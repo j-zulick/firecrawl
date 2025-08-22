@@ -68,10 +68,9 @@ services:
       FLY_PROCESS_GROUP: app
       ENV: local
     depends_on:
-      - redis
       - playwright-service
     ports:
-      - "${PORT:-3002}:${INTERNAL_PORT:-3002}"
+      - "127.0.0.1:${PORT:-3002}:${INTERNAL_PORT:-3002}"
     command: [ "pnpm", "run", "start:production" ]
 
   worker:
@@ -81,21 +80,20 @@ services:
       FLY_PROCESS_GROUP: worker
       ENV: local
     depends_on:
-      - redis
       - playwright-service
       - api
     command: [ "pnpm", "run", "workers" ]
 
-  redis:
-    # NOTE: If you want to use Valkey (open source) instead of Redis (source available),
-    # uncomment the Valkey statement and comment out the Redis statement.
-    # Using Valkey with Firecrawl is untested and not guaranteed to work. Use with caution.
-    image: redis:alpine
-    # image: valkey/valkey:alpine
+  # redis:
+  #   # NOTE: If you want to use Valkey (open source) instead of Redis (source available),
+  #   # uncomment the Valkey statement and comment out the Redis statement.
+  #   # Using Valkey with Firecrawl is untested and not guaranteed to work. Use with caution.
+  #   image: redis:alpine
+  #   # image: valkey/valkey:alpine
 
-    networks:
-      - backend
-    command: redis-server --bind 0.0.0.0
+  #   networks:
+  #     - backend
+  #   command: redis-server --bind 0.0.0.0
 
 networks:
   backend:
