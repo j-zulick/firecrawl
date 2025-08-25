@@ -18,7 +18,6 @@ import { getScrapeQueue } from "../../services/queue-service";
 import { search } from "../../search/v2";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import * as Sentry from "@sentry/node";
-import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { logger as _logger } from "../../lib/logger";
 import type { Logger } from "winston";
 import { CostTracking } from "../../lib/extract/extraction-service";
@@ -61,10 +60,6 @@ async function startScrapeJob(
   });
 
   const zeroDataRetention = flags?.forceZDR ?? false;
-
-  if (isUrlBlocked(searchResult.url, flags)) {
-    throw new Error("Could not scrape url: " + BLOCKLISTED_URL_MESSAGE);
-  }
   
   logger.info("Adding scrape job", {
     scrapeId: jobId,
@@ -85,7 +80,8 @@ async function startScrapeJob(
       },
       internalOptions: { teamId: options.teamId, bypassBilling: options.bypassBilling ?? true, zeroDataRetention },
       origin: options.origin,
-      is_scrape: true,
+      // Do not touch this flag
+      is_scrape: options.bypassBilling ?? false,
       startTime: Date.now(),
       zeroDataRetention,
     },
@@ -167,17 +163,12 @@ async function scrapeSearchResult(
       teamId: options.teamId,
     });
 
-    let statusCode = 0;
-    if (error?.message?.includes("Could not scrape url")) {
-      statusCode = 403;
-    }
-    
     const document: Document = {
       title: searchResult.title,
       description: searchResult.description,
       url: searchResult.url,
       metadata: {
-        statusCode,
+        statusCode: 500,
         error: error.message,
         proxyUsed: "basic",
       },
@@ -329,48 +320,60 @@ export async function searchController(
         scrapeInput: ScrapeJobInput;
       }> = [];
       
-      // Add web results
+      // Add web results (skip blocked URLs)
       if (searchResponse.web) {
         searchResponse.web.forEach(item => {
-          itemsToScrape.push({
-            item,
-            type: 'web',
-            scrapeInput: {
-              url: item.url,
-              title: item.title,
-              description: item.description,
-            }
-          });
+          if (!isUrlBlocked(item.url, req.acuc?.flags ?? null)) {
+            itemsToScrape.push({
+              item,
+              type: 'web',
+              scrapeInput: {
+                url: item.url,
+                title: item.title,
+                description: item.description,
+              }
+            });
+          } else {
+            logger.info(`Skipping blocked URL: ${item.url}`);
+          }
         });
       }
       
-      // Add news results (only those with URLs)
+      // Add news results (only those with URLs and not blocked)
       if (searchResponse.news) {
         searchResponse.news.filter(item => item.url).forEach(item => {
-          itemsToScrape.push({
-            item,
-            type: 'news',
-            scrapeInput: {
-              url: item.url!,
-              title: item.title || "",
-              description: item.snippet || "",
-            }
-          });
+          if (!isUrlBlocked(item.url!, req.acuc?.flags ?? null)) {
+            itemsToScrape.push({
+              item,
+              type: 'news',
+              scrapeInput: {
+                url: item.url!,
+                title: item.title || "",
+                description: item.snippet || "",
+              }
+            });
+          } else {
+            logger.info(`Skipping blocked URL: ${item.url}`);
+          }
         });
       }
       
-      // Add image results (only those with URLs)
+      // Add image results (only those with URLs and not blocked)
       if (searchResponse.images) {
         searchResponse.images.filter(item => item.url).forEach(item => {
-          itemsToScrape.push({
-            item,
-            type: 'image',
-            scrapeInput: {
-              url: item.url!,
-              title: item.title || "",
-              description: "",
-            }
-          });
+          if (!isUrlBlocked(item.url!, req.acuc?.flags ?? null)) {
+            itemsToScrape.push({
+              item,
+              type: 'image',
+              scrapeInput: {
+                url: item.url!,
+                title: item.title || "",
+                description: "",
+              }
+            });
+          } else {
+            logger.info(`Skipping blocked URL: ${item.url}`);
+          }
         });
       }
       
