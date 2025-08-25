@@ -443,7 +443,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               throw error.error;
             }
           } else {
-            meta.logger.warn("An unexpected error happened while scraping with " + engine + ".", { error });
+            meta.logger.warn("An unexpected error happened while scraping with " + error.engine + ".", { error });
           }
 
           // Filter out the failed engine
