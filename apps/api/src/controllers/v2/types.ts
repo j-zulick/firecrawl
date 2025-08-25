@@ -1329,6 +1329,7 @@ export const searchRequestSchema = z
     integration: z.nativeEnum(IntegrationEnum).optional().transform(val => val || null),
     timeout: z.number().int().positive().finite().safe().default(60000),
     ignoreInvalidURLs: z.boolean().optional().default(false),
+    asyncScraping: z.boolean().optional().default(false),
     __searchPreviewToken: z.string().optional(),
     scrapeOptions: baseScrapeOptions
       .extend({
@@ -1455,6 +1456,17 @@ export type SearchResponse =
     success: true;
     warning?: string;
     data: import("../../lib/entities").SearchV2Response;
+    creditsUsed: number;
+  }
+  | {
+    success: true;
+    warning?: string;
+    data: import("../../lib/entities").SearchV2Response;
+    scrapeIds: {
+      web?: string[];
+      news?: string[];
+      images?: string[];
+    };
     creditsUsed: number;
   };
 
