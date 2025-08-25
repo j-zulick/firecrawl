@@ -381,14 +381,14 @@ export async function searchController(
     if (!shouldScrape) {
       // No scraping - just count results for billing
       credits_billed = totalResultsCount;
-    } else if (isAsyncScraping) {
-      // Async scraping - start jobs and return IDs immediately
-      logger.info("Starting async search scraping");
+    } else {
+      // Common setup for both async and sync scraping
+      logger.info(`Starting ${isAsyncScraping ? 'async' : 'sync'} search scraping`);
       
       // Prepare all scrape job inputs
       const scrapeInputs = prepareScrapeJobInputs(searchResponse);
       
-      // Create all scrape job promises in parallel
+      // Create common options
       const scrapeOptions = {
         teamId: req.auth.team_id,
         origin: req.body.origin,
@@ -398,238 +398,202 @@ export async function searchController(
       
       const directToBullMQ = (req.acuc?.price_credits ?? 0) <= 3000;
       
-      // Start all scrape jobs in parallel
-      const allScrapePromises = [
+      // Create all promises based on mode (async vs sync)
+      const allPromises = [
         ...scrapeInputs.web.map(input => 
-          startScrapeJob(input, scrapeOptions, logger, req.acuc?.flags ?? null, directToBullMQ, isSearchPreview)
+          isAsyncScraping
+            ? startScrapeJob(input, scrapeOptions, logger, req.acuc?.flags ?? null, directToBullMQ, isSearchPreview)
+            : scrapeSearchResult(input, scrapeOptions, logger, req.acuc?.flags ?? null, directToBullMQ, isSearchPreview)
         ),
         ...scrapeInputs.news.map(input =>
-          startScrapeJob(input, scrapeOptions, logger, req.acuc?.flags ?? null, directToBullMQ, isSearchPreview)
+          isAsyncScraping
+            ? startScrapeJob(input, scrapeOptions, logger, req.acuc?.flags ?? null, directToBullMQ, isSearchPreview)
+            : scrapeSearchResult(input, scrapeOptions, logger, req.acuc?.flags ?? null, directToBullMQ, isSearchPreview)
         ),
         ...scrapeInputs.images.map(input =>
-          startScrapeJob(input, scrapeOptions, logger, req.acuc?.flags ?? null, directToBullMQ, isSearchPreview)
+          isAsyncScraping
+            ? startScrapeJob(input, scrapeOptions, logger, req.acuc?.flags ?? null, directToBullMQ, isSearchPreview)
+            : scrapeSearchResult(input, scrapeOptions, logger, req.acuc?.flags ?? null, directToBullMQ, isSearchPreview)
         ),
       ];
       
-      // Wait for all jobs to be queued
-      const allJobIds = await Promise.all(allScrapePromises);
+      // Execute all operations in parallel
+      const results = await Promise.all(allPromises);
       
-      // Organize job IDs by type
-      const scrapeIds: { web?: string[]; news?: string[]; images?: string[] } = {};
-      let currentIndex = 0;
-      
-      if (scrapeInputs.web.length > 0) {
-        scrapeIds.web = allJobIds.slice(currentIndex, currentIndex + scrapeInputs.web.length);
-        currentIndex += scrapeInputs.web.length;
-      }
-      
-      if (scrapeInputs.news.length > 0) {
-        scrapeIds.news = allJobIds.slice(currentIndex, currentIndex + scrapeInputs.news.length);
-        currentIndex += scrapeInputs.news.length;
-      }
-      
-      if (scrapeInputs.images.length > 0) {
-        scrapeIds.images = allJobIds.slice(currentIndex, currentIndex + scrapeInputs.images.length);
-      }
-      
-      // Calculate credits for billing
-      credits_billed = allJobIds.length;
-      
-      // Bill team once for all initiated scrapes
-      if (!isSearchPreview) {
-        billTeam(
-          req.auth.team_id,
-          req.acuc?.sub_id,
-          credits_billed,
-        ).catch((error) => {
-          logger.error(
-            `Failed to bill team ${req.auth.team_id} for ${credits_billed} credits: ${error}`,
+      if (isAsyncScraping) {
+        // Async mode: organize job IDs and return immediately
+        const allJobIds = results as string[];
+        const scrapeIds: { web?: string[]; news?: string[]; images?: string[] } = {};
+        let currentIndex = 0;
+        
+        if (scrapeInputs.web.length > 0) {
+          scrapeIds.web = allJobIds.slice(currentIndex, currentIndex + scrapeInputs.web.length);
+          currentIndex += scrapeInputs.web.length;
+        }
+        
+        if (scrapeInputs.news.length > 0) {
+          scrapeIds.news = allJobIds.slice(currentIndex, currentIndex + scrapeInputs.news.length);
+          currentIndex += scrapeInputs.news.length;
+        }
+        
+        if (scrapeInputs.images.length > 0) {
+          scrapeIds.images = allJobIds.slice(currentIndex, currentIndex + scrapeInputs.images.length);
+        }
+        
+        credits_billed = allJobIds.length;
+        
+        // Bill team for async scraping
+        if (!isSearchPreview) {
+          billTeam(req.auth.team_id, req.acuc?.sub_id, credits_billed).catch((error) => {
+            logger.error(`Failed to bill team ${req.auth.team_id} for ${credits_billed} credits: ${error}`);
+          });
+        }
+
+        const endTime = new Date().getTime();
+        const timeTakenInSeconds = (endTime - startTime) / 1000;
+
+        logger.info("Logging job (async scraping)", {
+          num_docs: credits_billed,
+          time_taken: timeTakenInSeconds,
+          scrapeIds,
+        });
+
+        logJob(
+          {
+            job_id: jobId,
+            success: true,
+            num_docs: (searchResponse.web?.length ?? 0) + (searchResponse.images?.length ?? 0) + (searchResponse.news?.length ?? 0),
+            docs: [searchResponse],
+            time_taken: timeTakenInSeconds,
+            team_id: req.auth.team_id,
+            mode: "search",
+            url: req.body.query,
+            scrapeOptions: req.body.scrapeOptions,
+            crawlerOptions: {
+              ...req.body,
+              query: undefined,
+              scrapeOptions: undefined,
+            },
+            origin: req.body.origin,
+            integration: req.body.integration,
+            credits_billed,
+            zeroDataRetention: false,
+          },
+          false,
+          isSearchPreview,
+        );
+
+        return res.status(200).json({
+          success: true,
+          data: searchResponse,
+          scrapeIds,
+          creditsUsed: credits_billed,
+        });
+      } else {
+        // Sync mode: process scraped documents
+        const allDocsWithCostTracking = results as DocumentWithCostTracking[];
+        const scrapedResponse: SearchV2Response = {};
+        let currentIndex = 0;
+        
+        // Process web results
+        if (scrapeInputs.web.length > 0) {
+          const webDocs = allDocsWithCostTracking.slice(currentIndex, currentIndex + scrapeInputs.web.length);
+          scrapedResponse.web = searchResponse.web!.map((item, index) => {
+            const doc = webDocs[index].document;
+            return {
+              url: doc.url || item.url,
+              title: doc.title || item.title,
+              description: doc.description || item.description,
+              position: item.position,
+              category: item.category,
+              markdown: doc.markdown,
+              html: doc.html,
+              rawHtml: doc.rawHtml,
+              links: doc.links,
+              screenshot: doc.screenshot,
+              summary: doc.summary,
+              metadata: doc.metadata,
+            };
+          });
+          currentIndex += scrapeInputs.web.length;
+        }
+        
+        // Process news results
+        if (scrapeInputs.news.length > 0) {
+          const newsDocs = allDocsWithCostTracking.slice(currentIndex, currentIndex + scrapeInputs.news.length);
+          const newsDocsMap = new Map(
+            newsDocs.map((docWithCost, index) => [
+              scrapeInputs.news[index].url,
+              docWithCost.document
+            ])
+          );
+          
+          scrapedResponse.news = searchResponse.news!.map(item => {
+            const doc = item.url ? newsDocsMap.get(item.url) : undefined;
+            return {
+              ...item,
+              category: item.category,
+              markdown: doc?.markdown,
+              html: doc?.html,
+              rawHtml: doc?.rawHtml,
+              summary: doc?.summary,
+              metadata: doc?.metadata,
+            };
+          });
+          currentIndex += scrapeInputs.news.length;
+        }
+        
+        // Process image results
+        if (scrapeInputs.images.length > 0) {
+          const imageDocs = allDocsWithCostTracking.slice(currentIndex, currentIndex + scrapeInputs.images.length);
+          const imageDocsMap = new Map(
+            imageDocs.map((docWithCost, index) => [
+              scrapeInputs.images[index].url,
+              docWithCost.document
+            ])
+          );
+          
+          scrapedResponse.images = searchResponse.images!.map(item => {
+            const doc = item.url ? imageDocsMap.get(item.url) : undefined;
+            return {
+              ...item,
+              markdown: doc?.markdown,
+              html: doc?.html,
+              rawHtml: doc?.rawHtml,
+              summary: doc?.summary,
+              metadata: doc?.metadata,
+            };
+          });
+        }
+        
+        // Calculate credits
+        const creditPromises = allDocsWithCostTracking.map(async (docWithCost) => {
+          return await calculateCreditsToBeBilled(
+            req.body.scrapeOptions,
+            { teamId: req.auth.team_id, bypassBilling: true, zeroDataRetention: false },
+            docWithCost.document, 
+            docWithCost.costTracking,
+            req.acuc?.flags ?? null,
           );
         });
-      }
-
-      const endTime = new Date().getTime();
-      const timeTakenInSeconds = (endTime - startTime) / 1000;
-
-      logger.info("Logging job (async scraping)", {
-        num_docs: credits_billed,
-        time_taken: timeTakenInSeconds,
-        scrapeIds,
-      });
-
-      logJob(
-        {
-          job_id: jobId,
-          success: true,
-          num_docs: (searchResponse.web?.length ?? 0) + (searchResponse.images?.length ?? 0) + (searchResponse.news?.length ?? 0),
-          docs: [searchResponse],
-          time_taken: timeTakenInSeconds,
-          team_id: req.auth.team_id,
-          mode: "search",
-          url: req.body.query,
-          scrapeOptions: req.body.scrapeOptions,
-          crawlerOptions: {
-            ...req.body,
-            query: undefined,
-            scrapeOptions: undefined,
-          },
-          origin: req.body.origin,
-          integration: req.body.integration,
-          credits_billed,
-          zeroDataRetention: false, // not supported
-        },
-        false,
-        isSearchPreview,
-      );
-
-      return res.status(200).json({
-        success: true,
-        data: searchResponse,
-        scrapeIds,
-        creditsUsed: credits_billed,
-      });
-    } else {
-      // Sync scraping - wait for results
-      logger.info("Starting sync search scraping");
-      
-      // Prepare all scrape job inputs
-      const scrapeInputs = prepareScrapeJobInputs(searchResponse);
-      
-      // Create scrape options
-      const scrapeOptions = {
-        teamId: req.auth.team_id,
-        origin: req.body.origin,
-        timeout: req.body.timeout,
-        scrapeOptions: req.body.scrapeOptions,
-      };
-      
-      const directToBullMQ = (req.acuc?.price_credits ?? 0) <= 3000;
-      
-      // Start all scrape jobs in parallel
-      const allScrapePromises = [
-        ...scrapeInputs.web.map(input =>
-          scrapeSearchResult(input, scrapeOptions, logger, req.acuc?.flags ?? null, directToBullMQ, isSearchPreview)
-        ),
-        ...scrapeInputs.news.map(input =>
-          scrapeSearchResult(input, scrapeOptions, logger, req.acuc?.flags ?? null, directToBullMQ, isSearchPreview)
-        ),
-        ...scrapeInputs.images.map(input =>
-          scrapeSearchResult(input, scrapeOptions, logger, req.acuc?.flags ?? null, directToBullMQ, isSearchPreview)
-        ),
-      ];
-      
-      // Wait for all scraping to complete
-      const allDocsWithCostTracking = await Promise.all(allScrapePromises);
-      
-      // Organize results by type and merge with search response
-      const scrapedResponse: SearchV2Response = {};
-      let currentIndex = 0;
-      
-      // Process web results
-      if (scrapeInputs.web.length > 0) {
-        const webDocs = allDocsWithCostTracking.slice(currentIndex, currentIndex + scrapeInputs.web.length);
-        scrapedResponse.web = searchResponse.web!.map((item, index) => {
-          const doc = webDocs[index].document;
-          return {
-            url: doc.url || item.url,
-            title: doc.title || item.title,
-            description: doc.description || item.description,
-            position: item.position,
-            category: item.category,
-            markdown: doc.markdown,
-            html: doc.html,
-            rawHtml: doc.rawHtml,
-            links: doc.links,
-            screenshot: doc.screenshot,
-            summary: doc.summary,
-            metadata: doc.metadata,
-          };
-        });
-        currentIndex += scrapeInputs.web.length;
-      }
-      
-      // Process news results
-      if (scrapeInputs.news.length > 0) {
-        const newsDocs = allDocsWithCostTracking.slice(currentIndex, currentIndex + scrapeInputs.news.length);
-        const newsDocsMap = new Map(
-          newsDocs.map((docWithCost, index) => [
-            scrapeInputs.news[index].url,
-            docWithCost.document
-          ])
-        );
         
-        scrapedResponse.news = searchResponse.news!.map(item => {
-          const doc = item.url ? newsDocsMap.get(item.url) : undefined;
-          return {
-            ...item,
-            category: item.category,
-            markdown: doc?.markdown,
-            html: doc?.html,
-            rawHtml: doc?.rawHtml,
-            summary: doc?.summary,
-            metadata: doc?.metadata,
-          };
-        });
-        currentIndex += scrapeInputs.news.length;
-      }
-      
-      // Process image results
-      if (scrapeInputs.images.length > 0) {
-        const imageDocs = allDocsWithCostTracking.slice(currentIndex, currentIndex + scrapeInputs.images.length);
-        const imageDocsMap = new Map(
-          imageDocs.map((docWithCost, index) => [
-            scrapeInputs.images[index].url,
-            docWithCost.document
-          ])
-        );
+        try {
+          const individualCredits = await Promise.all(creditPromises);
+          credits_billed = individualCredits.reduce((sum, credit) => sum + credit, 0);
+        } catch (error) {
+          logger.error("Error calculating credits for billing", { error });
+          credits_billed = totalResultsCount;
+        }
         
-        scrapedResponse.images = searchResponse.images!.map(item => {
-          const doc = item.url ? imageDocsMap.get(item.url) : undefined;
-          return {
-            ...item,
-            markdown: doc?.markdown,
-            html: doc?.html,
-            rawHtml: doc?.rawHtml,
-            summary: doc?.summary,
-            metadata: doc?.metadata,
-          };
-        });
+        // Update response with scraped data
+        Object.assign(searchResponse, scrapedResponse);
       }
-      
-      // Calculate credits
-      const creditPromises = allDocsWithCostTracking.map(async (docWithCost) => {
-        return await calculateCreditsToBeBilled(
-          req.body.scrapeOptions,
-          { teamId: req.auth.team_id, bypassBilling: true, zeroDataRetention: false },
-          docWithCost.document, 
-          docWithCost.costTracking,
-          req.acuc?.flags ?? null,
-        );
-      });
-      
-      try {
-        const individualCredits = await Promise.all(creditPromises);
-        credits_billed = individualCredits.reduce((sum, credit) => sum + credit, 0);
-      } catch (error) {
-        logger.error("Error calculating credits for billing", { error });
-        // Use the totalResultsCount which already respects the limit
-        credits_billed = totalResultsCount;
-      }
-      
-      // Update response with scraped data
-      Object.assign(searchResponse, scrapedResponse);
     }
 
-    // Bill team once for all successful results (only for sync scraping, async already billed)
-    if (!isSearchPreview && !isAsyncScraping) {
-      billTeam(
-        req.auth.team_id,
-        req.acuc?.sub_id,
-        credits_billed,
-      ).catch((error) => {
-        logger.error(
-          `Failed to bill team ${req.auth.team_id} for ${credits_billed} credits: ${error}`,
-        );
+    // Bill team once for all successful results (only for sync scraping, async already billed above)
+    if (!isSearchPreview && shouldScrape && !isAsyncScraping) {
+      billTeam(req.auth.team_id, req.acuc?.sub_id, credits_billed).catch((error) => {
+        logger.error(`Failed to bill team ${req.auth.team_id} for ${credits_billed} credits: ${error}`);
       });
     }
 
@@ -667,11 +631,14 @@ export async function searchController(
     );
 
     // For sync scraping or no scraping, don't include scrapeIds
-    return res.status(200).json({
+    // Return response based on mode
+    const response: any = {
       success: true,
       data: searchResponse,
       creditsUsed: credits_billed,
-    });
+    };
+    
+    return res.status(200).json(response);
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.warn("Invalid request body", { error: error.errors });
