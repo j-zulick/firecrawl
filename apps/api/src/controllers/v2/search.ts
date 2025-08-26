@@ -76,6 +76,7 @@ async function startScrapeJob(
       team_id: options.teamId,
       scrapeOptions: {
         ...options.scrapeOptions,
+        // TODO: fix this
         maxAge: 3 * 24 * 60 * 60 * 1000, // 3 days
       },
       internalOptions: { teamId: options.teamId, bypassBilling: options.bypassBilling ?? true, zeroDataRetention },
@@ -547,7 +548,8 @@ export async function searchController(
     // - For no scraping: Bill based on search results count
     if (!isSearchPreview && (!shouldScrape || (shouldScrape && !isAsyncScraping))) {
       billTeam(req.auth.team_id, req.acuc?.sub_id, credits_billed).catch((error) => {
-        logger.error("Failed to bill team", { teamId: req.auth.team_id, subId: req.acuc?.sub_id, credits_billed, error });
+        logger.error(`Failed to bill team ${req.acuc?.sub_id} for ${credits_billed} credits: ${error}`);
+        
       });
     }
 
@@ -574,6 +576,7 @@ export async function searchController(
           ...req.body,
           query: undefined,
           scrapeOptions: undefined,
+          asyncScraping: isAsyncScraping,
         },
         origin: req.body.origin,
         integration: req.body.integration,
