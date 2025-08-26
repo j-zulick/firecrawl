@@ -547,7 +547,7 @@ export async function searchController(
     // - For no scraping: Bill based on search results count
     if (!isSearchPreview && (!shouldScrape || (shouldScrape && !isAsyncScraping))) {
       billTeam(req.auth.team_id, req.acuc?.sub_id, credits_billed).catch((error) => {
-        logger.error(`Failed to bill team ${req.auth.team_id} for ${credits_billed} credits: ${error}`);
+        logger.error("Failed to bill team", { teamId: req.auth.team_id, subId: req.acuc?.sub_id, credits_billed, error });
       });
     }
 
