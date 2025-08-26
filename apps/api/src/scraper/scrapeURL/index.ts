@@ -630,7 +630,7 @@ export async function scrapeURL(
       } catch (error) {
         if (
           error instanceof AddFeatureError &&
-          meta.internalOptions.forceEngine === undefined
+          (meta.internalOptions.forceEngine === undefined || Array.isArray(meta.internalOptions.forceEngine))
         ) {
           meta.logger.debug(
             "More feature flags requested by scraper: adding " +
@@ -645,7 +645,7 @@ export async function scrapeURL(
           }
         } else if (
           error instanceof RemoveFeatureError &&
-          meta.internalOptions.forceEngine === undefined
+          (meta.internalOptions.forceEngine === undefined || Array.isArray(meta.internalOptions.forceEngine))
         ) {
           meta.logger.debug(
             "Incorrect feature flags reported by scraper: removing " +
