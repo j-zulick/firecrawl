@@ -18,6 +18,7 @@ export type RobustFetchParams<Schema extends z.Schema<any>> = {
   dontParseResponse?: boolean;
   ignoreResponse?: boolean;
   ignoreFailure?: boolean;
+  ignoreFailureStatus?: boolean;
   requestId?: string;
   tryCount?: number;
   tryCooldown?: number;
@@ -54,6 +55,7 @@ export async function robustFetch<
   schema,
   ignoreResponse = false,
   ignoreFailure = false,
+  ignoreFailureStatus = false,
   requestId = crypto.randomUUID(),
   tryCount = 1,
   tryCooldown,
@@ -203,7 +205,7 @@ export async function robustFetch<
     };
   }
 
-  if (response.status >= 300) {
+  if (response.status >= 300 && !ignoreFailureStatus) {
     if (tryCount > 1) {
       logger.debug(
         "Request sent failure status, trying " + (tryCount - 1) + " more times",

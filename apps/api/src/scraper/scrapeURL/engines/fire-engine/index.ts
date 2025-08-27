@@ -48,6 +48,7 @@ async function performFireEngineScrape<
   production = true,
 ): Promise<FireEngineCheckStatusSuccess> {
   const scrape = await fireEngineScrape(
+    meta,
     logger.child({ method: "fireEngineScrape" }),
     request,
     mock,
@@ -55,89 +56,93 @@ async function performFireEngineScrape<
     production,
   );
 
-  const errorLimit = 3;
-  let errors: any[] = [];
   let status: FireEngineCheckStatusSuccess | undefined = undefined;
+  if ((scrape as any).processing) {
+    const errorLimit = 3;
+    let errors: any[] = [];
 
-  while (status === undefined) {
-    if (errors.length >= errorLimit) {
-      logger.error("Error limit hit.", { errors });
-      fireEngineDelete(
-        logger.child({
-          method: "performFireEngineScrape/fireEngineDelete",
-          afterErrors: errors,
-        }),
-        scrape.jobId,
-        mock,
-        undefined,
-        production,
-      );
-      throw new Error("Error limit hit. See e.cause.errors for errors.", {
-        cause: { errors },
-      });
-    }
-
-    meta.abort.throwIfAborted();
-
-    try {
-      status = await fireEngineCheckStatus(
-        meta,
-        logger.child({ method: "fireEngineCheckStatus" }),
-        scrape.jobId,
-        mock,
-        abort,
-        production,
-      );
-    } catch (error) {
-      if (error instanceof StillProcessingError) {
-        // nop
-      } else if (
-        error instanceof EngineError ||
-        error instanceof SiteError ||
-        error instanceof SSLError ||
-        error instanceof DNSResolutionError ||
-        error instanceof ActionError ||
-        error instanceof UnsupportedFileError ||
-        error instanceof FEPageLoadFailed
-      ) {
+    while (status === undefined) {
+      if (errors.length >= errorLimit) {
+        logger.error("Error limit hit.", { errors });
         fireEngineDelete(
           logger.child({
             method: "performFireEngineScrape/fireEngineDelete",
-            afterError: error,
+            afterErrors: errors,
           }),
-          scrape.jobId,
+          (scrape as any).jobId,
           mock,
           undefined,
           production,
         );
-        logger.debug("Fire-engine scrape job failed.", {
-          error,
-          jobId: scrape.jobId,
+        throw new Error("Error limit hit. See e.cause.errors for errors.", {
+          cause: { errors },
         });
-        throw error;
-      } else if (error instanceof AbortManagerThrownError) {
-        fireEngineDelete(
-          logger.child({
-            method: "performFireEngineScrape/fireEngineDelete",
-            afterError: error,
-          }),
-          scrape.jobId,
+      }
+
+      meta.abort.throwIfAborted();
+
+      try {
+        status = await fireEngineCheckStatus(
+          meta,
+          logger.child({ method: "fireEngineCheckStatus" }),
+          (scrape as any).jobId,
           mock,
-          undefined,
+          abort,
           production,
         );
-        throw error;
-      } else {
-        errors.push(error);
-        logger.debug(
-          `An unexpeceted error occurred while calling checkStatus. Error counter is now at ${errors.length}.`,
-          { error, jobId: scrape.jobId },
-        );
-        Sentry.captureException(error);
+      } catch (error) {
+        if (error instanceof StillProcessingError) {
+          // nop
+        } else if (
+          error instanceof EngineError ||
+          error instanceof SiteError ||
+          error instanceof SSLError ||
+          error instanceof DNSResolutionError ||
+          error instanceof ActionError ||
+          error instanceof UnsupportedFileError ||
+          error instanceof FEPageLoadFailed
+        ) {
+          fireEngineDelete(
+            logger.child({
+              method: "performFireEngineScrape/fireEngineDelete",
+              afterError: error,
+            }),
+            (scrape as any).jobId,
+            mock,
+            undefined,
+            production,
+          );
+          logger.debug("Fire-engine scrape job failed.", {
+            error,
+            jobId: (scrape as any).jobId,
+          });
+          throw error;
+        } else if (error instanceof AbortManagerThrownError) {
+          fireEngineDelete(
+            logger.child({
+              method: "performFireEngineScrape/fireEngineDelete",
+              afterError: error,
+            }),
+            (scrape as any).jobId,
+            mock,
+            undefined,
+            production,
+          );
+          throw error;
+        } else {
+          errors.push(error);
+          logger.debug(
+            `An unexpeceted error occurred while calling checkStatus. Error counter is now at ${errors.length}.`,
+            { error, jobId: (scrape as any).jobId },
+          );
+          Sentry.captureException(error);
+        }
       }
     }
 
     await new Promise((resolve) => setTimeout(resolve, 500));
+  } else {
+    status = scrape as FireEngineCheckStatusSuccess;
   }
 
   await specialtyScrapeCheck(
@@ -166,7 +171,7 @@ async function performFireEngineScrape<
     logger.child({
       method: "performFireEngineScrape/fireEngineDelete",
     }),
-    scrape.jobId,
+    (scrape as any).jobId,
     mock,
     undefined,
     production,
@@ -214,7 +219,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
     FireEngineScrapeRequestChromeCDP = {
     url: meta.rewrittenUrl ?? meta.url,
     engine: "chrome-cdp",
-    instantReturn: true,
+    instantReturn: false,
     skipTlsVerification: meta.options.skipTlsVerification,
     headers: meta.options.headers,
     ...(actions.length > 0
@@ -302,7 +307,7 @@ export async function scrapeURLWithFireEnginePlaywright(
     FireEngineScrapeRequestPlaywright = {
     url: meta.rewrittenUrl ?? meta.url,
     engine: "playwright",
-    instantReturn: true,
+    instantReturn: false,
 
     headers: meta.options.headers,
     priority: meta.internalOptions.priority,
@@ -364,7 +369,7 @@ export async function scrapeURLWithFireEngineTLSClient(
     FireEngineScrapeRequestTLSClient = {
     url: meta.rewrittenUrl ?? meta.url,
     engine: "tlsclient",
-    instantReturn: true,
+    instantReturn: false,
 
     headers: meta.options.headers,
     priority: meta.internalOptions.priority,
