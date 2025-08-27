@@ -56,7 +56,6 @@ class V2Proxy:
         self._client = client_instance
 
         if client_instance:
-            # self.scrape = client_instance.scrape
             self.search = client_instance.search
             self.crawl = client_instance.crawl
             self.get_crawl_status = client_instance.get_crawl_status
@@ -168,14 +167,17 @@ class Firecrawl:
         self.v1 = V1Proxy(self._v1_client) if self._v1_client else None
         self.v2 = V2Proxy(self._v2_client)
         
-        
         self.scrape = self._v2_client.scrape
+        self.search = self._v2_client.search
+        self.map = self._v2_client.map
+
         self.crawl = self._v2_client.crawl
         self.start_crawl = self._v2_client.start_crawl
         self.crawl_params_preview = self._v2_client.crawl_params_preview
         self.get_crawl_status = self._v2_client.get_crawl_status
         self.cancel_crawl = self._v2_client.cancel_crawl
         self.get_crawl_errors = self._v2_client.get_crawl_errors
+        self.get_active_crawls = self._v2_client.get_active_crawls
         self.active_crawls = self._v2_client.active_crawls
 
         self.start_batch_scrape = self._v2_client.start_batch_scrape
@@ -183,13 +185,15 @@ class Firecrawl:
         self.cancel_batch_scrape = self._v2_client.cancel_batch_scrape
         self.batch_scrape = self._v2_client.batch_scrape
         self.get_batch_scrape_errors = self._v2_client.get_batch_scrape_errors
+
+        self.start_extract = self._v2_client.start_extract
         self.get_extract_status = self._v2_client.get_extract_status
-        self.map = self._v2_client.map
-        self.search = self._v2_client.search
         self.extract = self._v2_client.extract
+
         self.get_concurrency = self._v2_client.get_concurrency
         self.get_credit_usage = self._v2_client.get_credit_usage
         self.get_token_usage = self._v2_client.get_token_usage
+
         self.watcher = self._v2_client.watcher
         
 class AsyncFirecrawl:
