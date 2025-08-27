@@ -204,24 +204,21 @@ export function countryCheck(
   if (!couldBeRestricted) {
     return next();
   }
-  
-  const _ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
-  const ip = Array.isArray(_ip) ? _ip[0] : _ip.split(",")[0];
 
-  if (!ip) {
+  if (!req.ip) {
     logger.warn("IP address not found, unable to check country");
     return next();
   }
 
-  const country = geoip.lookup(ip);
+  const country = geoip.lookup(req.ip);
   if (!country || !country.country) {
-    logger.warn("IP address country data not found", { ip });
+    logger.warn("IP address country data not found", { ip: req.ip });
     return next();
   }
 
   const restricted = process.env.RESTRICTED_COUNTRIES?.split(",") ?? [];
   if (restricted.includes(country.country)) {
-    logger.warn("Denied access to restricted country", { ip, country: country.country, teamId: req.auth.team_id });
+    logger.warn("Denied access to restricted country", { ip: req.ip, country: country.country, teamId: req.auth.team_id });
     return res.status(403).json({
       success: false,
       error: "Use of headers, actions, and the FIRE-1 agent is not allowed by default in your country. Please contact us at help@firecrawl.com",

@@ -81,6 +81,10 @@ app.use(bodyParser.json({ limit: "10mb" }));
 
 app.use(cors()); // Add this line to enable CORS
 
+if (process.env.EXPRESS_TRUST_PROXY) {
+  app.set("trust proxy", parseInt(process.env.EXPRESS_TRUST_PROXY, 10));
+}
+
 const serverAdapter = new ExpressAdapter();
 serverAdapter.setBasePath(`/admin/${process.env.BULL_AUTH_KEY}/queues`);
 
