@@ -593,6 +593,13 @@ fn _extract_attributes(html: &str, options: &ExtractAttributesOptions) -> Result
 /// Output will be a JSON string. Output string must be freed with free_string.
 #[no_mangle]
 pub unsafe extern "C" fn extract_attributes(html: *const libc::c_char, options: *const libc::c_char) -> *mut libc::c_char {
+    let html = match unsafe { CStr::from_ptr(html) }.to_str().map_err(|_| ()) {
+        Ok(x) => x,
+        Err(_) => {
+            return CString::new("RUSTFC:ERROR:Failed to parse input HTML as C string").unwrap().into_raw();
+        }
+    };
+    
     let options_str = match unsafe { CStr::from_ptr(options) }.to_str().map_err(|_| ()) {
         Ok(x) => x,
         Err(_) => {
