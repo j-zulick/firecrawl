@@ -8,6 +8,7 @@ export function abTestJob(webScraperOptions: WebScraperOptions) {
     try {
         const abRateEnv = process.env.SCRAPEURL_AB_RATE;
         const abHostEnv = process.env.SCRAPEURL_AB_HOST;
+        const shouldExtendMaxAge = process.env.SCRAPEURL_AB_EXTEND_MAXAGE === "true";
         const abRate = abRateEnv !== undefined ? Math.max(0, Math.min(1, Number(abRateEnv))) : 0;
         const shouldABTest = webScraperOptions.mode === "single_urls"
             && !webScraperOptions.zeroDataRetention
@@ -29,6 +30,7 @@ export function abTestJob(webScraperOptions: WebScraperOptions) {
                             url: webScraperOptions.url,
                             ...webScraperOptions.scrapeOptions,
                             origin: (webScraperOptions.scrapeOptions as any).origin ?? "api",
+                            ...(shouldExtendMaxAge ? { maxAge: 900000000 } : {}),
                         },
                         logger: abLogger,
                         tryCount: 1,
