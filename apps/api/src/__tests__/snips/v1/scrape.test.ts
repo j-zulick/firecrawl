@@ -937,11 +937,14 @@ describe("Scrape tests", () => {
         // text on the last page
         expect(response.markdown).toContain("Redistribution and use in source and binary forms, with or without modification");
       }, scrapeTimeout * 5);
+    });
+  }
 
+  describe("URL rewriting", () => {
+    if (!process.env.TEST_SUITE_SELF_HOSTED) {
       it.concurrent("scrapes Google Docs links as PDFs", async () => {
         const response = await scrape({
           url: "https://docs.google.com/document/d/1H-hOLYssS8xXl2o5hxj4ipE7yyhZAX1s7ADYM1Hdlzo/view",
-          timeout: scrapeTimeout * 5,
         }, identity);
 
         expect(response.markdown).toContain("This is a test to confirm Google Docs scraping abilities.");
@@ -950,13 +953,36 @@ describe("Scrape tests", () => {
       it.concurrent("scrapes Google Slides links as PDFs", async () => {
         const response = await scrape({
           url: "https://docs.google.com/presentation/d/1pDKL1UULpr6siq_eVWE1hjqt5MKCgSSuKS_MWahnHAQ/view",
-          timeout: scrapeTimeout * 5,
         }, identity);
 
         expect(response.markdown).toContain("This is a test to confirm Google Slides scraping abilities.");
       }, scrapeTimeout * 5);
-    });
-  }
+
+      it.concurrent("scrapes Google Drive PDF files as PDFs", async () => {
+        const response = await scrape({
+          url: "https://drive.google.com/file/d/1QrgvXM2F7sgSdrhoBfdp9IMBVhUk-Ueu/view?usp=drive_link",
+        }, identity);
+  
+        expect(response.markdown).toContain("This is a simple PDF file.");
+      }, scrapeTimeout * 5);
+    }
+
+    it.concurrent("scrapes Google Drive text files correctly", async () => {
+      const response = await scrape({
+        url: "https://drive.google.com/file/d/14m3ZVDnWJwwPSDHX6U6jkL7FXxOf6cHB/view?usp=sharing",
+      }, identity);
+
+      expect(response.markdown).toContain("This is a simple TXT file.");
+    }, scrapeTimeout * 5);
+
+    it.concurrent("scrapes Google Sheets links correctly", async () => {
+      const response = await scrape({
+        url: "https://docs.google.com/spreadsheets/d/1DTpw_bbsf3OY17ZqEYEpW6lAmLdCRC2WfLrV0isG9ac/edit?usp=sharing",
+      }, identity);
+
+      expect(response.markdown).toContain("This is a test sheet.");
+    }, scrapeTimeout * 5);
+  });
 
   if (!process.env.TEST_SUITE_SELF_HOSTED || process.env.OPENAI_API_KEY || process.env.OLLAMA_BASE_URL) {
     describe("JSON format", () => {

@@ -38,7 +38,8 @@ export async function specialtyScrapeCheck(
     });
   } else if (
     contentType === "application/pdf" ||
-    contentType.startsWith("application/pdf;")
+    contentType.startsWith("application/pdf;") ||
+    (contentType === "application/octet-stream" && (feRes?.file?.content.startsWith("JVBERi0") || feRes?.content.startsWith("%PDF-")))
   ) {
     // .pdf
     throw new AddFeatureError(["pdf"], await feResToPdfPrefetch(logger, feRes));

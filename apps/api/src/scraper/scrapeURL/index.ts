@@ -154,6 +154,16 @@ function rewriteUrl(url: string): string | undefined {
     if (id) {
       return `https://docs.google.com/presentation/d/${id}/export?format=pdf`;
     }
+  } else if (url.startsWith("https://drive.google.com/file/d/") || url.startsWith("http://drive.google.com/file/d/")) {
+    const id = url.match(/\/file\/d\/([-\w]+)/)?.[1];
+    if (id) {
+      return `https://drive.google.com/uc?export=download&id=${id}`;
+    }
+  } else if (url.startsWith("https://docs.google.com/spreadsheets/d/") || url.startsWith("http://docs.google.com/spreadsheets/d/")) {
+    const id = url.match(/\/spreadsheets\/d\/([-\w]+)/)?.[1];
+    if (id) {
+      return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:html`;
+    }
   }
 
   return undefined;
