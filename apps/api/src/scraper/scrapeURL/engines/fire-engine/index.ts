@@ -137,7 +137,7 @@ async function performFireEngineScrape<
       }
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
   await specialtyScrapeCheck(
