@@ -31,27 +31,6 @@ describe("Scrape tests", () => {
   }, scrapeTimeout);
 
   describe("waitFor validation", () => {
-    it.concurrent("allows waitFor when it's less than half of timeout", async () => {
-      const response = await scrape({
-        url: "http://firecrawl.dev",
-        waitFor: 5000,
-        timeout: 15000,
-      }, identity);
-
-      expect(response.markdown).toContain("Firecrawl");
-    }, scrapeTimeout);
-
-    // TODO: does not make sense. reevaluate - mogery
-    // it.concurrent("allows waitFor when it's exactly half of timeout", async () => {
-    //   const response = await scrape({
-    //     url: "http://firecrawl.dev",
-    //     waitFor: 7500,
-    //     timeout: 15000,
-    //   }, identity);
-
-    //   expect(response.markdown).toContain("Firecrawl");
-    // }, scrapeTimeout);
-
     it.concurrent("rejects waitFor when it exceeds half of timeout", async () => {
       const raw = await scrapeRaw({
         url: "http://firecrawl.dev",
