@@ -2,10 +2,7 @@ import { Job } from "bullmq";
 import {
   WebScraperOptions,
   RunWebScraperParams,
-  RunWebScraperResult,
 } from "../types";
-import { billTeam } from "../services/billing/credit_billing";
-import { Document, TeamFlags } from "../controllers/v1/types";
 import { supabase_service } from "../services/supabase";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
@@ -13,7 +10,6 @@ import {
   scrapeURL,
   ScrapeUrlResponse,
 } from "../scraper/scrapeURL";
-import { Engine } from "../scraper/scrapeURL/engines";
 import { CostTracking } from "../lib/extract/extraction-service";
 configDotenv();
 

@@ -14,7 +14,6 @@ import {
 } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logJob } from "../../services/logging/log_job";
-import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { dereferenceSchema } from "./helpers/dereference-schema";
 import { spreadSchemas } from "./helpers/spread-schemas";
 import { transformArrayToObject } from "./helpers/transform-array-to-obj";
@@ -47,6 +46,7 @@ interface ExtractServiceOptions {
   cacheMode?: "load" | "save" | "direct";
   cacheKey?: string;
   agent?: boolean;
+  apiKeyId: number | null;
 }
 
 export interface ExtractResult {
@@ -126,7 +126,7 @@ export async function performExtraction(
   extractId: string,
   options: ExtractServiceOptions,
 ): Promise<ExtractResult> {
-  const { request, teamId, subId } = options;
+  const { request, teamId, subId, apiKeyId } = options;
   const urlTraces: URLTrace[] = [];
   let docsMap: Map<string, Document> = new Map();
   let singleAnswerCompletions: completions | null = null;
@@ -208,7 +208,7 @@ export async function performExtraction(
         zeroDataRetention: false, // not supported
       });
 
-      await billTeam(teamId, subId, tokens_billed, logger, true).catch((error) => {
+      await billTeam(teamId, subId, tokens_billed, apiKeyId, logger, true).catch((error) => {
         logger.error(
           `Failed to bill team ${teamId} for thinking tokens: ${error}`,
         );
@@ -432,6 +432,7 @@ export async function performExtraction(
               origin: "extract",
               timeout,
               flags: acuc?.flags ?? null,
+              apiKeyId,
             },
             urlTraces,
             logger.child({
@@ -719,7 +720,7 @@ export async function performExtraction(
           cost_tracking: costTracking,
           zeroDataRetention: false, // not supported
         });
-        await billTeam(teamId, subId, tokens_billed, logger, true).catch((error) => {
+        await billTeam(teamId, subId, tokens_billed, apiKeyId, logger, true).catch((error) => {
           logger.error(
             `Failed to bill team ${teamId} for thinking tokens: ${error}`,
           );
@@ -773,6 +774,7 @@ export async function performExtraction(
               origin: "extract",
               timeout,
               flags: acuc?.flags ?? null,
+              apiKeyId,
             },
             urlTraces,
             logger.child({
@@ -829,7 +831,7 @@ export async function performExtraction(
           cost_tracking: costTracking,
           zeroDataRetention: false, // not supported
         });
-        await billTeam(teamId, subId, tokens_billed, logger, true).catch((error) => {
+        await billTeam(teamId, subId, tokens_billed, apiKeyId, logger, true).catch((error) => {
           logger.error(
             `Failed to bill team ${teamId} for thinking tokens: ${error}`,
           );
@@ -847,7 +849,7 @@ export async function performExtraction(
         // All urls are invalid
         logger.error("All provided URLs are invalid!");
         const tokens_billed = 300 + calculateThinkingCost(costTracking);
-        await billTeam(teamId, subId, tokens_billed, logger, true).catch((error) => {
+        await billTeam(teamId, subId, tokens_billed, apiKeyId, logger, true).catch((error) => {
           logger.error(
             `Failed to bill team ${teamId} for thinking tokens: ${error}`,
           );
@@ -1036,7 +1038,7 @@ export async function performExtraction(
     }
 
     // Bill team for usage
-    await billTeam(teamId, subId, tokensToBill, logger, true).catch((error) => {
+    await billTeam(teamId, subId, tokensToBill, apiKeyId, logger, true).catch((error) => {
       logger.error(
         `Failed to bill team ${teamId} for ${tokensToBill} tokens: ${error}`,
       );
@@ -1109,7 +1111,7 @@ export async function performExtraction(
     };
   } catch (error) {
     const tokens_billed = 300 + calculateThinkingCost(costTracking);
-    await billTeam(teamId, subId, tokens_billed, logger, true).catch((error) => {
+    await billTeam(teamId, subId, tokens_billed, apiKeyId, logger, true).catch((error) => {
       logger.error(
         `Failed to bill team ${teamId} for thinking tokens: ${error}`,
       );

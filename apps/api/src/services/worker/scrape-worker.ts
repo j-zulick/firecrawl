@@ -99,6 +99,7 @@ async function billScrapeJob(job: Job & { id: string }, document: Document | nul
                         is_extract: false,
                         timestamp: new Date().toISOString(),
                         originating_job_id: job.id,
+                        api_key_id: job.data.apiKeyId,
                     },
                     {
                         jobId: billingJobId,
@@ -331,6 +332,7 @@ async function processJob(job: Job & { id: string }) {
                                     webhook: job.data.webhook,
                                     v1: job.data.v1,
                                     zeroDataRetention: job.data.zeroDataRetention,
+                                    apiKeyId: job.data.apiKeyId,
                                 },
                                 {},
                                 jobId,
@@ -623,6 +625,7 @@ async function processKickoffJob(job: Job & { id: string }) {
                 v1: job.data.v1,
                 isCrawlSourceScrape: true,
                 zeroDataRetention: job.data.zeroDataRetention,
+                apiKeyId: job.data.apiKeyId,
             },
             {
                 priority: 15,
@@ -679,6 +682,7 @@ async function processKickoffJob(job: Job & { id: string }) {
                             webhook: job.data.webhook,
                             v1: job.data.v1,
                             zeroDataRetention: job.data.zeroDataRetention,
+                            apiKeyId: job.data.apiKeyId,
                         },
                         opts: {
                             jobId: uuid,
@@ -743,6 +747,7 @@ async function processKickoffJob(job: Job & { id: string }) {
                         webhook: job.data.webhook,
                         v1: job.data.v1,
                         zeroDataRetention: job.data.zeroDataRetention,
+                        apiKeyId: job.data.apiKeyId,
                     },
                     opts: {
                         jobId: uuid,

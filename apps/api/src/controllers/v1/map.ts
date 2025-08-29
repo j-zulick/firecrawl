@@ -373,7 +373,7 @@ export async function mapController(
   }
 
   // Bill the team
-  billTeam(req.auth.team_id, req.acuc?.sub_id, 1).catch((error) => {
+  billTeam(req.auth.team_id, req.acuc?.sub_id, 1, req.acuc?.api_key_id ?? null).catch((error) => {
     logger.error(
       `Failed to bill team ${req.auth.team_id} for 1 credit: ${error}`,
     );

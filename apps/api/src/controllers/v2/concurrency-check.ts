@@ -1,9 +1,9 @@
 import {
-  AuthCreditUsageChunkFromTeam,
   ConcurrencyCheckParams,
   ConcurrencyCheckResponse,
   RequestWithAuth,
 } from "./types";
+import { AuthCreditUsageChunkFromTeam } from "../v1/types";
 import { Response } from "express";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { getACUCTeam } from "../auth";
@@ -14,6 +14,13 @@ export async function concurrencyCheckController(
   req: RequestWithAuth<ConcurrencyCheckParams, undefined, undefined>,
   res: Response<ConcurrencyCheckResponse>,
 ) {
+  if (!req.acuc) {
+    return res.status(401).json({
+      success: false,
+      error: "Unauthorized",
+    });
+  }
+
   let otherACUC: AuthCreditUsageChunkFromTeam | null = null;
   if (!req.acuc.is_extract) {
     otherACUC = await getACUCTeam(req.auth.team_id, false, true, RateLimiterMode.Extract);

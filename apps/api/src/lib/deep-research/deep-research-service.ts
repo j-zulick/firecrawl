@@ -7,7 +7,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { ExtractOptions } from "../../controllers/v1/types";
 import { CostTracking } from "../extract/extraction-service";
 import { getACUCTeam } from "../../controllers/auth";
-interface DeepResearchServiceOptions {
+export interface DeepResearchServiceOptions {
   researchId: string;
   teamId: string;
   query: string;
@@ -19,11 +19,12 @@ interface DeepResearchServiceOptions {
   formats: string[];
   jsonOptions: ExtractOptions;
   subId?: string;
+  apiKeyId: number | null;
 }
 
 export async function performDeepResearch(options: DeepResearchServiceOptions) {
   const costTracking = new CostTracking();
-  const { researchId, teamId, timeLimit, subId, maxUrls } = options;
+  const { researchId, teamId, timeLimit, subId, maxUrls, apiKeyId } = options;
   const startTime = Date.now();
   let currentTopic = options.query;
   let urlsAnalyzed = 0;
@@ -140,6 +141,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
             storeInCache: true,
             proxy: "basic",
           },
+          apiKeyId: apiKeyId,
         }, logger, acuc?.flags ?? null);
         return response.length > 0 ? response : [];
       });
@@ -395,7 +397,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
       json: finalAnalysisJson,
     });
     // Bill team for usage based on URLs analyzed
-    billTeam(teamId, subId, credits_billed, logger).catch(
+    billTeam(teamId, subId, credits_billed, apiKeyId, logger).catch(
       (error) => {
         logger.error(
           `Failed to bill team ${teamId} for ${urlsAnalyzed} URLs analyzed`, { teamId, count: urlsAnalyzed, error },

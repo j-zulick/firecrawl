@@ -2,9 +2,9 @@ import { NextFunction, Request, Response } from "express";
 // import { crawlStatusController } from "../../src/controllers/v1/crawl-status";
 import {
   isAgentExtractModelValid,
-  RequestWithACUC,
   RequestWithAuth,
   RequestWithMaybeAuth,
+  RequestWithMaybeACUC,
 } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authenticateUser } from "../controllers/auth";
@@ -31,7 +31,7 @@ export function checkCreditsMiddleware(
         }
       }
       const { success, remainingCredits, chunk } = await checkTeamCredits(
-        req.acuc,
+        req.acuc ?? null,
         req.auth.team_id,
         minimum ?? 1,
       );
@@ -55,7 +55,7 @@ export function checkCreditsMiddleware(
           return next();
         }
 
-        const currencyName = req.acuc.is_extract ? "tokens" : "credits";
+        const currencyName = req.acuc?.is_extract ? "tokens" : "credits";
         logger.error(
           `Insufficient ${currencyName}: ${JSON.stringify({ team_id: req.auth.team_id, minimum, remainingCredits })}`,
           {
@@ -164,7 +164,7 @@ export function idempotencyMiddleware(
   })().catch((err) => next(err));
 }
 export function blocklistMiddleware(
-  req: RequestWithACUC<any, any, any>,
+  req: RequestWithMaybeACUC<any, any, any>,
   res: Response,
   next: NextFunction,
 ) {

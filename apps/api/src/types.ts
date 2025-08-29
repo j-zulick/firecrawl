@@ -1,12 +1,12 @@
 import { z } from "zod";
 import {
-  AuthCreditUsageChunk,
   BaseScrapeOptions,
   ScrapeOptions,
   Document as V2Document,
   webhookSchema,
   TeamFlags,
 } from "./controllers/v2/types";
+import { AuthCreditUsageChunk } from "./controllers/v1/types";
 import { ExtractorOptions, Document } from "./lib/entities";
 import { InternalOptions } from "./scraper/scrapeURL";
 import type { CostTracking } from "./lib/extract/extraction-service";
@@ -60,6 +60,7 @@ export interface WebScraperOptions {
   sentry?: any;
   is_extract?: boolean;
   concurrencyLimited?: boolean;
+  apiKeyId: number | null;
 }
 
 export interface RunWebScraperParams {

@@ -120,12 +120,14 @@ const processExtractJobInternal = async (
         request: job.data.request,
         teamId: job.data.teamId,
         subId: job.data.subId,
+        apiKeyId: job.data.apiKeyId,
       });
     } else {
       result = await performExtraction_F0(job.data.extractId, {
         request: job.data.request,
         teamId: job.data.teamId,
         subId: job.data.subId,
+        apiKeyId: job.data.apiKeyId,
       });
     }
     // result = await performExtraction_F0(job.data.extractId, {
@@ -224,6 +226,7 @@ const processDeepResearchJobInternal = async (
       systemPrompt: job.data.request.systemPrompt,
       formats: job.data.request.formats,
       jsonOptions: job.data.request.jsonOptions,
+      apiKeyId: job.data.apiKeyId,
     });
 
     if (result.success) {
@@ -294,6 +297,7 @@ const processGenerateLlmsTxtJobInternal = async (
       showFullText: job.data.request.showFullText,
       subId: job.data.subId,
       cache: job.data.request.cache,
+      apiKeyId: job.data.apiKeyId,
     });
 
     if (result.success) {

@@ -30,46 +30,6 @@ interface DocumentWithCostTracking {
   costTracking: ReturnType<typeof CostTracking.prototype.toJSON>;
 }
 
-// Used for deep research
-export async function searchAndScrapeX402SearchResult(
-  query: string,
-  options: {
-    teamId: string;
-    origin: string;
-    timeout: number;
-    scrapeOptions: ScrapeOptions;
-  },
-  logger: Logger,
-  flags: TeamFlags,
-): Promise<DocumentWithCostTracking[]> {
-  try {
-    const searchResults = await search({
-      query,
-      logger,
-      num_results: 5,
-    });
-
-    const documentsWithCostTracking = await Promise.all(
-      searchResults.map((result) =>
-        scrapeX402SearchResult(
-          {
-            url: result.url,
-            title: result.title,
-            description: result.description,
-          },
-          options,
-          logger,
-          flags,
-        ),
-      ),
-    );
-
-    return documentsWithCostTracking;
-  } catch (error) {
-    return [];
-  }
-}
-
 async function scrapeX402SearchResult(
   searchResult: { url: string; title: string; description: string },
   options: {
@@ -77,6 +37,7 @@ async function scrapeX402SearchResult(
     origin: string;
     timeout: number;
     scrapeOptions: ScrapeOptions;
+    apiKeyId: number | null;
   },
   logger: Logger,
   flags: TeamFlags,
@@ -119,6 +80,7 @@ async function scrapeX402SearchResult(
         is_scrape: true,
         startTime: Date.now(),
         zeroDataRetention,
+        apiKeyId: options.apiKeyId,
       },
       {},
       jobId,
@@ -286,6 +248,7 @@ export async function x402SearchController(
             origin: req.body.origin,
             timeout: req.body.timeout,
             scrapeOptions: req.body.scrapeOptions,
+            apiKeyId: req.acuc?.api_key_id ?? null,
           },
           logger,
           req.acuc?.flags ?? null,

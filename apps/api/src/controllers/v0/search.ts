@@ -37,6 +37,7 @@ export async function searchHelper(
   pageOptions: PageOptions,
   searchOptions: SearchOptions,
   flags: TeamFlags,
+  api_key_id: number | null,
 ): Promise<{
   success: boolean;
   error?: string;
@@ -82,7 +83,7 @@ export async function searchHelper(
   );
 
   if (justSearch) {
-    billTeam(team_id, subscription_id, res.length).catch((error) => {
+    billTeam(team_id, subscription_id, res.length, api_key_id, logger).catch((error) => {
       logger.error(
         `Failed to bill team ${team_id} for ${res.length} credits: ${error}`,
       );
@@ -117,6 +118,7 @@ export async function searchHelper(
         internalOptions,
         startTime: Date.now(),
         zeroDataRetention: false, // not supported on v0
+        apiKeyId: api_key_id,
       },
       opts: {
         jobId: uuid,
@@ -218,6 +220,7 @@ export async function searchController(req: Request, res: Response) {
       pageOptions,
       searchOptions,
       chunk?.flags ?? null,
+      chunk?.api_key_id ?? null,
     );
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - startTime) / 1000;

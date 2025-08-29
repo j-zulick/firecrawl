@@ -16,6 +16,7 @@ import { getACUCTeam } from "../../controllers/auth";
 interface GenerateLLMsTextServiceOptions {
   generationId: string;
   teamId: string;
+  apiKeyId: number | null;
   url: string;
   maxUrls: number;
   showFullText: boolean;
@@ -64,7 +65,7 @@ function limitLlmsTxtEntries(llmstxt: string, maxEntries: number): string {
 export async function performGenerateLlmsTxt(
   options: GenerateLLMsTextServiceOptions,
 ) {
-  const { generationId, teamId, url, maxUrls = 100, showFullText, cache = true, subId } =
+  const { generationId, teamId, url, maxUrls = 100, showFullText, cache = true, subId, apiKeyId } =
     options;
   const startTime = Date.now();
   const logger = _logger.child({
@@ -148,6 +149,7 @@ export async function performGenerateLlmsTxt(
                 timeout: 30000,
                 isSingleUrl: true,
                 flags: acuc?.flags ?? null,
+                apiKeyId,
               },
               [],
               logger,
@@ -252,7 +254,7 @@ export async function performGenerateLlmsTxt(
     });
 
     // Bill team for usage
-    billTeam(teamId, subId, urls.length, logger).catch((error) => {
+    billTeam(teamId, subId, urls.length, apiKeyId, logger).catch((error) => {
       logger.error(`Failed to bill team ${teamId} for ${urls.length} urls`, {
         teamId,
         count: urls.length,

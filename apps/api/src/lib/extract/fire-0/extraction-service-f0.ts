@@ -8,7 +8,6 @@ import {
   import { scrapeDocument_F0 } from "./document-scraper-f0";
   import { billTeam } from "../../../services/billing/credit_billing";
   import { logJob } from "../../../services/logging/log_job";
-  import { _addScrapeJobToBullMQ } from "../../../services/queue-jobs";
   import { spreadSchemas_F0 } from "./helpers/spread-schemas-f0";
   import Ajv from "ajv";
   const ajv = new Ajv();
@@ -42,6 +41,7 @@ import { langfuse } from "../../../services/langfuse";
     subId?: string;
     cacheMode?: "load" | "save" | "direct";
     cacheKey?: string;
+    apiKeyId: number | null;
   }
   
   export interface ExtractResult {
@@ -70,7 +70,7 @@ import { langfuse } from "../../../services/langfuse";
     extractId: string,
     options: ExtractServiceOptions,
   ): Promise<ExtractResult> {
-    const { request, teamId, subId } = options;
+    const { request, teamId, subId, apiKeyId } = options;
     const urlTraces: URLTrace[] = [];
     let docsMap: Map<string, Document> = new Map();
     let singleAnswerCompletions: completions | null = null;
@@ -358,6 +358,7 @@ import { langfuse } from "../../../services/langfuse";
               origin: "extract",
               timeout,
               flags: acuc?.flags ?? null,
+              apiKeyId,
             },
             urlTraces,
             logger.child({
@@ -640,6 +641,7 @@ import { langfuse } from "../../../services/langfuse";
               origin: "extract",
               timeout,
               flags: acuc?.flags ?? null,
+              apiKeyId,
             },
             urlTraces,
             logger.child({
@@ -860,7 +862,7 @@ import { langfuse } from "../../../services/langfuse";
     }
   
     // Bill team for usage
-    billTeam(teamId, subId, tokensToBill, logger, true).catch((error) => {
+    billTeam(teamId, subId, tokensToBill, apiKeyId, logger, true).catch((error) => {
       logger.error(
         `Failed to bill team ${teamId} for ${tokensToBill} tokens: ${error}`,
       );

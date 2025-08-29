@@ -20,6 +20,7 @@ interface BillingOperation {
   credits: number;
   is_extract: boolean;
   timestamp: string;
+  api_key_id: number | null;
 }
 
 // Grouped billing operations for batch processing
@@ -28,6 +29,7 @@ interface GroupedBillingOperation {
   subscription_id: string | null;
   total_credits: number;
   is_extract: boolean;
+  api_key_id: number | null;
   operations: BillingOperation[];
 }
 
@@ -79,7 +81,7 @@ export async function processBillingBatch() {
     const groupedOperations = new Map<string, GroupedBillingOperation>();
     
     for (const op of operations) {
-      const key = `${op.team_id}:${op.subscription_id ?? 'null'}:${op.is_extract}`;
+      const key = `${op.team_id}:${op.subscription_id ?? 'null'}:${op.is_extract}:${op.api_key_id}`;
       
       if (!groupedOperations.has(key)) {
         groupedOperations.set(key, {
@@ -87,6 +89,7 @@ export async function processBillingBatch() {
           subscription_id: op.subscription_id,
           total_credits: 0,
           is_extract: op.is_extract,
+          api_key_id: op.api_key_id,
           operations: []
         });
       }
@@ -118,6 +121,7 @@ export async function processBillingBatch() {
           group.team_id,
           group.subscription_id,
           group.total_credits,
+          group.api_key_id, 
           logger,
           group.is_extract
         );
@@ -170,7 +174,8 @@ export async function queueBillingOperation(
   team_id: string,
   subscription_id: string | null | undefined,
   credits: number,
-  is_extract: boolean = false
+  api_key_id: number | null,
+  is_extract: boolean = false,
 ) {
   // Skip queuing for preview teams
   if (team_id === "preview" || team_id.startsWith("preview_")) {
@@ -191,7 +196,8 @@ export async function queueBillingOperation(
       subscription_id: subscription_id ?? null,
       credits,
       is_extract,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      api_key_id,
     };
     
     // Add operation to Redis list
@@ -263,6 +269,7 @@ async function supaBillTeam(
   team_id: string,
   subscription_id: string | null | undefined,
   credits: number,
+  api_key_id: number | null,
   __logger?: any,
   is_extract: boolean = false,
 ) {
@@ -281,11 +288,12 @@ async function supaBillTeam(
   _logger.info(`Batch billing team ${team_id} for ${credits} credits`);
 
   // Perform the actual database operation
-  const { data, error } = await supabase_service.rpc("bill_team_4_tally", {
+  const { data, error } = await supabase_service.rpc("bill_team_5", {
     _team_id: team_id,
     sub_id: subscription_id ?? null,
     fetch_subscription: subscription_id === undefined,
     credits,
+    i_api_key_id: api_key_id ?? null,
     is_extract_param: is_extract,
   });
 

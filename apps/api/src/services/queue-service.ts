@@ -2,6 +2,7 @@ import { Queue, QueueEvents } from "bullmq";
 import { logger } from "../lib/logger";
 import IORedis from "ioredis";
 import { BullMQOtel } from "bullmq-otel";
+import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
 
 export type QueueFunction = () => Queue<any, any, string, any, any, string>;
 
@@ -104,7 +105,7 @@ export function getGenerateLlmsTxtQueue() {
 
 export function getDeepResearchQueue() {
   if (!deepResearchQueue) {
-    deepResearchQueue = new Queue(deepResearchQueueName, {
+    deepResearchQueue = new Queue<DeepResearchServiceOptions>(deepResearchQueueName, {
       connection: getRedisConnection(),
       defaultJobOptions: {
         removeOnComplete: {

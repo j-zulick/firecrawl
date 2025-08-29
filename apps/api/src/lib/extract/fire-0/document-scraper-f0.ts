@@ -13,6 +13,7 @@ interface ScrapeDocumentOptions {
   timeout: number;
   isSingleUrl?: boolean;
   flags: TeamFlags | null;
+  apiKeyId: number | null;
 }
 
 export async function scrapeDocument_F0(
@@ -59,6 +60,7 @@ export async function scrapeDocument_F0(
         from_extract: true,
         startTime: Date.now(),
         zeroDataRetention: false, // not supported
+        apiKeyId: options.apiKeyId,
       },
       {},
       jobId,

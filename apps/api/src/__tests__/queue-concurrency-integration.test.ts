@@ -67,6 +67,7 @@ describe("Queue Concurrency Integration", () => {
       scrapeOptions: defaultScrapeOptions,
       crawlerOptions: null,
       zeroDataRetention: false,
+      apiKeyId: null,
     } as WebScraperOptions;
 
     it("should add job directly to BullMQ when under concurrency limit", async () => {

@@ -44,6 +44,7 @@ export async function scrapeHelper(
   extractorOptions: ExtractorOptions,
   timeout: number,
   flags: TeamFlags,
+  apiKeyId: number | null,
 ): Promise<{
   success: boolean;
   error?: string;
@@ -87,6 +88,7 @@ export async function scrapeHelper(
       is_scrape: true,
       startTime: Date.now(),
       zeroDataRetention: false, // not supported on v0
+      apiKeyId,
     },
     {},
     jobId,
@@ -242,6 +244,7 @@ export async function scrapeController(req: Request, res: Response) {
       extractorOptions,
       timeout,
       chunk?.flags ?? null,
+      chunk?.api_key_id ?? null,
     );
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - startTime) / 1000;
@@ -270,7 +273,7 @@ export async function scrapeController(req: Request, res: Response) {
       }
       if (creditsToBeBilled > 0) {
         // billing for doc done on queue end, bill only for llm extraction
-        billTeam(team_id, chunk?.sub_id, creditsToBeBilled, logger).catch(
+        billTeam(team_id, chunk?.sub_id, creditsToBeBilled, chunk?.api_key_id ?? null, logger).catch(
           (error) => {
             logger.error(
               `Failed to bill team ${team_id} for ${creditsToBeBilled} credits`,

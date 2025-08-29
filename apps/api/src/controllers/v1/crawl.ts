@@ -132,6 +132,7 @@ export async function crawlController(
       webhook: req.body.webhook,
       v1: true,
       zeroDataRetention: zeroDataRetention || false,
+      apiKeyId: req.acuc?.api_key_id ?? null,
     },
     {},
     crypto.randomUUID(),

@@ -20,23 +20,25 @@ export async function billTeam(
   team_id: string,
   subscription_id: string | null | undefined,
   credits: number,
+  api_key_id: number | null,
   logger?: Logger,
   is_extract: boolean = false,
 ) {
   // Maintain the withAuth wrapper for authentication
   return withAuth(
-    async (team_id, subscription_id, credits, logger, is_extract) => {
+    async (team_id: string, subscription_id: string | null | undefined, credits: number, api_key_id: number | null, logger: Logger | undefined, is_extract: boolean) => {
       // Within the authenticated context, queue the billing operation
-      return queueBillingOperation(team_id, subscription_id, credits, is_extract);
+      return queueBillingOperation(team_id, subscription_id, credits, api_key_id, is_extract);
     }, 
     { success: true, message: "No DB, bypassed." }
-  )(team_id, subscription_id, credits, logger, is_extract);
+  )(team_id, subscription_id, credits, api_key_id, logger, is_extract);
 }
 
 export async function supaBillTeam(
   team_id: string,
   subscription_id: string | null | undefined,
   credits: number,
+  api_key_id: number | null,
   __logger?: Logger,
   is_extract: boolean = false,
 ) {
@@ -51,7 +53,7 @@ export async function supaBillTeam(
   });
 
   _logger.warn("supaBillTeam was called directly. This function is deprecated and should only be called from batch_billing.ts");
-  queueBillingOperation(team_id, subscription_id, credits, is_extract).catch((err) => {
+  queueBillingOperation(team_id, subscription_id, credits, api_key_id, is_extract).catch((err) => {
     _logger.error("Error queuing billing operation", { err });
     Sentry.captureException(err);
   });

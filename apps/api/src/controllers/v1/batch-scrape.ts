@@ -148,6 +148,7 @@ export async function batchScrapeController(
         webhook: req.body.webhook,
         internalOptions: sc.internalOptions,
         zeroDataRetention: zeroDataRetention ?? false,
+        apiKeyId: req.acuc?.api_key_id ?? null,
       },
       opts: {
         jobId: uuidv4(),

@@ -117,6 +117,7 @@ export async function finishCrawlIfNeeded(job: Job & { id: string }, sc: StoredC
                             webhook: job.data.webhook,
                             v1: job.data.v1,
                             zeroDataRetention: job.data.zeroDataRetention,
+                            apiKeyId: job.data.apiKeyId,
                         },
                         opts: {
                             jobId: uuid,

@@ -213,6 +213,7 @@ export async function crawlController(req: Request, res: Response) {
                 crawl_id: id,
                 sitemapped: true,
                 zeroDataRetention: false, // not supported on v0
+                apiKeyId: chunk?.api_key_id ?? null,
               },
               opts: {
                 jobId: uuid,
@@ -257,6 +258,7 @@ export async function crawlController(req: Request, res: Response) {
           integration: req.body.integration,
           crawl_id: id,
           zeroDataRetention: false, // not supported on v0
+          apiKeyId: chunk?.api_key_id ?? null,
         },
         {
           priority: 15, // prioritize request 0 of crawl jobs same as scrape jobs

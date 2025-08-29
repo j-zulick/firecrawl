@@ -34,7 +34,8 @@ export async function generateLLMsTextController(
   const jobData = {
     request: req.body,
     teamId: req.auth.team_id,
-    subId: req.acuc?.sub_id,
+    subId: req.acuc?.sub_id ?? undefined,
+    apiKeyId: req.acuc?.api_key_id ?? null,
     generationId,
   };
 

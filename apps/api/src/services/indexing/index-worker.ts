@@ -61,7 +61,7 @@ const processBillingJobInternal = async (token: string, job: Job) => {
       await processBillingBatch();
     } else if (job.name === "bill_team") {
       // This is an individual billing operation that should be queued for batch processing
-      const { team_id, subscription_id, credits, is_extract } = job.data;
+      const { team_id, subscription_id, credits, is_extract, api_key_id } = job.data;
       
       logger.info(`Adding team ${team_id} billing operation to batch queue`, {
         credits,
@@ -70,7 +70,7 @@ const processBillingJobInternal = async (token: string, job: Job) => {
       });
       
       // Add to the REDIS batch queue 
-      await queueBillingOperation(team_id, subscription_id, credits, is_extract);
+      await queueBillingOperation(team_id, subscription_id, credits, api_key_id ?? null, is_extract);
     } else {
       logger.warn(`Unknown billing job type: ${job.name}`);
     }
@@ -181,6 +181,7 @@ const processPrecrawlJobInternal = async (token: string, job: Job) => {
             webhook: undefined,
             v1: true,
             zeroDataRetention: false,
+            apiKeyId: null,
           },
           {},
           crypto.randomUUID(),

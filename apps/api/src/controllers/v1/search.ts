@@ -41,6 +41,7 @@ export async function searchAndScrapeSearchResult(
     origin: string;
     timeout: number;
     scrapeOptions: ScrapeOptions;
+    apiKeyId: number | null;
   },
   logger: Logger,
   flags: TeamFlags,
@@ -80,6 +81,7 @@ async function scrapeSearchResult(
     origin: string;
     timeout: number;
     scrapeOptions: ScrapeOptions;
+    apiKeyId: number | null;
   },
   logger: Logger,
   flags: TeamFlags,
@@ -124,6 +126,7 @@ async function scrapeSearchResult(
         is_scrape: true,
         startTime: Date.now(),
         zeroDataRetention,
+        apiKeyId: options.apiKeyId,
       },
       {},
       jobId,
@@ -291,6 +294,7 @@ export async function searchController(
             origin: req.body.origin,
             timeout: req.body.timeout,
             scrapeOptions: req.body.scrapeOptions,
+            apiKeyId: req.acuc?.api_key_id ?? null,
           },
           logger,
           req.acuc?.flags ?? null,
@@ -357,8 +361,9 @@ export async function searchController(
     if (!isSearchPreview) {
       billTeam(
         req.auth.team_id,
-        req.acuc?.sub_id,
+        req.acuc?.sub_id ?? undefined,
         credits_billed,
+        req.acuc?.api_key_id ?? null,
       ).catch((error) => {
         logger.error(
           `Failed to bill team ${req.auth.team_id} for ${responseData.data.length} credits: ${error}`,
