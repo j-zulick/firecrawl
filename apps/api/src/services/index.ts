@@ -645,10 +645,9 @@ export async function queryIndexAtSplitLevelWithMeta(url: string, limit: number)
   while (true) {
     // Query the index for the next set of links
     const { data: _data, error } = await index_supabase_service
-      .rpc("query_index_at_split_level_with_meta", {
+      .rpc("query_index_at_split_level_with_meta_2", {
         i_level: level,
         i_url_hash: urlSplitsHash[level],
-        i_newer_than: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
       })
       .range(iteration * 1000, (iteration + 1) * 1000)
 
@@ -698,10 +697,9 @@ export async function queryIndexAtDomainSplitLevelWithMeta(hostname: string, lim
   while (true) {
     // Query the index for the next set of links
     const { data: _data, error } = await index_supabase_service
-      .rpc("query_index_at_domain_split_level_with_meta", {
+      .rpc("query_index_at_domain_split_level_with_meta_2", {
         i_level: level,
         i_domain_hash: domainSplitsHash[level],
-        i_newer_than: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
       })
       .range(iteration * 1000, (iteration + 1) * 1000)
 
