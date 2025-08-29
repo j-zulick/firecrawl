@@ -134,6 +134,7 @@ export async function crawlStatusController(
   res: Response<CrawlStatusResponse>,
   isBatch = false,
 ) {
+  const isPreviewTeam = req.auth.team_id?.startsWith("preview");
   const start =
     typeof req.query.skip === "string" ? parseInt(req.query.skip, 10) : 0;
   const end =
@@ -147,18 +148,30 @@ export async function crawlStatusController(
 
   if (sc) {
     if (sc.team_id !== req.auth.team_id) {
-      return res.status(404).json({ success: false, error: "Job not found" });
+      // Allow preview tokens to access preview jobs regardless of IP-derived team_id mismatch
+      const scIsPreview = sc.team_id?.startsWith("preview");
+      if (!(isPreviewTeam && scIsPreview)) {
+        return res.status(404).json({ success: false, error: "Job not found" });
+      }
     }
   } else if (process.env.USE_DB_AUTHENTICATION === "true") {
+    if (isPreviewTeam) {
+      // Preview teams do not persist crawls in DB; avoid DB lookup that can 500
+      return res.status(404).json({ success: false, error: "Job not found" });
+    }
     const { data: crawlJobs, error: crawlJobError } = await supabase_rr_service
       .from("firecrawl_jobs")
       .select("*")
       .eq("job_id", req.params.jobId)
       .limit(1);
 
-    if (crawlJobError || !crawlJobs || crawlJobs.length === 0) {
+    if (crawlJobError) {
       logger.error("Error getting crawl job", { error: crawlJobError });
       throw new Error("Error getting crawl job", { cause: crawlJobError });
+    }
+
+    if (!crawlJobs || crawlJobs.length === 0) {
+      return res.status(404).json({ success: false, error: "Job not found" });
     }
 
     const crawlJob = crawlJobs[0];
@@ -193,7 +206,7 @@ export async function crawlStatusController(
     let completed = await getDoneJobsOrderedLength(req.params.jobId, djoCutoff);
     let creditsUsed = completed * (sc.scrapeOptions?.formats?.find(x => typeof x === "object" && x.type === "json") ? 5 : 1);
 
-    if (process.env.USE_DB_AUTHENTICATION === "true") {
+    if (process.env.USE_DB_AUTHENTICATION === "true" && !isPreviewTeam) {
       const creditsRpc = await supabase_service
         .rpc("credits_billed_by_crawl_id_1", {
           i_crawl_id: req.params.jobId,
@@ -254,7 +267,7 @@ export async function crawlStatusController(
     next: string | undefined,
   };
 
-  if (process.env.USE_DB_AUTHENTICATION === "true") {
+  if (process.env.USE_DB_AUTHENTICATION === "true" && !isPreviewTeam) {
     // new DB-based path
     const { data, error } = await supabase_service.rpc("crawl_status_1", {
       i_team_id: req.auth.team_id,
@@ -319,19 +332,27 @@ export async function crawlStatusController(
       const state = await job?.getState();
 
       if (state === "failed") {
-        // no iterated over, just ignore
         continue;
+      }
+
+      let doc: Document | undefined;
+      if (job?.returnvalue) {
+        doc = job.returnvalue as Document;
       } else {
-        if (job?.returnvalue) {
-          scrapes.push(job.returnvalue);
-          bytes += JSON.stringify(job.returnvalue).length;
+        const gcsDocs = await getJobFromGCS(jobId);
+        if (gcsDocs && gcsDocs.length > 0) {
+          doc = gcsDocs[0] as Document;
         } else {
           logger.warn(
-            "Job was considered done, but returnvalue is undefined!",
-            { scrapeId: jobId, crawlId: req.params.jobId, state, returnvalue: job?.returnvalue },
+            "Job was considered done, but neither BullMQ returnvalue nor GCS blob is available!",
+            { scrapeId: jobId, crawlId: req.params.jobId, state },
           );
         }
+      }
 
+      if (doc) {
+        scrapes.push(doc);
+        bytes += JSON.stringify(doc).length;
         iteratedOver++;
       }
 
