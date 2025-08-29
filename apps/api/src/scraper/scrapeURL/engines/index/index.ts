@@ -53,7 +53,10 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
                     statusCode: document.metadata.statusCode,
                     error: document.metadata.error,
                     screenshot: document.screenshot,
-                    numPages: document.metadata.numPages,
+                    pdfMetadata: document.metadata.numPages !== undefined ? { // reconstruct pdfMetadata from numPages and title
+                        numPages: document.metadata.numPages,
+                        title: document.metadata.title ?? undefined,
+                    } : undefined,
                     contentType: document.metadata.contentType,
                 });
             } catch (error) {
@@ -267,7 +270,9 @@ export async function scrapeURLWithIndex(meta: Meta): Promise<EngineScrapeResult
         statusCode: doc.statusCode,
         error: doc.error,
         screenshot: doc.screenshot,
-        numPages: doc.numPages,
+        pdfMetadata: doc.pdfMetadata ?? (doc.numPages !== undefined ? { // backwards-compatible shim of pdfMetadata without title
+            numPages: doc.numPages
+        } : undefined),
         contentType: doc.contentType,
         
         cacheInfo: {

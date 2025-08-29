@@ -510,7 +510,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       url: result.result.url,
       statusCode: result.result.statusCode,
       error: result.result.error,
-      numPages: result.result.numPages,
+      numPages: result.result.pdfMetadata?.numPages,
+      title: result.result.pdfMetadata?.title,
       contentType: result.result.contentType,
       proxyUsed: meta.featureFlags.has("stealthProxy") ? "stealth" : "basic",
       ...(fallbackList.find(x => ["index", "index;documents"].includes(x.engine)) ? (

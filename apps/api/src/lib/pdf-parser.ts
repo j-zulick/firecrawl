@@ -10,13 +10,18 @@ const rustExecutablePath = join(
     platform() === "darwin" ? "libpdf_parser.dylib" : "libpdf_parser.so"
 );
 
+export type PDFMetadata = {
+    numPages: number;
+    title?: string;
+}
+
 class RustPDFParser {
     private static instance: RustPDFParser;
-    private _getPageCount: KoffiFunction;
+    private _getPDFMetadata: KoffiFunction;
 
     private constructor() {
         const lib = koffi.load(rustExecutablePath);
-        this._getPageCount = lib.func("get_page_count", "int32", ["string"]);
+        this._getPDFMetadata = lib.func("get_pdf_metadata", "string", ["string"]);
     }
 
     public static async isParserAvailable(): Promise<boolean> {
@@ -45,16 +50,21 @@ class RustPDFParser {
         return RustPDFParser.instance;
     }
 
-    public async getPageCount(path: string): Promise<number> {
-        return new Promise<number>((resolve, reject) => {
-            this._getPageCount.async(path, (err: Error, res: number) => {
+    public async getPDFMetadata(path: string): Promise<PDFMetadata> {
+        return new Promise<PDFMetadata>((resolve, reject) => {
+            this._getPDFMetadata.async(path, (err: Error, res: string) => {
                 if (err) {
                     reject(err);
                 } else {
-                    if (res === -1) {
-                        reject(new Error("Failed to parse PDF."));
+                    if (res.startsWith("RUSTFC:ERROR:")) {
+                        reject(new Error(res.replace("RUSTFC:ERROR:", "")));
                     } else {
-                        resolve(res);
+                        try {
+                            const metadata = JSON.parse(res) as PDFMetadata;
+                            resolve(metadata);
+                        } catch (e) {
+                            reject(new Error("Failed to parse PDF metadata."));
+                        }
                     }
                 }
             });
@@ -62,9 +72,9 @@ class RustPDFParser {
     }
 }
 
-export async function getPageCount(
+export async function getPDFMetadata(
     path: string,
-): Promise<number> {
+): Promise<PDFMetadata> {
     const converter = await RustPDFParser.getInstance();
-    return await converter.getPageCount(path);
+    return await converter.getPDFMetadata(path);
 }

@@ -791,6 +791,17 @@ describe("Scrape tests", () => {
     });
     
     describe("PDF (f-e dependant)", () => {
+      it.concurrent("works", async () => {
+        const response = await scrape({
+          url: "https://www.orimi.com/pdf-test.pdf",
+          maxAge: 0,
+        }, identity);
+
+        expect(response.markdown).toContain("PDF Test File");
+        expect(response.metadata.title).toBe("PDF Test Page");
+        expect(response.metadata.numPages).toBe(1);
+      }, scrapeTimeout);
+
       // Temporarily disabled, too flaky
       // it.concurrent("works for PDFs behind anti-bot", async () => {
       //   const response = await scrape({

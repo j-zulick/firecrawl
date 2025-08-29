@@ -7,6 +7,7 @@ import { redisEvictConnection } from "./redis";
 import type { Logger } from "winston";
 import psl from "psl";
 import { MapDocument } from "../controllers/v2/types";
+import { PDFMetadata } from "../lib/pdf-parser";
 configDotenv();
 
 // SupabaseService class initializes the Supabase client conditionally based on environment variables.
@@ -97,7 +98,7 @@ export async function saveIndexToGCS(id: string, doc: {
   statusCode: number;
   error?: string;
   screenshot?: string;
-  numPages?: number;
+  pdfMetadata?: PDFMetadata;
   contentType?: string;
 }): Promise<void> {
   try {

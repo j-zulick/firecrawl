@@ -13,6 +13,7 @@ import { playwrightMaxReasonableTime, scrapeURLWithPlaywright } from "./playwrig
 import { indexMaxReasonableTime, scrapeURLWithIndex } from "./index/index";
 import { useIndex } from "../../../services";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import { PDFMetadata } from "../../../lib/pdf-parser";
 
 export type Engine =
   | "fire-engine;chrome-cdp"
@@ -114,7 +115,7 @@ export type EngineScrapeResult = {
     pdfs: string[];
   };
 
-  numPages?: number;
+  pdfMetadata?: PDFMetadata;
 
   cacheInfo?: {
     created_at: Date;

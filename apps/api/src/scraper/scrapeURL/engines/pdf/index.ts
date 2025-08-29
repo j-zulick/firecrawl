@@ -16,7 +16,7 @@ import {
 import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { Response } from "undici";
-import { getPageCount } from "../../../../lib/pdf-parser";
+import { getPDFMetadata } from "../../../../lib/pdf-parser";
 import { getPdfResultFromCache, savePdfResultToCache } from "../../../../lib/gcs-pdf-cache";
 import { AbortManagerThrownError } from "../../lib/abortManager";
 
@@ -227,11 +227,12 @@ export async function scrapePDF(
     }
   }
 
-  const pageCount = await getPageCount(tempFilePath);
-  if (pageCount * MILLISECONDS_PER_PAGE > (meta.abort.scrapeTimeout() ?? Infinity)) {
+  const pdfMetadata = await getPDFMetadata(tempFilePath);
+
+  if (pdfMetadata.numPages * MILLISECONDS_PER_PAGE > (meta.abort.scrapeTimeout() ?? Infinity)) {
     throw new PDFInsufficientTimeError(
-      pageCount,
-      pageCount * MILLISECONDS_PER_PAGE + 5000,
+      pdfMetadata.numPages,
+      pdfMetadata.numPages * MILLISECONDS_PER_PAGE + 5000,
     );
   }
 
@@ -291,7 +292,7 @@ export async function scrapePDF(
     statusCode: response.status,
     html: result?.html ?? "",
     markdown: result?.markdown ?? "",
-    numPages: pageCount,
+    pdfMetadata,
 
     proxyUsed: "basic",
   };
