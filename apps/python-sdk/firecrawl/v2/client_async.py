@@ -31,6 +31,7 @@ from .types import (
     ExecuteJavascriptAction,
     PDFAction,
     Location,
+    PaginationConfig,
 )
 from .utils.http_client import HttpClient
 from .utils.http_client_async import AsyncHttpClient
@@ -94,8 +95,16 @@ class AsyncFirecrawlClient:
         timeout = kwargs.get("timeout")
         return await self.wait_crawl(resp.id, poll_interval=poll_interval, timeout=timeout)
 
-    async def get_crawl_status(self, job_id: str) -> CrawlJob:
-        return await async_crawl.get_crawl_status(self.async_http_client, job_id)
+    async def get_crawl_status(
+        self, 
+        job_id: str,
+        pagination_config: Optional[PaginationConfig] = None
+    ) -> CrawlJob:
+        return await async_crawl.get_crawl_status(
+            self.async_http_client, 
+            job_id,
+            pagination_config=pagination_config
+        )
 
     async def cancel_crawl(self, job_id: str) -> bool:
         return await async_crawl.cancel_crawl(self.async_http_client, job_id)
@@ -154,8 +163,16 @@ class AsyncFirecrawlClient:
         timeout = kwargs.get("timeout")
         return await self.wait_batch_scrape(job_id, poll_interval=poll_interval, timeout=timeout)
 
-    async def get_batch_scrape_status(self, job_id: str):
-        return await async_batch.get_batch_scrape_status(self.async_http_client, job_id)
+    async def get_batch_scrape_status(
+        self, 
+        job_id: str,
+        pagination_config: Optional[PaginationConfig] = None
+    ):
+        return await async_batch.get_batch_scrape_status(
+            self.async_http_client, 
+            job_id,
+            pagination_config=pagination_config
+        )
 
     async def cancel_batch_scrape(self, job_id: str) -> bool:
         return await async_batch.cancel_batch_scrape(self.async_http_client, job_id)

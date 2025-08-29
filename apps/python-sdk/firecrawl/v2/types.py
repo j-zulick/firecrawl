@@ -671,6 +671,13 @@ class ClientConfig(BaseModel):
     max_retries: int = 3
     backoff_factor: float = 0.5
 
+class PaginationConfig(BaseModel):
+    """Configuration for pagination behavior."""
+    auto_paginate: bool = True
+    max_pages: Optional[int] = Field(default=None, ge=0)
+    max_results: Optional[int] = Field(default=None, ge=0)
+    max_wait_time: Optional[int] = Field(default=None, ge=0)    # seconds
+
 # Response union types
 AnyResponse = Union[
     ScrapeResponse,

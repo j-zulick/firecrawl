@@ -63,7 +63,7 @@ class TestCrawlE2E:
         assert status_job.status in ["scraping", "completed", "failed"]
         assert status_job.completed >= 0
         assert status_job.expires_at is not None
-        assert status_job.next is not None
+        assert status_job.next is None
         assert isinstance(status_job.data, list)
 
     def test_cancel_crawl(self):

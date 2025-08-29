@@ -189,6 +189,18 @@ export interface Document {
   changeTracking?: Record<string, unknown>;
 }
 
+// Pagination configuration for auto-fetching pages from v2 endpoints that return a `next` URL
+export interface PaginationConfig {
+  /** When true (default), automatically follow `next` links and aggregate all documents. */
+  autoPaginate?: boolean;
+  /** Maximum number of additional pages to fetch after the first response. */
+  maxPages?: number;
+  /** Maximum total number of documents to return across all pages. */
+  maxResults?: number;
+  /** Maximum time to spend fetching additional pages (in seconds). */
+  maxWaitTime?: number;
+}
+
 export interface SearchResultWeb {
   url: string;
   title?: string;

@@ -36,6 +36,7 @@ import type {
   ExtractResponse,
   CrawlOptions,
   BatchScrapeOptions,
+  PaginationConfig,
 } from "./types";
 import { Watcher } from "./watcher";
 import type { WatcherOptions } from "./watcher";
@@ -145,8 +146,8 @@ export class FirecrawlClient {
    * Get the status and partial data of a crawl job.
    * @param jobId Crawl job id.
    */
-  async getCrawlStatus(jobId: string): Promise<CrawlJob> {
-    return getCrawlStatus(this.http, jobId);
+  async getCrawlStatus(jobId: string, pagination?: PaginationConfig): Promise<CrawlJob> {
+    return getCrawlStatus(this.http, jobId, pagination);
   }
   /**
    * Cancel a crawl job.
@@ -201,8 +202,8 @@ export class FirecrawlClient {
    * Get the status and partial data of a batch scrape job.
    * @param jobId Batch job id.
    */
-  async getBatchScrapeStatus(jobId: string): Promise<BatchScrapeJob> {
-    return getBatchScrapeStatus(this.http, jobId);
+  async getBatchScrapeStatus(jobId: string, pagination?: PaginationConfig): Promise<BatchScrapeJob> {
+    return getBatchScrapeStatus(this.http, jobId, pagination);
   }
   /**
    * Retrieve batch scrape errors and robots.txt blocks.
