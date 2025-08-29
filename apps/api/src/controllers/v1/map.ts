@@ -8,7 +8,7 @@ import {
 } from "./types";
 import { scrapeOptions } from "../v2/types";
 import { crawlToCrawler, StoredCrawl } from "../../lib/crawl-redis";
-import { MapResponse, MapRequest } from "./types";
+import { MapResponse, MapRequest, MAX_MAP_LIMIT } from "./types";
 import { configDotenv } from "dotenv";
 import {
   checkAndUpdateURLForMap,
@@ -28,8 +28,6 @@ import { MapTimeoutError } from "../../lib/error";
 configDotenv();
 const redis = new Redis(process.env.REDIS_URL!);
 
-// Max Links that /map can return
-const MAX_MAP_LIMIT = 30000;
 // Max Links that "Smart /map" can return
 const MAX_FIRE_ENGINE_RESULTS = 500;
 

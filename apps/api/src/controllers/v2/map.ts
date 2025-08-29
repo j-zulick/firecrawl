@@ -8,6 +8,7 @@ import {
   MapRequest,
   MapDocument,
   MapResponse,
+  MAX_MAP_LIMIT,
 } from "./types";
 import { crawlToCrawler, StoredCrawl } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
@@ -27,8 +28,6 @@ import { MapTimeoutError } from "../../lib/error";
 
 configDotenv();
 
-// Max Links that /map can return
-const MAX_MAP_LIMIT = 30000;
 // Max Links that "Smart /map" can return
 const MAX_FIRE_ENGINE_RESULTS = 500;
 

@@ -611,6 +611,8 @@ export const crawlRequestSchema = crawlerOptions
 export type CrawlRequest = z.infer<typeof crawlRequestSchema>;
 export type CrawlRequestInput = z.input<typeof crawlRequestSchema>;
 
+export const MAX_MAP_LIMIT = 100000;
+
 export const mapRequestSchema = crawlerOptions
   .omit({ sitemap: true, ignoreQueryParameters: true })
   .extend({
@@ -621,7 +623,7 @@ export const mapRequestSchema = crawlerOptions
     ignoreQueryParameters: z.boolean().default(true),
     search: z.string().optional(),
     sitemap: z.enum(["only", "include", "skip"]).default("include"),
-    limit: z.number().min(1).max(100000).default(5000),
+    limit: z.number().min(1).max(MAX_MAP_LIMIT).default(5000),
     timeout: z.number().positive().finite().optional(),
     useMock: z.string().optional(),
     filterByPath: z.boolean().default(true),
