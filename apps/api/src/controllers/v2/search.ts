@@ -474,15 +474,7 @@ export async function searchController(
             const doc = resultsMap.get(item.url);
             return {
               ...item, // Preserve ALL original fields
-              // Override/add scraped content
-              markdown: doc?.markdown,
-              html: doc?.html,
-              rawHtml: doc?.rawHtml,
-              links: doc?.links,
-              screenshot: doc?.screenshot,
-              summary: doc?.summary,
-              metadata: doc?.metadata,
-              json: doc?.json
+              ...doc, // Override/add scraped content
             };
           });
         }
@@ -493,13 +485,7 @@ export async function searchController(
             const doc = item.url ? resultsMap.get(item.url) : undefined;
             return {
               ...item, // Preserve ALL original fields
-              // Add scraped content if available
-              markdown: doc?.markdown,
-              html: doc?.html,
-              rawHtml: doc?.rawHtml,
-              summary: doc?.summary,
-              metadata: doc?.metadata,
-              json: doc?.json
+              ...doc, // Override/add scraped content
             };
           });
         }
@@ -510,13 +496,7 @@ export async function searchController(
             const doc = item.url ? resultsMap.get(item.url) : undefined;
             return {
               ...item, // Preserve ALL original fields
-              // Add scraped content if available
-              markdown: doc?.markdown,
-              html: doc?.html,
-              rawHtml: doc?.rawHtml,
-              summary: doc?.summary,
-              metadata: doc?.metadata,
-              json: doc?.json
+              ...doc, // Override/add scraped content
             };
           });
         }
