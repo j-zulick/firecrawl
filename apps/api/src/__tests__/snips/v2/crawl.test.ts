@@ -272,6 +272,7 @@ describe("Crawl tests", () => {
             }, 8 * scrapeTimeout);
         });
     }
+
 });
 
 describe("Robots.txt FFI Integration tests", () => {

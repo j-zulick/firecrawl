@@ -311,6 +311,20 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                                 converted_action[action_key] = action_value
                         converted_actions.append(converted_action)
                 scrape_data["actions"] = converted_actions
+            elif key == "parsers":
+                converted_parsers = []
+                for parser in value:
+                    if isinstance(parser, str):
+                        converted_parsers.append(parser)
+                    elif isinstance(parser, dict):
+                        converted_parsers.append(parser)
+                    else:
+                        parser_data = parser.model_dump(exclude_none=True)
+                        # Convert snake_case to camelCase for API
+                        if "max_pages" in parser_data:
+                            parser_data["maxPages"] = parser_data.pop("max_pages")
+                        converted_parsers.append(parser_data)
+                scrape_data["parsers"] = converted_parsers
             elif key == "location":
                 # Handle location conversion
                 if isinstance(value, dict):
@@ -321,4 +335,4 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                 # For fields that don't need conversion, use as-is
                 scrape_data[key] = value
     
-    return scrape_data 
+    return scrape_data  

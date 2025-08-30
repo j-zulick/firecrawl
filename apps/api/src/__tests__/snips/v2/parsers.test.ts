@@ -57,6 +57,42 @@ describe("Parsers parameter tests", () => {
     }, scrapeTimeout);
   });
 
+  describe("Object format", () => {
+    it.concurrent("accepts parsers: [{type: 'pdf'}] and parses PDF", async () => {
+      const response = await scrape({
+        url: pdfUrl,
+        parsers: [{ type: "pdf" }],
+      }, identity);
+
+      expect(response.markdown).toBeDefined();
+      expect(response.markdown).toContain("PDF Test File");
+      expect(response.metadata.numPages).toBeGreaterThan(0);
+    }, scrapeTimeout * 2);
+
+    it.concurrent("accepts parsers: [{type: 'pdf', maxPages: 1}] and limits pages", async () => {
+      const response = await scrape({
+        url: pdfUrl,
+        parsers: [{ type: "pdf", maxPages: 1 }],
+      }, identity);
+
+      expect(response.markdown).toBeDefined();
+      expect(response.markdown).toContain("PDF Test File");
+      expect(response.metadata.numPages).toBe(1);
+    }, scrapeTimeout * 2);
+
+    it.concurrent("handles maxPages larger than actual pages", async () => {
+      const response = await scrape({
+        url: pdfUrl,
+        parsers: [{ type: "pdf", maxPages: 10000 }],
+      }, identity);
+
+      expect(response.markdown).toBeDefined();
+      expect(response.markdown).toContain("PDF Test File");
+      expect(response.metadata.numPages).toBeGreaterThan(0);
+      expect(response.metadata.numPages).toBeLessThan(10000);
+    }, scrapeTimeout * 2);
+  });
+
 
   describe("Default behavior", () => {
     it.concurrent("parses PDF by default when parsers not specified", async () => {
@@ -103,6 +139,28 @@ describe("Parsers parameter tests", () => {
       expect(raw.body.success).toBe(false);
       expect(raw.body.error).toBe("Bad Request");
     }, scrapeTimeout);
+
+    it.concurrent("rejects negative maxPages", async () => {
+      const raw = await scrapeRaw({
+        url: pdfUrl,
+        parsers: [{ type: "pdf", maxPages: -1 }],
+      }, identity);
+
+      expect(raw.statusCode).toBe(400);
+      expect(raw.body.success).toBe(false);
+      expect(raw.body.error).toBe("Bad Request");
+    }, scrapeTimeout);
+
+    it.concurrent("rejects maxPages over limit", async () => {
+      const raw = await scrapeRaw({
+        url: pdfUrl,
+        parsers: [{ type: "pdf", maxPages: 10001 }],
+      }, identity);
+
+      expect(raw.statusCode).toBe(400);
+      expect(raw.body.success).toBe(false);
+      expect(raw.body.error).toBe("Bad Request");
+    }, scrapeTimeout);
   });
 
   describe("Billing implications", () => {
@@ -124,6 +182,17 @@ describe("Parsers parameter tests", () => {
 
       // Should bill flat rate (1 credit) when PDF parsing is disabled
       expect(response.metadata.creditsUsed).toBe(1);
+    }, scrapeTimeout * 2);
+
+    it.concurrent("bills based on limited pages with maxPages", async () => {
+      const response = await scrape({
+        url: pdfUrl,
+        parsers: [{ type: "pdf", maxPages: 1 }],
+      }, identity);
+
+      // Should bill based on limited pages (1 page = 1 credit)
+      expect(response.metadata.creditsUsed).toBe(1);
+      expect(response.metadata.numPages).toBe(1);
     }, scrapeTimeout * 2);
   });
 });

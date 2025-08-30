@@ -278,7 +278,7 @@ class ScrapeOptions(BaseModel):
     timeout: Optional[int] = None
     wait_for: Optional[int] = None
     mobile: Optional[bool] = None
-    parsers: Optional[List[str]] = None
+    parsers: Optional[Union[List[str], List[Union[str, 'PDFParser']]]] = None
     actions: Optional[List[Union['WaitAction', 'ScreenshotAction', 'ClickAction', 'WriteAction', 'PressAction', 'ScrollAction', 'ScrapeAction', 'ExecuteJavascriptAction', 'PDFAction']]] = None
     location: Optional['Location'] = None
     skip_tls_verification: Optional[bool] = None
@@ -536,6 +536,11 @@ class PDFAction(BaseModel):
     landscape: Optional[bool] = None
     scale: Optional[float] = None
 
+class PDFParser(BaseModel):
+    """PDF parser configuration with optional page limit."""
+    type: Literal["pdf"] = "pdf"
+    max_pages: Optional[int] = None
+
 # Location types
 class Location(BaseModel):
     """Location configuration for scraping."""
@@ -593,6 +598,26 @@ class SearchRequest(BaseModel):
                 raise ValueError(f"Invalid category format: {category}")
         
         return normalized_categories
+
+    @field_validator('parsers')
+    @classmethod
+    def validate_parsers(cls, v):
+        """Validate and normalize parsers input."""
+        if v is None:
+            return v
+        
+        normalized_parsers = []
+        for parser in v:
+            if isinstance(parser, str):
+                normalized_parsers.append(parser)
+            elif isinstance(parser, dict):
+                normalized_parsers.append(PDFParser(**parser))
+            elif isinstance(parser, PDFParser):
+                normalized_parsers.append(parser)
+            else:
+                raise ValueError(f"Invalid parser format: {parser}")
+        
+        return normalized_parsers
 
 class LinkResult(BaseModel):
     """A generic link result with optional metadata (used by search and map)."""

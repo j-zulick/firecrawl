@@ -33,4 +33,5 @@ describe("Search tests", () => {
       expect(doc.markdown).toBeDefined();
     }
   }, 125000);
+
 });

@@ -235,9 +235,46 @@ export type FormatObject =
   | ScreenshotFormatWithOptions
   | AttributesFormatWithOptions
 
-export const parsersSchema = z.array(z.enum(["pdf"])).default(["pdf"]);
+export const pdfParserWithOptions = z.object({
+  type: z.literal("pdf"),
+  maxPages: z.number().int().positive().finite().max(10000).optional(),
+}).strict();
+
+export const parsersSchema = z
+  .array(
+    z.union([
+      z.literal("pdf"),
+      pdfParserWithOptions,
+    ])
+  )
+  .default(["pdf"]);
 
 export type Parsers = z.infer<typeof parsersSchema>;
+
+export function shouldParsePDF(parsers?: Parsers): boolean {
+  if (!parsers) return true;
+  return parsers.some(parser => {
+    if (parser === "pdf") return true;
+    if (typeof parser === "object" && parser !== null && "type" in parser) {
+      return (parser as any).type === "pdf";
+    }
+    return false;
+  });
+}
+
+export function getPDFMaxPages(parsers?: Parsers): number | undefined {
+  if (!parsers) return undefined;
+  const pdfParser = parsers.find(parser => {
+    if (typeof parser === "object" && parser !== null && "type" in parser) {
+      return (parser as any).type === "pdf";
+    }
+    return false;
+  });
+  if (pdfParser && typeof pdfParser === "object" && "maxPages" in pdfParser) {
+    return (pdfParser as any).maxPages;
+  }
+  return undefined;
+}
 
 function transformIframeSelector(selector: string): string {
   return selector.replace(/(?:^|[\s,])iframe(?=\s|$|[.#\[:,])/g, (match) => {

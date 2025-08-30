@@ -3,6 +3,7 @@ import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
 import { getIndexFromGCS, hashURL, index_supabase_service, normalizeURLForIndex, saveIndexToGCS, generateURLSplits, addIndexInsertJob, generateDomainSplits, addOMCEJob, addDomainFrequencyJob } from "../../../../services";
 import { EngineError, IndexMissError } from "../../error";
+import { shouldParsePDF } from "../../../../controllers/v2/types";
 import crypto from "crypto";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
@@ -10,7 +11,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
         && !meta.internalOptions.zeroDataRetention
         && meta.winnerEngine !== "index"
         && meta.winnerEngine !== "index;documents"
-        && !(meta.winnerEngine === "pdf" && meta.options.parsers?.includes("pdf") === false)
+        && !(meta.winnerEngine === "pdf" && !shouldParsePDF(meta.options.parsers))
         && (
             meta.internalOptions.teamId === "sitemap"
             || (
@@ -249,13 +250,13 @@ export async function scrapeURLWithIndex(meta: Meta): Promise<EngineScrapeResult
     const isCachedPdfBase64 = doc.html && doc.html.startsWith("JVBERi");
     
     // If the cached content is base64 PDF but we want parsed PDF (parsePDF:true or default)
-    if (isCachedPdfBase64 && meta.options.parsers?.includes("pdf") !== false) {
+    if (isCachedPdfBase64 && shouldParsePDF(meta.options.parsers)) {
         // Cached content is unparsed PDF, but we want parsed - report cache miss
         throw new IndexMissError();
     }
     
     // If the cached content is NOT base64 PDF but we want unparsed PDF (parsePDF:false)
-    if (!isCachedPdfBase64 && meta.options.parsers?.includes("pdf") === false) {
+    if (!isCachedPdfBase64 && !shouldParsePDF(meta.options.parsers)) {
         // Check if URL looks like a PDF
         const isPdfUrl = meta.url.toLowerCase().endsWith(".pdf") || meta.url.includes(".pdf?");
         if (isPdfUrl) {

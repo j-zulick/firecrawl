@@ -1,5 +1,5 @@
 import { InternalOptions } from "src/scraper/scrapeURL";
-import { Document, ScrapeOptions, TeamFlags } from "../controllers/v2/types";
+import { Document, ScrapeOptions, TeamFlags, shouldParsePDF } from "../controllers/v2/types";
 import { CostTracking } from "./extract/extraction-service";
 import { hasFormatOfType } from "./format-utils";
 
@@ -34,8 +34,8 @@ export async function calculateCreditsToBeBilled(options: ScrapeOptions, interna
         creditsToBeBilled += (flags?.zdrCost ?? 1);
     }
     
-    const shouldParsePDF = options.parsers?.includes("pdf") ?? true;
-    if (shouldParsePDF && document.metadata?.numPages !== undefined && document.metadata.numPages > 1) {
+    const shouldParse = shouldParsePDF(options.parsers);
+    if (shouldParse && document.metadata?.numPages !== undefined && document.metadata.numPages > 1) {
         creditsToBeBilled += creditsPerPDFPage * (document.metadata.numPages - 1);
     }
 
