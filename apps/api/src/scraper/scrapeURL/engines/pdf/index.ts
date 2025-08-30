@@ -36,19 +36,21 @@ async function scrapePDFWithRunPodMU(
     tempFilePath,
   });
 
-  try {
-    const cachedResult = await getPdfResultFromCache(base64Content);
-    if (cachedResult) {
-      meta.logger.info("Using cached RunPod MU result for PDF", {
+  if (!maxPages) {
+    try {
+      const cachedResult = await getPdfResultFromCache(base64Content);
+      if (cachedResult) {
+        meta.logger.info("Using cached RunPod MU result for PDF", {
+          tempFilePath,
+        });
+        return cachedResult;
+      }
+    } catch (error) {
+      meta.logger.warn("Error checking PDF cache, proceeding with RunPod MU", {
+        error,
         tempFilePath,
       });
-      return cachedResult;
     }
-  } catch (error) {
-    meta.logger.warn("Error checking PDF cache, proceeding with RunPod MU", {
-      error,
-      tempFilePath,
-    });
   }
 
   meta.abort.throwIfAborted();
