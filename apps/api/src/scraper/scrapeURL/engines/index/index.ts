@@ -12,6 +12,12 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
         && meta.winnerEngine !== "index"
         && meta.winnerEngine !== "index;documents"
         && !(meta.winnerEngine === "pdf" && !shouldParsePDF(meta.options.parsers))
+        && !meta.options.parsers?.some(parser => {
+            if (typeof parser === "object" && parser !== null && "maxPages" in parser) {
+                return true;
+            }
+            return false;
+        })
         && (
             meta.internalOptions.teamId === "sitemap"
             || (
