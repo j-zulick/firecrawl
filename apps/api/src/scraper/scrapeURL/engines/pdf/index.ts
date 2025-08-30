@@ -55,6 +55,11 @@ async function scrapePDFWithRunPodMU(
 
 
 
+  meta.logger.info("Max Pdf pages", {
+    tempFilePath,
+    maxPages,
+  });
+
   const podStart = await robustFetch({
     url:
       "https://api.runpod.ai/v2/" + process.env.RUNPOD_MU_POD_ID + "/runsync",
