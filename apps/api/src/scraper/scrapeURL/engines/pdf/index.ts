@@ -305,7 +305,12 @@ export async function scrapePDF(
     statusCode: response.status,
     html: result?.html ?? "",
     markdown: result?.markdown ?? "",
-    pdfMetadata,
+    pdfMetadata: {
+      // Rust parser gets the metadata incorrectly, so we overwrite the page count here with the effective page count
+      // TODO: fix this later
+      numPages: effectivePageCount,
+      title: pdfMetadata.title,
+    },
 
     proxyUsed: "basic",
   };
