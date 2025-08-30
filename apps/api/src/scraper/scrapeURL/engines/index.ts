@@ -14,6 +14,7 @@ import { indexMaxReasonableTime, scrapeURLWithIndex } from "./index/index";
 import { useIndex } from "../../../services";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { PDFMetadata } from "../../../lib/pdf-parser";
+import { getPDFMaxPages } from "../../../controllers/v2/types";
 
 export type Engine =
   | "fire-engine;chrome-cdp"
@@ -446,6 +447,8 @@ export function buildFallbackList(meta: Meta): {
     && process.env.FIRECRAWL_INDEX_WRITE_ONLY !== "true"
     && meta.options.waitFor === 0
     && !hasFormatOfType(meta.options.formats, "changeTracking")
+    // Skip index if a non-default PDF maxPages is specified
+    && getPDFMaxPages(meta.options.parsers) === undefined
     && meta.options.maxAge !== 0
     && (
       meta.options.headers === undefined
