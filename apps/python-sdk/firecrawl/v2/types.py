@@ -599,25 +599,7 @@ class SearchRequest(BaseModel):
         
         return normalized_categories
 
-    @field_validator('parsers')
-    @classmethod
-    def validate_parsers(cls, v):
-        """Validate and normalize parsers input."""
-        if v is None:
-            return v
-        
-        normalized_parsers = []
-        for parser in v:
-            if isinstance(parser, str):
-                normalized_parsers.append(parser)
-            elif isinstance(parser, dict):
-                normalized_parsers.append(PDFParser(**parser))
-            elif isinstance(parser, PDFParser):
-                normalized_parsers.append(parser)
-            else:
-                raise ValueError(f"Invalid parser format: {parser}")
-        
-        return normalized_parsers
+    # NOTE: parsers validation does not belong on SearchRequest; it is part of ScrapeOptions.
 
 class LinkResult(BaseModel):
     """A generic link result with optional metadata (used by search and map)."""
