@@ -1,10 +1,11 @@
+import crypto from "crypto";
 import { Document } from "../../../../controllers/v1/types";
 import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
 import { getIndexFromGCS, hashURL, index_supabase_service, normalizeURLForIndex, saveIndexToGCS, generateURLSplits, addIndexInsertJob, generateDomainSplits, addOMCEJob, addDomainFrequencyJob } from "../../../../services";
 import { EngineError, IndexMissError } from "../../error";
 import { shouldParsePDF } from "../../../../controllers/v2/types";
-import crypto from "crypto";
+import { storage } from "../../../../lib/gcs-jobs";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
     const shouldCache = meta.options.storeInCache

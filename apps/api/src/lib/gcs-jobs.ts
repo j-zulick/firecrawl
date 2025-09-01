@@ -4,7 +4,7 @@ import { logger } from "./logger";
 import { Document } from "../controllers/v1/types";
 
 const credentials = process.env.GCS_CREDENTIALS ? JSON.parse(atob(process.env.GCS_CREDENTIALS)) : undefined;
-const storage = new Storage({ credentials });
+export const storage = new Storage({ credentials });
 
 export async function saveJobToGCS(job: FirecrawlJob): Promise<void> {
     try {

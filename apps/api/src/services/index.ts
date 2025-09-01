@@ -1,13 +1,14 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
-import { ApiError, Storage } from "@google-cloud/storage";
+import { ApiError } from "@google-cloud/storage";
 import crypto from "crypto";
 import { redisEvictConnection } from "./redis";
 import type { Logger } from "winston";
 import psl from "psl";
 import { MapDocument } from "../controllers/v2/types";
 import { PDFMetadata } from "../lib/pdf-parser";
+import { storage } from "../lib/gcs-jobs";
 configDotenv();
 
 // SupabaseService class initializes the Supabase client conditionally based on environment variables.
@@ -71,11 +72,41 @@ export async function getIndexFromGCS(url: string, logger?: Logger): Promise<any
             return null;
         }
 
-        const storage = new Storage({ credentials });
         const bucket = storage.bucket(process.env.GCS_INDEX_BUCKET_NAME);
         const blob = bucket.file(`${url}`);
         const [blobContent] = await blob.download();
         const parsed = JSON.parse(blobContent.toString());
+
+        try {
+          if (
+            typeof parsed.screenshot === "string"
+           ) {
+            const screenshotUrl = new URL(parsed.screenshot);
+            let expiresAt = parseInt(screenshotUrl.searchParams.get("Expires") ?? "0", 10) * 1000;
+            if (expiresAt === 0) {
+              expiresAt = new Date(screenshotUrl.searchParams.get("X-Goog-Date") ?? "1970-01-01T00:00:00Z").getTime() + parseInt(screenshotUrl.searchParams.get("X-Goog-Expires") ?? "0", 10) * 1000;
+            }
+            if (screenshotUrl.hostname === "storage.googleapis.com" && expiresAt < Date.now()) {
+                logger?.info("Re-signing screenshot URL");
+                const [url] = await storage.bucket(process.env.GCS_MEDIA_BUCKET_NAME!).file(decodeURIComponent(screenshotUrl.pathname.split("/")[2])).getSignedUrl({
+                    action: "read",
+                    expires: Date.now() + 1000 * 60 * 60 * 24 * 7, // 7 days
+                });
+                parsed.screenshot = url;
+  
+                // Update the blob
+                await blob.save(JSON.stringify(parsed), {
+                  contentType: "application/json",
+                });
+            }
+          }
+        } catch (error) {
+          logger?.warn("Error re-signing screenshot URL", {
+            error,
+            url,
+          });
+        }
+
         return parsed;
     } catch (error) {
         if (error instanceof ApiError && error.code === 404 && error.message.includes("No such object:")) {
@@ -106,7 +137,6 @@ export async function saveIndexToGCS(id: string, doc: {
           return;
       }
 
-      const storage = new Storage({ credentials });
       const bucket = storage.bucket(process.env.GCS_INDEX_BUCKET_NAME);
       const blob = bucket.file(`${id}.json`);
       for (let i = 0; i < 3; i++) {

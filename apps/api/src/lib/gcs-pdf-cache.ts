@@ -1,6 +1,6 @@
-import { Storage } from "@google-cloud/storage";
 import { logger } from "./logger";
 import crypto from "crypto";
+import { storage } from "./gcs-jobs";
 
 const credentials = process.env.GCS_CREDENTIALS ? JSON.parse(atob(process.env.GCS_CREDENTIALS)) : undefined;
 const PDF_CACHE_PREFIX = "pdf-cache-v2/";
@@ -29,7 +29,6 @@ export async function savePdfResultToCache(
         }
 
         const cacheKey = createPdfCacheKey(pdfContent);
-        const storage = new Storage({ credentials });
         const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
         const blob = bucket.file(`${PDF_CACHE_PREFIX}${cacheKey}.json`);
 
@@ -83,7 +82,6 @@ export async function getPdfResultFromCache(
         }
 
         const cacheKey = createPdfCacheKey(pdfContent);
-        const storage = new Storage({ credentials });
         const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
         const blob = bucket.file(`${PDF_CACHE_PREFIX}${cacheKey}.json`);
 
