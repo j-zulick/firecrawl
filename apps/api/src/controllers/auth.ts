@@ -187,7 +187,7 @@ export async function getACUC(
       const client =
         Math.random() > (2/3) ? supabase_rr_service : supabase_service;
       ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_33",
+        "auth_credit_usage_chunk_34",
         { input_key: api_key, i_is_extract: isExtract, tally_untallied_credits: true },
         { get: true },
       ));
@@ -308,7 +308,7 @@ export async function getACUCTeam(
       const client =
         Math.random() > (2/3) ? supabase_rr_service : supabase_service;
       ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_33_from_team",
+        "auth_credit_usage_chunk_34_from_team",
         { input_team: team_id, i_is_extract: isExtract, tally_untallied_credits: true },
         { get: true },
       ));
