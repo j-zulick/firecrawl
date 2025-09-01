@@ -727,6 +727,14 @@ class FirecrawlClient:
         """Get recent token usage metrics (v2)."""
         return usage_methods.get_token_usage(self.http_client)
 
+    def get_credit_usage_historical(self, by_api_key: bool = False):
+        """Get historical credit usage (v2)."""
+        return usage_methods.get_credit_usage_historical(self.http_client, by_api_key)
+
+    def get_token_usage_historical(self, by_api_key: bool = False):
+        """Get historical token usage (v2)."""
+        return usage_methods.get_token_usage_historical(self.http_client, by_api_key)
+
     def get_queue_status(self):
         """Get metrics about the team's scrape queue."""
         return usage_methods.get_queue_status(self.http_client)

@@ -34,6 +34,8 @@ import {
 } from "./shared";
 import { paymentMiddleware } from "x402-express";
 import { queueStatusController } from "../controllers/v1/queue-status";
+import { creditUsageHistoricalController } from "../controllers/v1/credit-usage-historical";
+import { tokenUsageHistoricalController } from "../controllers/v1/token-usage-historical";
 
 expressWs(express());
 
@@ -230,9 +232,21 @@ v1Router.get(
 );
 
 v1Router.get(
+  "/team/credit-usage/historical",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(creditUsageHistoricalController),
+);
+
+v1Router.get(
   "/team/token-usage",
   authMiddleware(RateLimiterMode.ExtractStatus),
   wrap(tokenUsageController),
+);
+
+v1Router.get(
+  "/team/token-usage/historical",
+  authMiddleware(RateLimiterMode.ExtractStatus),
+  wrap(tokenUsageHistoricalController),
 );
 
 v1Router.get(

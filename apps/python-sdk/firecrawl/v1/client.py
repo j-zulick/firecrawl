@@ -358,6 +358,46 @@ class V1SearchResponse(pydantic.BaseModel):
     warning: Optional[str] = None
     error: Optional[str] = None
 
+class V1CreditUsageData(pydantic.BaseModel):
+    remaining_credits: int
+    plan_credits: Optional[int] = None
+    billing_period_start: Optional[str] = None
+    billing_period_end: Optional[str] = None
+
+class V1CreditUsageResponse(pydantic.BaseModel):
+    success: bool
+    data: V1CreditUsageData
+
+class V1TokenUsageData(pydantic.BaseModel):
+    remaining_tokens: int
+    plan_tokens: Optional[int] = None
+    billing_period_start: Optional[str] = None
+    billing_period_end: Optional[str] = None
+
+class V1TokenUsageResponse(pydantic.BaseModel):
+    success: bool
+    data: V1TokenUsageData
+
+class V1CreditUsageHistoricalPeriod(pydantic.BaseModel):
+    startDate: Optional[str] = None
+    endDate: Optional[str] = None
+    apiKey: Optional[str] = None
+    creditsUsed: int
+
+class V1CreditUsageHistoricalResponse(pydantic.BaseModel):
+    success: bool
+    periods: List[V1CreditUsageHistoricalPeriod]
+
+class V1TokenUsageHistoricalPeriod(pydantic.BaseModel):
+    startDate: Optional[str] = None
+    endDate: Optional[str] = None
+    apiKey: Optional[str] = None
+    tokensUsed: int
+
+class V1TokenUsageHistoricalResponse(pydantic.BaseModel):
+    success: bool
+    periods: List[V1TokenUsageHistoricalPeriod]
+
 class V1GenerateLLMsTextParams(pydantic.BaseModel):
     """
     Parameters for the LLMs.txt generation operation.
@@ -721,6 +761,90 @@ class V1FirecrawlApp:
                 raise Exception('Failed to parse Firecrawl response as JSON.')
         else:
             self._handle_error(response, 'search')
+
+    def get_credit_usage(self) -> V1CreditUsageResponse:
+        """Get current credit usage and billing period (v1)."""
+        _headers = self._prepare_headers()
+        response = self._get_request(
+            f"{self.api_url}/v1/team/credit-usage",
+            _headers
+        )
+
+        if response.status_code == 200:
+            try:
+                response_json = response.json()
+                if response_json.get('success') and 'data' in response_json:
+                    return V1CreditUsageResponse(**response_json)
+                elif "error" in response_json:
+                    raise Exception(f"Failed to get credit usage. Error: {response_json['error']}")
+                else:
+                    raise Exception(f"Failed to get credit usage. Error: {response_json}")
+            except ValueError:
+                raise Exception('Failed to parse Firecrawl response as JSON.')
+        else:
+            self._handle_error(response, 'get credit usage')
+
+    def get_token_usage(self) -> V1TokenUsageResponse:
+        """Get current token usage and billing period (v1)."""
+        _headers = self._prepare_headers()
+        response = self._get_request(
+            f"{self.api_url}/v1/team/token-usage",
+            _headers
+        )
+
+        if response.status_code == 200:
+            try:
+                response_json = response.json()
+                if response_json.get('success') and 'data' in response_json:
+                    return V1TokenUsageResponse(**response_json)
+                elif "error" in response_json:
+                    raise Exception(f"Failed to get token usage. Error: {response_json['error']}")
+                else:
+                    raise Exception(f"Failed to get token usage. Error: {response_json}")
+            except ValueError:
+                raise Exception('Failed to parse Firecrawl response as JSON.')
+        else:
+            self._handle_error(response, 'get token usage')
+
+    def get_credit_usage_historical(self, by_api_key: bool = False) -> V1CreditUsageHistoricalResponse:
+        """Get historical credit usage (v1)."""
+        _headers = self._prepare_headers()
+        url = f"{self.api_url}/v1/team/credit-usage/historical" + ("?byApiKey=true" if by_api_key else "")
+        response = self._get_request(url, _headers)
+
+        if response.status_code == 200:
+            try:
+                response_json = response.json()
+                if response_json.get('success') and 'periods' in response_json:
+                    return V1CreditUsageHistoricalResponse(**response_json)
+                elif "error" in response_json:
+                    raise Exception(f"Failed to get historical credit usage. Error: {response_json['error']}")
+                else:
+                    raise Exception(f"Failed to get historical credit usage. Error: {response_json}")
+            except ValueError:
+                raise Exception('Failed to parse Firecrawl response as JSON.')
+        else:
+            self._handle_error(response, 'get credit usage historical')
+
+    def get_token_usage_historical(self, by_api_key: bool = False) -> V1TokenUsageHistoricalResponse:
+        """Get historical token usage (v1)."""
+        _headers = self._prepare_headers()
+        url = f"{self.api_url}/v1/team/token-usage/historical" + ("?byApiKey=true" if by_api_key else "")
+        response = self._get_request(url, _headers)
+
+        if response.status_code == 200:
+            try:
+                response_json = response.json()
+                if response_json.get('success') and 'periods' in response_json:
+                    return V1TokenUsageHistoricalResponse(**response_json)
+                elif "error" in response_json:
+                    raise Exception(f"Failed to get historical token usage. Error: {response_json['error']}")
+                else:
+                    raise Exception(f"Failed to get historical token usage. Error: {response_json}")
+            except ValueError:
+                raise Exception('Failed to parse Firecrawl response as JSON.')
+        else:
+            self._handle_error(response, 'get token usage historical')
 
     def crawl_url(
         self,
@@ -2912,6 +3036,24 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             str: A formatted error message
         """
         return self._get_error_message(status_code, action, error_message, error_details)
+
+    async def get_credit_usage(self) -> V1CreditUsageResponse:
+        """Get current credit usage and billing period (v1, async)."""
+        headers = self._prepare_headers()
+        resp = await self._async_get_request(
+            f"{self.api_url}/v1/team/credit-usage",
+            headers
+        )
+        return V1CreditUsageResponse(**resp)
+
+    async def get_token_usage(self) -> V1TokenUsageResponse:
+        """Get current token usage and billing period (v1, async)."""
+        headers = self._prepare_headers()
+        resp = await self._async_get_request(
+            f"{self.api_url}/v1/team/token-usage",
+            headers
+        )
+        return V1TokenUsageResponse(**resp)
 
     async def crawl_url_and_watch(
             self,

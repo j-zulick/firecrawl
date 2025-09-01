@@ -584,6 +584,48 @@ export interface QueueStatusResponse {
   mostRecentSuccess: string | null;
 }
 
+/** Credit usage for v1 API (snake_case fields as returned by API). */
+export interface CreditUsageResponseV1 {
+  success: boolean;
+  data: {
+    remaining_credits: number;
+    plan_credits: number;
+    billing_period_start: string | null;
+    billing_period_end: string | null;
+  };
+}
+
+/** Token usage for v1 API (snake_case fields as returned by API). */
+export interface TokenUsageResponseV1 {
+  success: boolean;
+  data: {
+    remaining_tokens: number;
+    plan_tokens: number;
+    billing_period_start: string | null;
+    billing_period_end: string | null;
+  };
+}
+
+export interface CreditUsageHistoricalResponseV1 {
+  success: boolean;
+  periods: {
+    startDate: string | null;
+    endDate: string | null;
+    apiKey?: string;
+    creditsUsed: number;
+  }[];
+}
+
+export interface TokenUsageHistoricalResponseV1 {
+  success: boolean;
+  periods: {
+    startDate: string | null;
+    endDate: string | null;
+    apiKey?: string;
+    tokensUsed: number;
+  }[];
+}
+
 /**
  * Main class for interacting with the Firecrawl API.
  * Provides methods for scraping, searching, crawling, and mapping web content.
@@ -2060,6 +2102,102 @@ export default class FirecrawlApp {
         return response.data;
       } else {
         this.handleError(response, "get queue status");
+      }
+    } catch (error: any) {
+      if (error.response?.data?.error) {
+        throw new FirecrawlError(`Request failed with status code ${error.response.status}. Error: ${error.response.data.error} ${error.response.data.details ? ` - ${JSON.stringify(error.response.data.details)}` : ''}`, error.response.status);
+      } else {
+        throw new FirecrawlError(error.message, 500);
+      }
+    }
+    return { success: false, error: "Internal server error." };
+  }
+
+  /**
+   * Gets current credit usage and billing period for the team (v1).
+   */
+  async getCreditUsage(): Promise<CreditUsageResponseV1 | ErrorResponse> {
+    const headers = this.prepareHeaders();
+    try {
+      const response: AxiosResponse = await this.getRequest(
+        `${this.apiUrl}/v1/team/credit-usage`,
+        headers
+      );
+      if (response.status === 200) {
+        return response.data as CreditUsageResponseV1;
+      } else {
+        this.handleError(response, "get credit usage");
+      }
+    } catch (error: any) {
+      if (error.response?.data?.error) {
+        throw new FirecrawlError(`Request failed with status code ${error.response.status}. Error: ${error.response.data.error} ${error.response.data.details ? ` - ${JSON.stringify(error.response.data.details)}` : ''}`, error.response.status);
+      } else {
+        throw new FirecrawlError(error.message, 500);
+      }
+    }
+    return { success: false, error: "Internal server error." };
+  }
+
+  /**
+   * Gets current token usage and billing period for the team (v1).
+   */
+  async getTokenUsage(): Promise<TokenUsageResponseV1 | ErrorResponse> {
+    const headers = this.prepareHeaders();
+    try {
+      const response: AxiosResponse = await this.getRequest(
+        `${this.apiUrl}/v1/team/token-usage`,
+        headers
+      );
+      if (response.status === 200) {
+        return response.data as TokenUsageResponseV1;
+      } else {
+        this.handleError(response, "get token usage");
+      }
+    } catch (error: any) {
+      if (error.response?.data?.error) {
+        throw new FirecrawlError(`Request failed with status code ${error.response.status}. Error: ${error.response.data.error} ${error.response.data.details ? ` - ${JSON.stringify(error.response.data.details)}` : ''}`, error.response.status);
+      } else {
+        throw new FirecrawlError(error.message, 500);
+      }
+    }
+    return { success: false, error: "Internal server error." };
+  }
+
+  /**
+   * Gets historical credit usage. Pass byApiKey=true to break down by API key.
+   */
+  async getCreditUsageHistorical(byApiKey?: boolean): Promise<CreditUsageHistoricalResponseV1 | ErrorResponse> {
+    const headers = this.prepareHeaders();
+    try {
+      const url = `${this.apiUrl}/v1/team/credit-usage/historical${byApiKey ? "?byApiKey=true" : ""}`;
+      const response: AxiosResponse = await this.getRequest(url, headers);
+      if (response.status === 200) {
+        return response.data as CreditUsageHistoricalResponseV1;
+      } else {
+        this.handleError(response, "get credit usage historical");
+      }
+    } catch (error: any) {
+      if (error.response?.data?.error) {
+        throw new FirecrawlError(`Request failed with status code ${error.response.status}. Error: ${error.response.data.error} ${error.response.data.details ? ` - ${JSON.stringify(error.response.data.details)}` : ''}`, error.response.status);
+      } else {
+        throw new FirecrawlError(error.message, 500);
+      }
+    }
+    return { success: false, error: "Internal server error." };
+  }
+
+  /**
+   * Gets historical token usage. Pass byApiKey=true to break down by API key.
+   */
+  async getTokenUsageHistorical(byApiKey?: boolean): Promise<TokenUsageHistoricalResponseV1 | ErrorResponse> {
+    const headers = this.prepareHeaders();
+    try {
+      const url = `${this.apiUrl}/v1/team/token-usage/historical${byApiKey ? "?byApiKey=true" : ""}`;
+      const response: AxiosResponse = await this.getRequest(url, headers);
+      if (response.status === 200) {
+        return response.data as TokenUsageHistoricalResponseV1;
+      } else {
+        this.handleError(response, "get token usage historical");
       }
     } catch (error: any) {
       if (error.response?.data?.error) {

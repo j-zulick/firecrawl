@@ -339,10 +339,40 @@ export interface ConcurrencyCheck {
 
 export interface CreditUsage {
   remainingCredits: number;
+  planCredits?: number;
+  billingPeriodStart?: string | null;
+  billingPeriodEnd?: string | null;
 }
 
 export interface TokenUsage {
   remainingTokens: number;
+  planTokens?: number;
+  billingPeriodStart?: string | null;
+  billingPeriodEnd?: string | null;
+}
+
+export interface CreditUsageHistoricalPeriod {
+  startDate: string | null;
+  endDate: string | null;
+  apiKey?: string;
+  creditsUsed: number;
+}
+
+export interface CreditUsageHistoricalResponse {
+  success: boolean;
+  periods: CreditUsageHistoricalPeriod[];
+}
+
+export interface TokenUsageHistoricalPeriod {
+  startDate: string | null;
+  endDate: string | null;
+  apiKey?: string;
+  tokensUsed: number;
+}
+
+export interface TokenUsageHistoricalResponse {
+  success: boolean;
+  periods: TokenUsageHistoricalPeriod[];
 }
 
 export interface CrawlErrorsResponse {

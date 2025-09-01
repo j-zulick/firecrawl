@@ -480,10 +480,16 @@ class ConcurrencyCheck(BaseModel):
 class CreditUsage(BaseModel):
     """Remaining credits for the team/API key."""
     remaining_credits: int
+    plan_credits: Optional[int] = None
+    billing_period_start: Optional[str] = None
+    billing_period_end: Optional[str] = None
 
 class TokenUsage(BaseModel):
     """Recent token usage metrics (if available)."""
     remaining_tokens: int
+    plan_tokens: Optional[int] = None
+    billing_period_start: Optional[str] = None
+    billing_period_end: Optional[str] = None
 
 class QueueStatusResponse(BaseModel):
     """Metrics about the team's scrape queue."""
@@ -492,6 +498,26 @@ class QueueStatusResponse(BaseModel):
     waiting_jobs_in_queue: int
     max_concurrency: int
     most_recent_success: Optional[datetime] = None
+
+class CreditUsageHistoricalPeriod(BaseModel):
+    startDate: Optional[str] = None
+    endDate: Optional[str] = None
+    apiKey: Optional[str] = None
+    creditsUsed: int
+
+class CreditUsageHistoricalResponse(BaseModel):
+    success: bool
+    periods: List[CreditUsageHistoricalPeriod]
+
+class TokenUsageHistoricalPeriod(BaseModel):
+    startDate: Optional[str] = None
+    endDate: Optional[str] = None
+    apiKey: Optional[str] = None
+    tokensUsed: int
+
+class TokenUsageHistoricalResponse(BaseModel):
+    success: bool
+    periods: List[TokenUsageHistoricalPeriod]
 
 # Action types
 class WaitAction(BaseModel):
