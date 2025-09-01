@@ -142,17 +142,17 @@ async function getNextConcurrentJob(teamId: string, i = 0): Promise<{
   job: ConcurrencyLimitedJob;
   timeout: number;
 } | null> {
-  let finalJob: {
+  let finalJobs: {
     job: ConcurrencyLimitedJob;
     _member: string;
     timeout: number;
-  } | null = null;
+  }[] = [];
 
   const crawlCache = new Map<string, StoredCrawl>();
   let cursor: string = "0";
 
-  while (true) {
-    const scanResult = await redisEvictConnection.zscan(constructQueueKey(teamId), cursor, "COUNT", 1);
+  do {
+    const scanResult = await redisEvictConnection.zscan(constructQueueKey(teamId), cursor, "COUNT", 20);
     cursor = scanResult[0];
     const results = scanResult[1];
 
@@ -172,7 +172,7 @@ async function getNextConcurrentJob(teamId: string, i = 0): Promise<{
 
         const maxCrawlConcurrency = sc === null
           ? null
-          : (typeof sc.crawlerOptions?.delay === "number")
+          : (typeof sc.crawlerOptions?.delay === "number" && sc.crawlerOptions.delay > 0)
             ? 1
             : sc.maxConcurrency ?? null;
               
@@ -181,50 +181,46 @@ async function getNextConcurrentJob(teamId: string, i = 0): Promise<{
           const currentActiveConcurrency = (await getCrawlConcurrencyLimitActiveJobs(res.job.data.crawl_id)).length;
           if (currentActiveConcurrency < maxCrawlConcurrency) {
             // If we're under the max concurrency limit, we can run the job
-            finalJob = res;
+            finalJobs.push(res);
           }
         } else {
           // If the crawl has no max concurrency limit, we can run the job
-          finalJob = res;
+          finalJobs.push(res);
         }
       } else {
         // If the job is not associated with a crawl ID, we can run the job
-        finalJob = res;
+        finalJobs.push(res);
       }
+    }
+  } while (finalJobs.length === 0 && cursor !== "0");
 
-      if (finalJob !== null) {
+  let finalJob: typeof finalJobs[number] | null = null;
+  if (finalJobs.length > 0) {
+    for (const job of finalJobs) {
+      const res = await redisEvictConnection.zrem(constructQueueKey(teamId), job._member);
+      if (res !== 0) {
+        finalJob = job;
         break;
       }
     }
 
-    if (finalJob !== null) {
-      break;
-    }
-
-    if (cursor === "0") {
-      break;
-    }
-  }
-
-  if (finalJob !== null) {
-    const res = await redisEvictConnection.zrem(constructQueueKey(teamId), finalJob._member);
-    if (res === 0) {
+    if (finalJob === null) {
       // It's normal for this to happen, but if it happens too many times, we should log a warning
-      if (i > 15) {
-        logger.warn("Failed to remove job from concurrency limit queue", {
-          teamId,
-          jobId: finalJob.job.id,
-          zeroDataRetention: finalJob.job.data?.zeroDataRetention,
-          i
-        });
-      } else if (i > 100) {
+      if (i > 100) {
         logger.error("Failed to remove job from concurrency limit queue, hard bailing", {
           teamId,
-          jobId: finalJob.job.id,
-          zeroDataRetention: finalJob.job.data?.zeroDataRetention,
+          jobIds: finalJobs.map(x => x.job.id),
+          zeroDataRetention: finalJobs.some(x => x.job.data?.zeroDataRetention),
           i
         });
         return null;
+      } else if (i > 15) {
+        logger.warn("Failed to remove job from concurrency limit queue", {
+          teamId,
+          jobIds: finalJobs.map(x => x.job.id),
+          zeroDataRetention: finalJobs.some(x => x.job.data?.zeroDataRetention),
+          i
+        });
       }
 
       return await new Promise((resolve, reject) => setTimeout(() => {
