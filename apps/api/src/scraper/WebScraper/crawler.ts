@@ -14,6 +14,8 @@ import { filterLinks } from "../../lib/crawler";
 import { fetchRobotsTxt, createRobotsChecker, isUrlAllowedByRobots } from "../../lib/robots-txt";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 
+export const SITEMAP_LIMIT = 100;
+
 export interface FilterResult {
   allowed: boolean;
   url?: string;
@@ -864,7 +866,7 @@ export class WebCrawler {
       }
     }
 
-    if (this.sitemapsHit.size >= 20) {
+    if (this.sitemapsHit.size >= SITEMAP_LIMIT) {
       this.logger.warn("Sitemap limit hit!", { crawlId: this.jobId, url: this.baseUrl });
     }
 

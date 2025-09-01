@@ -1,5 +1,5 @@
 import { parseStringPromise } from "xml2js";
-import { WebCrawler } from "./crawler";
+import { WebCrawler, SITEMAP_LIMIT } from "./crawler";
 import { scrapeURL } from "../scrapeURL";
 import { scrapeOptions } from "../../controllers/v2/types";
 import type { Logger } from "winston";
@@ -9,6 +9,8 @@ import { ScrapeJobTimeoutError } from "../../lib/error";
 const useFireEngine =
   process.env.FIRE_ENGINE_BETA_URL !== "" &&
   process.env.FIRE_ENGINE_BETA_URL !== undefined;
+
+
 export async function getLinksFromSitemap(
   {
     sitemapUrl,
@@ -29,7 +31,7 @@ export async function getLinksFromSitemap(
   abort?: AbortSignal,
   mock?: string,
 ): Promise<number> {
-  if (sitemapsHit.size >= 20) {
+  if (sitemapsHit.size >= SITEMAP_LIMIT) {
     return 0;
   }
 
