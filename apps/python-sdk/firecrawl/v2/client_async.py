@@ -253,6 +253,18 @@ class AsyncFirecrawlClient:
     async def get_token_usage(self):
         from .methods.aio import usage as async_usage  # type: ignore[attr-defined]
         return await async_usage.get_token_usage(self.async_http_client)
+    
+    async def get_credit_usage_historical(self, by_api_key: bool = False):
+        from .methods.aio import usage as async_usage  # type: ignore[attr-defined]
+        return await async_usage.get_credit_usage_historical(self.async_http_client, by_api_key)
+    
+    async def get_token_usage_historical(self, by_api_key: bool = False):
+        from .methods.aio import usage as async_usage  # type: ignore[attr-defined]
+        return await async_usage.get_token_usage_historical(self.async_http_client, by_api_key)
+
+    async def get_queue_status(self):
+        from .methods.aio import usage as async_usage  # type: ignore[attr-defined]
+        return await async_usage.get_queue_status(self.async_http_client)
 
     # Watcher (sync object usable from async contexts)
     def watcher(

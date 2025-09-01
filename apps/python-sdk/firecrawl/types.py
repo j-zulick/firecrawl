@@ -65,6 +65,9 @@ from .v2.types import (
     ExecuteJavascriptAction,
     PDFAction,
     
+    # Usage types
+    QueueStatusResponse,
+
     # Location and format types
     Location,
     
@@ -142,6 +145,9 @@ __all__ = [
     'ScrapeAction',
     'ExecuteJavascriptAction',
     'PDFAction',
+
+    # Usage types
+    'QueueStatusResponse',
     
     # Location and format types
     'Location',

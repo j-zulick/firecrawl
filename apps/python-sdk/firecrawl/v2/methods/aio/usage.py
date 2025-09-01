@@ -1,6 +1,6 @@
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.error_handler import handle_response_error
-from ...types import ConcurrencyCheck, CreditUsage, TokenUsage, CreditUsageHistoricalResponse, TokenUsageHistoricalResponse
+from ...types import ConcurrencyCheck, CreditUsage, TokenUsage, CreditUsageHistoricalResponse, TokenUsageHistoricalResponse, QueueStatusResponse
 
 
 async def get_concurrency(client: AsyncHttpClient) -> ConcurrencyCheck:
@@ -46,6 +46,23 @@ async def get_token_usage(client: AsyncHttpClient) -> TokenUsage:
         plan_tokens=data.get("planTokens", data.get("plan_tokens")),
         billing_period_start=data.get("billingPeriodStart", data.get("billing_period_start")),
         billing_period_end=data.get("billingPeriodEnd", data.get("billing_period_end")),
+    )
+
+
+async def get_queue_status(client: AsyncHttpClient) -> QueueStatusResponse:
+    resp = await client.get("/v2/team/queue-status")
+    if resp.status_code >= 400:
+        handle_response_error(resp, "get queue status")
+    body = resp.json()
+    if not body.get("success"):
+        raise Exception(body.get("error", "Unknown error"))
+    data = body.get("data", body)
+    return QueueStatusResponse(
+        jobs_in_queue=data.get("jobsInQueue", 0),
+        active_jobs_in_queue=data.get("activeJobsInQueue", 0),
+        waiting_jobs_in_queue=data.get("waitingJobsInQueue", 0),
+        max_concurrency=data.get("maxConcurrency", 0),
+        most_recent_success=data.get("mostRecentSuccess", None),
     )
 
 

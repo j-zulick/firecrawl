@@ -56,23 +56,34 @@ class V2Proxy:
         self._client = client_instance
 
         if client_instance:
+            self.scrape = client_instance.scrape
             self.search = client_instance.search
             self.crawl = client_instance.crawl
+            self.start_crawl = client_instance.start_crawl
             self.get_crawl_status = client_instance.get_crawl_status
             self.cancel_crawl = client_instance.cancel_crawl
-            self.start_crawl = client_instance.start_crawl
+            self.get_crawl_errors = client_instance.get_crawl_errors
+            self.get_active_crawls = client_instance.get_active_crawls
+            self.active_crawls = client_instance.active_crawls
             self.crawl_params_preview = client_instance.crawl_params_preview
+
             self.extract = client_instance.extract
+            self.start_extract = client_instance.start_extract
+            self.get_extract_status = client_instance.get_extract_status
+
             self.start_batch_scrape = client_instance.start_batch_scrape
             self.get_batch_scrape_status = client_instance.get_batch_scrape_status
             self.cancel_batch_scrape = client_instance.cancel_batch_scrape
             self.batch_scrape = client_instance.batch_scrape
             self.get_batch_scrape_errors = client_instance.get_batch_scrape_errors
-            self.get_extract_status = client_instance.get_extract_status
+
             self.map = client_instance.map
             self.get_concurrency = client_instance.get_concurrency
             self.get_credit_usage = client_instance.get_credit_usage
             self.get_token_usage = client_instance.get_token_usage
+            self.get_queue_status = client_instance.get_queue_status
+
+            self.watcher = client_instance.watcher
     
     def __getattr__(self, name):
         """Forward attribute access to the underlying client."""
@@ -99,9 +110,9 @@ class AsyncV1Proxy:
 
 class AsyncV2Proxy:
     """Proxy class that forwards method calls to the appropriate version client."""
-    _client: Optional[Any] = None
+    _client: Optional[AsyncFirecrawlClient] = None
 
-    def __init__(self, client_instance: Optional[Any] = None):
+    def __init__(self, client_instance: Optional[AsyncFirecrawlClient] = None):
         self._client = client_instance
 
         if client_instance:
@@ -132,6 +143,8 @@ class AsyncV2Proxy:
             self.get_concurrency = client_instance.get_concurrency
             self.get_credit_usage = client_instance.get_credit_usage
             self.get_token_usage = client_instance.get_token_usage
+            self.get_queue_status = client_instance.get_queue_status
+
             self.watcher = client_instance.watcher
 
     def __getattr__(self, name):
@@ -193,7 +206,8 @@ class Firecrawl:
         self.get_concurrency = self._v2_client.get_concurrency
         self.get_credit_usage = self._v2_client.get_credit_usage
         self.get_token_usage = self._v2_client.get_token_usage
-
+        self.get_queue_status = self._v2_client.get_queue_status
+        
         self.watcher = self._v2_client.watcher
         
 class AsyncFirecrawl:
@@ -238,6 +252,7 @@ class AsyncFirecrawl:
         self.get_concurrency = self._v2_client.get_concurrency
         self.get_credit_usage = self._v2_client.get_credit_usage
         self.get_token_usage = self._v2_client.get_token_usage
+        self.get_queue_status = self._v2_client.get_queue_status
 
         self.watcher = self._v2_client.watcher
 
