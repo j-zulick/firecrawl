@@ -1,2 +1,2 @@
-html-to-markdown.so
-html-to-markdown.h
+html-to-markdown.*
+!html-to-markdown.go

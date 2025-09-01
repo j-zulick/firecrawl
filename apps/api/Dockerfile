@@ -20,8 +20,8 @@ COPY sharedLibs/go-html-to-md /app/sharedLibs/go-html-to-md
 # Install Go dependencies and build parser lib
 RUN cd /app/sharedLibs/go-html-to-md && \
     go mod download && \
-    go build -o html-to-markdown.so -buildmode=c-shared html-to-markdown.go && \
-    chmod +x html-to-markdown.so
+    go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go && \
+    chmod +x libhtml-to-markdown.so
 
 # Install Rust
 FROM rust:1-slim AS rust-base
@@ -47,7 +47,7 @@ RUN cd /app/sharedLibs/crawler && \
 FROM base
 COPY --from=build /app/dist /app/dist
 COPY --from=prod-deps /app/node_modules /app/node_modules
-COPY --from=go-base /app/sharedLibs/go-html-to-md/html-to-markdown.so /app/sharedLibs/go-html-to-md/html-to-markdown.so
+COPY --from=go-base /app/sharedLibs/go-html-to-md/libhtml-to-markdown.so /app/sharedLibs/go-html-to-md/libhtml-to-markdown.so
 COPY --from=rust-base /app/sharedLibs/html-transformer/target/release/libhtml_transformer.so /app/sharedLibs/html-transformer/target/release/libhtml_transformer.so
 COPY --from=rust-base /app/sharedLibs/pdf-parser/target/release/libpdf_parser.so /app/sharedLibs/pdf-parser/target/release/libpdf_parser.so
 COPY --from=rust-base /app/sharedLibs/crawler/target/release/libcrawler.so /app/sharedLibs/crawler/target/release/libcrawler.so

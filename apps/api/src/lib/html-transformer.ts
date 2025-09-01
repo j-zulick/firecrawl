@@ -1,22 +1,14 @@
 import koffi, { KoffiFunction } from "koffi";
-import { join } from "path";
 import { stat } from "fs/promises";
-import { platform } from "os";
-
-// TODO: add a timeout to the Rust transformer
-const rustExecutablePath = join(
-  process.cwd(),
-  "sharedLibs/html-transformer/target/release/",
-  platform() === "darwin" ? "libhtml_transformer.dylib" : "libhtml_transformer.so"
-);
+import { HTML_TRANSFORMER_PATH } from "../natives";
 
 type TransformHtmlOptions = {
-  html: string,
-  url: string,
-  include_tags: string[],
-  exclude_tags: string[],
-  only_main_content: boolean,
-  omce_signatures?: string[],
+  html: string;
+  url: string;
+  include_tags: string[];
+  exclude_tags: string[];
+  only_main_content: boolean;
+  omce_signatures?: string[];
 };
 
 class RustHTMLTransformer {
@@ -31,23 +23,45 @@ class RustHTMLTransformer {
   private _extractAttributes: KoffiFunction;
 
   private constructor() {
-    const lib = koffi.load(rustExecutablePath);
+    const lib = koffi.load(HTML_TRANSFORMER_PATH);
     this._freeString = lib.func("free_string", "void", ["string"]);
     const cstn = "CString:" + crypto.randomUUID();
-    const freedResultString = koffi.disposable(cstn, "string", this._freeString);
-    this._extractLinks = lib.func("extract_links", freedResultString, ["string"]);
-    this._extractImages = lib.func("extract_images", freedResultString, ["string", "string"]);
-    this._extractBaseHref = lib.func("extract_base_href", freedResultString, ["string", "string"]);
-    this._extractMetadata = lib.func("extract_metadata", freedResultString, ["string"]);
-    this._transformHtml = lib.func("transform_html", freedResultString, ["string"]);
-    this._getInnerJSON = lib.func("get_inner_json", freedResultString, ["string"]);
-    this._extractAttributes = lib.func("extract_attributes", freedResultString, ["string", "string"]);
+    const freedResultString = koffi.disposable(
+      cstn,
+      "string",
+      this._freeString,
+    );
+    this._extractLinks = lib.func("extract_links", freedResultString, [
+      "string",
+    ]);
+    this._extractImages = lib.func("extract_images", freedResultString, [
+      "string",
+      "string",
+    ]);
+    this._extractBaseHref = lib.func("extract_base_href", freedResultString, [
+      "string",
+      "string",
+    ]);
+    this._extractMetadata = lib.func("extract_metadata", freedResultString, [
+      "string",
+    ]);
+    this._transformHtml = lib.func("transform_html", freedResultString, [
+      "string",
+    ]);
+    this._getInnerJSON = lib.func("get_inner_json", freedResultString, [
+      "string",
+    ]);
+    this._extractAttributes = lib.func(
+      "extract_attributes",
+      freedResultString,
+      ["string", "string"],
+    );
   }
 
   public static async getInstance(): Promise<RustHTMLTransformer> {
     if (!RustHTMLTransformer.instance) {
       try {
-        await stat(rustExecutablePath);
+        await stat(HTML_TRANSFORMER_PATH);
       } catch (_) {
         throw Error("Rust html-transformer shared library not found");
       }
@@ -110,17 +124,27 @@ class RustHTMLTransformer {
 
   public async transformHtml(opts: TransformHtmlOptions): Promise<string> {
     return new Promise<string>((resolve, reject) => {
-      this._transformHtml.async(JSON.stringify(opts), (err: Error, res: string) => {
-        if (err) {
-          reject(err);
-        } else {
-          if (res === "RUSTFC:ERROR" || res.startsWith("RUSTFC:ERROR:")) {
-            reject(new Error(res.startsWith("RUSTFC:ERROR:") ? ("Something went wrong on the Rust side. " + res.split("RUSTFC:ERROR:")[1]) : "Something went wrong on the Rust side."));
+      this._transformHtml.async(
+        JSON.stringify(opts),
+        (err: Error, res: string) => {
+          if (err) {
+            reject(err);
           } else {
-            resolve(res);
+            if (res === "RUSTFC:ERROR" || res.startsWith("RUSTFC:ERROR:")) {
+              reject(
+                new Error(
+                  res.startsWith("RUSTFC:ERROR:")
+                    ? "Something went wrong on the Rust side. " +
+                      res.split("RUSTFC:ERROR:")[1]
+                    : "Something went wrong on the Rust side.",
+                ),
+              );
+            } else {
+              resolve(res);
+            }
           }
-        }
-      });
+        },
+      );
     });
   }
 
@@ -140,19 +164,31 @@ class RustHTMLTransformer {
     });
   }
 
-  public async extractAttributes(html: string, options: string): Promise<string> {
+  public async extractAttributes(
+    html: string,
+    options: string,
+  ): Promise<string> {
     return new Promise<string>((resolve, reject) => {
-      this._extractAttributes.async(html, options, (err: Error, res: string) => {
-        if (err) {
-          reject(err);
-        } else {
-          if (res.startsWith("RUSTFC:ERROR:")) {
-            reject(new Error("Rust attribute extraction failed: " + res.split("RUSTFC:ERROR:")[1]));
+      this._extractAttributes.async(
+        html,
+        options,
+        (err: Error, res: string) => {
+          if (err) {
+            reject(err);
           } else {
-            resolve(res);
+            if (res.startsWith("RUSTFC:ERROR:")) {
+              reject(
+                new Error(
+                  "Rust attribute extraction failed: " +
+                    res.split("RUSTFC:ERROR:")[1],
+                ),
+              );
+            } else {
+              resolve(res);
+            }
           }
-        }
-      });
+        },
+      );
     });
   }
 }
@@ -160,47 +196,47 @@ class RustHTMLTransformer {
 export async function extractLinks(
   html: string | null | undefined,
 ): Promise<string[]> {
-    if (!html) {
-        return [];
-    }
+  if (!html) {
+    return [];
+  }
 
-    const converter = await RustHTMLTransformer.getInstance();
-    return await converter.extractLinks(html);
+  const converter = await RustHTMLTransformer.getInstance();
+  return await converter.extractLinks(html);
 }
 
 export async function extractImages(
   html: string | null | undefined,
-  baseUrl: string = ''
+  baseUrl: string = "",
 ): Promise<string[]> {
-    if (!html) {
-        return [];
-    }
+  if (!html) {
+    return [];
+  }
 
-    const converter = await RustHTMLTransformer.getInstance();
-    return await converter.extractImages(html, baseUrl);
+  const converter = await RustHTMLTransformer.getInstance();
+  return await converter.extractImages(html, baseUrl);
 }
 
 export async function extractBaseHref(
   html: string | null | undefined,
-  url: string
+  url: string,
 ): Promise<string> {
-    if (!html) {
-        return url;
-    }
+  if (!html) {
+    return url;
+  }
 
-    const converter = await RustHTMLTransformer.getInstance();
-    return await converter.extractBaseHref(html, url);
+  const converter = await RustHTMLTransformer.getInstance();
+  return await converter.extractBaseHref(html, url);
 }
 
 export async function extractMetadata(
-    html: string | null | undefined,
+  html: string | null | undefined,
 ): Promise<any> {
-    if (!html) {
-        return [];
-    }
+  if (!html) {
+    return [];
+  }
 
-    const converter = await RustHTMLTransformer.getInstance();
-    return await converter.extractMetadata(html);
+  const converter = await RustHTMLTransformer.getInstance();
+  return await converter.extractMetadata(html);
 }
 
 export async function transformHtml(
@@ -210,9 +246,7 @@ export async function transformHtml(
   return await converter.transformHtml(opts);
 }
 
-export async function getInnerJSON(
-  html: string,
-): Promise<string> {
+export async function getInnerJSON(html: string): Promise<string> {
   const converter = await RustHTMLTransformer.getInstance();
   return await converter.getInnerJSON(html);
 }
@@ -230,7 +264,7 @@ export type AttributeResult = {
 
 export async function extractAttributesRust(
   html: string,
-  selectors: AttributeSelector[]
+  selectors: AttributeSelector[],
 ): Promise<AttributeResult[]> {
   if (!html || selectors.length === 0) {
     return [];
@@ -243,6 +277,8 @@ export async function extractAttributesRust(
   try {
     return JSON.parse(resultJson);
   } catch (error) {
-    throw new Error(`Failed to parse Rust attribute extraction result: ${error}`);
+    throw new Error(
+      `Failed to parse Rust attribute extraction result: ${error}`,
+    );
   }
 }
