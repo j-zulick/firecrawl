@@ -824,6 +824,14 @@ export const processJobInternal = async (job: Job & { id: string }) => {
                     const result = await processJob(job);
                     if (result.success) {
                         try {
+                            if (job.data.team_id) {
+                                await redisEvictConnection.set("most-recent-success:" + job.data.team_id, new Date().toISOString(), "EX", 60 * 60 * 24);
+                            }
+                        } catch (e) {
+                            logger.warn("Failed to set most recent success", { error: e });
+                        }
+
+                        try {
                             if (
                                 process.env.USE_DB_AUTHENTICATION === "true" &&
                                 (job.data.crawl_id || process.env.GCS_BUCKET_NAME)

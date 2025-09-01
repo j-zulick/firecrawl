@@ -1,5 +1,5 @@
 from ..utils import HttpClient, handle_response_error
-from ..types import ConcurrencyCheck, CreditUsage, TokenUsage
+from ..types import ConcurrencyCheck, CreditUsage, QueueStatusResponse, TokenUsage
 
 
 def get_concurrency(client: HttpClient) -> ConcurrencyCheck:
@@ -39,3 +39,18 @@ def get_token_usage(client: HttpClient) -> TokenUsage:
         remaining_tokens=data.get("remainingTokens", 0)
     )
 
+def get_queue_status(client: HttpClient) -> QueueStatusResponse:
+    resp = client.get("/v2/team/queue-status")
+    if not resp.ok:
+        handle_response_error(resp, "get queue status")
+    body = resp.json()
+    if not body.get("success"):
+        raise Exception(body.get("error", "Unknown error"))
+    data = body.get("data", body)
+    return QueueStatusResponse(
+        jobs_in_queue=data.get("jobsInQueue", 0),
+        active_jobs_in_queue=data.get("activeJobsInQueue", 0),
+        waiting_jobs_in_queue=data.get("waitingJobsInQueue", 0),
+        max_concurrency=data.get("maxConcurrency", 0),
+        most_recent_success=data.get("mostRecentSuccess", None),
+    )

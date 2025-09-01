@@ -569,6 +569,22 @@ export interface GenerateLLMsTextStatusResponse {
 }
 
 /**
+ * Response interface for queue status operations.
+ */
+export interface QueueStatusResponse {
+  success: boolean;
+  jobsInQueue: number;
+  activeJobsInQueue: number;
+  waitingJobsInQueue: number;
+  maxConcurrency: number;
+
+  /**
+   * ISO timestamp of the most recent successful scrape in the past 24 hours. Will be null if no successful scrape has occurred in the past 24 hours.
+   */
+  mostRecentSuccess: string | null;
+}
+
+/**
  * Main class for interacting with the Firecrawl API.
  * Provides methods for scraping, searching, crawling, and mapping web content.
  */
@@ -1586,7 +1602,7 @@ export default class FirecrawlApp {
    * @param {AxiosResponse} response - The response from the API.
    * @param {string} action - The action being performed when the error occurred.
    */
-  handleError(response: AxiosResponse, action: string): void {
+  handleError(response: AxiosResponse, action: string): never {
     if (!response) {
       throw new FirecrawlError(
         `No response received while trying to ${action}. This may be a network error or the server is unreachable.`,
@@ -2017,6 +2033,33 @@ export default class FirecrawlApp {
         throw new FirecrawlError("LLMs.txt generation job not found", 404);
       } else {
         this.handleError(response, "check LLMs.txt generation status");
+      }
+    } catch (error: any) {
+      if (error.response?.data?.error) {
+        throw new FirecrawlError(`Request failed with status code ${error.response.status}. Error: ${error.response.data.error} ${error.response.data.details ? ` - ${JSON.stringify(error.response.data.details)}` : ''}`, error.response.status);
+      } else {
+        throw new FirecrawlError(error.message, 500);
+      }
+    }
+    return { success: false, error: "Internal server error." };
+  }
+
+  /**
+   * Gets metrics about the team's scrape queue.
+   * @returns The current queue status.
+   */
+  async getQueueStatus(): Promise<QueueStatusResponse | ErrorResponse> {
+    const headers = this.prepareHeaders();
+    try {
+      const response: AxiosResponse = await this.getRequest(
+      `${this.apiUrl}/v1/team/queue-status`,
+        headers
+      );
+
+      if (response.status === 200) {
+        return response.data;
+      } else {
+        this.handleError(response, "get queue status");
       }
     } catch (error: any) {
       if (error.response?.data?.error) {

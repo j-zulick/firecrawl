@@ -367,13 +367,16 @@ export async function tokenUsage(identity: Identity): Promise<{ remaining_tokens
 
 export async function concurrencyCheck(identity: Identity): Promise<{ concurrency: number, maxConcurrency: number }> {
     const x = (await request(TEST_URL)
-        .get("/v1/concurrency-check")
+        .get("/v1/team/queue-status")
         .set("Authorization", `Bearer ${identity.apiKey}`)
         .set("Content-Type", "application/json"));
     
     expect(x.statusCode).toBe(200);
     expect(x.body.success).toBe(true);
-    return x.body;
+    return {
+        concurrency: x.body.activeJobsInQueue,
+        maxConcurrency: x.body.maxConcurrency,
+    };
 }
 
 export async function crawlWithConcurrencyTracking(body: CrawlRequestInput, identity: Identity): Promise<{

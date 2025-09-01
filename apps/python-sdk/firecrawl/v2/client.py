@@ -727,6 +727,10 @@ class FirecrawlClient:
         """Get recent token usage metrics (v2)."""
         return usage_methods.get_token_usage(self.http_client)
 
+    def get_queue_status(self):
+        """Get metrics about the team's scrape queue."""
+        return usage_methods.get_queue_status(self.http_client)
+
     def watcher(
         self,
         job_id: str,

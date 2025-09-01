@@ -33,6 +33,7 @@ import {
   wrap,
 } from "./shared";
 import { paymentMiddleware } from "x402-express";
+import { queueStatusController } from "../controllers/v1/queue-status";
 
 expressWs(express());
 
@@ -232,6 +233,12 @@ v1Router.get(
   "/team/token-usage",
   authMiddleware(RateLimiterMode.ExtractStatus),
   wrap(tokenUsageController),
+);
+
+v1Router.get(
+  "/team/queue-status",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(queueStatusController),
 );
 
 v1Router.post(

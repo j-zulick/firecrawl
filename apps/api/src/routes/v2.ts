@@ -26,6 +26,7 @@ import {
   idempotencyMiddleware,
   wrap,
 } from "./shared";
+import { queueStatusController } from "../controllers/v2/queue-status";
 
 expressWs(express());
 
@@ -165,4 +166,10 @@ v2Router.get(
   "/concurrency-check",
   authMiddleware(RateLimiterMode.CrawlStatus),
   wrap(concurrencyCheckController),
+);
+
+v2Router.get(
+  "/team/queue-status",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(queueStatusController),
 );

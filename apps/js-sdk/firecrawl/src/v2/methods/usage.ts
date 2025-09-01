@@ -1,4 +1,4 @@
-import type { ConcurrencyCheck, CreditUsage, TokenUsage } from "../types";
+import type { ConcurrencyCheck, CreditUsage, QueueStatusResponse, TokenUsage } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
 
@@ -37,3 +37,13 @@ export async function getTokenUsage(http: HttpClient): Promise<TokenUsage> {
   }
 }
 
+export async function getQueueStatus(http: HttpClient): Promise<QueueStatusResponse> {
+  try {
+    const res = await http.get<QueueStatusResponse>("/v2/team/queue-status");
+    if (res.status !== 200 || !res.data?.success) throwForBadResponse(res, "get queue status");
+    return res.data;
+  } catch (err: any) {
+    if (err?.isAxiosError) return normalizeAxiosError(err, "get queue status");
+    throw err;
+  }
+}

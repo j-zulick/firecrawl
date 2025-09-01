@@ -485,6 +485,14 @@ class TokenUsage(BaseModel):
     """Recent token usage metrics (if available)."""
     remaining_tokens: int
 
+class QueueStatusResponse(BaseModel):
+    """Metrics about the team's scrape queue."""
+    jobs_in_queue: int
+    active_jobs_in_queue: int
+    waiting_jobs_in_queue: int
+    max_concurrency: int
+    most_recent_success: Optional[datetime] = None
+
 # Action types
 class WaitAction(BaseModel):
     """Wait action to perform during scraping."""

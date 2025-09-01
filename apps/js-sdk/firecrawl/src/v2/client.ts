@@ -19,7 +19,7 @@ import {
   batchScrape as batchWaiter,
 } from "./methods/batch";
 import { startExtract, getExtractStatus, extract as extractWaiter } from "./methods/extract";
-import { getConcurrency, getCreditUsage, getTokenUsage } from "./methods/usage";
+import { getConcurrency, getCreditUsage, getQueueStatus, getTokenUsage } from "./methods/usage";
 import type {
   Document,
   ScrapeOptions,
@@ -267,6 +267,11 @@ export class FirecrawlClient {
   /** Recent token usage. */
   async getTokenUsage() {
     return getTokenUsage(this.http);
+  }
+
+  /** Metrics about the team's scrape queue. */
+  async getQueueStatus() {
+    return getQueueStatus(this.http);
   }
 
   // Watcher
