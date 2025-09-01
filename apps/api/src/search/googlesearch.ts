@@ -160,9 +160,9 @@ export async function googleSearch(
       }
 
       for (const result of result_block) {
-          const link_tag = result.querySelector("a[href]") as HTMLAnchorElement;
+          const link_tag = result.querySelector("a[href].fuLhoc.ZWRArf") as HTMLAnchorElement;
           const title_tag = link_tag ? link_tag.querySelector("span.CVA68e") : null;
-          const description_tag = result.querySelector("span.FrIlee");
+          const description_tag = result.querySelector("span.FrIlee span.fYyStc");
 
           if (link_tag && title_tag && description_tag) {
               const link = decodeURIComponent(link_tag.href.split("&")[0].replace("/url?q=", ""));
