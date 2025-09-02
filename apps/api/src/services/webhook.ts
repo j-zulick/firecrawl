@@ -6,11 +6,37 @@ import { configDotenv } from "dotenv";
 import { z } from "zod";
 import { webhookSchema } from "../controllers/v1/types";
 import { redisEvictConnection } from "./redis";
-import { getSecureDispatcher, isIPPrivate } from "../scraper/scrapeURL/engines/utils/safeFetch";
+import { createHmac } from "crypto";
+import {
+  getSecureDispatcher,
+  isIPPrivate,
+} from "../scraper/scrapeURL/engines/utils/safeFetch";
 configDotenv();
 
 const WEBHOOK_INSERT_QUEUE_KEY = "webhook-insert-queue";
 const WEBHOOK_INSERT_BATCH_SIZE = 1000;
+
+interface WebhookLogData {
+  success: boolean;
+  error?: string;
+  teamId: string;
+  crawlId: string;
+  scrapeId?: string;
+  url: string;
+  statusCode?: number;
+  event: WebhookEventType;
+}
+
+interface CallWebhookParams {
+  teamId: string;
+  crawlId: string;
+  scrapeId?: string;
+  webhook?: z.infer<typeof webhookSchema>;
+  v1: boolean;
+  data: any | null;
+  eventType: WebhookEventType;
+  awaitWebhook?: boolean;
+}
 
 async function addWebhookInsertJob(data: any) {
   await redisEvictConnection.rpush(
@@ -51,16 +77,7 @@ export async function processWebhookInsertJobs() {
   }
 }
 
-async function logWebhook(data: {
-  success: boolean;
-  error?: string;
-  teamId: string;
-  crawlId: string;
-  scrapeId?: string;
-  url: string;
-  statusCode?: number;
-  event: WebhookEventType;
-}) {
+async function logWebhook(data: WebhookLogData) {
   try {
     await addWebhookInsertJob({
       success: data.success,
@@ -85,6 +102,12 @@ async function logWebhook(data: {
   }
 }
 
+function generateHmacSignature(payload: string, secret: string): string {
+  const hmac = createHmac("sha256", secret);
+  hmac.update(payload);
+  return hmac.digest("hex");
+}
+
 export const callWebhook = async ({
   teamId,
   crawlId,
@@ -94,16 +117,7 @@ export const callWebhook = async ({
   v1,
   eventType,
   awaitWebhook = false,
-}: {
-  teamId: string;
-  crawlId: string;
-  scrapeId?: string;
-  webhook?: z.infer<typeof webhookSchema>;
-  v1: boolean;
-  data: any | null;
-  eventType: WebhookEventType;
-  awaitWebhook?: boolean;
-}) => {
+}: CallWebhookParams) => {
   const logger = _logger.child({
     module: "webhook",
     method: "callWebhook",
@@ -138,6 +152,8 @@ export const callWebhook = async ({
       webhook ??
       (selfHostedUrl ? webhookSchema.parse({ url: selfHostedUrl }) : undefined);
 
+    // TODO: do these queries upstream so we don't have to query the DB multiple times per crawl
+
     // Only fetch the webhook URL from the database if the self-hosted webhook URL and specified webhook are not set
     // and the USE_DB_AUTHENTICATION environment variable is set to true
     if (!webhookUrl && useDbAuthentication) {
@@ -158,6 +174,25 @@ export const callWebhook = async ({
       }
 
       webhookUrl = webhooksData[0].url;
+    }
+
+    let hmacSecret: string | undefined =
+      process.env.SELF_HOSTED_WEBHOOK_HMAC_SECRET;
+    if (useDbAuthentication) {
+      const { data: teamData, error: teamError } = await supabase_rr_service
+        .from("teams")
+        .select("hmac_secret")
+        .eq("id", teamId)
+        .limit(1)
+        .single();
+
+      if (teamError) {
+        logger.error(`Error fetching team HMAC secret`, {
+          error: teamError,
+        });
+      }
+
+      if (teamData?.hmac_secret) hmacSecret = teamData.hmac_secret;
     }
 
     logger.debug("Calling webhook...", {
@@ -198,36 +233,49 @@ export const callWebhook = async ({
       }
     }
 
-    if (awaitWebhook) {
+    const payload = {
+      success: !v1
+        ? data.success
+        : eventType === "crawl.page"
+          ? data.success
+          : true,
+      type: eventType,
+      [v1 ? "id" : "jobId"]: crawlId,
+      data: dataToSend,
+      error: !v1
+        ? data?.error || undefined
+        : eventType === "crawl.page"
+          ? data?.error || undefined
+          : undefined,
+      metadata: webhookUrl.metadata || undefined,
+    };
+
+    const payloadString = JSON.stringify(payload);
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...webhookUrl.headers,
+    };
+
+    if (hmacSecret) {
+      const signature = generateHmacSignature(payloadString, hmacSecret);
+      headers["X-Firecrawl-Signature"] = `sha256=${signature}`;
+    }
+
+    const executeWebhookRequest = async () => {
       try {
         const res = await undici.fetch(webhookUrl.url, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...webhookUrl.headers,
-          },
-          body: JSON.stringify({
-            success: !v1
-              ? data.success
-              : eventType === "crawl.page"
-                ? data.success
-                : true,
-            type: eventType,
-            [v1 ? "id" : "jobId"]: crawlId,
-            data: dataToSend,
-            error: !v1
-              ? data?.error || undefined
-              : eventType === "crawl.page"
-                ? data?.error || undefined
-                : undefined,
-            metadata: webhookUrl.metadata || undefined,
-          }),
+          headers,
+          body: payloadString,
           dispatcher: getSecureDispatcher(),
           signal: AbortSignal.timeout(v1 ? 10000 : 30000), // 10 seconds timeout (v1)
         });
+
         if (!res.ok) {
           throw { status: res.status };
         }
+
         logWebhook({
           success: res.status >= 200 && res.status < 300,
           teamId,
@@ -237,10 +285,13 @@ export const callWebhook = async ({
           event: eventType,
           statusCode: res.status,
         });
+
+        return res;
       } catch (error) {
         logger.error(`Failed to send webhook`, {
           error,
         });
+
         logWebhook({
           success: false,
           teamId,
@@ -259,70 +310,17 @@ export const callWebhook = async ({
               ? (error as any).status
               : undefined,
         });
+
+        throw error;
       }
+    };
+
+    if (awaitWebhook) {
+      await executeWebhookRequest();
     } else {
-      undici
-        .fetch(webhookUrl.url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...webhookUrl.headers,
-          },
-          body: JSON.stringify({
-            success: !v1
-              ? data.success
-              : eventType === "crawl.page"
-                ? data.success
-                : true,
-            type: eventType,
-            [v1 ? "id" : "jobId"]: crawlId,
-            data: dataToSend,
-            error: !v1
-              ? data?.error || undefined
-              : eventType === "crawl.page"
-                ? data?.error || undefined
-                : undefined,
-            metadata: webhookUrl.metadata || undefined,
-          }),
-          dispatcher: getSecureDispatcher(),
-        })
-        .then((res) => {
-          if (!res.ok) {
-            throw { status: res.status };
-          }
-          logWebhook({
-            success: res.status >= 200 && res.status < 300,
-            teamId,
-            crawlId,
-            scrapeId,
-            url: webhookUrl.url,
-            event: eventType,
-            statusCode: res.status,
-          });
-        })
-        .catch((error) => {
-          logger.error(`Failed to send webhook`, {
-            error,
-          });
-          logWebhook({
-            success: false,
-            teamId,
-            crawlId,
-            scrapeId,
-            url: webhookUrl.url,
-            event: eventType,
-            error:
-              error instanceof Error
-                ? error.message
-                : typeof error === "string"
-                  ? error
-                  : undefined,
-            statusCode:
-              typeof (error as any)?.status === "number"
-                ? (error as any).status
-                : undefined,
-          });
-        });
+      executeWebhookRequest().catch(() => {
+        // already logged in executeWebhookRequest
+      });
     }
   } catch (error) {
     logger.warn(`Error sending webhook`, {
