@@ -18,7 +18,7 @@ export function isIPPrivate(address: string): boolean {
   return addr.range() !== "unicast";
 }
 
-export function makeSecureDispatcher(skipTlsVerification: boolean = false) {
+export function makeSecureDispatcher(skipTlsVerification: boolean) {
   const agentOpts: undici.Agent.Options = {
     maxRedirections: 5000,
   };
@@ -62,5 +62,8 @@ export function makeSecureDispatcher(skipTlsVerification: boolean = false) {
   return agent;
 }
 
-export const secureDispatcher = makeSecureDispatcher(false);
-export const secureDispatcherSkipTlsVerification = makeSecureDispatcher(true);
+const secureDispatcher = makeSecureDispatcher(false);
+const secureDispatcherSkipTlsVerification = makeSecureDispatcher(true);
+
+export const getSecureDispatcher = (skipTlsVerification: boolean = false) =>
+  skipTlsVerification ? secureDispatcherSkipTlsVerification : secureDispatcher;
