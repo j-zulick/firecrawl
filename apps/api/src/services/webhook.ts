@@ -1,5 +1,5 @@
 import undici from "undici";
-import { secureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
+import { isIPPrivate, secureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
 import { logger as _logger, logger } from "../lib/logger";
 import { supabase_rr_service, supabase_service } from "./supabase";
 import { WebhookEventType } from "../types";
@@ -147,6 +147,16 @@ export const callWebhook = async ({
     });
 
     if (!webhookUrl) {
+      return null;
+    }
+
+    // check if the webhook URL is a private IP address *before* making the request
+    // the dispatcher also performs a check once connected, however this prevents unnecessary connections
+    const webhookHost = new URL(webhookUrl.url).hostname;
+    if (isIPPrivate(webhookHost)) {
+      logger.warn("Aborting webhook call to private IP address", {
+        url: webhookUrl.url,
+      });
       return null;
     }
 
