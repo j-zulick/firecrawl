@@ -342,7 +342,7 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
     processBillingJobInternal,
   );
   const precrawlWorkerPromise = process.env.PRECRAWL_TEAM_ID
-    ? workerFun(getPrecrawlQueue(), processPrecrawlJobInternal)
+    ? Promise.resolve() // workerFun(getPrecrawlQueue(), processPrecrawlJobInternal)
     : (async () => {
         logger.warn("PRECRAWL_TEAM_ID not set, skipping precrawl worker");
       })();
