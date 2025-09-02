@@ -5,7 +5,7 @@ import {
   fireEngineMaxReasonableTime,
   scrapeURLWithFireEngineChromeCDP,
   scrapeURLWithFireEnginePlaywright,
-  // scrapeURLWithFireEngineTLSClient,
+  scrapeURLWithFireEngineTLSClient,
 } from "./fire-engine";
 import { pdfMaxReasonableTime, scrapePDF } from "./pdf";
 import { fetchMaxReasonableTime, scrapeURLWithFetch } from "./fetch";
@@ -26,8 +26,8 @@ export type Engine =
   | "fire-engine(retry);chrome-cdp;stealth"
   | "fire-engine;playwright"
   | "fire-engine;playwright;stealth"
-  // | "fire-engine;tlsclient"
-  // | "fire-engine;tlsclient;stealth"
+  | "fire-engine;tlsclient"
+  | "fire-engine;tlsclient;stealth"
   | "playwright"
   | "fetch"
   | "pdf"
@@ -52,8 +52,8 @@ export const engines: Engine[] = [
         "fire-engine(retry);chrome-cdp;stealth" as const,
         "fire-engine;playwright" as const,
         "fire-engine;playwright;stealth" as const,
-        // "fire-engine;tlsclient" as const,
-        // "fire-engine;tlsclient;stealth" as const,
+        "fire-engine;tlsclient" as const,
+        "fire-engine;tlsclient;stealth" as const,
       ]
     : []),
   ...(usePlaywright ? ["playwright" as const] : []),
@@ -141,8 +141,8 @@ const engineHandlers: {
   "fire-engine(retry);chrome-cdp;stealth": scrapeURLWithFireEngineChromeCDP,
   "fire-engine;playwright": scrapeURLWithFireEnginePlaywright,
   "fire-engine;playwright;stealth": scrapeURLWithFireEnginePlaywright,
-  // "fire-engine;tlsclient": scrapeURLWithFireEngineTLSClient,
-  // "fire-engine;tlsclient;stealth": scrapeURLWithFireEngineTLSClient,
+  "fire-engine;tlsclient": scrapeURLWithFireEngineTLSClient,
+  "fire-engine;tlsclient;stealth": scrapeURLWithFireEngineTLSClient,
   playwright: scrapeURLWithPlaywright,
   fetch: scrapeURLWithFetch,
   pdf: scrapePDF,
@@ -166,10 +166,10 @@ const engineMRTs: {
     fireEngineMaxReasonableTime(meta, "playwright"),
   "fire-engine;playwright;stealth": meta =>
     fireEngineMaxReasonableTime(meta, "playwright"),
-  // "fire-engine;tlsclient": meta =>
-    // fireEngineMaxReasonableTime(meta, "tlsclient"),
-  // "fire-engine;tlsclient;stealth": meta =>
-    // fireEngineMaxReasonableTime(meta, "tlsclient"),
+  "fire-engine;tlsclient": meta =>
+    fireEngineMaxReasonableTime(meta, "tlsclient"),
+  "fire-engine;tlsclient;stealth": meta =>
+    fireEngineMaxReasonableTime(meta, "tlsclient"),
   playwright: playwrightMaxReasonableTime,
   fetch: fetchMaxReasonableTime,
   pdf: pdfMaxReasonableTime,
@@ -348,42 +348,42 @@ export const engineOptions: {
     },
     quality: 20,
   },
-  // "fire-engine;tlsclient": {
-  //   features: {
-  //     actions: false,
-  //     waitFor: false,
-  //     screenshot: false,
-  //     "screenshot@fullScreen": false,
-  //     pdf: false,
-  //     docx: false,
-  //     atsv: true,
-  //     location: true,
-  //     mobile: false,
-  //     skipTlsVerification: true,
-  //     useFastMode: true,
-  //     stealthProxy: false,
-  //     disableAdblock: false,
-  //   },
-  //   quality: 10,
-  // },
-  // "fire-engine;tlsclient;stealth": {
-  //   features: {
-  //     actions: false,
-  //     waitFor: false,
-  //     screenshot: false,
-  //     "screenshot@fullScreen": false,
-  //     pdf: false,
-  //     docx: false,
-  //     atsv: true,
-  //     location: true,
-  //     mobile: false,
-  //     skipTlsVerification: true,
-  //     useFastMode: true,
-  //     stealthProxy: true,
-  //     disableAdblock: false,
-  //   },
-  //   quality: -15,
-  // },
+  "fire-engine;tlsclient": {
+    features: {
+      actions: false,
+      waitFor: false,
+      screenshot: false,
+      "screenshot@fullScreen": false,
+      pdf: false,
+      docx: false,
+      atsv: true,
+      location: true,
+      mobile: false,
+      skipTlsVerification: true,
+      useFastMode: true,
+      stealthProxy: false,
+      disableAdblock: false,
+    },
+    quality: 10,
+  },
+  "fire-engine;tlsclient;stealth": {
+    features: {
+      actions: false,
+      waitFor: false,
+      screenshot: false,
+      "screenshot@fullScreen": false,
+      pdf: false,
+      docx: false,
+      atsv: true,
+      location: true,
+      mobile: false,
+      skipTlsVerification: true,
+      useFastMode: true,
+      stealthProxy: true,
+      disableAdblock: false,
+    },
+    quality: -15,
+  },
   fetch: {
     features: {
       actions: false,
