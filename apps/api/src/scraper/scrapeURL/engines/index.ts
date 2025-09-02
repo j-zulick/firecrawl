@@ -455,9 +455,9 @@ export function buildFallbackList(meta: Meta): {
           "fire-engine;chrome-cdp;stealth",
           "fire-engine(retry);chrome-cdp;stealth",
           "fire-engine;playwright",
-          "fire-engine;tlsclient",
-          "fire-engine;playwright;stealth",
-          "fire-engine;tlsclient;stealth",
+          // "fire-engine;tlsclient",
+          // "fire-engine;playwright;stealth",
+          // "fire-engine;tlsclient;stealth",
         ] as Engine[])
       : []),
   ];
