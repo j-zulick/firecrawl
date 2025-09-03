@@ -190,6 +190,7 @@ export async function fireEngineScrape<
     body: request,
     logger: logger.child({ method: "fireEngineScrape/robustFetch" }),
     tryCount: 3,
+    ignoreFailureStatus: true, // sends 500 on processing and various codes on errors
     mock,
     abort,
   });
