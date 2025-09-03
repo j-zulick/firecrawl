@@ -71,7 +71,7 @@ def _transform_array(arr: List[Any], result_type: Type[T]) -> List[Union[T, 'Doc
                 "summary" in item or
                 "json" in item
             ):
-                results.append(Document(**item))
+                results.append(Document(**normalize_document_input(item)))
             else:
                 results.append(result_type(**item))
         else:

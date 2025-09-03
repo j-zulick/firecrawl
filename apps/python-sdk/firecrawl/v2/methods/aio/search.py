@@ -10,6 +10,7 @@ from ...types import (
 )
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.error_handler import handle_response_error
+from ...utils.normalize import normalize_document_input
 from ...utils.validation import validate_scrape_options, prepare_scrape_options
 
 T = TypeVar("T")
@@ -73,7 +74,7 @@ def _transform_array(arr: List[Any], result_type: Type[T]) -> List[Union[T, Docu
                 "summary" in item or
                 "json" in item
             ):
-                results.append(Document(**item))
+                results.append(Document(**normalize_document_input(item)))
             else:
                 results.append(result_type(**item))
         else:
