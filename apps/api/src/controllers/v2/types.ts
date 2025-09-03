@@ -34,6 +34,19 @@ export enum IntegrationEnum {
   RELEVANCEAI = "relevanceai",
 }
 
+export const integrationSchema = z
+  .string()
+  .refine(
+    val =>
+      (typeof val === "string" && val.startsWith("_")) ||
+      Object.values(IntegrationEnum).includes(val as any),
+    {
+      message: `Invalid enum value. Expected ${Object.values(IntegrationEnum)
+        .map(v => `'${v}'`)
+        .join(" | ")}`,
+    },
+  );
+
 export type Format =
   | "markdown"
   | "html"
@@ -517,10 +530,7 @@ export const extractOptions = z
       .default({ onlyMainContent: false })
       .optional(),
     origin: z.string().optional().default("api"),
-    integration: z
-      .nativeEnum(IntegrationEnum)
-      .optional()
-      .transform(val => val || null),
+    integration: integrationSchema.optional().transform(val => val || null),
     urlTrace: z.boolean().default(false),
     timeout: z.number().int().positive().finite().safe().optional(),
     agent: agentOptionsExtract.optional(),
@@ -564,10 +574,7 @@ export const scrapeRequestSchema = baseScrapeOptions
   .extend({
     url,
     origin: z.string().optional().default("api"),
-    integration: z
-      .nativeEnum(IntegrationEnum)
-      .optional()
-      .transform(val => val || null),
+    integration: integrationSchema.optional().transform(val => val || null),
     zeroDataRetention: z.boolean().optional(),
   })
   .strict(strictMessage)
@@ -613,10 +620,7 @@ export const batchScrapeRequestSchema = baseScrapeOptions
   .extend({
     urls: url.array(),
     origin: z.string().optional().default("api"),
-    integration: z
-      .nativeEnum(IntegrationEnum)
-      .optional()
-      .transform(val => val || null),
+    integration: integrationSchema.optional().transform(val => val || null),
     webhook: webhookSchema.optional(),
     appendToId: z.string().uuid().optional(),
     ignoreInvalidURLs: z.boolean().default(true),
@@ -631,10 +635,7 @@ export const batchScrapeRequestSchemaNoURLValidation = baseScrapeOptions
   .extend({
     urls: z.string().array(),
     origin: z.string().optional().default("api"),
-    integration: z
-      .nativeEnum(IntegrationEnum)
-      .optional()
-      .transform(val => val || null),
+    integration: integrationSchema.optional().transform(val => val || null),
     webhook: webhookSchema.optional(),
     appendToId: z.string().uuid().optional(),
     ignoreInvalidURLs: z.boolean().default(true),
@@ -682,10 +683,7 @@ export const crawlRequestSchema = crawlerOptions
   .extend({
     url,
     origin: z.string().optional().default("api"),
-    integration: z
-      .nativeEnum(IntegrationEnum)
-      .optional()
-      .transform(val => val || null),
+    integration: integrationSchema.optional().transform(val => val || null),
     scrapeOptions: baseScrapeOptions.default({}),
     webhook: webhookSchema.optional(),
     limit: z.number().default(10000),
@@ -724,10 +722,7 @@ export const mapRequestSchema = crawlerOptions
   .extend({
     url,
     origin: z.string().optional().default("api"),
-    integration: z
-      .nativeEnum(IntegrationEnum)
-      .optional()
-      .transform(val => val || null),
+    integration: integrationSchema.optional().transform(val => val || null),
     includeSubdomains: z.boolean().default(true),
     ignoreQueryParameters: z.boolean().default(true),
     search: z.string().optional(),
@@ -1432,10 +1427,7 @@ export const searchRequestSchema = z
     country: z.string().optional().default("us"),
     location: z.string().optional(),
     origin: z.string().optional().default("api"),
-    integration: z
-      .nativeEnum(IntegrationEnum)
-      .optional()
-      .transform(val => val || null),
+    integration: integrationSchema.optional().transform(val => val || null),
     timeout: z.number().int().positive().finite().safe().default(60000),
     ignoreInvalidURLs: z.boolean().optional().default(false),
     asyncScraping: z.boolean().optional().default(false),
