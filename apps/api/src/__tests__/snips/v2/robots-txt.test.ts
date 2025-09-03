@@ -8,7 +8,16 @@ describe("Robots.txt tests", () => {
   let checker: ReturnType<typeof createRobotsChecker>;
 
   beforeAll(async () => {
-    robotsTxt = await fetchRobotsTxt(robotsUrl);
+    const logger = {
+      error: jest.fn(),
+    } as any;
+    robotsTxt = (
+      await fetchRobotsTxt(
+        { url: robotsUrl, zeroDataRetention: true },
+        "test-scrape",
+        logger,
+      )
+    ).content;
     checker = createRobotsChecker(siteUrl, robotsTxt);
   }, scrapeTimeout);
 

@@ -1,7 +1,13 @@
 import robotsParser, { Robot } from "robots-parser";
-import * as undici from "undici";
 import { Logger } from "winston";
-import { getSecureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
+import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
+import { scrapeURL } from "../scraper/scrapeURL";
+import { Engine } from "../scraper/scrapeURL/engines";
+import { CostTracking } from "./cost-tracking";
+
+const useFireEngine =
+  process.env.FIRE_ENGINE_BETA_URL !== "" &&
+  process.env.FIRE_ENGINE_BETA_URL !== undefined;
 
 export interface RobotsTxtChecker {
   robotsTxtUrl: string;
@@ -10,36 +16,88 @@ export interface RobotsTxtChecker {
 }
 
 export async function fetchRobotsTxt(
-  url: string,
-  skipTlsVerification: boolean = false,
+  {
+    url,
+    zeroDataRetention,
+    location,
+  }: {
+    url: string;
+    zeroDataRetention: boolean;
+    location?: ScrapeOptions["location"];
+  },
+  scrapeId: string,
+  logger: Logger,
   abort?: AbortSignal,
-): Promise<string> {
+): Promise<{ content: string; url: string }> {
   const urlObj = new URL(url);
   const robotsTxtUrl = `${urlObj.protocol}//${urlObj.host}/robots.txt`;
 
-  const response = await undici.fetch(robotsTxtUrl, {
-    signal: abort,
-    dispatcher: getSecureDispatcher(skipTlsVerification),
-  });
+  const shouldPrioritizeFireEngine = location && useFireEngine;
 
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch robots.txt: ${response.status} ${response.statusText}`,
-    );
-  }
+  const forceEngine: Engine[] = [
+    ...(shouldPrioritizeFireEngine
+      ? [
+          "fire-engine;tlsclient" as const,
+          "fire-engine;tlsclient;stealth" as const,
+        ]
+      : []),
+    "fetch",
+    ...(!shouldPrioritizeFireEngine && useFireEngine
+      ? [
+          "fire-engine;tlsclient" as const,
+          "fire-engine;tlsclient;stealth" as const,
+        ]
+      : []),
+  ];
 
-  const content = await response.text();
-  const contentType = response.headers.get("content-type") || "";
+  let content: string = "";
+  const response = await scrapeURL(
+    "robots-txt;" + scrapeId,
+    robotsTxtUrl,
+    scrapeOptions.parse({
+      formats: ["rawHtml"],
+      ...(location ? { location } : {}),
+    }),
+    {
+      forceEngine,
+      v0DisableJsDom: true,
+      externalAbort: abort
+        ? {
+            signal: abort,
+            tier: "external",
+            throwable() {
+              return new Error("Robots.txt fetch aborted");
+            },
+          }
+        : undefined,
+      teamId: "robots-txt",
+      zeroDataRetention,
+    },
+    new CostTracking(),
+  );
 
   if (
-    (contentType.includes("text/html") && content.trim().startsWith("<")) ||
-    contentType.includes("application/json") ||
-    contentType.includes("application/xml")
+    response.success &&
+    response.document.metadata.statusCode >= 200 &&
+    response.document.metadata.statusCode < 300
   ) {
-    return "";
+    content = response.document.rawHtml!;
+  } else {
+    logger.error(`Request failed for robots.txt fetch`, {
+      method: "fetchRobotsTxt",
+      robotsTxtUrl,
+      error: response.success
+        ? response.document.metadata.statusCode
+        : response.error,
+    });
+    return { content: "", url: robotsTxtUrl };
   }
 
-  return content;
+  // return URL in case we've been redirected
+  return {
+    content: content,
+    url: response.document.metadata.url || robotsTxtUrl,
+  };
 }
 
 export function createRobotsChecker(
@@ -98,24 +156,4 @@ export function isUrlAllowedByRobots(
   }
 
   return false;
-}
-
-export async function checkRobotsTxt(
-  url: string,
-  skipTlsVerification: boolean = false,
-  logger?: Logger,
-  abort?: AbortSignal,
-): Promise<boolean> {
-  try {
-    const robotsTxt = await fetchRobotsTxt(url, skipTlsVerification, abort);
-    const checker = createRobotsChecker(url, robotsTxt);
-    return isUrlAllowedByRobots(url, checker.robots);
-  } catch (error) {
-    // If we can't fetch robots.txt, assume it's allowed
-    logger?.debug("Failed to fetch robots.txt, allowing scrape", {
-      error,
-      url,
-    });
-    return true;
-  }
 }

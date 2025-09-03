@@ -3,9 +3,11 @@ import { WebCrawler, SITEMAP_LIMIT } from "./crawler";
 import { scrapeURL } from "../scrapeURL";
 import { scrapeOptions } from "../../controllers/v2/types";
 import type { Logger } from "winston";
-import { CostTracking } from "../../lib/extract/extraction-service";
+import { CostTracking } from "../../lib/cost-tracking";
 import { parseSitemapXml, processSitemap } from "../../lib/crawler";
 import { ScrapeJobTimeoutError } from "../../lib/error";
+import type { ScrapeOptions } from "../../controllers/v2/types";
+import { Engine } from "../scrapeURL/engines";
 const useFireEngine =
   process.env.FIRE_ENGINE_BETA_URL !== "" &&
   process.env.FIRE_ENGINE_BETA_URL !== undefined;
@@ -17,12 +19,14 @@ export async function getLinksFromSitemap(
     mode = "axios",
     maxAge = 0,
     zeroDataRetention,
+    location,
   }: {
     sitemapUrl: string;
     urlsHandler(urls: string[]): unknown;
     mode?: "axios" | "fire-engine";
     maxAge?: number;
     zeroDataRetention: boolean;
+    location?: ScrapeOptions["location"];
   },
   logger: Logger,
   crawlId: string,
@@ -44,21 +48,39 @@ export async function getLinksFromSitemap(
   try {
     let content: string = "";
     try {
+      const shouldPrioritizeFireEngine =
+        location && mode === "fire-engine" && useFireEngine;
+
+      const forceEngine: Engine[] = [
+        ...(maxAge > 0 ? ["index" as const] : []),
+        ...(shouldPrioritizeFireEngine
+          ? [
+              "fire-engine;tlsclient" as const,
+              "fire-engine;tlsclient;stealth" as const,
+            ]
+          : []),
+        "fetch",
+        ...(!shouldPrioritizeFireEngine &&
+        mode === "fire-engine" &&
+        useFireEngine
+          ? [
+              "fire-engine;tlsclient" as const,
+              "fire-engine;tlsclient;stealth" as const,
+            ]
+          : []),
+      ];
+
       const response = await scrapeURL(
         "sitemap;" + crawlId,
         sitemapUrl,
-        scrapeOptions.parse({ formats: ["rawHtml"], useMock: mock, maxAge }),
+        scrapeOptions.parse({
+          formats: ["rawHtml"],
+          useMock: mock,
+          maxAge,
+          ...(location ? { location } : {}),
+        }),
         {
-          forceEngine: [
-            ...(maxAge > 0 ? ["index" as const] : []),
-            "fetch",
-            ...(mode === "fire-engine" && useFireEngine
-              ? [
-                  "fire-engine;tlsclient" as const,
-                  "fire-engine;tlsclient;stealth" as const,
-                ]
-              : []),
-          ],
+          forceEngine,
           v0DisableJsDom: true,
           externalAbort: abort
             ? {
@@ -145,7 +167,7 @@ export async function getLinksFromSitemap(
 
         const sitemapPromises: Promise<number>[] = sitemapUrls.map(sitemapUrl =>
           getLinksFromSitemap(
-            { sitemapUrl, urlsHandler, mode, zeroDataRetention },
+            { sitemapUrl, urlsHandler, mode, zeroDataRetention, location },
             logger,
             crawlId,
             sitemapsHit,
@@ -169,7 +191,13 @@ export async function getLinksFromSitemap(
         if (xmlSitemaps.length > 0) {
           const sitemapPromises = xmlSitemaps.map(sitemapUrl =>
             getLinksFromSitemap(
-              { sitemapUrl: sitemapUrl, urlsHandler, mode, zeroDataRetention },
+              {
+                sitemapUrl: sitemapUrl,
+                urlsHandler,
+                mode,
+                zeroDataRetention,
+                location,
+              },
               logger,
               crawlId,
               sitemapsHit,
@@ -209,7 +237,7 @@ export async function getLinksFromSitemap(
         const sitemapPromises: Promise<number>[] = instruction.urls.map(
           sitemapUrl =>
             getLinksFromSitemap(
-              { sitemapUrl, urlsHandler, mode, zeroDataRetention },
+              { sitemapUrl, urlsHandler, mode, zeroDataRetention, location },
               logger,
               crawlId,
               sitemapsHit,
