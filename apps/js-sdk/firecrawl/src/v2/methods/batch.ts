@@ -21,8 +21,8 @@ export async function startBatchScrape(
     ignoreInvalidURLs,
     maxConcurrency,
     zeroDataRetention,
-    integration,
     idempotencyKey,
+    integration,
   }: BatchScrapeOptions = {}
 ): Promise<BatchScrapeResponse> {
   if (!Array.isArray(urls) || urls.length === 0) throw new Error("URLs list cannot be empty");
@@ -36,7 +36,7 @@ export async function startBatchScrape(
   if (ignoreInvalidURLs != null) payload.ignoreInvalidURLs = ignoreInvalidURLs;
   if (maxConcurrency != null) payload.maxConcurrency = maxConcurrency;
   if (zeroDataRetention != null) payload.zeroDataRetention = zeroDataRetention;
-  if (integration != null) payload.integration = integration;
+  if (integration != null && integration.trim()) payload.integration = integration.trim();
 
   try {
     const headers = http.prepareHeaders(idempotencyKey);

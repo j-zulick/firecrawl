@@ -26,7 +26,9 @@ def _prepare(urls: List[str], *, options: Optional[ScrapeOptions] = None, **kwar
     if (v := kwargs.get("zero_data_retention")) is not None:
         payload["zeroDataRetention"] = v
     if (v := kwargs.get("integration")) is not None:
-        payload["integration"] = v
+        trimmed_integration = str(v).strip()
+        if trimmed_integration:
+            payload["integration"] = trimmed_integration
     return payload
 
 

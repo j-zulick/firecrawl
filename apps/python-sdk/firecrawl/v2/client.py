@@ -117,6 +117,7 @@ class FirecrawlClient:
         proxy: Optional[str] = None,
         max_age: Optional[int] = None,
         store_in_cache: Optional[bool] = None,
+        integration: Optional[str] = None,
     ) -> Document:
         """
         Scrape a single URL and return the document.
@@ -165,8 +166,9 @@ class FirecrawlClient:
                 proxy=proxy,
                 max_age=max_age,
                 store_in_cache=store_in_cache,
+                integration=integration,
             ).items() if v is not None}
-        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache]) else None
+        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, integration]) else None
         return scrape_module.scrape(self.http_client, url, options)
 
     def search(
@@ -181,6 +183,7 @@ class FirecrawlClient:
         ignore_invalid_urls: Optional[bool] = None,
         timeout: Optional[int] = None,
         scrape_options: Optional[ScrapeOptions] = None,
+        integration: Optional[str] = None,
     ) -> SearchData:
         """
         Search for documents.
@@ -206,6 +209,7 @@ class FirecrawlClient:
             ignore_invalid_urls=ignore_invalid_urls,
             timeout=timeout,
             scrape_options=scrape_options,
+            integration=integration,
         )
 
         return search_module.search(self.http_client, request)
@@ -230,7 +234,8 @@ class FirecrawlClient:
         scrape_options: Optional[ScrapeOptions] = None,
         zero_data_retention: bool = False,
         poll_interval: int = 2,
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
+        integration: Optional[str] = None,
     ) -> CrawlJob:
         """
         Start a crawl job and wait for it to complete.
@@ -279,7 +284,8 @@ class FirecrawlClient:
             max_concurrency=max_concurrency,
             webhook=webhook,
             scrape_options=scrape_options,
-            zero_data_retention=zero_data_retention
+            zero_data_retention=zero_data_retention,
+            integration=integration,
         )
         
         return crawl_module.crawl(
@@ -307,7 +313,8 @@ class FirecrawlClient:
         max_concurrency: Optional[int] = None,
         webhook: Optional[Union[str, WebhookConfig]] = None,
         scrape_options: Optional[ScrapeOptions] = None,
-        zero_data_retention: bool = False
+        zero_data_retention: bool = False,
+        integration: Optional[str] = None,
     ) -> CrawlResponse:
         """
         Start an asynchronous crawl job.
@@ -353,7 +360,8 @@ class FirecrawlClient:
             max_concurrency=max_concurrency,
             webhook=webhook,
             scrape_options=scrape_options,
-            zero_data_retention=zero_data_retention
+            zero_data_retention=zero_data_retention,
+            integration=integration,
         )
         
         return crawl_module.start_crawl(self.http_client, request)
@@ -421,6 +429,7 @@ class FirecrawlClient:
         limit: Optional[int] = None,
         sitemap: Optional[Literal["only", "include", "skip"]] = None,
         timeout: Optional[int] = None,
+        integration: Optional[str] = None,
         location: Optional[Location] = None,
     ) -> MapData:
         """Map a URL and return discovered links.
@@ -442,8 +451,9 @@ class FirecrawlClient:
             limit=limit,
             sitemap=sitemap if sitemap is not None else "include",
             timeout=timeout,
+            integration=integration,
             location=location
-        ) if any(v is not None for v in [search, include_subdomains, limit, sitemap, timeout, location]) else None
+        ) if any(v is not None for v in [search, include_subdomains, limit, sitemap, timeout, integration, location]) else None
 
         return map_module.map(self.http_client, url, options)
     
@@ -484,6 +494,7 @@ class FirecrawlClient:
         show_sources: Optional[bool] = None,
         scrape_options: Optional['ScrapeOptions'] = None,
         ignore_invalid_urls: Optional[bool] = None,
+        integration: Optional[str] = None,
     ):
         """Start an extract job (non-blocking).
 
@@ -512,6 +523,7 @@ class FirecrawlClient:
             show_sources=show_sources,
             scrape_options=scrape_options,
             ignore_invalid_urls=ignore_invalid_urls,
+            integration=integration,
         )
 
     def extract(
@@ -528,6 +540,7 @@ class FirecrawlClient:
         ignore_invalid_urls: Optional[bool] = None,
         poll_interval: int = 2,
         timeout: Optional[int] = None,
+        integration: Optional[str] = None,
     ):
         """Extract structured data and wait until completion.
 
@@ -560,6 +573,7 @@ class FirecrawlClient:
             ignore_invalid_urls=ignore_invalid_urls,
             poll_interval=poll_interval,
             timeout=timeout,
+            integration=integration,
         )
 
     def start_batch_scrape(

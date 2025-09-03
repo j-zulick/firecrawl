@@ -132,6 +132,7 @@ class AsyncFirecrawlClient:
         limit: Optional[int] = None,
         sitemap: Optional[Literal["only", "include", "skip"]] = None,
         timeout: Optional[int] = None,
+        integration: Optional[str] = None,
     ) -> MapData:
         options = MapOptions(
             search=search,
@@ -139,7 +140,8 @@ class AsyncFirecrawlClient:
             limit=limit,
             sitemap=sitemap if sitemap is not None else "include",
             timeout=timeout,
-        ) if any(v is not None for v in [search, include_subdomains, limit, sitemap, timeout]) else None
+            integration=integration,
+        ) if any(v is not None for v in [search, include_subdomains, limit, sitemap, integration, timeout]) else None
         return await async_map.map(self.async_http_client, url, options)
 
     async def start_batch_scrape(self, urls: List[str], **kwargs) -> Any:
@@ -196,6 +198,7 @@ class AsyncFirecrawlClient:
         ignore_invalid_urls: Optional[bool] = None,
         poll_interval: int = 2,
         timeout: Optional[int] = None,
+        integration: Optional[str] = None,
     ):
         return await async_extract.extract(
             self.async_http_client,
@@ -210,6 +213,7 @@ class AsyncFirecrawlClient:
             ignore_invalid_urls=ignore_invalid_urls,
             poll_interval=poll_interval,
             timeout=timeout,
+            integration=integration,
         )
 
     async def get_extract_status(self, job_id: str):
@@ -227,6 +231,7 @@ class AsyncFirecrawlClient:
         show_sources: Optional[bool] = None,
         scrape_options: Optional['ScrapeOptions'] = None,
         ignore_invalid_urls: Optional[bool] = None,
+        integration: Optional[str] = None,
     ):
         return await async_extract.start_extract(
             self.async_http_client,
@@ -239,6 +244,7 @@ class AsyncFirecrawlClient:
             show_sources=show_sources,
             scrape_options=scrape_options,
             ignore_invalid_urls=ignore_invalid_urls,
+            integration=integration,
         )
 
     # Usage endpoints

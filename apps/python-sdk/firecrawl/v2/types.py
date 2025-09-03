@@ -289,6 +289,7 @@ class ScrapeOptions(BaseModel):
     proxy: Optional[Literal["basic", "stealth", "auto"]] = None
     max_age: Optional[int] = None
     store_in_cache: Optional[bool] = None
+    integration: Optional[str] = None
 
     @field_validator('formats')
     @classmethod
@@ -334,6 +335,7 @@ class CrawlRequest(BaseModel):
     webhook: Optional[Union[str, WebhookConfig]] = None
     scrape_options: Optional[ScrapeOptions] = None
     zero_data_retention: bool = False
+    integration: Optional[str] = None
 
 class CrawlResponse(BaseModel):
     """Information about a crawl job."""
@@ -349,6 +351,10 @@ class CrawlJob(BaseModel):
     expires_at: Optional[datetime] = None
     next: Optional[str] = None
     data: List[Document] = []
+
+class CrawlStatusRequest(BaseModel):
+    """Request to get crawl job status."""
+    job_id: str
 
 class SearchResultWeb(BaseModel):
     """A web search result with URL, title, and description."""
@@ -410,6 +416,7 @@ class CrawlParamsData(BaseModel):
     scrape_options: Optional[ScrapeOptions] = None
     zero_data_retention: bool = False
     warning: Optional[str] = None
+    integration: Optional[str] = None
 
 class CrawlParamsResponse(BaseResponse[CrawlParamsData]):
     """Response from crawl params endpoint."""
@@ -420,6 +427,12 @@ class BatchScrapeRequest(BaseModel):
     """Request for batch scraping multiple URLs (internal helper only)."""
     urls: List[str]
     options: Optional[ScrapeOptions] = None
+    webhook: Optional[Union[str, WebhookConfig]] = None
+    append_to_id: Optional[str] = None
+    ignore_invalid_urls: Optional[bool] = None
+    max_concurrency: Optional[int] = None
+    zero_data_retention: Optional[bool] = None
+    integration: Optional[str] = None
 
 class BatchScrapeResponse(BaseModel):
     """Response from starting a batch scrape job (mirrors CrawlResponse naming)."""
@@ -437,6 +450,14 @@ class BatchScrapeJob(BaseModel):
     next: Optional[str] = None
     data: List[Document] = []
 
+class BatchScrapeStatusRequest(BaseModel):
+    """Request to get batch scrape job status."""
+    job_id: str
+
+class BatchScrapeErrorsRequest(BaseModel):
+    """Request to get errors for a batch scrape job."""
+    job_id: str
+
 # Map types
 class MapOptions(BaseModel):
     """Options for mapping operations."""
@@ -445,12 +466,15 @@ class MapOptions(BaseModel):
     include_subdomains: Optional[bool] = None
     limit: Optional[int] = None
     timeout: Optional[int] = None
+    integration: Optional[str] = None
     location: Optional['Location'] = None
 
 class MapRequest(BaseModel):
     """Request for mapping a website."""
     url: str
     options: Optional[MapOptions] = None
+
+
 
 class MapData(BaseModel):
     """Map results data."""
@@ -461,6 +485,19 @@ class MapResponse(BaseResponse[MapData]):
     pass
 
 # Extract types
+class ExtractRequest(BaseModel):
+    """Request for extract operations."""
+    urls: Optional[List[str]] = None
+    prompt: Optional[str] = None
+    schema_: Optional[Dict[str, Any]] = Field(default=None, alias="schema")
+    system_prompt: Optional[str] = None
+    allow_external_links: Optional[bool] = None
+    enable_web_search: Optional[bool] = None
+    show_sources: Optional[bool] = None
+    scrape_options: Optional[ScrapeOptions] = None
+    ignore_invalid_urls: Optional[bool] = None
+    integration: Optional[str] = None
+    
 class ExtractResponse(BaseModel):
     """Response for extract operations (start/status/final)."""
     success: Optional[bool] = None
@@ -491,6 +528,10 @@ class TokenUsage(BaseModel):
     plan_tokens: Optional[int] = None
     billing_period_start: Optional[str] = None
     billing_period_end: Optional[str] = None
+
+class QueueStatusRequest(BaseModel):
+    """Request to retrieve queue status."""
+    pass
 
 class QueueStatusResponse(BaseModel):
     """Metrics about the team's scrape queue."""
@@ -593,6 +634,7 @@ class SearchRequest(BaseModel):
     ignore_invalid_urls: Optional[bool] = None
     timeout: Optional[int] = 60000
     scrape_options: Optional[ScrapeOptions] = None
+    integration: Optional[str] = None
 
     @field_validator('sources')
     @classmethod
@@ -692,6 +734,10 @@ class CrawlErrorsResponse(BaseModel):
     errors: List[CrawlError]
     robots_blocked: List[str]
 
+class CrawlErrorsRequest(BaseModel):
+    """Request for crawl error monitoring."""
+    crawl_id: str
+
 class ActiveCrawl(BaseModel):
     """Information about an active crawl job."""
     id: str
@@ -703,6 +749,10 @@ class ActiveCrawlsResponse(BaseModel):
     """Response from active crawls endpoint."""
     success: bool = True
     crawls: List[ActiveCrawl]
+
+class ActiveCrawlsRequest(BaseModel):
+    """Request for listing active crawl jobs."""
+    pass
 
 # Configuration types
 class ClientConfig(BaseModel):

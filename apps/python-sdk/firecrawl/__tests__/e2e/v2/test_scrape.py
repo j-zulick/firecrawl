@@ -150,6 +150,7 @@ class TestScrapeE2E:
             proxy="basic",
             max_age=0,
             store_in_cache=False,
+            integration="_e2e-test",
         )
         assert isinstance(doc, Document)
 

@@ -177,6 +177,9 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
     # Handle special cases
     for key, value in options_data.items():
         if value is not None:
+            if key == "integration":
+                scrape_data["integration"] = (str(value).strip() or None)
+                continue
             if key == "formats":
                 # Handle formats conversion
                 converted_formats: List[Any] = []

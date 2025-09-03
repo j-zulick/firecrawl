@@ -99,6 +99,9 @@ def _prepare_crawl_request(request: CrawlRequest) -> dict:
     
     # Add any remaining fields that don't need conversion (like limit)
     data.update(request_data)
+    # Trim integration if present
+    if "integration" in data and isinstance(data["integration"], str):
+        data["integration"] = data["integration"].strip()
     
     return data
 
