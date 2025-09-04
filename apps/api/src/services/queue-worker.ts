@@ -33,6 +33,7 @@ import { performDeepResearch } from "../lib/deep-research/deep-research-service"
 import { performGenerateLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-service";
 import { updateGeneratedLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-redis";
 import { performExtraction_F0 } from "../lib/extract/fire-0/extraction-service-f0";
+import { createWebhookSender, WebhookEvent } from "./webhook";
 import Express from "express";
 import http from "http";
 import https from "https";
@@ -118,7 +119,20 @@ const processExtractJobInternal = async (
     await job.extendLock(token, jobLockExtensionTime);
   }, jobLockExtendInterval);
 
+  const sender = await createWebhookSender({
+    teamId: job.data.teamId,
+    jobId: job.data.extractId,
+    webhook: job.data.request.webhook,
+    v0: true,
+  });
+
   try {
+    if (sender) {
+      sender.send(WebhookEvent.EXTRACT_STARTED, {
+        success: true,
+      });
+    }
+
     let result: ExtractResult | null = null;
 
     const model = job.data.request.agent?.model;
@@ -150,6 +164,14 @@ const processExtractJobInternal = async (
     if (result && result.success) {
       // Move job to completed state in Redis
       await job.moveToCompleted(result, token, false);
+
+      if (sender) {
+        sender.send(WebhookEvent.EXTRACT_COMPLETED, {
+          success: true,
+          data: [result],
+        });
+      }
+
       return result;
     } else {
       // throw new Error(result.error || "Unknown error during extraction");
@@ -162,6 +184,16 @@ const processExtractJobInternal = async (
           "Unknown error, please contact help@firecrawl.com. Extract id: " +
             job.data.extractId,
       });
+
+      if (sender) {
+        sender.send(WebhookEvent.EXTRACT_FAILED, {
+          success: false,
+          error:
+            result?.error ??
+            "Unknown error, please contact help@firecrawl.com. Extract id: " +
+              job.data.extractId,
+        });
+      }
 
       return result;
     }
@@ -189,6 +221,17 @@ const processExtractJobInternal = async (
         "Unknown error, please contact help@firecrawl.com. Extract id: " +
           job.data.extractId,
     });
+
+    if (sender) {
+      sender.send(WebhookEvent.EXTRACT_FAILED, {
+        success: false,
+        error:
+          (error as any)?.message ??
+          "Unknown error, please contact help@firecrawl.com. Extract id: " +
+            job.data.extractId,
+      });
+    }
+
     return {
       success: false,
       error:

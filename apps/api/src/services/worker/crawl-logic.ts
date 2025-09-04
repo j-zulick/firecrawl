@@ -19,7 +19,7 @@ import { v4 as uuidv4 } from "uuid";
 import { addScrapeJobs } from "../queue-jobs";
 import { getJobs } from "../../controllers/v1/crawl-status";
 import { logJob } from "../logging/log_job";
-import { callWebhook } from "../webhook";
+import { createWebhookSender, WebhookEvent } from "../webhook";
 import { hasFormatOfType } from "../../lib/format-utils";
 
 export async function finishCrawlIfNeeded(
@@ -231,17 +231,33 @@ export async function finishCrawlIfNeeded(
 
       // v0 web hooks, call when done with all the data
       if (!job.data.v1) {
-        callWebhook({
+        const sender = await createWebhookSender({
           teamId: job.data.team_id,
-          crawlId: job.data.crawl_id,
-          data,
-          webhook: job.data.webhook,
-          v1: job.data.v1,
-          eventType:
-            job.data.crawlerOptions !== null
-              ? "crawl.completed"
-              : "batch_scrape.completed",
+          jobId: job.data.crawl_id,
+          webhook: job.data.webhook as any,
+          v0: true,
         });
+        if (sender) {
+          const documents = fullDocs.map((doc: any) => ({
+            content: {
+              content: doc?.content ?? doc?.rawHtml ?? doc?.markdown ?? "",
+              markdown: doc?.markdown,
+              metadata: doc?.metadata ?? {},
+            },
+            source: doc?.metadata?.sourceURL ?? doc?.url ?? "",
+          }));
+          if (job.data.crawlerOptions !== null) {
+            sender.send(WebhookEvent.CRAWL_COMPLETED, {
+              success: true,
+              data: documents,
+            });
+          } else {
+            sender.send(WebhookEvent.BATCH_SCRAPE_COMPLETED, {
+              success: true,
+              data: documents,
+            });
+          }
+        }
       }
     } else {
       const num_docs = await getDoneJobsOrderedLength(job.data.crawl_id);
@@ -292,17 +308,24 @@ export async function finishCrawlIfNeeded(
 
       // v1 web hooks, call when done with no data, but with event completed
       if (job.data.v1 && job.data.webhook) {
-        callWebhook({
+        const sender = await createWebhookSender({
           teamId: job.data.team_id,
-          crawlId: job.data.crawl_id,
-          data: [],
-          webhook: job.data.webhook,
-          v1: job.data.v1,
-          eventType:
-            job.data.crawlerOptions !== null
-              ? "crawl.completed"
-              : "batch_scrape.completed",
+          jobId: job.data.crawl_id,
+          webhook: job.data.webhook as any,
         });
+        if (sender) {
+          if (job.data.crawlerOptions !== null) {
+            sender.send(WebhookEvent.CRAWL_COMPLETED, {
+              success: true,
+              data: [],
+            });
+          } else {
+            sender.send(WebhookEvent.BATCH_SCRAPE_COMPLETED, {
+              success: true,
+              data: [],
+            });
+          }
+        }
       }
     }
   }
