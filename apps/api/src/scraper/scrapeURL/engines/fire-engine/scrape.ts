@@ -11,6 +11,7 @@ import {
   DNSResolutionError,
   EngineError,
   FEPageLoadFailed,
+  ProxySelectionError,
   SSLError,
   SiteError,
   UnsupportedFileError,
@@ -263,6 +264,11 @@ export async function fireEngineScrape<
         status.error.includes("Javascript execution failed"))
     ) {
       throw new ActionError(status.error.split("Error: ")[1]);
+    } else if (
+      typeof status.error === "string" &&
+      status.error.includes("proxies available for")
+    ) {
+      throw new ProxySelectionError();
     } else {
       throw new EngineError("Scrape job failed", {
         cause: {

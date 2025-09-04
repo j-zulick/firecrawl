@@ -38,6 +38,7 @@ import {
   EngineSnipedError,
   WaterfallNextEngineSignal,
   EngineUnsuccessfulError,
+  ProxySelectionError,
 } from "./error";
 import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
@@ -528,7 +529,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
             error.error instanceof ActionError ||
             error.error instanceof UnsupportedFileError ||
             error.error instanceof PDFAntibotError ||
-            error.error instanceof PDFInsufficientTimeError
+            error.error instanceof PDFInsufficientTimeError ||
+            error.error instanceof ProxySelectionError
           ) {
             throw error.error;
           } else if (error.error instanceof LLMRefusalError) {
@@ -864,6 +866,8 @@ export async function scrapeURL(
         "scrapeURL: Failed to prefetch PDF that is protected by anti-bot",
         { error },
       );
+    } else if (error instanceof ProxySelectionError) {
+      meta.logger.warn("scrapeURL: Proxy selection error", { error });
     } else if (error instanceof AbortManagerThrownError) {
       throw error.inner;
     } else {

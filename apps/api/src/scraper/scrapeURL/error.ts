@@ -113,6 +113,30 @@ export class SiteError extends TransportableError {
   }
 }
 
+export class ProxySelectionError extends TransportableError {
+  constructor() {
+    super(
+      "SCRAPE_PROXY_SELECTION_ERROR",
+      "Specified proxy cannot be selected. Change `location` or `proxy` in your scrape request.",
+    );
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+    };
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ProxySelectionError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class ActionError extends TransportableError {
   constructor(public errorCode: string) {
     super(

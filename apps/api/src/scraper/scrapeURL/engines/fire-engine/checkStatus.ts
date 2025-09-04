@@ -11,6 +11,7 @@ import {
   UnsupportedFileError,
   DNSResolutionError,
   FEPageLoadFailed,
+  ProxySelectionError,
 } from "../../error";
 import { MockState } from "../../lib/mock";
 import { fireEngineStagingURL, fireEngineURL } from "./scrape";
@@ -182,6 +183,11 @@ export async function fireEngineCheckStatus(
       } else {
         throw new SiteError(code);
       }
+    } else if (
+      typeof status.error === "string" &&
+      status.error.includes("proxies available for")
+    ) {
+      throw new ProxySelectionError();
     } else if (
       typeof status.error === "string" &&
       status.error.includes("Dns resolution error for hostname: ")
