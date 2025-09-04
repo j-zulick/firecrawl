@@ -460,11 +460,7 @@ async function processJob(job: Job & { id: string }) {
         });
         if (sender) {
           const documents = Array.isArray(data?.result?.links)
-            ? data.result.links.map((x: any) => ({
-                content: x?.content?.content,
-                markdown: x?.content?.markdown,
-                metadata: x?.content?.metadata,
-              }))
+            ? data.result.links.map(x => x.content)
             : [];
           if (job.data.crawlerOptions !== null) {
             sender.send(WebhookEvent.CRAWL_PAGE, {
