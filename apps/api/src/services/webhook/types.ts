@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { webhookSchema } from "./schema";
 import { ExtractResult } from "../../lib/extract/extraction-service";
+import { Document } from "../../controllers/v2/types";
 
 export enum WebhookEvent {
   CRAWL_STARTED = "crawl.started",
@@ -52,13 +53,13 @@ export interface CrawlStartedData extends BaseWebhookData {
 
 export interface CrawlPageData extends BaseWebhookData {
   success: boolean;
-  data: WebhookDocument[] | WebhookDocumentLink[]; // links or documents (v0 compatible)
+  data: Document[] | WebhookDocumentLink[]; // links or documents (v0 compatible)
   error?: string;
 }
 
 export interface CrawlCompletedData extends BaseWebhookData {
   success: true;
-  data: WebhookDocument[] | WebhookDocumentLink[]; // empty array or links (v0 compatible)
+  data: Document[] | WebhookDocumentLink[]; // empty array or links (v0 compatible)
 }
 
 export interface CrawlFailedData extends BaseWebhookData {
@@ -73,7 +74,7 @@ export interface BatchScrapeStartedData extends BaseWebhookData {
 
 export interface BatchScrapePageData extends BaseWebhookData {
   success: boolean;
-  data: WebhookDocument[];
+  data: Document[];
   error?: string; // more v0 tomfoolery
 }
 
