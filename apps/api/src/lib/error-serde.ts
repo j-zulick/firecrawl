@@ -17,6 +17,7 @@ import {
   PDFPrefetchFailed,
   SiteError,
   SSLError,
+  ProxySelectionError,
 } from "../scraper/scrapeURL/error";
 
 // TODO: figure out correct typing for this
@@ -27,6 +28,7 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_ALL_ENGINES_FAILED: NoEnginesLeftError,
   SCRAPE_SSL_ERROR: SSLError,
   SCRAPE_SITE_ERROR: SiteError,
+  SCRAPE_PROXY_SELECTION_ERROR: ProxySelectionError,
   SCRAPE_PDF_PREFETCH_FAILED: PDFPrefetchFailed,
   SCRAPE_ZDR_VIOLATION_ERROR: ZDRViolationError,
   SCRAPE_DNS_RESOLUTION_ERROR: DNSResolutionError,
