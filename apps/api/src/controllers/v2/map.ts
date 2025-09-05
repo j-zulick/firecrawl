@@ -30,6 +30,7 @@ import {
 import { redisEvictConnection } from "../../services/redis";
 import { performCosineSimilarityV2 } from "../../lib/map-cosine";
 import { MapTimeoutError } from "../../lib/error";
+import { checkPermissions } from "../../lib/permissions";
 
 configDotenv();
 
@@ -353,6 +354,14 @@ export async function mapController(
 ) {
   const originalRequest = req.body;
   req.body = mapRequestSchema.parse(req.body);
+
+  const permissions = checkPermissions(req.body, req.acuc?.flags);
+  if (permissions.error) {
+    return res.status(403).json({
+      success: false,
+      error: permissions.error,
+    });
+  }
 
   logger.info("Map request", {
     request: req.body,

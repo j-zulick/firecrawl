@@ -12,6 +12,7 @@ import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
+import { checkPermissions } from "../../lib/permissions";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -20,11 +21,11 @@ export async function crawlController(
   const preNormalizedBody = req.body;
   req.body = crawlRequestSchema.parse(req.body);
 
-  if (req.body.zeroDataRetention && !req.acuc?.flags?.allowZDR) {
-    return res.status(400).json({
+  const permissions = checkPermissions(req.body, req.acuc?.flags);
+  if (permissions.error) {
+    return res.status(403).json({
       success: false,
-      error:
-        "Zero data retention is enabled for this team. If you're interested in ZDR, please contact support@firecrawl.com",
+      error: permissions.error,
     });
   }
 

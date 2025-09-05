@@ -28,6 +28,7 @@ import {
   queryIndexAtSplitLevel,
 } from "../../services/index";
 import { MapTimeoutError } from "../../lib/error";
+import { checkPermissions } from "../../lib/permissions";
 
 configDotenv();
 const redis = new Redis(process.env.REDIS_URL!);
@@ -357,6 +358,14 @@ export async function mapController(
       success: false,
       error:
         "Your team has zero data retention enabled. This is not supported on map. Please contact support@firecrawl.com to unblock this feature.",
+    });
+  }
+
+  const permissions = checkPermissions(req.body, req.acuc?.flags);
+  if (permissions.error) {
+    return res.status(403).json({
+      success: false,
+      error: permissions.error,
     });
   }
 

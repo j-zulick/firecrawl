@@ -13,6 +13,7 @@ import { getJobPriority } from "../../lib/job-priority";
 import { getScrapeQueue } from "../../services/queue-service";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { TransportableError } from "../../lib/error";
+import { checkPermissions } from "../../lib/permissions";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -20,12 +21,13 @@ export async function scrapeController(
 ) {
   const jobId: string = uuidv4();
   const preNormalizedBody = { ...req.body };
+  req.body = scrapeRequestSchema.parse(req.body);
 
-  if (req.body.zeroDataRetention && !req.acuc?.flags?.allowZDR) {
-    return res.status(400).json({
+  const permissions = checkPermissions(req.body, req.acuc?.flags);
+  if (permissions.error) {
+    return res.status(403).json({
       success: false,
-      error:
-        "Zero data retention is enabled for this team. If you're interested in ZDR, please contact support@firecrawl.com",
+      error: permissions.error,
     });
   }
 
@@ -47,8 +49,6 @@ export async function scrapeController(
     originalRequest: preNormalizedBody,
     account: req.account,
   });
-
-  req.body = scrapeRequestSchema.parse(req.body);
 
   const origin = req.body.origin;
   const timeout = req.body.timeout;

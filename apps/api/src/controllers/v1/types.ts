@@ -270,6 +270,8 @@ export const actionsSchema = z
     },
   );
 
+const SPECIAL_COUNTRIES = ["us-generic", "us-whitelist"];
+
 export const locationSchema = z
   .object({
     country: z
@@ -279,14 +281,14 @@ export const locationSchema = z
         val =>
           !val ||
           Object.keys(countries).includes(val.toUpperCase()) ||
-          val === "US-generic",
-        {
-          message:
-            "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
-        },
+          SPECIAL_COUNTRIES.includes(val.toLowerCase()),
+        "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
       )
-      .transform(val => (val ? val.toUpperCase() : "US-generic")),
-    languages: z.string().array().optional(),
+      .transform(val => {
+        if (!val) return "us-generic";
+        return val.toLowerCase();
+      }),
+    languages: z.array(z.string()).optional(),
   })
   .optional();
 
@@ -1115,6 +1117,7 @@ export type TeamFlags = {
   checkRobotsOnScrape?: boolean;
   allowTeammateInvites?: boolean;
   crawlTtlHours?: number;
+  ipWhitelist?: boolean;
 } | null;
 
 export type AuthCreditUsageChunkFromTeam = Omit<
