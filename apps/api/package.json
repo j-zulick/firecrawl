@@ -159,7 +159,8 @@
     "ws": "^8.18.0",
     "x402-express": "^0.5.3",
     "xml2js": "^0.6.2",
-    "zod": "^3.24.2"
+    "zod": "^3.24.2",
+    "@mendable/firecrawl-rs": "workspace:*"
   },
   "nodemonConfig": {
     "ignore": [
@@ -179,5 +180,6 @@
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,css,md}": "prettier --write"
-  }
+  },
+  "packageManager": "pnpm@10.15.1"
 }
