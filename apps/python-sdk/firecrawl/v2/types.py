@@ -114,6 +114,10 @@ class DocumentMetadata(BaseModel):
     def coerce_status_code_to_int(cls, v):
         return cls._coerce_string_to_int(v)
 
+class AgentOptions(BaseModel):
+    """Configuration for the agent in extract operations."""
+    model: Literal["FIRE-1"] = "FIRE-1"
+
 class AttributeResult(BaseModel):
     """Result of attribute extraction."""
     selector: str
@@ -497,6 +501,7 @@ class ExtractRequest(BaseModel):
     scrape_options: Optional[ScrapeOptions] = None
     ignore_invalid_urls: Optional[bool] = None
     integration: Optional[str] = None
+    agent: Optional[AgentOptions] = None
     
 class ExtractResponse(BaseModel):
     """Response for extract operations (start/status/final)."""

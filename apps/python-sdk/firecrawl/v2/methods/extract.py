@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional
 import time
 
 from ..types import ExtractResponse, ScrapeOptions
+from ..types import AgentOptions
 from ..utils.http_client import HttpClient
 from ..utils.validation import prepare_scrape_options
 from ..utils.error_handler import handle_response_error
@@ -19,6 +20,7 @@ def _prepare_extract_request(
     scrape_options: Optional[ScrapeOptions] = None,
     ignore_invalid_urls: Optional[bool] = None,
     integration: Optional[str] = None,
+    agent: Optional[AgentOptions] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
     if urls is not None:
@@ -43,6 +45,11 @@ def _prepare_extract_request(
             body["scrapeOptions"] = prepared
     if integration is not None and str(integration).strip():
         body["integration"] = str(integration).strip()
+    if agent is not None:
+        try:
+            body["agent"] = agent.model_dump(exclude_none=True)  # type: ignore[attr-defined]
+        except AttributeError:
+            body["agent"] = agent  # fallback
     return body
 
 
@@ -59,6 +66,7 @@ def start_extract(
     scrape_options: Optional[ScrapeOptions] = None,
     ignore_invalid_urls: Optional[bool] = None,
     integration: Optional[str] = None,
+    agent: Optional[AgentOptions] = None,
 ) -> ExtractResponse:
     body = _prepare_extract_request(
         urls,
@@ -71,6 +79,7 @@ def start_extract(
         scrape_options=scrape_options,
         ignore_invalid_urls=ignore_invalid_urls,
         integration=integration,
+        agent=agent,
     )
     resp = client.post("/v2/extract", body)
     if not resp.ok:
@@ -117,6 +126,7 @@ def extract(
     poll_interval: int = 2,
     timeout: Optional[int] = None,
     integration: Optional[str] = None,
+    agent: Optional[AgentOptions] = None,
 ) -> ExtractResponse:
     started = start_extract(
         client,
@@ -130,9 +140,9 @@ def extract(
         scrape_options=scrape_options,
         ignore_invalid_urls=ignore_invalid_urls,
         integration=integration,
+        agent=agent,
     )
     job_id = getattr(started, "id", None)
     if not job_id:
         return started
     return wait_extract(client, job_id, poll_interval=poll_interval, timeout=timeout)
-

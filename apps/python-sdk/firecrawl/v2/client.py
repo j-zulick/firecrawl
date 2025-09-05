@@ -37,6 +37,7 @@ from .types import (
     PDFAction,
     Location,
     PaginationConfig,
+    AgentOptions,
 )
 from .utils.http_client import HttpClient
 from .utils.error_handler import FirecrawlError
@@ -495,6 +496,7 @@ class FirecrawlClient:
         scrape_options: Optional['ScrapeOptions'] = None,
         ignore_invalid_urls: Optional[bool] = None,
         integration: Optional[str] = None,
+        agent: Optional[AgentOptions] = None,
     ):
         """Start an extract job (non-blocking).
 
@@ -508,7 +510,8 @@ class FirecrawlClient:
             show_sources: Include per-field/source mapping when available
             scrape_options: Scrape options applied prior to extraction
             ignore_invalid_urls: Skip invalid URLs instead of failing
-
+            integration: Integration tag/name
+            agent: Agent configuration
         Returns:
             Response payload with job id/status (poll with get_extract_status)
         """
@@ -524,6 +527,7 @@ class FirecrawlClient:
             scrape_options=scrape_options,
             ignore_invalid_urls=ignore_invalid_urls,
             integration=integration,
+            agent=agent,
         )
 
     def extract(
@@ -541,6 +545,7 @@ class FirecrawlClient:
         poll_interval: int = 2,
         timeout: Optional[int] = None,
         integration: Optional[str] = None,
+        agent: Optional[AgentOptions] = None,
     ):
         """Extract structured data and wait until completion.
 
@@ -556,7 +561,8 @@ class FirecrawlClient:
             ignore_invalid_urls: Skip invalid URLs instead of failing
             poll_interval: Seconds between status checks
             timeout: Maximum seconds to wait (None for no timeout)
-
+            integration: Integration tag/name
+            agent: Agent configuration
         Returns:
             Final extract response when completed
         """
@@ -574,6 +580,7 @@ class FirecrawlClient:
             poll_interval=poll_interval,
             timeout=timeout,
             integration=integration,
+            agent=agent,
         )
 
     def start_batch_scrape(

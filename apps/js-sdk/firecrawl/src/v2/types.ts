@@ -337,6 +337,10 @@ export interface ExtractResponse {
   expiresAt?: string;
 }
 
+export interface AgentOptions {
+  model: "FIRE-1";
+}
+
 export interface ConcurrencyCheck {
   concurrency: number;
   maxConcurrency: number;

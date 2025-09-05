@@ -82,6 +82,7 @@ from .v2.types import (
     
     # Configuration types
     ClientConfig,
+    AgentOptions,
 )
 
 __all__ = [
@@ -162,4 +163,5 @@ __all__ = [
     
     # Configuration types
     'ClientConfig',
+    'AgentOptions',
 ]  
