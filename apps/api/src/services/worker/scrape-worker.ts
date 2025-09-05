@@ -449,16 +449,16 @@ async function processJob(job: Job & { id: string }) {
         job.data.internalOptions?.bypassBilling ?? false,
       );
 
-      if (job.data.webhook && job.data.mode !== "crawl" && job.data.v1) {
-        logger.debug("Calling webhook with success...", {
-          webhook: job.data.webhook,
-        });
+      if (job.data.mode !== "crawl" && job.data.v1) {
         const sender = await createWebhookSender({
           teamId: job.data.team_id,
           jobId: job.data.crawl_id,
-          webhook: job.data.webhook as any,
+          webhook: job.data.webhook,
         });
         if (sender) {
+          logger.debug("Calling webhook with success...", {
+            webhook: job.data.webhook,
+          });
           const documents = Array.isArray(data?.result?.links)
             ? data.result.links.map(x => x.content)
             : [];
@@ -588,31 +588,39 @@ async function processJob(job: Job & { id: string }) {
             : new Error(JSON.stringify(error)),
     };
 
-    if (!job.data.v1 && (job.data.mode === "crawl" || job.data.crawl_id)) {
+    if (job.data.mode === "crawl" || job.data.crawl_id) {
       const sender = await createWebhookSender({
         teamId: job.data.team_id,
-        jobId: (job.data.crawl_id ?? (job.id as string)) as string,
-        webhook: job.data.webhook as any,
+        jobId: (job.data.crawl_id ?? job.id) as string,
+        webhook: job.data.webhook,
         v0: true,
       });
+
+      // at this point we don't have a document, send a minimal payload to let users identify the errored URL
+      const metadata = {
+        sourceURL: job.data.url,
+      } as any;
+
       if (sender) {
-        const errorMessage =
-          data?.error instanceof Error
-            ? data.error.message
-            : typeof data?.error === "string"
-              ? data.error
-              : "Unknown error";
         if (job.data.crawlerOptions !== null) {
           sender.send(WebhookEvent.CRAWL_PAGE, {
             success: false,
-            error: errorMessage,
-            data: [],
+            error: data.error.message,
+            data: [
+              {
+                metadata,
+              },
+            ],
           });
         } else {
           sender.send(WebhookEvent.BATCH_SCRAPE_PAGE, {
             success: false,
-            error: errorMessage,
-            data: [],
+            error: data.error.message,
+            data: [
+              {
+                metadata,
+              },
+            ],
           });
         }
       }
@@ -746,7 +754,7 @@ async function processKickoffJob(job: Job & { id: string }) {
       const sender = await createWebhookSender({
         teamId: job.data.team_id,
         jobId: job.data.crawl_id,
-        webhook: job.data.webhook as any,
+        webhook: job.data.webhook,
         v0: Boolean(!job.data.v1),
       });
       if (sender) {
