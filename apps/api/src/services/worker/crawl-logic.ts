@@ -234,7 +234,7 @@ export async function finishCrawlIfNeeded(
         const sender = await createWebhookSender({
           teamId: job.data.team_id,
           jobId: job.data.crawl_id,
-          webhook: job.data.webhook as any,
+          webhook: job.data.webhook,
           v0: true,
         });
         if (sender) {
@@ -311,7 +311,7 @@ export async function finishCrawlIfNeeded(
         const sender = await createWebhookSender({
           teamId: job.data.team_id,
           jobId: job.data.crawl_id,
-          webhook: job.data.webhook as any,
+          webhook: job.data.webhook,
         });
         if (sender) {
           if (job.data.crawlerOptions !== null) {
