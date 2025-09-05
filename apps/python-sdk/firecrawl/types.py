@@ -52,7 +52,6 @@ from .v2.types import (
     SearchResultNews,
     SearchResultImages,
     SearchData,
-    SearchResponse,
     
     # Action types
     WaitAction,
@@ -133,7 +132,6 @@ __all__ = [
     'SearchResultNews',
     'SearchResultImages',
     'SearchData',
-    'SearchResponse',
     
     # Action types
     'WaitAction',
@@ -164,4 +162,4 @@ __all__ = [
     
     # Configuration types
     'ClientConfig',
-] 
+]  
