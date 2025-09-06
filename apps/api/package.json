@@ -4,9 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "tsc-watch --onSuccess \"node dist/src/index.js\"",
-    "start:production": "tsc && node dist/src/index.js",
-    "start:production:nobuild": "node dist/src/index.js",
+    "start": "tsc-watch --onSuccess \"node dist/src/harness.js --start-built\"",
+    "start:production": "tsx src/harness.ts --start",
+    "server": "tsc-watch --onSuccess \"node dist/src/index.js\"",
+    "server:production": "tsc && node dist/src/index.js",
+    "server:production:nobuild": "node dist/src/index.js",
+    "format": "prettier --write \"src/**/*.(js|ts)\"",
     "flyio": "node dist/src/index.js",
     "start:dev": "tsc-watch --onSuccess \"node dist/src/index.js\"",
     "build": "tsc",
@@ -19,6 +22,8 @@
     "harness": "tsx src/harness.ts",
     "workers": "tsc-watch --onSuccess \"node dist/src/services/queue-worker.js\"",
     "worker:production": "node dist/src/services/queue-worker.js",
+    "nuq-worker": "tsc-watch --onSuccess \"node dist/src/services/worker/nuq-worker.js\"",
+    "nuq-worker:production": "node dist/src/services/worker/nuq-worker.js",
     "index-worker": "tsc-watch --onSuccess \"node dist/src/services/indexing/index-worker.js\"",
     "index-worker:production": "node dist/src/services/indexing/index-worker.js",
     "mongo-docker": "docker run -d -p 2717:27017 -v ./mongo-data:/data/db --name mongodb mongo:latest",
@@ -43,6 +48,7 @@
     "@types/lodash": "^4.17.14",
     "@types/node": "^20.14.1",
     "@types/pdf-parse": "^1.1.4",
+    "@types/pg": "^8.15.5",
     "@types/supertest": "^6.0.2",
     "@types/tough-cookie": "^4.0.5",
     "husky": "^9.1.7",
@@ -136,6 +142,7 @@
     "openai": "^5.12.0",
     "parse-diff": "^0.11.1",
     "pdf-parse": "^1.1.1",
+    "pg": "^8.16.3",
     "pos": "^0.4.2",
     "posthog-node": "^4.0.1",
     "prettier": "^3.6.2",
@@ -172,6 +179,11 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "@sentry-internal/node-cpu-profiler",
+      "bigint-buffer",
+      "bufferutil",
+      "keccak",
+      "libpq",
+      "utf-8-validate",
       "supabase"
     ],
     "overrides": {

@@ -10,9 +10,9 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { getJobPriority } from "../../lib/job-priority";
-import { getScrapeQueue } from "../../services/queue-service";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { TransportableError } from "../../lib/error";
+import { scrapeQueue } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 
 export async function scrapeController(
@@ -54,10 +54,6 @@ export async function scrapeController(
   const timeout = req.body.timeout;
 
   const startTime = new Date().getTime();
-  const jobPriority = await getJobPriority({
-    team_id: req.auth.team_id,
-    basePriority: 10,
-  });
 
   const isDirectToBullMQ =
     process.env.SEARCH_PREVIEW_TOKEN !== undefined &&
@@ -68,6 +64,11 @@ export async function scrapeController(
     req.body.timeout,
     req.auth.team_id,
   );
+
+  const jobPriority = await getJobPriority({
+    team_id: req.auth.team_id,
+    basePriority: 10,
+  });
 
   const bullJob = await addScrapeJob(
     {
@@ -92,7 +93,6 @@ export async function scrapeController(
       zeroDataRetention: zeroDataRetention ?? false,
       apiKeyId: req.acuc?.api_key_id ?? null,
     },
-    {},
     jobId,
     jobPriority,
     isDirectToBullMQ,
@@ -113,6 +113,7 @@ export async function scrapeController(
     doc = await waitForJob(
       bullJob ? bullJob : jobId,
       timeout + totalWait,
+      zeroDataRetention ?? false,
       logger,
     );
   } catch (e) {
@@ -122,7 +123,7 @@ export async function scrapeController(
     });
 
     if (zeroDataRetention) {
-      await getScrapeQueue().remove(jobId);
+      await scrapeQueue.removeJob(jobId);
     }
 
     if (e instanceof TransportableError) {
@@ -142,7 +143,7 @@ export async function scrapeController(
 
   logger.info("Done with waitForJob");
 
-  await getScrapeQueue().remove(jobId);
+  await scrapeQueue.removeJob(jobId);
 
   logger.info("Removed job from queue");
 

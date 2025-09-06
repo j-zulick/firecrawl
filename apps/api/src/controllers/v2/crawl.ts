@@ -196,9 +196,7 @@ export async function crawlController(
       zeroDataRetention: zeroDataRetention || false,
       apiKeyId: req.acuc?.api_key_id ?? null,
     },
-    {},
     crypto.randomUUID(),
-    10,
   );
 
   const protocol = process.env.ENV === "local" ? req.protocol : "https";

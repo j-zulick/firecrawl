@@ -70,8 +70,4 @@ COPY --from=build /app/native ./native
 # Copy Go shared library
 COPY --from=go-build /app/sharedLibs/go-html-to-md/libhtml-to-markdown.so ./sharedLibs/go-html-to-md/
 
-# Copy and prepare entrypoint
-COPY docker-entrypoint.sh ./
-RUN sed -i 's/\r$//' ./docker-entrypoint.sh && chmod +x ./docker-entrypoint.sh
-
-ENTRYPOINT ["./docker-entrypoint.sh"]
+CMD ["node", "dist/src/harness.js", "--start-docker"]

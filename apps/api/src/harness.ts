@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { exec } from "child_process";
 import * as net from "net";
 import { basename } from "path";
@@ -77,50 +78,64 @@ function execForward(fancyName: string, command: string): Promise<void> {
 }
 
 (async () => {
-  console.log("=== Installing dependencies and building all components...");
-  await Promise.all([
-    (async () => {
-      const install = execForward("api@install", "pnpm install");
-      await install;
+  if (process.argv[2] !== "--start-docker") {
+    console.log("=== Installing dependencies and building all components...");
+    await Promise.all([
+      (async () => {
+        if (process.argv[2] !== "--start-built") {
+          const install = execForward("api@install", "pnpm install");
+          await install;
 
-      const build = execForward("api@build", "pnpm build");
-      await build;
-    })(),
-    execForward(
-      "sharedLibs/crawler@build",
-      "cd sharedLibs/crawler && cargo build --release",
-    ),
-    execForward(
-      "sharedLibs/html-transformer@build",
-      "cd sharedLibs/html-transformer && cargo build --release",
-    ),
-    execForward(
-      "sharedLibs/pdf-parser@build",
-      "cd sharedLibs/pdf-parser && cargo build --release",
-    ),
-    (async () => {
-      const install = execForward(
-        "sharedLibs/go-html-to-md@install",
-        "cd sharedLibs/go-html-to-md && go mod tidy",
-      );
-      await install;
+          const build = execForward("api@build", "pnpm build");
+          await build;
+        } else {
+          console.log("=== Skipping install and build, using built files...");
+        }
+      })(),
+      execForward(
+        "sharedLibs/crawler@build",
+        "cd sharedLibs/crawler && cargo build --release",
+      ),
+      execForward(
+        "sharedLibs/html-transformer@build",
+        "cd sharedLibs/html-transformer && cargo build --release",
+      ),
+      execForward(
+        "sharedLibs/pdf-parser@build",
+        "cd sharedLibs/pdf-parser && cargo build --release",
+      ),
+      (async () => {
+        const install = execForward(
+          "sharedLibs/go-html-to-md@install",
+          "cd sharedLibs/go-html-to-md && go mod tidy",
+        );
+        await install;
 
-      const build = execForward(
-        "sharedLibs/go-html-to-md@build",
-        `cd sharedLibs/go-html-to-md && go build -o ${basename(HTML_TO_MARKDOWN_PATH)} -buildmode=c-shared html-to-markdown.go`,
-      );
-      await build;
-    })(),
-  ]);
+        const build = execForward(
+          "sharedLibs/go-html-to-md@build",
+          `cd sharedLibs/go-html-to-md && go build -o ${basename(HTML_TO_MARKDOWN_PATH)} -buildmode=c-shared html-to-markdown.go`,
+        );
+        await build;
+      })(),
+    ]);
+  }
 
   console.log("=== Starting API, Worker, and Index Worker...");
 
-  const api = execForward("api", "pnpm start:production:nobuild");
+  const api = execForward("api", "pnpm server:production:nobuild");
   const worker = execForward("worker", "pnpm worker:production");
-  const indexWorker = execForward(
-    "index-worker",
-    "pnpm index-worker:production",
-  );
+  const nuqWorkers = new Array(5)
+    .fill(0)
+    .map((_, i) =>
+      execForward(
+        `nuq-worker-${i}`,
+        `NUQ_WORKER_PORT=${3006 + i} NUQ_REDUCE_NOISE=true pnpm nuq-worker:production`,
+      ),
+    );
+  const indexWorker =
+    process.env.USE_DB_AUTHENTICATION === "true"
+      ? execForward("index-worker", "pnpm index-worker:production")
+      : null;
 
   try {
     await Promise.race([
@@ -130,17 +145,49 @@ function execForward(fancyName: string, command: string): Promise<void> {
       ),
     ]);
 
-    console.log("=== Running command...");
-
-    const cmd = execForward("command", command.join(" "));
-
-    await Promise.race([cmd, api, worker, indexWorker]);
+    if (
+      process.argv[2] === "--start" ||
+      process.argv[2] === "--start-built" ||
+      process.argv[2] === "--start-docker"
+    ) {
+      console.log(
+        "=== Everything is up and running, waiting for termination or failure...",
+      );
+      await Promise.race([
+        new Promise(resolve => {
+          process.on("SIGINT", resolve);
+          process.on("SIGTERM", resolve);
+        }),
+        api,
+        worker,
+        ...nuqWorkers,
+        ...(indexWorker ? [indexWorker] : []),
+      ]);
+    } else {
+      console.log("=== Running command...");
+      const cmd = execForward("command", command.join(" "));
+      await Promise.race([
+        cmd,
+        api,
+        worker,
+        ...nuqWorkers,
+        ...(indexWorker ? [indexWorker] : []),
+      ]);
+    }
   } finally {
     console.log("=== Tearing down API, Worker, and Index Worker...");
     exec("pkill -f 'queue-worker.js'");
     exec("pkill -f 'index.js'");
-    exec("pkill -f 'index-worker.js'");
-    await Promise.all([api, worker, indexWorker]);
+    if (indexWorker) {
+      exec("pkill -f 'index-worker.js'");
+    }
+    exec("pkill -f 'nuq-worker.js'");
+    await Promise.all([
+      api,
+      worker,
+      ...nuqWorkers,
+      ...(indexWorker ? [indexWorker] : []),
+    ]);
   }
 
   console.log("=== Goodbye!");

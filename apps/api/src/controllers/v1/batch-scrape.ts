@@ -145,6 +145,7 @@ export async function batchScrapeController(
   logger.debug("Using job priority " + jobPriority, { jobPriority });
 
   const jobs = urls.map(x => ({
+    jobId: uuidv4(),
     data: {
       url: x,
       mode: "single_urls" as const,
@@ -161,10 +162,7 @@ export async function batchScrapeController(
       zeroDataRetention: zeroDataRetention ?? false,
       apiKeyId: req.acuc?.api_key_id ?? null,
     },
-    opts: {
-      jobId: uuidv4(),
-      priority: 20,
-    },
+    priority: jobPriority,
   }));
 
   await finishCrawlKickoff(id);
@@ -179,7 +177,7 @@ export async function batchScrapeController(
   logger.debug("Adding scrape jobs to Redis...");
   await addCrawlJobs(
     id,
-    jobs.map(x => x.opts.jobId),
+    jobs.map(x => x.jobId),
     logger,
   );
   logger.debug("Adding scrape jobs to BullMQ...");

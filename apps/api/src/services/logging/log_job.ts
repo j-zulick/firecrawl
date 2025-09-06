@@ -55,6 +55,10 @@ export async function logJob(
   });
 
   try {
+    if (process.env.GCS_BUCKET_NAME) {
+      await saveJobToGCS(job);
+    }
+
     const useDbAuthentication = process.env.USE_DB_AUTHENTICATION === "true";
     if (!useDbAuthentication) {
       return;
@@ -115,10 +119,6 @@ export async function logJob(
           ? new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString()
           : null,
     };
-
-    if (process.env.GCS_BUCKET_NAME) {
-      await saveJobToGCS(job);
-    }
 
     if (bypassLogging) {
       return;

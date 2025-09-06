@@ -6,50 +6,74 @@ on:
       - main
       - nsc/v2
 
-env:
-  BULL_AUTH_KEY: ${{ secrets.BULL_AUTH_KEY }}
-  POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
-  POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  REDIS_URL: ${{ secrets.REDIS_URL }}
-  SUPABASE_ANON_TOKEN: ${{ secrets.SUPABASE_ANON_TOKEN }}
-  SUPABASE_SERVICE_TOKEN: ${{ secrets.SUPABASE_SERVICE_TOKEN }}
-  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-  SUPABASE_REPLICA_URL: ${{ secrets.SUPABASE_REPLICA_URL }}
-  INDEX_SUPABASE_SERVICE_TOKEN: ${{ secrets.INDEX_SUPABASE_SERVICE_TOKEN }}
-  INDEX_SUPABASE_ANON_TOKEN: ${{ secrets.INDEX_SUPABASE_ANON_TOKEN }}
-  INDEX_SUPABASE_URL: ${{ secrets.INDEX_SUPABASE_URL }}
-  TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
-  TEST_TEAM_ID: ${{ secrets.TEST_TEAM_ID }}
-  TEST_API_KEY_CONCURRENCY: ${{ secrets.TEST_API_KEY_CONCURRENCY }}
-  TEST_TEAM_ID_CONCURRENCY: ${{ secrets.TEST_TEAM_ID_CONCURRENCY }}
-  TEST_API_KEY_ZDR: ${{ secrets.TEST_API_KEY_ZDR }}
-  TEST_TEAM_ID_ZDR: ${{ secrets.TEST_TEAM_ID_ZDR }}
-  FIRE_ENGINE_BETA_URL: ${{ secrets.FIRE_ENGINE_BETA_URL }}
-  FIRE_ENGINE_STAGING_URL: ${{ secrets.FIRE_ENGINE_STAGING_URL }}
-  USE_DB_AUTHENTICATION: true
-  SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
-  ENV: ${{ secrets.ENV }}
-  RUNPOD_MU_POD_ID: ${{ secrets.RUNPOD_MU_POD_ID }}
-  RUNPOD_MUV2_POD_ID: ${{ secrets.RUNPOD_MUV2_POD_ID }}
-  RUNPOD_MU_API_KEY: ${{ secrets.RUNPOD_MU_API_KEY }}
-  GCS_CREDENTIALS: ${{ secrets.GCS_CREDENTIALS }}
-  GCS_BUCKET_NAME: ${{ secrets.GCS_BUCKET_NAME }}
-  GCS_INDEX_BUCKET_NAME: ${{ secrets.GCS_INDEX_BUCKET_NAME }}
-  GCS_MEDIA_BUCKET_NAME: ${{ secrets.GCS_MEDIA_BUCKET_NAME }}
-  GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
-  GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-  VERTEX_CREDENTIALS: ${{ secrets.VERTEX_CREDENTIALS }}
-  USE_GO_MARKDOWN_PARSER: true
-  SENTRY_ENVIRONMENT: dev
-  IDMUX_URL: ${{ secrets.IDMUX_URL }}
-  LOG_ENCRYPTION_KEY: ${{ secrets.LOG_ENCRYPTION_KEY }}
-
 jobs:
+  build-images:
+    name: Build images
+    runs-on: big-runner
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build API image
+        run: |
+          docker buildx build \
+            -t firecrawl/firecrawl:latest \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --load \
+            ./apps/api
+      - name: Build nuq-postgres image
+        run: |
+          docker buildx build \
+            -t firecrawl/nuq-postgres:latest \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --load \
+            ./apps/nuq-postgres
+      - name: Build tailscale-proxy image
+        run: |
+          docker buildx build \
+            -t firecrawl/tailscale-proxy:latest \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --load \
+            .github/k8s/tailscale-proxy
+      - name: Build Playwright image
+        run: |
+          docker buildx build \
+            -t firecrawl/playwright-service:latest \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --load \
+            ./apps/playwright-service-ts
+      - name: Export images as tarballs
+        run: |
+          docker save -o firecrawl-firecrawl.tar firecrawl/firecrawl:latest
+          docker save -o firecrawl-nuq-postgres.tar firecrawl/nuq-postgres:latest
+          docker save -o firecrawl-tailscale-proxy.tar firecrawl/tailscale-proxy:latest
+          docker save -o firecrawl-playwright-service.tar firecrawl/playwright-service:latest
+      - name: Upload images artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-images
+          path: |
+            firecrawl-firecrawl.tar
+            firecrawl-nuq-postgres.tar
+            firecrawl-tailscale-proxy.tar
+            firecrawl-playwright-service.tar
+
   test:
-    name: Run tests
-    runs-on: ubuntu-latest
+    name: Self-hosted (Kubernetes) environment tests
+    needs: build-images
+    strategy:
+      matrix:
+        ai: ["openai", "no-ai"]
+        search: ["searxng", "google"]
+        engine: ["playwright", "fetch"]
+        # proxy: ["proxy", "no-proxy"]
+        proxy: ["proxy"]
+      fail-fast: false
+    runs-on: big-runner
     services:
       redis:
         image: redis
@@ -57,13 +81,43 @@ jobs:
           - 6379:6379
     steps:
       - uses: actions/checkout@v5
-      - name: Tailscale
-        uses: tailscale/github-action@v3
+      - name: Start minikube
+        uses: medyagh/setup-minikube@v0.0.20
+      - name: Download images artifact
+        uses: actions/download-artifact@v4
         with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
-          use-cache: 'true'
+          name: built-images
+          path: ./images
+      - name: Load images into minikube
+        run: |
+          eval $(minikube docker-env)
+          docker load -i ./images/firecrawl-firecrawl.tar
+          docker load -i ./images/firecrawl-nuq-postgres.tar
+      - name: Load Playwright image into minikube
+        if: matrix.engine == 'playwright'
+        run: |
+          eval $(minikube docker-env)
+          docker load -i ./images/firecrawl-playwright-service.tar
+      - name: Create configmap
+        run: |
+          kubectl create configmap firecrawl-config-dynamic -n default \
+            --from-literal=SEARXNG_ENDPOINT=${{ matrix.search == 'searxng' && 'http://firecrawl-searxng:8080/search' || '' }} \
+            --from-literal=PLAYWRIGHT_MICROSERVICE_URL=${{ matrix.engine == 'playwright' && 'http://firecrawl-playwright-service:3003/scrape' || '' }} \
+            --from-literal=PROXY_SERVER=${{ matrix.proxy == 'proxy' && secrets.PROXY_SERVER || '' }} \
+            --from-literal=PROXY_USERNAME=${{ matrix.proxy == 'proxy' && secrets.PROXY_USERNAME || '' }}
+      - name: Create secret
+        run: |
+          kubectl create secret generic firecrawl-secret-dynamic \
+            --from-literal=OPENAI_API_KEY=${{ matrix.ai == 'openai' && secrets.OPENAI_API_KEY || '' }} \
+            --from-literal=PROXY_PASSWORD=${{ matrix.proxy == 'proxy' && secrets.PROXY_PASSWORD || '' }}
+      - name: Deploy server
+        run: kubectl apply -f .github/k8s/server.yml
+      - name: Deploy playwright
+        if: matrix.engine == 'playwright'
+        run: kubectl apply -f .github/k8s/playwright.yml
+      - name: Deploy searxng
+        if: matrix.search == 'searxng'
+        run: kubectl apply -f .github/k8s/searxng.yml
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -77,43 +131,277 @@ jobs:
       - name: Install dependencies
         run: pnpm install
         working-directory: ./apps/api
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-          cache-dependency-path: ./apps/api/sharedLibs/go-html-to-md/go.sum
-      - name: Build go-html-to-md
+      - name: Wait for server
+        run: kubectl wait --for=condition=ready pod -l app=firecrawl-app --timeout=60s -o json
+      - name: Debug wait failure (server)
+        if: failure()
         run: |
-          go mod tidy
-          go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go
-          chmod +x libhtml-to-markdown.so
-        working-directory: ./apps/api/sharedLibs/go-html-to-md
-      - name: Build the application
-        run: pnpm run build
-        working-directory: ./apps/api
-      - name: Start the application
-        run: pnpm run start:production:nobuild > api.log 2>&1 &
-        env:
-          PORT: 3002
-          HOST: 0.0.0.0
-        working-directory: ./apps/api
-        id: start_app
-      - name: Start worker
-        run: pnpm run worker:production > worker.log 2>&1 &
-        env:
-          PORT: 3005
-          HOST: 0.0.0.0
-        working-directory: ./apps/api
-        id: start_workers
-      - name: Start index worker
-        run: pnpm run index-worker:production > index-worker.log 2>&1 &
-        working-directory: ./apps/api
-        id: start_index_worker
-      - name: Wait for API
-        run: pnpx wait-on tcp:3002 -t 60s
+          echo "Pods with label app=firecrawl-app:" || true
+          kubectl get pods -l app=firecrawl-app -o wide || true
+          echo "\nDescribe pods:" || true
+          kubectl describe pods -l app=firecrawl-app || true
+          echo "\nRecent events:" || true
+          kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
+          echo "\nLogs from firecrawl-app deployment (if any):" || true
+          kubectl logs deployment/firecrawl-app --all-containers=true --tail=200 || true
+      - name: Wait for playwright
+        if: matrix.engine == 'playwright'
+        run: kubectl wait --for=condition=ready pod -l app=firecrawl-playwright-service --timeout=60s -o json
+      - name: Debug wait failure (playwright)
+        if: failure() && matrix.engine == 'playwright'
+        run: |
+          echo "Pods with label app=firecrawl-playwright-service:" || true
+          kubectl get pods -l app=firecrawl-playwright-service -o wide || true
+          echo "\nDescribe pods:" || true
+          kubectl describe pods -l app=firecrawl-playwright-service || true
+          echo "\nRecent events:" || true
+          kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
+          echo "\nLogs from playwright deployment (if any):" || true
+          kubectl logs deployment/firecrawl-playwright-service --all-containers=true --tail=200 || true
+      - name: Wait for searxng
+        if: matrix.search == 'searxng'
+        run: kubectl wait --for=condition=ready pod -l app=firecrawl-searxng --timeout=60s -o json
+      - name: Debug wait failure (searxng)
+        if: failure() && matrix.search == 'searxng'
+        run: |
+          echo "Pods with label app=firecrawl-searxng:" || true
+          kubectl get pods -l app=firecrawl-searxng -o wide || true
+          echo "\nDescribe pods:" || true
+          kubectl describe pods -l app=firecrawl-searxng || true
+          echo "\nRecent events:" || true
+          kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
+          echo "\nLogs from searxng deployment (if any):" || true
+          kubectl logs deployment/firecrawl-searxng --all-containers=true --tail=200 || true
       - name: Run snippet tests
+        env:
+          TEST_SUITE_SELF_HOSTED: true
+          OPENAI_API_KEY: ${{ matrix.ai == 'openai' && '<IS SET>' || '' }}
+          PROXY_SERVER: ${{ matrix.proxy == 'proxy' && secrets.PROXY_SERVER || '' }}
+          PLAYWRIGHT_MICROSERVICE_URL: ${{ matrix.engine == 'playwright' && '<IS SET>' || '' }}
+        run: TEST_API_URL=$(minikube service firecrawl-app --url) pnpm run test:snips
+        working-directory: ./apps/api
+      - name: Create logs directory
+        if: always()
+        run: mkdir -p logs
+      - name: Copy log files
+        if: always()
         run: |
-          npm run test:snips
+          kubectl logs deployment/firecrawl-app > logs/api.log || true
+          kubectl logs deployment/firecrawl-worker > logs/worker.log || true
+          kubectl logs deployment/firecrawl-nuq-worker > logs/nuq-worker.log || true
+          kubectl logs deployment/firecrawl-dragonfly > logs/dragonfly.log || true
+          kubectl logs deployment/nuq-postgres > logs/postgres.log || true
+      - name: Copy SearXNG logs
+        if: always() && matrix.search == 'searxng'
+        run: kubectl logs deployment/firecrawl-searxng > logs/searxng.log || true
+      - name: Copy Playwright logs
+        if: always() && matrix.engine == 'playwright'
+        run: kubectl logs deployment/firecrawl-playwright-service > logs/playwright.log || true
+      - name: Zip logs
+        if: always()
+        run: |
+          cd logs
+          zip -r logs.zip ./*
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Logs (kubernetes, ${{ matrix.ai }}, ${{ matrix.search }}, ${{ matrix.engine }}, ${{ matrix.proxy }})
+          path: logs/logs.zip
+    
+  docker-test:
+    name: Self-hosted (Docker) environment tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Compose
+        env:
+          PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
+          PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
+          PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
+        run: |
+          docker compose up -d
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: './apps/api/pnpm-lock.yaml'
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: ./apps/api
+      - name: Wait for server
+        run: pnpx wait-on http://localhost:3002
+      - name: Run snippet tests
+        env:
+          PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
+          PLAYWRIGHT_MICROSERVICE_URL: ${{ secrets.PLAYWRIGHT_MICROSERVICE_URL }}
+        run: pnpm run test:snips
+        working-directory: ./apps/api
+      - name: Create logs directory
+        if: always()
+        run: mkdir -p logs
+      - name: Copy log files
+        if: always()
+        run: |
+          docker compose logs api > logs/api.log || true
+          docker compose logs playwright-service > logs/playwright.log || true
+          docker compose logs nuq-postgres > logs/postgres.log || true
+      - name: Zip logs
+        if: always()
+        run: |
+          cd logs
+          zip -r logs.zip ./*
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Logs (docker, no-ai, google, playwright, proxy)
+          path: logs/logs.zip
+
+  prod-test:
+    name: Production environment tests
+    needs: build-images
+    runs-on: big-runner
+    steps:
+      - uses: actions/checkout@v5
+      - name: Start minikube
+        uses: medyagh/setup-minikube@v0.0.20
+      - name: Download images artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: built-images
+          path: ./images
+      - name: Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: Load prebuilt images into minikube
+        run: |
+          eval $(minikube docker-env)
+          docker load -i ./images/firecrawl-firecrawl.tar
+          docker load -i ./images/firecrawl-nuq-postgres.tar
+          docker load -i ./images/firecrawl-tailscale-proxy.tar
+      - name: Create Tailscale secret
+        run: |
+          if [ -z "${{ secrets.TS_AUTHKEY }}" ]; then
+            echo "secrets.TS_AUTHKEY is empty; set a reusable/preauthorized or ephemeral key" >&2
+            exit 1
+          fi
+          kubectl create secret generic tailscale \
+            --from-literal=TS_AUTHKEY=${{ secrets.TS_AUTHKEY }} \
+            --from-literal=TS_ADVERTISE_TAGS=${{ secrets.TS_ADVERTISE_TAGS }} \
+            --from-literal=FIRE_ENGINE_BETA_URL=${{ secrets.FIRE_ENGINE_BETA_URL }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+      - name: Create configmap
+        run: |
+          kubectl create configmap firecrawl-config-dynamic -n default \
+            --from-literal=USE_DB_AUTHENTICATION=true \
+            --from-literal=SUPABASE_ANON_TOKEN=${{ secrets.SUPABASE_ANON_TOKEN }} \
+            --from-literal=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --from-literal=SUPABASE_REPLICA_URL=${{ secrets.SUPABASE_REPLICA_URL }} \
+            --from-literal=INDEX_SUPABASE_ANON_TOKEN=${{ secrets.INDEX_SUPABASE_ANON_TOKEN }} \
+            --from-literal=INDEX_SUPABASE_URL=${{ secrets.INDEX_SUPABASE_URL }} \
+            --from-literal=FIRE_ENGINE_BETA_URL=http://tailscale-proxy:8080 \
+            --from-literal=RUNPOD_MU_POD_ID=${{ secrets.RUNPOD_MU_POD_ID }} \
+            --from-literal=RUNPOD_MUV2_POD_ID=${{ secrets.RUNPOD_MUV2_POD_ID }} \
+            --from-literal=GCS_BUCKET_NAME=${{ secrets.GCS_BUCKET_NAME }} \
+            --from-literal=GCS_MEDIA_BUCKET_NAME=${{ secrets.GCS_MEDIA_BUCKET_NAME }} \
+            --from-literal=GCS_INDEX_BUCKET_NAME=${{ secrets.GCS_INDEX_BUCKET_NAME }}
+      - name: Create secret
+        run: |
+          kubectl create secret generic firecrawl-secret-dynamic \
+            --from-literal=BULL_AUTH_KEY=${{ secrets.BULL_AUTH_KEY }} \
+            --from-literal=OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
+            --from-literal=SUPABASE_SERVICE_TOKEN=${{ secrets.SUPABASE_SERVICE_TOKEN }} \
+            --from-literal=INDEX_SUPABASE_SERVICE_TOKEN=${{ secrets.INDEX_SUPABASE_SERVICE_TOKEN }} \
+            --from-literal=SERPER_API_KEY=${{ secrets.SERPER_API_KEY }} \
+            --from-literal=RUNPOD_MU_API_KEY=${{ secrets.RUNPOD_MU_API_KEY }} \
+            --from-literal=GCS_CREDENTIALS=${{ secrets.GCS_CREDENTIALS }} \
+            --from-literal=GOOGLE_GENERATIVE_AI_API_KEY=${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }} \
+            --from-literal=GROQ_API_KEY=${{ secrets.GROQ_API_KEY }} \
+            --from-literal=ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} \
+            --from-literal=VERTEX_CREDENTIALS=${{ secrets.VERTEX_CREDENTIALS }} \
+            --from-literal=LOG_ENCRYPTION_KEY=${{ secrets.LOG_ENCRYPTION_KEY }}
+      - name: Deploy server
+        run: |
+          kubectl apply -f .github/k8s/server.yml
+          kubectl apply -f .github/k8s/server-nsh.yml
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: './apps/api/pnpm-lock.yaml'
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: ./apps/api
+      - name: Wait for API
+        run: kubectl wait --for=condition=ready pod -l app=firecrawl-app --timeout=60s -o json
+      - name: Debug wait failure (API)
+        if: failure()
+        run: |
+          echo "Pods with label app=firecrawl-app:" || true
+          kubectl get pods -l app=firecrawl-app -o wide || true
+          echo "\nDescribe pods:" || true
+          kubectl describe pods -l app=firecrawl-app || true
+          echo "\nRecent events:" || true
+          kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
+      - name: Wait for nuq-postgres
+        run: kubectl wait --for=condition=ready pod -l app=nuq-postgres --timeout=60s -o json
+      - name: Debug wait failure (nuq-postgres)
+        if: failure()
+        run: |
+          echo "Pods with label app=nuq-postgres:" || true
+          kubectl get pods -l app=nuq-postgres -o wide || true
+          echo "\nDescribe pods:" || true
+          kubectl describe pods -l app=nuq-postgres || true
+          echo "\nRecent events:" || true
+          kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
+          echo "\nLogs from nuq-postgres deployment (if any):" || true
+          kubectl logs deployment/nuq-postgres --all-containers=true --tail=200 || true
+      - name: Wait for tailscale-proxy
+        run: kubectl wait --for=condition=ready pod -l app=tailscale-proxy --timeout=60s -o json
+      - name: Debug wait failure (tailscale-proxy)
+        if: failure()
+        run: |
+          echo "Pods with label app=tailscale-proxy:" || true
+          kubectl get pods -l app=tailscale-proxy -o wide || true
+          echo "\nDescribe pods:" || true
+          kubectl describe pods -l app=tailscale-proxy || true
+          echo "\nRecent events:" || true
+          kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
+      - name: Wait for dragonfly (redis)
+        run: kubectl wait --for=condition=ready pod -l app=firecrawl-dragonfly --timeout=60s -o json
+      - name: Debug wait failure (dragonfly)
+        if: failure()
+        run: |
+          echo "Pods with label app=firecrawl-dragonfly:" || true
+          kubectl get pods -l app=firecrawl-dragonfly -o wide || true
+          echo "\nDescribe pods:" || true
+          kubectl describe pods -l app=firecrawl-dragonfly || true
+          echo "\nRecent events:" || true
+          kubectl get events --sort-by=.lastTimestamp | tail -n 100 || true
+      - name: Run snippet tests
+        env:
+          IDMUX_URL: ${{ secrets.IDMUX_URL }}
+          USE_DB_AUTHENTICATION: true
+          SUPABASE_ANON_TOKEN: ${{ secrets.SUPABASE_ANON_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_REPLICA_URL: ${{ secrets.SUPABASE_REPLICA_URL }}
+          SUPABASE_SERVICE_TOKEN: ${{ secrets.SUPABASE_SERVICE_TOKEN }}
+          GCS_BUCKET_NAME: ${{ secrets.GCS_BUCKET_NAME }}
+          GCS_CREDENTIALS: ${{ secrets.GCS_CREDENTIALS }}
+        run: |
+          TEST_API_URL=$(minikube service firecrawl-app --url) pnpm run test:snips
         working-directory: ./apps/api
       - name: Kill instances
         if: always()
@@ -124,9 +412,13 @@ jobs:
       - name: Copy log files
         if: always()
         run: |
-          cp ./apps/api/api.log logs/ || true
-          cp ./apps/api/worker.log logs/ || true
-          cp ./apps/api/index-worker.log logs/ || true
+          kubectl logs deployment/firecrawl-app > logs/api.log || true
+          kubectl logs deployment/firecrawl-worker > logs/worker.log || true
+          kubectl logs deployment/firecrawl-index-worker > logs/index-worker.log || true
+          kubectl logs deployment/firecrawl-nuq-worker > logs/nuq-worker.log || true
+          kubectl logs deployment/firecrawl-dragonfly > logs/dragonfly.log || true
+          kubectl logs deployment/nuq-postgres > logs/postgres.log || true
+          kubectl logs deployment/tailscale-proxy > logs/tailscale-proxy.log || true
       - name: Zip and encrypt logs
         if: always()
         run: |

@@ -11,9 +11,7 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { logJob } from "../../services/logging/log_job";
-import { getJobPriority } from "../../lib/job-priority";
 import { Mode } from "../../types";
-import { getScrapeQueue } from "../../services/queue-service";
 import { search } from "../../search";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import * as Sentry from "@sentry/node";
@@ -24,6 +22,8 @@ import { CostTracking } from "../../lib/cost-tracking";
 import { supabase_service } from "../../services/supabase";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { ScrapeJobTimeoutError } from "../../lib/error";
+import { scrapeQueue } from "../../services/worker/nuq";
+import { getJobPriority } from "../../lib/job-priority";
 
 interface DocumentWithCostTracking {
   document: Document;
@@ -45,10 +45,6 @@ async function scrapeX402SearchResult(
   isSearchPreview: boolean = false,
 ): Promise<DocumentWithCostTracking> {
   const jobId = uuidv4();
-  const jobPriority = await getJobPriority({
-    team_id: options.teamId,
-    basePriority: 10,
-  });
 
   const costTracking = new CostTracking();
 
@@ -94,13 +90,19 @@ async function scrapeX402SearchResult(
         zeroDataRetention,
         apiKeyId: options.apiKeyId,
       },
-      {},
       jobId,
-      jobPriority,
+      await getJobPriority({
+        team_id: options.teamId,
+        basePriority: 10,
+      }),
       directToBullMQ,
     );
 
-    const doc: Document = await waitForJob(jobId, options.timeout);
+    const doc: Document = await waitForJob(
+      jobId,
+      options.timeout,
+      zeroDataRetention,
+    );
 
     logger.info("Scrape job [x402] completed", {
       scrapeId: jobId,
@@ -108,7 +110,7 @@ async function scrapeX402SearchResult(
       teamId: options.teamId,
       origin: options.origin,
     });
-    await getScrapeQueue().remove(jobId);
+    await scrapeQueue.removeJob(jobId);
 
     const document = {
       title: searchResult.title,

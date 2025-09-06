@@ -1,11 +1,10 @@
 import { RateLimiterMode } from "../types";
 import { redisEvictConnection } from "../services/redis";
-import type { Job, JobsOptions } from "bullmq";
 import { getACUCTeam } from "../controllers/auth";
 import { getCrawl, StoredCrawl } from "./crawl-redis";
-import { getScrapeQueue } from "../services/queue-service";
 import { logger } from "./logger";
 import { abTestJob } from "../services/ab-test";
+import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
 
 const constructKey = (team_id: string) => "concurrency-limiter:" + team_id;
 const constructQueueKey = (team_id: string) =>
@@ -65,8 +64,7 @@ export async function removeConcurrencyLimitActiveJob(
 export type ConcurrencyLimitedJob = {
   id: string;
   data: any;
-  opts: JobsOptions;
-  priority?: number;
+  priority: number;
 };
 
 export async function cleanOldConcurrencyLimitedJobs(
@@ -311,7 +309,7 @@ async function getNextConcurrentJob(
  *
  * @param job The BullMQ job that is done.
  */
-export async function concurrentJobDone(job: Job) {
+export async function concurrentJobDone(job: NuQJob<any>) {
   if (job.id && job.data && job.data.team_id) {
     await removeConcurrencyLimitActiveJob(job.data.team_id, job.id);
     await cleanOldConcurrencyLimitEntries(job.data.team_id);
@@ -360,17 +358,13 @@ export async function concurrentJobDone(job: Job) {
 
         abTestJob(nextJob.job.data);
 
-        (await getScrapeQueue()).add(
+        await scrapeQueue.addJob(
           nextJob.job.id,
           {
             ...nextJob.job.data,
             concurrencyLimitHit: true,
           },
-          {
-            ...nextJob.job.opts,
-            jobId: nextJob.job.id,
-            priority: nextJob.job.priority,
-          },
+          nextJob.job.priority,
         );
       }
     }

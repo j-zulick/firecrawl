@@ -1,27 +1,24 @@
 import { Request, Response } from "express";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../../src/types";
-import { getScrapeQueue } from "../../../src/services/queue-service";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { logger } from "../../../src/lib/logger";
 import { getCrawl, getCrawlJobs } from "../../../src/lib/crawl-redis";
 import { supabaseGetJobsByCrawlId } from "../../../src/lib/supabase-jobs";
 import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
-import { Job } from "bullmq";
 import { toLegacyDocument } from "../v1/types";
 import type { DBJob, PseudoJob } from "../v1/crawl-status";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
+import { scrapeQueue, NuQJob } from "../../services/worker/nuq";
 configDotenv();
 
 export async function getJobs(
   crawlId: string,
   ids: string[],
 ): Promise<PseudoJob<any>[]> {
-  const [bullJobs, dbJobs, gcsJobs] = await Promise.all([
-    Promise.all(ids.map(x => getScrapeQueue().getJob(x))).then(x =>
-      x.filter(x => x),
-    ) as Promise<(Job<any, any, string> & { id: string })[]>,
+  const [nuqJobs, dbJobs, gcsJobs] = await Promise.all([
+    scrapeQueue.getJobs(ids),
     process.env.USE_DB_AUTHENTICATION === "true"
       ? await supabaseGetJobsByCrawlId(crawlId)
       : [],
@@ -34,12 +31,12 @@ export async function getJobs(
       : [],
   ]);
 
-  const bullJobMap = new Map<string, PseudoJob<any>>();
+  const nuqJobMap = new Map<string, NuQJob<any, any>>();
   const dbJobMap = new Map<string, DBJob>();
   const gcsJobMap = new Map<string, any>();
 
-  for (const job of bullJobs) {
-    bullJobMap.set(job.id, job);
+  for (const job of nuqJobs) {
+    nuqJobMap.set(job.id, job);
   }
 
   for (const job of dbJobs) {
@@ -53,13 +50,13 @@ export async function getJobs(
   const jobs: PseudoJob<any>[] = [];
 
   for (const id of ids) {
-    const bullJob = bullJobMap.get(id);
+    const nuqJob = nuqJobMap.get(id);
     const dbJob = dbJobMap.get(id);
     const gcsJob = gcsJobMap.get(id);
 
-    if (!bullJob && !dbJob) continue;
+    if (!nuqJob && !dbJob) continue;
 
-    const data = gcsJob ?? dbJob?.docs ?? bullJob?.returnvalue;
+    const data = gcsJob ?? dbJob?.docs ?? nuqJob?.returnvalue;
     if (gcsJob === null && data) {
       logger.warn("GCS Job not found", {
         jobId: id,
@@ -68,20 +65,16 @@ export async function getJobs(
 
     const job: PseudoJob<any> = {
       id,
-      getState: dbJob
-        ? () => (dbJob.success ? "completed" : "failed")
-        : () => bullJob!.getState(),
+      status: dbJob ? (dbJob.success ? "completed" : "failed") : nuqJob!.status,
       returnvalue: Array.isArray(data) ? data[0] : data,
       data: {
-        scrapeOptions: bullJob
-          ? bullJob.data.scrapeOptions
-          : dbJob!.page_options,
+        scrapeOptions: nuqJob ? nuqJob.data.scrapeOptions : dbJob!.page_options,
       },
-      timestamp: bullJob
-        ? bullJob.timestamp
+      timestamp: nuqJob
+        ? nuqJob.createdAt.valueOf()
         : new Date(dbJob!.date_added).valueOf(),
       failedReason:
-        (bullJob ? bullJob.failedReason : dbJob!.message) || undefined,
+        (nuqJob ? nuqJob.failedReason : dbJob!.message) || undefined,
     };
 
     jobs.push(job);
@@ -135,7 +128,7 @@ export async function crawlStatusController(req: Request, res: Response) {
     }
     let jobIDs = await getCrawlJobs(req.params.jobId);
     let jobs = await getJobs(req.params.jobId, jobIDs);
-    let jobStatuses = await Promise.all(jobs.map(x => x.getState()));
+    let jobStatuses = jobs.map(x => x.status);
 
     // Combine jobs and jobStatuses into a single array of objects
     let jobsWithStatuses = jobs.map((job, index) => ({
@@ -144,9 +137,7 @@ export async function crawlStatusController(req: Request, res: Response) {
     }));
 
     // Filter out failed jobs
-    jobsWithStatuses = jobsWithStatuses.filter(
-      x => x.status !== "failed" && x.status !== "unknown",
-    );
+    jobsWithStatuses = jobsWithStatuses.filter(x => x.status !== "failed");
 
     // Sort jobs by timestamp
     jobsWithStatuses.sort((a, b) => a.job.timestamp - b.job.timestamp);

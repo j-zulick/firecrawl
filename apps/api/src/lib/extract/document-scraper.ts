@@ -5,12 +5,12 @@ import {
   URLTrace,
   scrapeOptions as scrapeOptionsSchema,
 } from "../../controllers/v2/types";
-import { getScrapeQueue } from "../../services/queue-service";
 import { waitForJob } from "../../services/queue-jobs";
 import { addScrapeJob } from "../../services/queue-jobs";
 import { getJobPriority } from "../job-priority";
 import type { Logger } from "winston";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+import { scrapeQueue } from "../../services/worker/nuq";
 
 interface ScrapeDocumentOptions {
   url: string;
@@ -69,14 +69,16 @@ export async function scrapeDocument(
         zeroDataRetention: false, // not supported
         apiKeyId: options.apiKeyId,
       },
-      {},
       jobId,
       jobPriority,
     );
 
-    const doc = await waitForJob(jobId, timeout);
-
-    await getScrapeQueue().remove(jobId);
+    const doc = await waitForJob(jobId, timeout, false, logger);
+    try {
+      await scrapeQueue.removeJob(jobId);
+    } catch (error) {
+      logger.warn("Error removing job from queue", { error, scrapeId: jobId });
+    }
 
     if (trace) {
       trace.timing.completedAt = new Date().toISOString();

@@ -5,30 +5,14 @@ import {
   RequestWithAuth,
 } from "./types";
 import { getCrawl, getCrawlJobs } from "../../lib/crawl-redis";
-import { getScrapeQueue } from "../../services/queue-service";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { configDotenv } from "dotenv";
-import { Job } from "bullmq";
 import { supabase_rr_service } from "../../services/supabase";
-import { logger } from "../../lib/logger";
+import { logger as _logger } from "../../lib/logger";
 import { deserializeTransportableError } from "../../lib/error-serde";
 import { TransportableError } from "../../lib/error";
+import { scrapeQueue } from "../../services/worker/nuq";
 configDotenv();
-
-export async function getJob(id: string) {
-  const job = await getScrapeQueue().getJob(id);
-  if (!job) return job;
-
-  return job;
-}
-
-export async function getJobs(ids: string[]) {
-  const jobs: (Job & { id: string })[] = (
-    await Promise.all(ids.map(x => getScrapeQueue().getJob(x)))
-  ).filter(x => x) as (Job & { id: string })[];
-
-  return jobs;
-}
 
 export async function crawlErrorsController(
   req: RequestWithAuth<CrawlStatusParams, undefined, CrawlErrorsResponse>,
@@ -41,25 +25,24 @@ export async function crawlErrorsController(
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
-    let jobStatuses = await Promise.all(
-      (await getCrawlJobs(req.params.jobId)).map(
-        async x => [x, await getScrapeQueue().getJobState(x)] as const,
-      ),
-    );
+    const logger = _logger.child({
+      crawlId: req.params.jobId,
+      zeroDataRetention: sc.zeroDataRetention ?? false,
+    });
 
-    const failedJobIDs: string[] = [];
-
-    for (const [id, status] of jobStatuses) {
-      if (status === "failed") {
-        failedJobIDs.push(id);
-      }
-    }
+    const failedJobs = (
+      await scrapeQueue.getJobsWithStatus(
+        await getCrawlJobs(req.params.jobId),
+        "failed",
+        logger,
+      )
+    ).filter(x => x.failedReason);
 
     res.status(200).json({
-      errors: (await getJobs(failedJobIDs))
+      errors: failedJobs
         .map(x => {
           const error = deserializeTransportableError(
-            x.failedReason,
+            x.failedReason!,
           ) as TransportableError | null;
           if (error?.code === "SCRAPE_RACED_REDIRECT_ERROR") {
             return null;
@@ -67,8 +50,8 @@ export async function crawlErrorsController(
           return {
             id: x.id,
             timestamp:
-              x.finishedOn !== undefined
-                ? new Date(x.finishedOn).toISOString()
+              x.finishedAt !== undefined
+                ? new Date(x.finishedAt).toISOString()
                 : undefined,
             url: x.data.url,
             ...(error
@@ -77,7 +60,7 @@ export async function crawlErrorsController(
                   error: error.message,
                 }
               : {
-                  error: x.failedReason,
+                  error: x.failedReason!,
                 }),
           };
         })
@@ -95,7 +78,7 @@ export async function crawlErrorsController(
       .throwOnError();
 
     if (crawlJobError) {
-      logger.error("Error getting crawl job", { error: crawlJobError });
+      _logger.error("Error getting crawl job", { error: crawlJobError });
       throw crawlJobError;
     }
 
@@ -130,7 +113,7 @@ export async function crawlErrorsController(
         .throwOnError();
 
     if (failedJobsError) {
-      logger.error("Error getting failed jobs", { error: failedJobsError });
+      _logger.error("Error getting failed jobs", { error: failedJobsError });
       throw failedJobsError;
     }
 

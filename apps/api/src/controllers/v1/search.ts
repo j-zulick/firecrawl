@@ -7,26 +7,25 @@ import {
   searchRequestSchema,
   ScrapeOptions,
   TeamFlags,
-  scrapeOptions,
 } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { v4 as uuidv4 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { logJob } from "../../services/logging/log_job";
-import { getJobPriority } from "../../lib/job-priority";
 import { Mode } from "../../types";
-import { getScrapeQueue } from "../../services/queue-service";
 import { search } from "../../search";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import * as Sentry from "@sentry/node";
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { logger as _logger } from "../../lib/logger";
 import type { Logger } from "winston";
+import { getJobPriority } from "../../lib/job-priority";
 import { CostTracking } from "../../lib/cost-tracking";
 import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
 import { supabase_service } from "../../services/supabase";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { ScrapeJobTimeoutError } from "../../lib/error";
+import { scrapeQueue } from "../../services/worker/nuq";
 
 interface DocumentWithCostTracking {
   document: Document;
@@ -89,10 +88,6 @@ async function scrapeSearchResult(
   isSearchPreview: boolean = false,
 ): Promise<DocumentWithCostTracking> {
   const jobId = uuidv4();
-  const jobPriority = await getJobPriority({
-    team_id: options.teamId,
-    basePriority: 10,
-  });
 
   const costTracking = new CostTracking();
 
@@ -115,6 +110,11 @@ async function scrapeSearchResult(
       options.timeout,
       options.teamId,
     );
+
+    const jobPriority = await getJobPriority({
+      team_id: options.teamId,
+      basePriority: 10,
+    });
 
     await addScrapeJob(
       {
@@ -140,13 +140,16 @@ async function scrapeSearchResult(
         zeroDataRetention,
         apiKeyId: options.apiKeyId,
       },
-      {},
       jobId,
       jobPriority,
       directToBullMQ,
     );
 
-    const doc: Document = await waitForJob(jobId, options.timeout);
+    const doc: Document = await waitForJob(
+      jobId,
+      options.timeout,
+      zeroDataRetention,
+    );
 
     logger.info("Scrape job completed", {
       scrapeId: jobId,
@@ -154,7 +157,7 @@ async function scrapeSearchResult(
       teamId: options.teamId,
       origin: options.origin,
     });
-    await getScrapeQueue().remove(jobId);
+    await scrapeQueue.removeJob(jobId);
 
     const document = {
       title: searchResult.title,

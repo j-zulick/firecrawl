@@ -1,5 +1,4 @@
 import { logger as _logger } from "../../lib/logger";
-import { Job } from "bullmq";
 import {
   addCrawlJobs,
   finishCrawl,
@@ -21,11 +20,9 @@ import { getJobs } from "../../controllers/v1/crawl-status";
 import { logJob } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook";
 import { hasFormatOfType } from "../../lib/format-utils";
+import type { NuQJob } from "./nuq";
 
-export async function finishCrawlIfNeeded(
-  job: Job & { id: string },
-  sc: StoredCrawl,
-) {
+export async function finishCrawlIfNeeded(job: NuQJob<any>, sc: StoredCrawl) {
   const logger = _logger.child({
     module: "queue-worker",
     method: "finishCrawlIfNeeded",
@@ -113,7 +110,7 @@ export async function finishCrawlIfNeeded(
         const jobs = univistedUrls.links.slice(0, addableJobCount).map(url => {
           const uuid = uuidv4();
           return {
-            name: uuid,
+            jobId: uuid,
             data: {
               url,
               mode: "single_urls" as const,
@@ -133,24 +130,21 @@ export async function finishCrawlIfNeeded(
               zeroDataRetention: job.data.zeroDataRetention,
               apiKeyId: job.data.apiKeyId,
             },
-            opts: {
-              jobId: uuid,
-              priority: 20,
-            },
+            priority: 20, // TODO: make this dynamic
           };
         });
 
         const lockedIds = await lockURLsIndividually(
           job.data.crawl_id,
           sc,
-          jobs.map(x => ({ id: x.opts.jobId, url: x.data.url })),
+          jobs.map(x => ({ id: x.jobId, url: x.data.url })),
         );
         const lockedJobs = jobs.filter(x =>
-          lockedIds.find(y => y.id === x.opts.jobId),
+          lockedIds.find(y => y.id === x.jobId),
         );
         await addCrawlJobs(
           job.data.crawl_id,
-          lockedJobs.map(x => x.opts.jobId),
+          lockedJobs.map(x => x.jobId),
           logger,
         );
         await addScrapeJobs(lockedJobs);

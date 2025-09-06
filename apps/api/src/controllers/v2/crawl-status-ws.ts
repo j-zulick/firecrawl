@@ -15,15 +15,11 @@ import {
   getCrawlExpiry,
   getCrawlJobs,
   getDoneJobsOrdered,
-  getDoneJobsOrderedLength,
-  isCrawlFinished,
-  isCrawlFinishedLocked,
 } from "../../lib/crawl-redis";
-import { getScrapeQueue } from "../../services/queue-service";
-import { getJob, getJobs } from "./crawl-status";
+import { getJobs, PseudoJob } from "./crawl-status";
 import * as Sentry from "@sentry/node";
-import { Job, JobState } from "bullmq";
 import { getConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
+import { scrapeQueue, NuQJobStatus } from "../../services/worker/nuq";
 
 type ErrorMessage = {
   type: "error";
@@ -88,18 +84,14 @@ async function crawlStatusWS(
 
     const notDoneJobIDs = jobIDs.filter(x => !doneJobIDs.includes(x));
 
-    const queue = getScrapeQueue();
+    const newlyDoneJobIDs: string[] = (
+      await scrapeQueue.getJobsWithStatuses(notDoneJobIDs, [
+        "completed",
+        "failed",
+      ])
+    ).map(x => x.id);
 
-    const jobStatuses = await Promise.all(
-      notDoneJobIDs.map(async x => [x, await queue.getJobState(x)]),
-    );
-    const newlyDoneJobIDs: string[] = jobStatuses
-      .filter(x => x[1] === "completed" || x[1] === "failed")
-      .map(x => x[0]);
-
-    const newlyDoneJobs: Job[] = (
-      await Promise.all(newlyDoneJobIDs.map(x => getJob(x)))
-    ).filter(x => x !== undefined) as Job[];
+    const newlyDoneJobs: PseudoJob<any>[] = await getJobs(newlyDoneJobIDs);
 
     for (const job of newlyDoneJobs) {
       if (job.returnvalue) {
@@ -118,28 +110,28 @@ async function crawlStatusWS(
 
   setTimeout(loop, 1000);
 
-  doneJobIDs = await getDoneJobsOrdered(req.params.jobId);
+  let [_doneJobIDs, jobIDs, throttledJobsSet] = await Promise.all([
+    getDoneJobsOrdered(req.params.jobId),
+    getCrawlJobs(req.params.jobId),
+    getConcurrencyLimitedJobs(req.auth.team_id),
+  ]);
 
-  let jobIDs = await getCrawlJobs(req.params.jobId);
+  doneJobIDs = _doneJobIDs;
+  const jobs = new Map((await scrapeQueue.getJobs(jobIDs)).map(x => [x.id, x]));
 
-  const queue = getScrapeQueue();
-
-  let jobStatuses = await Promise.all(
-    jobIDs.map(async x => [x, await queue.getJobState(x)] as const),
-  );
-
-  const throttledJobsSet = await getConcurrencyLimitedJobs(req.auth.team_id);
-
-  const validJobStatuses: [string, JobState | "unknown"][] = [];
+  const validJobStatuses: [string, NuQJobStatus][] = [];
   const validJobIDs: string[] = [];
 
-  for (const [id, status] of jobStatuses) {
+  for (const id of jobIDs) {
     if (throttledJobsSet.has(id)) {
-      validJobStatuses.push([id, "prioritized"]);
+      validJobStatuses.push([id, "queued"]);
       validJobIDs.push(id);
-    } else if (status !== "failed" && status !== "unknown") {
-      validJobStatuses.push([id, status]);
-      validJobIDs.push(id);
+    } else {
+      const job = jobs.get(id);
+      if (job && job.status !== "failed") {
+        validJobStatuses.push([id, job.status]);
+        validJobIDs.push(id);
+      }
     }
   }
 

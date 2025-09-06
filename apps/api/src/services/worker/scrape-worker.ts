@@ -1,5 +1,4 @@
 import { configDotenv } from "dotenv";
-import { Job } from "bullmq";
 import * as Sentry from "@sentry/node";
 import http from "http";
 import https from "https";
@@ -60,6 +59,7 @@ import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import type { NuQJob } from "./nuq";
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -74,7 +74,7 @@ cacheableLookup.install(http.globalAgent);
 cacheableLookup.install(https.globalAgent);
 
 async function billScrapeJob(
-  job: Job & { id: string },
+  job: NuQJob<any>,
   document: Document | null,
   logger: Logger,
   costTracking: CostTracking,
@@ -138,7 +138,7 @@ async function billScrapeJob(
   return creditsToBeBilled;
 }
 
-async function processJob(job: Job & { id: string }) {
+async function processJob(job: NuQJob<any>) {
   const logger = _logger.child({
     module: "queue-worker",
     method: "processJob",
@@ -157,13 +157,6 @@ async function processJob(job: Job & { id: string }) {
   const costTracking = new CostTracking();
 
   try {
-    job.updateProgress({
-      current: 1,
-      total: 100,
-      current_step: "SCRAPING",
-      current_url: "",
-    });
-
     if (remainingTime !== undefined && remainingTime < 0) {
       throw new ScrapeJobTimeoutError("Scrape timed out");
     }
@@ -368,7 +361,6 @@ async function processJob(job: Job & { id: string }) {
                   zeroDataRetention: job.data.zeroDataRetention,
                   apiKeyId: job.data.apiKeyId,
                 },
-                {},
                 jobId,
                 jobPriority,
               );
@@ -699,7 +691,7 @@ async function kickoffGetIndexLinks(
   return validIndexLinks;
 }
 
-async function processKickoffJob(job: Job & { id: string }) {
+async function processKickoffJob(job: NuQJob<any>) {
   const logger = _logger.child({
     module: "queue-worker",
     method: "processKickoffJob",
@@ -739,10 +731,8 @@ async function processKickoffJob(job: Job & { id: string }) {
         zeroDataRetention: job.data.zeroDataRetention,
         apiKeyId: job.data.apiKeyId,
       },
-      {
-        priority: 15,
-      },
       jobId,
+      await getJobPriority({ team_id: job.data.team_id, basePriority: 15 }),
     );
     logger.debug("Adding scrape job to BullMQ...", { jobId });
     await addCrawlJob(job.data.crawl_id, jobId, logger);
@@ -780,7 +770,6 @@ async function processKickoffJob(job: Job & { id: string }) {
           const jobs = urls.map(url => {
             const uuid = uuidv4();
             return {
-              name: uuid,
               data: {
                 url,
                 mode: "single_urls" as const,
@@ -797,10 +786,8 @@ async function processKickoffJob(job: Job & { id: string }) {
                 zeroDataRetention: job.data.zeroDataRetention,
                 apiKeyId: job.data.apiKeyId,
               },
-              opts: {
-                jobId: uuid,
-                priority: 20,
-              },
+              jobId: uuid,
+              priority: jobPriority,
             };
           });
 
@@ -808,15 +795,15 @@ async function processKickoffJob(job: Job & { id: string }) {
           const lockedIds = await lockURLsIndividually(
             job.data.crawl_id,
             sc,
-            jobs.map(x => ({ id: x.opts.jobId, url: x.data.url })),
+            jobs.map(x => ({ id: x.jobId, url: x.data.url })),
           );
           const lockedJobs = jobs.filter(x =>
-            lockedIds.find(y => y.id === x.opts.jobId),
+            lockedIds.find(y => y.id === x.jobId),
           );
           logger.debug("Adding scrape jobs to Redis...");
           await addCrawlJobs(
             job.data.crawl_id,
-            lockedJobs.map(x => x.opts.jobId),
+            lockedJobs.map(x => x.jobId),
             logger,
           );
           logger.debug("Adding scrape jobs to BullMQ...");
@@ -845,7 +832,7 @@ async function processKickoffJob(job: Job & { id: string }) {
       const jobs = indexLinks.map(url => {
         const uuid = uuidv4();
         return {
-          name: uuid,
+          jobId: uuid,
           data: {
             url,
             mode: "single_urls" as const,
@@ -862,10 +849,7 @@ async function processKickoffJob(job: Job & { id: string }) {
             zeroDataRetention: job.data.zeroDataRetention,
             apiKeyId: job.data.apiKeyId,
           },
-          opts: {
-            jobId: uuid,
-            priority: 20,
-          },
+          priority: jobPriority,
         };
       });
 
@@ -873,15 +857,15 @@ async function processKickoffJob(job: Job & { id: string }) {
       const lockedIds = await lockURLsIndividually(
         job.data.crawl_id,
         sc,
-        jobs.map(x => ({ id: x.opts.jobId, url: x.data.url })),
+        jobs.map(x => ({ id: x.jobId, url: x.data.url })),
       );
       const lockedJobs = jobs.filter(x =>
-        lockedIds.find(y => y.id === x.opts.jobId),
+        lockedIds.find(y => y.id === x.jobId),
       );
       logger.debug("Adding scrape jobs to Redis...");
       await addCrawlJobs(
         job.data.crawl_id,
-        lockedJobs.map(x => x.opts.jobId),
+        lockedJobs.map(x => x.jobId),
         logger,
       );
       logger.debug("Adding scrape jobs to BullMQ...");
@@ -905,7 +889,7 @@ async function processKickoffJob(job: Job & { id: string }) {
   }
 }
 
-export const processJobInternal = async (job: Job & { id: string }) => {
+export const processJobInternal = async (job: NuQJob<any>) => {
   const logger = _logger.child({
     module: "queue-worker",
     method: "processJobInternal",
@@ -954,10 +938,7 @@ export const processJobInternal = async (job: Job & { id: string }) => {
             }
 
             try {
-              if (
-                process.env.USE_DB_AUTHENTICATION === "true" &&
-                (job.data.crawl_id || process.env.GCS_BUCKET_NAME)
-              ) {
+              if (process.env.GCS_BUCKET_NAME) {
                 logger.debug("Job succeeded -- putting null in Redis");
                 return null;
               } else {
@@ -1018,11 +999,9 @@ if (otelSdk) {
   otelSdk.start();
 }
 
-module.exports = processJobInternal;
-
 const exitHandler = () => {
   if (otelSdk) {
-    otelSdk.shutdown().then(() => {
+    otelSdk.shutdown().finally(() => {
       _logger.debug("OTEL shutdown");
       process.exit(0);
     });

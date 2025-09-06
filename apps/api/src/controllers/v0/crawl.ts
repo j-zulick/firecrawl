@@ -27,7 +27,7 @@ import { redisEvictConnection } from "../../../src/services/redis";
 import { checkAndUpdateURL } from "../../../src/lib/validateUrl";
 import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
-import { fromLegacyScrapeOptions, url as urlSchema } from "../v1/types";
+import { url as urlSchema } from "../v1/types";
 import { ZodError } from "zod";
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { fromV0ScrapeOptions } from "../v2/types";
@@ -216,7 +216,7 @@ export async function crawlController(req: Request, res: Response) {
           const jobs = urls.map(url => {
             const uuid = uuidv4();
             return {
-              name: uuid,
+              jobId: uuid,
               data: {
                 url,
                 mode: "single_urls" as const,
@@ -231,10 +231,7 @@ export async function crawlController(req: Request, res: Response) {
                 zeroDataRetention: false, // not supported on v0
                 apiKeyId: chunk?.api_key_id ?? null,
               },
-              opts: {
-                jobId: uuid,
-                priority: jobPriority,
-              },
+              priority: jobPriority,
             };
           });
 
@@ -246,12 +243,12 @@ export async function crawlController(req: Request, res: Response) {
           );
           await addCrawlJobs(
             id,
-            jobs.map(x => x.opts.jobId),
+            jobs.map(x => x.jobId),
             logger,
           );
           for (const job of jobs) {
             // add with sentry instrumentation
-            await addScrapeJob(job.data, {}, job.opts.jobId);
+            await addScrapeJob(job.data, job.jobId, job.priority);
           }
         });
 
@@ -276,10 +273,8 @@ export async function crawlController(req: Request, res: Response) {
           zeroDataRetention: false, // not supported on v0
           apiKeyId: chunk?.api_key_id ?? null,
         },
-        {
-          priority: 15, // prioritize request 0 of crawl jobs same as scrape jobs
-        },
         jobId,
+        await getJobPriority({ team_id, basePriority: 15 }),
       );
       await addCrawlJob(id, jobId, logger);
     }

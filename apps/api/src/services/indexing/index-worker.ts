@@ -218,9 +218,7 @@ const processPrecrawlJobInternal = async (token: string, job: Job) => {
             zeroDataRetention: false,
             apiKeyId: null,
           },
-          {},
           crypto.randomUUID(),
-          10,
         );
       } catch (e) {
         logger.error("Error processing one cycle of the precrawl job", {

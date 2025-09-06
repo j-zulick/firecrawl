@@ -1,3 +1,4 @@
+import { exec, spawn } from "node:child_process";
 import { getJobFromGCS } from "../../../lib/gcs-jobs";
 import { supabase_service } from "../../../services/supabase";
 import {
@@ -20,6 +21,9 @@ const logIgnoreList = [
   "Billing batch processing",
   "Processing batch of",
   "Billing team",
+  "No jobs to process",
+  "nuqHealthCheck metrics",
+  "nuqGetJobToProcess metrics",
 ];
 
 if (process.env.TEST_SUITE_SELF_HOSTED) {
@@ -27,7 +31,35 @@ if (process.env.TEST_SUITE_SELF_HOSTED) {
     expect(true).toBe(true);
   });
 } else {
+  function getOutput(command: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      try {
+        const cmd = spawn(command, { shell: true });
+        let out = "";
+        cmd.stdout?.on("data", data => {
+          out += data;
+        });
+        cmd.stderr?.on("data", data => {
+          out += data;
+        });
+        cmd.on("error", e => {
+          reject(e);
+        });
+        cmd.on("close", code => {
+          if (code !== 0) {
+            reject(new Error(`Command ${command} failed with code ${code}`));
+          } else {
+            resolve(out);
+          }
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
   async function getServerLogs() {
+    let logs: string;
     if (!process.env.GITHUB_ACTIONS) {
       try {
         await stat("api.log");
@@ -35,8 +67,10 @@ if (process.env.TEST_SUITE_SELF_HOSTED) {
         console.warn("No api.log file found");
         return [];
       }
+      logs = await readFile("api.log", "utf8");
+    } else {
+      logs = await getOutput("kubectl logs deployment/firecrawl-app");
     }
-    const logs = await readFile("api.log", "utf8");
     return logs
       .split("\n")
       .filter(
@@ -45,6 +79,7 @@ if (process.env.TEST_SUITE_SELF_HOSTED) {
   }
 
   async function getWorkerLogs() {
+    let logs: string;
     if (!process.env.GITHUB_ACTIONS) {
       try {
         await stat("worker.log");
@@ -52,8 +87,10 @@ if (process.env.TEST_SUITE_SELF_HOSTED) {
         console.warn("No worker.log file found");
         return [];
       }
+      logs = await readFile("worker.log", "utf8");
+    } else {
+      logs = await getOutput("kubectl logs deployment/firecrawl-nuq-worker");
     }
-    const logs = await readFile("worker.log", "utf8");
     return logs
       .split("\n")
       .filter(

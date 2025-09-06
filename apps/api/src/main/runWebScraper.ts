@@ -1,9 +1,8 @@
-import { Job } from "bullmq";
 import { WebScraperOptions, RunWebScraperParams } from "../types";
-import { supabase_service } from "../services/supabase";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
 import { scrapeURL, ScrapeUrlResponse } from "../scraper/scrapeURL";
+import type { NuQJob } from "../services/worker/nuq";
 import { CostTracking } from "../lib/cost-tracking";
 configDotenv();
 
@@ -11,7 +10,7 @@ export async function startWebScraperPipeline({
   job,
   costTracking,
 }: {
-  job: Job<WebScraperOptions> & { id: string };
+  job: NuQJob<WebScraperOptions>;
   costTracking: CostTracking;
 }) {
   return await runWebScraper({
@@ -33,8 +32,8 @@ export async function startWebScraperPipeline({
       ...job.data.internalOptions,
     },
     team_id: job.data.team_id,
-    bull_job_id: job.id.toString(),
-    priority: job.opts.priority,
+    bull_job_id: job.id,
+    priority: job.priority,
     is_scrape: job.data.is_scrape ?? false,
     is_crawl: !!(job.data.crawl_id && job.data.crawlerOptions !== null),
     urlInvisibleInCurrentCrawl:
@@ -172,40 +171,3 @@ export async function runWebScraper({
     }
   }
 }
-
-const saveJob = async (job: Job, result: any, mode: string) => {
-  try {
-    const useDbAuthentication = process.env.USE_DB_AUTHENTICATION === "true";
-    if (useDbAuthentication) {
-      const { data, error } = await supabase_service
-        .from("firecrawl_jobs")
-        .update({ docs: result })
-        .eq("job_id", job.id);
-
-      if (error) throw new Error(error.message);
-      // try {
-      //   if (mode === "crawl") {
-      //     await job.moveToCompleted(null, token, false);
-      //   } else {
-      //     await job.moveToCompleted(result, token, false);
-      //   }
-      // } catch (error) {
-      //   // I think the job won't exist here anymore
-      // }
-      // } else {
-      //   try {
-      //     await job.moveToCompleted(result, token, false);
-      //   } catch (error) {
-      //     // I think the job won't exist here anymore
-      //   }
-    }
-    // ScrapeEvents.logJobEvent(job, "completed");
-  } catch (error) {
-    _logger.error(`🐂 Failed to update job status`, {
-      module: "runWebScraper",
-      method: "saveJob",
-      jobId: job.id,
-      scrapeId: job.id,
-    });
-  }
-};

@@ -10,9 +10,9 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { getJobPriority } from "../../lib/job-priority";
-import { getScrapeQueue } from "../../services/queue-service";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { TransportableError } from "../../lib/error";
+import { scrapeQueue } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 
 export async function scrapeController(
@@ -54,16 +54,17 @@ export async function scrapeController(
   const timeout = req.body.timeout;
 
   const startTime = new Date().getTime();
-  const jobPriority = await getJobPriority({
-    team_id: req.auth.team_id,
-    basePriority: 10,
-  });
 
   const isDirectToBullMQ =
     process.env.SEARCH_PREVIEW_TOKEN !== undefined &&
     process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
 
-  await addScrapeJob(
+  const jobPriority = await getJobPriority({
+    team_id: req.auth.team_id,
+    basePriority: 10,
+  });
+
+  const job = await addScrapeJob(
     {
       url: req.body.url,
       mode: "single_urls",
@@ -92,7 +93,6 @@ export async function scrapeController(
       zeroDataRetention,
       apiKeyId: req.acuc?.api_key_id ?? null,
     },
-    {},
     jobId,
     jobPriority,
     isDirectToBullMQ,
@@ -108,8 +108,10 @@ export async function scrapeController(
   let doc: Document;
   try {
     doc = await waitForJob(
-      jobId,
+      job ?? jobId,
       timeout !== undefined ? timeout + totalWait : null,
+      zeroDataRetention,
+      logger,
     );
   } catch (e) {
     logger.error(`Error in scrapeController`, {
@@ -118,7 +120,7 @@ export async function scrapeController(
     });
 
     if (zeroDataRetention) {
-      await getScrapeQueue().remove(jobId);
+      await scrapeQueue.removeJob(jobId);
     }
 
     if (e instanceof TransportableError) {
@@ -135,7 +137,7 @@ export async function scrapeController(
     }
   }
 
-  await getScrapeQueue().remove(jobId);
+  await scrapeQueue.removeJob(jobId);
 
   if (!hasFormatOfType(req.body.formats, "rawHtml")) {
     if (doc && doc.rawHtml) {
