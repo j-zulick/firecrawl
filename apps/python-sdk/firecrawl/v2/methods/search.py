@@ -194,7 +194,11 @@ def _prepare_search_request(request: SearchRequest) -> Dict[str, Any]:
             data["scrapeOptions"] = scrape_data
         data.pop("scrape_options", None)
     
-    if (str(getattr(validated_request, "integration", "")).strip()):
-        data["integration"] = str(validated_request.integration).strip()
+    # Only include integration if it was explicitly provided and non-empty
+    integration_value = getattr(validated_request, "integration", None)
+    if integration_value is not None:
+        integration_str = str(integration_value).strip()
+        if integration_str:
+            data["integration"] = integration_str
     
     return data
