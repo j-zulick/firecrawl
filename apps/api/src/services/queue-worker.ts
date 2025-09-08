@@ -37,6 +37,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { BullMQOtel } from "bullmq-otel";
 import { pathToFileURL } from "url";
+import { getErrorContactMessage } from "../lib/deployment";
 
 configDotenv();
 
@@ -164,20 +165,13 @@ const processExtractJobInternal = async (
 
       await job.moveToCompleted(result, token, false);
       await updateExtract(job.data.extractId, {
-        status: "failed",
-        error:
-          result?.error ??
-          "Unknown error, please contact help@firecrawl.com. Extract id: " +
-            job.data.extractId,
+        error: result?.error ?? getErrorContactMessage(job.data.extractId),
       });
 
       if (sender) {
         sender.send(WebhookEvent.EXTRACT_FAILED, {
           success: false,
-          error:
-            result?.error ??
-            "Unknown error, please contact help@firecrawl.com. Extract id: " +
-              job.data.extractId,
+          error: result?.error ?? getErrorContactMessage(job.data.extractId),
         });
       }
 
@@ -201,30 +195,20 @@ const processExtractJobInternal = async (
 
     await updateExtract(job.data.extractId, {
       status: "failed",
-      error:
-        error.error ??
-        error ??
-        "Unknown error, please contact help@firecrawl.com. Extract id: " +
-          job.data.extractId,
+      error: error.error ?? error ?? getErrorContactMessage(job.data.extractId),
     });
 
     if (sender) {
       sender.send(WebhookEvent.EXTRACT_FAILED, {
         success: false,
         error:
-          (error as any)?.message ??
-          "Unknown error, please contact help@firecrawl.com. Extract id: " +
-            job.data.extractId,
+          (error as any)?.message ?? getErrorContactMessage(job.data.extractId),
       });
     }
 
     return {
       success: false,
-      error:
-        error.error ??
-        error ??
-        "Unknown error, please contact help@firecrawl.com. Extract id: " +
-          job.data.extractId,
+      error: error.error ?? error ?? getErrorContactMessage(job.data.extractId),
     };
     // throw error;
   } finally {

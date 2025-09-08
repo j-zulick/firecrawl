@@ -16,6 +16,7 @@ import { logger } from "../lib/logger";
 import { BLOCKLISTED_URL_MESSAGE } from "../lib/strings";
 import { addDomainFrequencyJob } from "../services";
 import * as geoip from "geoip-country";
+import { isSelfHosted } from "../lib/deployment";
 
 export function checkCreditsMiddleware(
   _minimum?: number,
@@ -229,8 +230,9 @@ export function countryCheck(
     });
     return res.status(403).json({
       success: false,
-      error:
-        "Use of headers, actions, and the FIRE-1 agent is not allowed by default in your country. Please contact us at help@firecrawl.com",
+      error: isSelfHosted()
+        ? "Use of headers, actions, and the FIRE-1 agent is not allowed by default in your country. Please check your server configuration."
+        : "Use of headers, actions, and the FIRE-1 agent is not allowed by default in your country. Please contact us at help@firecrawl.com",
     });
   }
 

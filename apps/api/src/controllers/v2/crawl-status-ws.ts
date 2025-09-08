@@ -20,6 +20,7 @@ import { getJobs, PseudoJob } from "./crawl-status";
 import * as Sentry from "@sentry/node";
 import { getConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
 import { scrapeQueue, NuQJobStatus } from "../../services/worker/nuq";
+import { getErrorContactMessage } from "../../lib/deployment";
 
 type ErrorMessage = {
   type: "error";
@@ -211,9 +212,7 @@ export async function crawlStatusWSController(
     );
     return close(ws, 1011, {
       type: "error",
-      error:
-        "An unexpected error occurred. Please contact help@firecrawl.com for help. Your exception ID is " +
-        id,
+      error: getErrorContactMessage(id),
     });
   }
 }

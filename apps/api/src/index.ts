@@ -38,6 +38,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { nuqShutdown } from "./services/worker/nuq";
+import { getErrorContactMessage } from "./lib/deployment";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -245,9 +246,7 @@ app.use(
     res.status(500).json({
       success: false,
       code: "UNKNOWN_ERROR",
-      error:
-        "An unexpected error occurred. Please contact help@firecrawl.com for help. Your exception ID is " +
-        id,
+      error: getErrorContactMessage(id),
     });
   },
 );

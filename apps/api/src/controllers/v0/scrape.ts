@@ -23,6 +23,7 @@ import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { fromV0Combo } from "../v2/types";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq";
+import { getErrorContactMessage } from "../../lib/deployment";
 
 async function scrapeHelper(
   jobId: string,
@@ -230,8 +231,7 @@ export async function scrapeController(req: Request, res: Response) {
       logger.error(error);
       earlyReturn = true;
       return res.status(500).json({
-        error:
-          "Error checking team credits. Please contact help@firecrawl.com for help.",
+        error: getErrorContactMessage(),
       });
     }
 

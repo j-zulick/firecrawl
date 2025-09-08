@@ -1,6 +1,7 @@
 import { ErrorCodes, TransportableError } from "../../lib/error";
 import { Meta } from ".";
 import { Engine, FeatureFlag } from "./engines";
+import { isSelfHosted } from "../../lib/deployment";
 
 export class EngineError extends Error {
   constructor(message?: string, options?: ErrorOptions) {
@@ -12,10 +13,11 @@ export class NoEnginesLeftError extends TransportableError {
   public fallbackList: Engine[];
 
   constructor(fallbackList: Engine[]) {
-    super(
-      "SCRAPE_ALL_ENGINES_FAILED",
-      "All scraping engines failed! -- Double check the URL to make sure it's not broken. If the issue persists, contact us at help@firecrawl.com.",
-    );
+    const message = isSelfHosted()
+      ? "All scraping engines failed! -- Double check the URL to make sure it's not broken. Check your server logs for more details."
+      : "All scraping engines failed! -- Double check the URL to make sure it's not broken. If the issue persists, contact us at help@firecrawl.com.";
+
+    super("SCRAPE_ALL_ENGINES_FAILED", message);
     this.fallbackList = fallbackList;
   }
 
@@ -293,10 +295,11 @@ export class ZDRViolationError extends TransportableError {
 
 export class PDFPrefetchFailed extends TransportableError {
   constructor() {
-    super(
-      "SCRAPE_PDF_PREFETCH_FAILED",
-      "Failed to prefetch PDF that is protected by anti-bot. Please contact help@firecrawl.com",
-    );
+    const message = isSelfHosted()
+      ? "Failed to prefetch PDF that is protected by anti-bot. Please check your logs for more details."
+      : "Failed to prefetch PDF that is protected by anti-bot. Please contact help@firecrawl.com";
+
+    super("SCRAPE_PDF_PREFETCH_FAILED", message);
   }
 
   serialize() {

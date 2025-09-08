@@ -11,6 +11,7 @@ import { logJob } from "../../../services/logging/log_job";
 import { spreadSchemas_F0 } from "./helpers/spread-schemas-f0";
 import Ajv from "ajv";
 const ajv = new Ajv();
+import { getErrorContactMessage } from "../../deployment";
 
 import { ExtractStep, updateExtract } from "../extract-redis";
 import { CUSTOM_U_TEAMS } from "../config";
@@ -628,8 +629,7 @@ export async function performExtraction_F0(
       });
       return {
         success: false,
-        error:
-          "An unexpected error occurred. Please contact help@firecrawl.com for help.",
+        error: getErrorContactMessage(),
         extractId,
         urlTrace: urlTraces,
         totalUrlsScraped,

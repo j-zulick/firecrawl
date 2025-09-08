@@ -31,6 +31,7 @@ import { url as urlSchema } from "../v1/types";
 import { ZodError } from "zod";
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { fromV0ScrapeOptions } from "../v2/types";
+import { isSelfHosted } from "../../lib/deployment";
 
 export async function crawlController(req: Request, res: Response) {
   try {
@@ -114,8 +115,9 @@ export async function crawlController(req: Request, res: Response) {
 
     if (!creditsCheckSuccess) {
       return res.status(402).json({
-        error:
-          "Insufficient credits. You may be requesting with a higher limit than the amount of credits you have left. If not, upgrade your plan at https://firecrawl.dev/pricing or contact us at help@firecrawl.com",
+        error: isSelfHosted()
+          ? "Insufficient credits. You may be requesting with a higher limit than the amount of credits you have left. Please check your server configuration."
+          : "Insufficient credits. You may be requesting with a higher limit than the amount of credits you have left. If not, upgrade your plan at https://firecrawl.dev/pricing or contact us at help@firecrawl.com",
       });
     }
 

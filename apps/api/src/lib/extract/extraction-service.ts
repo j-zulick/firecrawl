@@ -20,6 +20,7 @@ import { transformArrayToObject } from "./helpers/transform-array-to-obj";
 import { mixSchemaObjects } from "./helpers/mix-schema-objs";
 import Ajv from "ajv";
 const ajv = new Ajv();
+import { getErrorContactMessage } from "../deployment";
 
 import { ExtractStep, updateExtract } from "./extract-redis";
 import { deduplicateObjectsArray } from "./helpers/deduplicate-objs-array";
@@ -717,8 +718,7 @@ export async function performExtraction(
         });
         return {
           success: false,
-          error:
-            "An unexpected error occurred. Please contact help@firecrawl.com for help.",
+          error: getErrorContactMessage(),
           extractId,
           urlTrace: urlTraces,
           totalUrlsScraped,
