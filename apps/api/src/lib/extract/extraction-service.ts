@@ -844,7 +844,8 @@ export async function performExtraction(
 
       if (docsMap.size == 0) {
         // All urls are invalid
-        logger.error("All provided URLs are invalid!");
+        const errorMessage = "All provided URLs are either invalid, unsupported or failed to be scraped.";
+        logger.error(errorMessage);
         const tokens_billed = 300 + calculateThinkingCost(costTracking);
         await billTeam(
           teamId,
@@ -861,8 +862,7 @@ export async function performExtraction(
         logJob({
           job_id: extractId,
           success: false,
-          message:
-            "All provided URLs are invalid. Please check your input and try again.",
+          message: errorMessage,
           num_docs: 1,
           docs: [],
           time_taken: (new Date().getTime() - Date.now()) / 1000,
@@ -880,8 +880,7 @@ export async function performExtraction(
         });
         return {
           success: false,
-          error:
-            "All provided URLs are invalid. Please check your input and try again.",
+          error: errorMessage,
           extractId,
           urlTrace: request.urlTrace ? urlTraces : undefined,
           totalUrlsScraped: 0,
@@ -977,11 +976,11 @@ export async function performExtraction(
 
     let finalResult = reqSchema
       ? await mixSchemaObjects(
-          reqSchema,
-          singleAnswerResult,
-          multiEntityResult,
-          logger.child({ method: "mixSchemaObjects" }),
-        )
+        reqSchema,
+        singleAnswerResult,
+        multiEntityResult,
+        logger.child({ method: "mixSchemaObjects" }),
+      )
       : singleAnswerResult || multiEntityResult;
 
     // Tokenize final result to get token count
