@@ -122,19 +122,34 @@ function execForward(fancyName: string, command: string): Promise<void> {
 
   console.log("=== Starting API, Worker, and Index Worker...");
 
-  const api = execForward("api", "pnpm server:production:nobuild");
-  const worker = execForward("worker", "pnpm worker:production");
+  const api = execForward(
+    "api",
+    process.argv[2] === "--start-docker"
+      ? "node dist/src/index.js"
+      : "pnpm server:production:nobuild",
+  );
+  const worker = execForward(
+    "worker",
+    process.argv[2] === "--start-docker"
+      ? "node dist/src/services/queue-worker.js"
+      : "pnpm worker:production",
+  );
   const nuqWorkers = new Array(5)
     .fill(0)
     .map((_, i) =>
       execForward(
         `nuq-worker-${i}`,
-        `NUQ_WORKER_PORT=${3006 + i} NUQ_REDUCE_NOISE=true pnpm nuq-worker:production`,
+        `NUQ_WORKER_PORT=${3006 + i} NUQ_REDUCE_NOISE=true ${process.argv[2] === "--start-docker" ? "node dist/src/services/worker/nuq-worker.js" : "pnpm nuq-worker:production"}`,
       ),
     );
   const indexWorker =
     process.env.USE_DB_AUTHENTICATION === "true"
-      ? execForward("index-worker", "pnpm index-worker:production")
+      ? execForward(
+          "index-worker",
+          process.argv[2] === "--start-docker"
+            ? "node dist/src/services/indexing/index-worker.js"
+            : "pnpm index-worker:production",
+        )
       : null;
 
   try {
