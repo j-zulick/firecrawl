@@ -234,7 +234,7 @@ jobs:
         run: pnpm install
         working-directory: ./apps/api
       - name: Wait for server
-        run: pnpx wait-on http://localhost:3002
+        run: pnpx wait-on http://localhost:3002 -t 30s
       - name: Run snippet tests
         env:
           PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
