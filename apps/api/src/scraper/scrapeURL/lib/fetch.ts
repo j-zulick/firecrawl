@@ -74,6 +74,7 @@ export async function robustFetch<
     schema,
     ignoreResponse,
     ignoreFailure,
+    ignoreFailureStatus,
     tryCount,
     tryCooldown,
     abort,
