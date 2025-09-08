@@ -56,6 +56,7 @@ export async function fetchRobotsTxt(
     robotsTxtUrl,
     scrapeOptions.parse({
       formats: ["rawHtml"],
+      timeout: 5000,
       ...(location ? { location } : {}),
     }),
     {
