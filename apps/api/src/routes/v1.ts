@@ -45,10 +45,8 @@ export const v1Router = express.Router();
 // This middleware handles payment verification and processing for premium API features
 // x402 payments protocol - https://github.com/coinbase/x402
 v1Router.use(
-  paymentMiddleware(
-    (process.env.X402_PAY_TO_ADDRESS as `0x${string}`) ||
-      "0x0000000000000000000000000000000000000000",
-    {
+  paymentMiddleware( (process.env.X402_PAY_TO_ADDRESS as `0x${string}`) ||
+      "0x0000000000000000000000000000000000000000", {
       "POST /x402/search": {
         price: process.env.X402_ENDPOINT_PRICE_USD as string,
         network: process.env.X402_NETWORK as
@@ -58,10 +56,48 @@ v1Router.use(
           | "avalanche"
           | "iotex",
         config: {
+          discoverable: true,
           description:
             "The search endpoint combines web search (SERP) with Firecrawl's scraping capabilities to return full page content for any query. Requires micropayment via X402 protocol",
           mimeType: "application/json",
           maxTimeoutSeconds: 120,
+          inputSchema: {
+            body: {
+              query: {
+                type: "string",
+                description: "Search query to find relevant web pages",
+                required: true
+              },
+              limit: {
+                type: "number",
+                description: "Maximum number of results to return (max 10)",
+                required: false
+              },
+              scrapeOptions: {
+                type: "object",
+                description: "Options for scraping the found pages",
+                required: false
+              }
+            }
+          },
+          outputSchema: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              data: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    url: { type: "string" },
+                    title: { type: "string" },
+                    description: { type: "string" },
+                    markdown: { type: "string" }
+                  }
+                }
+              }
+            }
+          }
         },
       },
     },
