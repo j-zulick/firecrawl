@@ -94,6 +94,10 @@ export class WebhookSender {
         signal: AbortSignal.timeout(this.context.v0 ? 30000 : 10000),
       });
 
+      if (!res.ok) {
+        throw new Error(`Unexpected response status: ${res.status}`);
+      }
+
       await logWebhook({
         success: res.status >= 200 && res.status < 300,
         teamId: this.context.teamId,
@@ -103,10 +107,6 @@ export class WebhookSender {
         event: payload.type,
         statusCode: res.status,
       });
-
-      if (!res.ok) {
-        throw new Error(`Unexpected response status: ${res.status}`);
-      }
     } catch (error) {
       this.logger.error("Failed to send webhook", {
         error,
