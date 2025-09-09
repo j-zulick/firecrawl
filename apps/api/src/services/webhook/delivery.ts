@@ -49,7 +49,10 @@ export class WebhookSender {
       metadata: this.config.metadata || undefined,
     };
 
-    const delivery = this.deliver(payload, data.scrapeId);
+    const delivery = this.deliver(
+      payload,
+      (data as any)?.scrapeId ?? undefined,
+    );
 
     if (data.awaitWebhook) {
       await delivery;

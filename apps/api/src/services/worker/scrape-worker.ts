@@ -458,11 +458,13 @@ async function processJob(job: NuQJob<any>) {
             sender.send(WebhookEvent.CRAWL_PAGE, {
               success: true,
               data: documents,
+              scrapeId: job.id,
             });
           } else {
             sender.send(WebhookEvent.BATCH_SCRAPE_PAGE, {
               success: true,
               data: documents,
+              scrapeId: job.id,
             });
           }
         }
@@ -603,6 +605,7 @@ async function processJob(job: NuQJob<any>) {
                 metadata,
               },
             ],
+            scrapeId: job.id,
           });
         } else {
           sender.send(WebhookEvent.BATCH_SCRAPE_PAGE, {
@@ -613,6 +616,7 @@ async function processJob(job: NuQJob<any>) {
                 metadata,
               },
             ],
+            scrapeId: job.id,
           });
         }
       }

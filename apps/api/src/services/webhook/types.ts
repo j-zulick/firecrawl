@@ -42,7 +42,6 @@ export interface WebhookDocumentLink {
 
 interface BaseWebhookData {
   success: boolean;
-  scrapeId?: string;
   awaitWebhook?: boolean;
 }
 
@@ -54,6 +53,7 @@ export interface CrawlStartedData extends BaseWebhookData {
 export interface CrawlPageData extends BaseWebhookData {
   success: boolean;
   data: Document[] | WebhookDocumentLink[]; // links or documents (v0 compatible)
+  scrapeId: string;
   error?: string;
 }
 
@@ -75,6 +75,7 @@ export interface BatchScrapeStartedData extends BaseWebhookData {
 export interface BatchScrapePageData extends BaseWebhookData {
   success: boolean;
   data: Document[];
+  scrapeId: string;
   error?: string; // more v0 tomfoolery
 }
 
