@@ -188,6 +188,7 @@ export async function batchScrapeController(
       teamId: req.auth.team_id,
       jobId: id,
       webhook: req.body.webhook,
+      v0: false,
     });
     await sender?.send(WebhookEvent.BATCH_SCRAPE_STARTED, { success: true });
   }

@@ -306,6 +306,7 @@ export async function finishCrawlIfNeeded(job: NuQJob<any>, sc: StoredCrawl) {
           teamId: job.data.team_id,
           jobId: job.data.crawl_id,
           webhook: job.data.webhook,
+          v0: false,
         });
         if (sender) {
           if (job.data.crawlerOptions !== null) {

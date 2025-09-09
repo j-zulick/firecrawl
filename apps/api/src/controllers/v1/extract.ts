@@ -31,6 +31,7 @@ export async function oldExtract(
     teamId: req.auth.team_id,
     jobId: extractId,
     webhook: req.body.webhook,
+    v0: false,
   });
 
   sender?.send(WebhookEvent.EXTRACT_STARTED, { success: true });

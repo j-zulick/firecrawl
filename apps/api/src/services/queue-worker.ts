@@ -110,7 +110,7 @@ const processExtractJobInternal = async (
     teamId: job.data.teamId,
     jobId: job.data.extractId,
     webhook: job.data.request.webhook,
-    v0: true,
+    v0: false,
   });
 
   try {

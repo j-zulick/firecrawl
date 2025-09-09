@@ -7,7 +7,7 @@ export async function createWebhookSender(params: {
   teamId: string;
   jobId: string;
   webhook?: WebhookConfig;
-  v0?: boolean;
+  v0: boolean;
 }): Promise<WebhookSender | null> {
   const config = await getWebhookConfig(
     params.teamId,
@@ -21,7 +21,7 @@ export async function createWebhookSender(params: {
   return new WebhookSender(config.config, config.secret, {
     teamId: params.teamId,
     jobId: params.jobId,
-    v0: params.v0 || false,
+    v0: params.v0,
   });
 }
 
