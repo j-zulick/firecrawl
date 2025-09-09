@@ -9,7 +9,6 @@ import {
   idmux,
 } from "./lib";
 import { readFile, stat } from "node:fs/promises";
-import { spawn } from "node:child_process";
 
 const logIgnoreList = [
   "Billing queue created",
@@ -31,66 +30,15 @@ if (process.env.TEST_SUITE_SELF_HOSTED) {
     expect(true).toBe(true);
   });
 } else {
-  function getOutput(command: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      try {
-        const cmd = spawn(command, { shell: true });
-        let out = "";
-        cmd.stdout?.on("data", data => {
-          out += data;
-        });
-        cmd.stderr?.on("data", data => {
-          out += data;
-        });
-        cmd.on("error", e => {
-          reject(e);
-        });
-        cmd.on("close", code => {
-          if (code !== 0) {
-            reject(new Error(`Command ${command} failed with code ${code}`));
-          } else {
-            resolve(out);
-          }
-        });
-      } catch (e) {
-        reject(e);
-      }
-    });
-  }
-
-  async function getServerLogs() {
+  async function getLogs() {
     let logs: string;
-    if (!process.env.GITHUB_ACTIONS) {
-      try {
-        await stat("api.log");
-      } catch (e) {
-        console.warn("No api.log file found");
-        return [];
-      }
-      logs = await readFile("api.log", "utf8");
-    } else {
-      logs = await getOutput("kubectl logs deployment/firecrawl-app");
+    try {
+      await stat("firecrawl.log");
+    } catch (e) {
+      console.warn("No firecrawl.log file found");
+      return [];
     }
-    return logs
-      .split("\n")
-      .filter(
-        x => x.trim().length > 0 && !logIgnoreList.some(y => x.includes(y)),
-      );
-  }
-
-  async function getWorkerLogs() {
-    let logs: string;
-    if (!process.env.GITHUB_ACTIONS) {
-      try {
-        await stat("worker.log");
-      } catch (e) {
-        console.warn("No worker.log file found");
-        return [];
-      }
-      logs = await readFile("worker.log", "utf8");
-    } else {
-      logs = await getOutput("kubectl logs deployment/firecrawl-nuq-worker");
-    }
+    logs = await readFile("firecrawl.log", "utf8");
     return logs
       .split("\n")
       .filter(
@@ -154,8 +102,7 @@ if (process.env.TEST_SUITE_SELF_HOSTED) {
       }, 60000);
 
       it("should clean up a crawl", async () => {
-        const preServerLogs = await getServerLogs();
-        const preWorkerLogs = await getWorkerLogs();
+        const preLogs = await getLogs();
 
         let identity = await idmux({
           name: `zdr/${scope}/crawl`,
@@ -179,23 +126,13 @@ if (process.env.TEST_SUITE_SELF_HOSTED) {
           identity,
         );
 
-        const postServerLogs = (await getServerLogs()).slice(
-          preServerLogs.length,
-        );
-        const postWorkerLogs = (await getWorkerLogs()).slice(
-          preWorkerLogs.length,
-        );
+        const postLogs = (await getLogs()).slice(preLogs.length);
 
-        if (postWorkerLogs.length > 0 || postServerLogs.length > 0) {
-          console.warn(
-            "Logs changed during crawl",
-            postServerLogs,
-            postWorkerLogs,
-          );
+        if (postLogs.length > 0) {
+          console.warn("Logs changed during crawl", postLogs);
         }
 
-        expect(postServerLogs).toHaveLength(0);
-        expect(postWorkerLogs).toHaveLength(0);
+        expect(postLogs).toHaveLength(0);
 
         const { data, error } = await supabase_service
           .from("firecrawl_jobs")
@@ -249,8 +186,7 @@ if (process.env.TEST_SUITE_SELF_HOSTED) {
       }, 600000);
 
       it("should clean up a batch scrape", async () => {
-        const preServerLogs = await getServerLogs();
-        const preWorkerLogs = await getWorkerLogs();
+        const preLogs = await getLogs();
 
         let identity = await idmux({
           name: `zdr/${scope}/batch-scrape`,
@@ -273,23 +209,13 @@ if (process.env.TEST_SUITE_SELF_HOSTED) {
           identity,
         );
 
-        const postServerLogs = (await getServerLogs()).slice(
-          preServerLogs.length,
-        );
-        const postWorkerLogs = (await getWorkerLogs()).slice(
-          preWorkerLogs.length,
-        );
+        const postLogs = (await getLogs()).slice(preLogs.length);
 
-        if (postWorkerLogs.length > 0 || postServerLogs.length > 0) {
-          console.warn(
-            "Logs changed during batch scrape",
-            postServerLogs,
-            postWorkerLogs,
-          );
+        if (postLogs.length > 0) {
+          console.warn("Logs changed during batch scrape", postLogs);
         }
 
-        expect(postServerLogs).toHaveLength(0);
-        expect(postWorkerLogs).toHaveLength(0);
+        expect(postLogs).toHaveLength(0);
 
         const { data, error } = await supabase_service
           .from("firecrawl_jobs")

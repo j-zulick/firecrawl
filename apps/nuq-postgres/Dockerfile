@@ -17,8 +17,5 @@ RUN set -eux; \
     sed -ri "s/^#?shared_preload_libraries\s*=.*/shared_preload_libraries = 'pg_cron'/" "$conf_sample"; \
     printf "\n# Added for pg_cron\ncron.database_name = 'postgres'\n" >> "$conf_sample"
 
-# Create required extensions before executing our SQL
-RUN printf 'CREATE EXTENSION IF NOT EXISTS pgcrypto;\nCREATE EXTENSION IF NOT EXISTS pg_cron;\n' > /docker-entrypoint-initdb.d/010-extensions.sql
-
 # Copy nuq.sql so it is executed as part of the initdb sequence
-COPY nuq.sql /docker-entrypoint-initdb.d/020-nuq.sql
+COPY nuq.sql /docker-entrypoint-initdb.d/010-nuq.sql

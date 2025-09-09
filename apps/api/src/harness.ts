@@ -3,6 +3,7 @@ import { type ChildProcess, spawn } from "child_process";
 import * as net from "net";
 import { basename } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
+import { createWriteStream } from "fs";
 
 const childProcesses = new Set<ChildProcess>();
 
@@ -64,6 +65,8 @@ function formatDuration(nanoseconds: bigint): string {
   return `${minutes}m ${remainingSeconds.toFixed(0)}s`;
 }
 
+const stream = createWriteStream("firecrawl.log");
+
 const logger = {
   section(message: string) {
     console.log(
@@ -110,6 +113,7 @@ const logger = {
     const color = getProcessColor(name);
     const label = `${color}${name.padEnd(12)}${colors.reset}`;
     console.log(`${label} ${line}`);
+    stream.write(`${name.padEnd(12)} ${line}\n`);
   },
 };
 
