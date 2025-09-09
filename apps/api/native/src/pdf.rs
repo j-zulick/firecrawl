@@ -27,11 +27,7 @@ fn _get_pdf_metadata(path: &str) -> std::result::Result<PDFMetadata, String> {
       info
         .as_dict()
         .and_then(|info| info.get(b"Title"))
-        .and_then(|title| {
-          title
-            .as_str()
-            .map(|s| String::from_utf8_lossy(s).to_string())
-        })
+        .and_then(|title| lopdf::decode_text_string(title))
     })
     .ok()
     .or_else(|| {
@@ -39,15 +35,11 @@ fn _get_pdf_metadata(path: &str) -> std::result::Result<PDFMetadata, String> {
         obj
           .as_dict()
           .and_then(|obj| obj.get(b"Title"))
-          .and_then(|title| title.as_str())
-          .map(|s| String::from_utf8_lossy(s).to_string())
+          .and_then(|title| lopdf::decode_text_string(title))
           .ok()
       })
     })
-    .map(|x| {
-      x.trim_matches(|x| char::is_whitespace(x) || x == '\0')
-        .to_string()
-    });
+    .map(|x| x.trim().to_string());
 
   Ok(PDFMetadata { num_pages, title })
 }
