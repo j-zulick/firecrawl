@@ -398,7 +398,7 @@ export async function authenticateUser(
   })(req, res, mode);
 }
 
-export async function supaAuthenticateUser(
+async function supaAuthenticateUser(
   req,
   res,
   mode?: RateLimiterMode,

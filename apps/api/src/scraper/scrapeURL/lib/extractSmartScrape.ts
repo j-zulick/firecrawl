@@ -81,69 +81,6 @@ const multiSmartScrapeWrapperSchemaDefinition = {
   required: ["extractedData", "shouldUseSmartscrape"],
 };
 
-//TODO: go over and check
-// should add null to all types
-// type:string should be type:["string","null"]
-export function makeSchemaNullable(schema: any): any {
-  if (typeof schema !== "object" || schema === null) {
-    return schema; // Base case: not an object/array or is null
-  }
-
-  if (Array.isArray(schema)) {
-    return schema.map(makeSchemaNullable); // Recurse for array items
-  }
-
-  // Process object properties
-  const newSchema: { [key: string]: any } = {};
-  let isObject = false; // Flag to track if this level is an object type
-
-  for (const key in schema) {
-    if (key === "additionalProperties") {
-      continue; // Skip existing additionalProperties, we'll set it later if needed
-    }
-
-    if (key === "type") {
-      const currentType = schema[key];
-      let finalType: string | string[];
-
-      if (typeof currentType === "string") {
-        if (currentType === "object") isObject = true;
-        finalType =
-          currentType === "null" ? currentType : [currentType, "null"];
-      } else if (Array.isArray(currentType)) {
-        if (currentType.includes("object")) isObject = true;
-        finalType = currentType.includes("null")
-          ? currentType
-          : [...currentType, "null"];
-      } else {
-        finalType = currentType; // Handle unexpected types?
-      }
-      newSchema[key] = finalType;
-    } else if (typeof schema[key] === "object" && schema[key] !== null) {
-      // Recurse for nested objects (properties, items, definitions, etc.)
-      newSchema[key] = makeSchemaNullable(schema[key]);
-      if (key === "properties") {
-        // Having a 'properties' key strongly implies an object type
-        isObject = true;
-      }
-    } else {
-      // Copy other properties directly (like required, description, etc.)
-      newSchema[key] = schema[key];
-    }
-  }
-
-  // **Crucial Fix:** If this schema represents an object type, add additionalProperties: false
-  if (isObject) {
-    // Ensure 'properties' exists if 'type' was 'object' but 'properties' wasn't defined
-    if (!newSchema.properties) {
-      newSchema.properties = {};
-    }
-    newSchema.additionalProperties = false;
-  }
-
-  return newSchema;
-}
-
 /**
  * Wraps the original schema with SmartScrape fields if an original schema exists.
  *
@@ -151,7 +88,7 @@ export function makeSchemaNullable(schema: any): any {
  * @param logger Winston logger instance.
  * @returns An object containing the schema to use for the LLM call and whether wrapping occurred.
  */
-export function prepareSmartScrapeSchema(
+function prepareSmartScrapeSchema(
   originalSchema: any | z.ZodTypeAny | undefined,
   logger: Logger,
   isSingleUrl: boolean,

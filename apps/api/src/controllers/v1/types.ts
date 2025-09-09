@@ -15,7 +15,7 @@ import { ErrorCodes } from "../../lib/error";
 import { integrationSchema } from "../../utils/integration";
 import { webhookSchema } from "../../services/webhook/schema";
 
-export type Format =
+type Format =
   | "markdown"
   | "html"
   | "rawHtml"
@@ -70,7 +70,7 @@ export const url = z.preprocess(
 const strictMessage =
   "Unrecognized key in body -- please review the v1 API documentation for request body changes";
 
-export const agentExtractModelValue = "fire-1";
+const agentExtractModelValue = "fire-1";
 export const isAgentExtractModelValid = (x: string | undefined) =>
   x?.toLowerCase() === agentExtractModelValue;
 
@@ -79,8 +79,6 @@ export const agentOptionsExtract = z
     model: z.string().default(agentExtractModelValue),
   })
   .strict(strictMessage);
-
-export type AgentOptions = z.infer<typeof agentOptionsExtract>;
 
 export const extractOptions = z
   .object({
@@ -113,7 +111,7 @@ export const extractOptions = z
       "Based on the information on the page, extract all the information from the schema in JSON format. Try to extract all the fields even those that might not be marked as required.",
   }));
 
-export const extractOptionsWithAgent = z
+const extractOptionsWithAgent = z
   .object({
     mode: z.enum(["llm"]).default("llm"),
     schema: z
@@ -188,7 +186,7 @@ function calculateTotalWaitTime(
   return waitFor + actionWaitTime;
 }
 
-export const actionSchema = z.union([
+const actionSchema = z.union([
   z
     .object({
       type: z.literal("wait"),
@@ -258,7 +256,7 @@ export const actionSchema = z.union([
 
 export type Action = z.infer<typeof actionSchema>;
 
-export const actionsSchema = z
+const actionsSchema = z
   .array(actionSchema)
   .refine(actions => actions.length <= MAX_ACTIONS, {
     message: `Number of actions cannot exceed ${MAX_ACTIONS}`,
@@ -272,7 +270,7 @@ export const actionsSchema = z
 
 const SPECIAL_COUNTRIES = ["us-generic", "us-whitelist"];
 
-export const locationSchema = z
+const locationSchema = z
   .object({
     country: z
       .string()
@@ -536,7 +534,7 @@ export const scrapeOptions = baseScrapeOptions
     return extractTransform(obj) as typeof obj;
   });
 
-export type BaseScrapeOptions = z.infer<typeof baseScrapeOptions>;
+type BaseScrapeOptions = z.infer<typeof baseScrapeOptions>;
 
 export type ScrapeOptions = BaseScrapeOptions & {
   extract?: z.infer<typeof extractOptionsWithAgent>;
@@ -551,7 +549,7 @@ export type ScrapeOptions = BaseScrapeOptions & {
 
 const ajv = new Ajv();
 
-export const extractV1Options = z
+const extractV1Options = z
   .object({
     urls: url
       .array()
@@ -629,7 +627,6 @@ export const extractV1Options = z
       : x.scrapeOptions,
   }));
 
-export type ExtractV1Options = z.infer<typeof extractV1Options>;
 export const extractRequestSchema = extractV1Options;
 export type ExtractRequest = z.infer<typeof extractRequestSchema>;
 export type ExtractRequestInput = z.input<typeof extractRequestSchema>;
@@ -732,7 +729,7 @@ const crawlerOptions = z
 //   ignoreSitemap?: boolean;
 // };
 
-export type CrawlerOptions = z.infer<typeof crawlerOptions>;
+type CrawlerOptions = z.infer<typeof crawlerOptions>;
 
 export const crawlRequestSchema = crawlerOptions
   .extend({
@@ -935,12 +932,6 @@ export type ScrapeResponse =
       scrape_id?: string;
     };
 
-export interface ScrapeResponseRequestTest {
-  statusCode: number;
-  body: ScrapeResponse;
-  error?: string;
-}
-
 export interface URLTrace {
   url: string;
   status: "mapped" | "scraped" | "error";
@@ -973,12 +964,6 @@ export interface ExtractResponse {
     [key: string]: string[];
   };
   tokensUsed?: number;
-}
-
-export interface ExtractResponseRequestTest {
-  statusCode: number;
-  body: ExtractResponse;
-  error?: string;
 }
 
 export type CrawlResponse =
@@ -1207,7 +1192,7 @@ export function toNewCrawlerOptions(x: any): CrawlerOptions {
   };
 }
 
-export function fromLegacyCrawlerOptions(
+function fromLegacyCrawlerOptions(
   x: any,
   teamId: string,
 ): {
@@ -1303,26 +1288,6 @@ export function fromLegacyScrapeOptions(
     },
     // TODO: fallback, fetchPageContent, replaceAllPathsWithAbsolutePaths, includeLinks
   };
-}
-
-export function fromLegacyCombo(
-  pageOptions: PageOptions,
-  extractorOptions: ExtractorOptions | undefined,
-  timeout: number | undefined,
-  crawlerOptions: any,
-  teamId: string,
-): { scrapeOptions: ScrapeOptions; internalOptions: InternalOptions } {
-  const { scrapeOptions, internalOptions: i1 } = fromLegacyScrapeOptions(
-    pageOptions,
-    extractorOptions,
-    timeout,
-    teamId,
-  );
-  const { internalOptions: i2 } = fromLegacyCrawlerOptions(
-    crawlerOptions,
-    teamId,
-  );
-  return { scrapeOptions, internalOptions: Object.assign(i1, i2) };
 }
 
 export function toLegacyDocument(

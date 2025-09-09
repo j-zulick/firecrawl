@@ -9,7 +9,7 @@ import { getGenerateLlmsTxtQueue } from "../../services/queue-service";
 import * as Sentry from "@sentry/node";
 import { saveGeneratedLlmsTxt } from "../../lib/generate-llmstxt/generate-llmstxt-redis";
 
-export type GenerateLLMsTextResponse =
+type GenerateLLMsTextResponse =
   | ErrorResponse
   | {
       success: boolean;

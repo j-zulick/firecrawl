@@ -13,7 +13,7 @@ import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { scrapeQueue, NuQJob } from "../../services/worker/nuq";
 configDotenv();
 
-export async function getJobs(
+async function getJobs(
   crawlId: string,
   ids: string[],
 ): Promise<PseudoJob<any>[]> {

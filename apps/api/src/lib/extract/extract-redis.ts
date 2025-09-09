@@ -15,7 +15,7 @@ export enum ExtractStep {
   COMPLETE = "complete",
 }
 
-export type ExtractedStep = {
+type ExtractedStep = {
   step: ExtractStep;
   startedAt: number;
   finishedAt: number | null;
@@ -23,7 +23,7 @@ export type ExtractedStep = {
   discoveredLinks?: string[];
 };
 
-export type StoredExtract = {
+type StoredExtract = {
   id: string;
   team_id: string;
   createdAt: number;

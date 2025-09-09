@@ -24,7 +24,7 @@ import { fromV0Combo } from "../v2/types";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq";
 
-export async function searchHelper(
+async function searchHelper(
   jobId: string,
   req: Request,
   team_id: string,

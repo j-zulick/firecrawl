@@ -19,12 +19,12 @@ import {
   hasAnyFormatOfTypes,
 } from "../../../lib/format-utils";
 
-export type Transformer = (
+type Transformer = (
   meta: Meta,
   document: Document,
 ) => Document | Promise<Document>;
 
-export async function deriveMetadataFromRawHTML(
+async function deriveMetadataFromRawHTML(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
@@ -41,7 +41,7 @@ export async function deriveMetadataFromRawHTML(
   return document;
 }
 
-export async function deriveHTMLFromRawHTML(
+async function deriveHTMLFromRawHTML(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
@@ -62,7 +62,7 @@ export async function deriveHTMLFromRawHTML(
   return document;
 }
 
-export async function deriveMarkdownFromHTML(
+async function deriveMarkdownFromHTML(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
@@ -112,7 +112,7 @@ export async function deriveMarkdownFromHTML(
   return document;
 }
 
-export async function deriveLinksFromHTML(
+async function deriveLinksFromHTML(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
@@ -136,7 +136,7 @@ export async function deriveLinksFromHTML(
   return document;
 }
 
-export async function deriveImagesFromHTML(
+async function deriveImagesFromHTML(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
@@ -160,10 +160,7 @@ export async function deriveImagesFromHTML(
   return document;
 }
 
-export function coerceFieldsToFormats(
-  meta: Meta,
-  document: Document,
-): Document {
+function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
   const hasRawHtml = hasFormatOfType(meta.options.formats, "rawHtml");
   const hasHtml = hasFormatOfType(meta.options.formats, "html");
@@ -331,7 +328,7 @@ export function coerceFieldsToFormats(
 }
 
 // TODO: allow some of these to run in parallel
-export const transformerStack: Transformer[] = [
+const transformerStack: Transformer[] = [
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
   deriveLinksFromHTML,

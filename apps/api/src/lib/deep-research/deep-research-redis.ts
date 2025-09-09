@@ -1,15 +1,6 @@
 import { redisEvictConnection } from "../../services/redis";
 import { logger as _logger } from "../logger";
 
-export enum DeepResearchStep {
-  INITIAL = "initial",
-  SEARCH = "search",
-  EXTRACT = "extract",
-  ANALYZE = "analyze",
-  SYNTHESIS = "synthesis",
-  COMPLETE = "complete",
-}
-
 export type DeepResearchActivity = {
   type:
     | "search"

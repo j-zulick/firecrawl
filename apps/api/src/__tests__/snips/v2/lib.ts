@@ -27,14 +27,7 @@ import {
 import { SearchV2Response } from "../../../lib/entities";
 
 // Re-export shared utilities for backwards compatibility
-export {
-  TEST_URL,
-  scrapeTimeout,
-  indexCooldown,
-  Identity,
-  IdmuxRequest,
-  idmux,
-};
+export { scrapeTimeout, indexCooldown, Identity, idmux };
 
 // =========================================
 // Scrape API
@@ -208,7 +201,7 @@ export async function asyncCrawlWaitForFinish(
   return x.body;
 }
 
-export async function crawlErrors(
+async function crawlErrors(
   id: string,
   identity: Identity,
 ): Promise<Exclude<CrawlErrorsResponse, ErrorResponse>> {
@@ -409,7 +402,7 @@ export async function creditUsage(
 // Concurrency API
 // =========================================
 
-export async function concurrencyCheck(
+async function concurrencyCheck(
   identity: Identity,
 ): Promise<{ concurrency: number; maxConcurrency: number }> {
   const x = await request(TEST_URL)

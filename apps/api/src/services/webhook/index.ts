@@ -29,4 +29,4 @@ export {
   getWebhookInsertQueueLength,
   processWebhookInsertJobs,
 } from "./delivery";
-export * from "./types";
+export { WebhookEvent } from "./types";

@@ -20,13 +20,13 @@ import { filterLinks } from "@mendable/firecrawl-rs";
 
 export const SITEMAP_LIMIT = 100;
 
-export interface FilterResult {
+interface FilterResult {
   allowed: boolean;
   url?: string;
   denialReason?: string;
 }
 
-export enum DenialReason {
+enum DenialReason {
   DEPTH_LIMIT = "URL exceeds maximum crawl depth",
   EXCLUDE_PATTERN = "URL matches exclude pattern",
   INCLUDE_PATTERN = "URL does not match required include pattern",
@@ -39,7 +39,7 @@ export enum DenialReason {
   SECTION_LINK = "URL contains section anchor (#)",
 }
 
-export interface FilterLinksResult {
+interface FilterLinksResult {
   links: string[];
   denialReasons: Map<string, string>;
 }

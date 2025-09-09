@@ -25,14 +25,7 @@ import {
 } from "../lib";
 
 // Re-export shared utilities for backwards compatibility
-export {
-  TEST_URL,
-  scrapeTimeout,
-  indexCooldown,
-  Identity,
-  IdmuxRequest,
-  idmux,
-};
+export { scrapeTimeout, indexCooldown, Identity, idmux };
 
 export async function scrapeRaw(body: ScrapeRequestInput, identity: Identity) {
   return await request(TEST_URL)
@@ -207,7 +200,7 @@ export async function asyncCrawlWaitForFinish(
   return x.body;
 }
 
-export async function crawlErrors(
+async function crawlErrors(
   id: string,
   identity: Identity,
 ): Promise<Exclude<CrawlErrorsResponse, ErrorResponse>> {
@@ -473,7 +466,7 @@ export async function tokenUsage(
 // Concurrency API
 // =========================================
 
-export async function concurrencyCheck(
+async function concurrencyCheck(
   identity: Identity,
 ): Promise<{ concurrency: number; maxConcurrency: number }> {
   const x = await request(TEST_URL)

@@ -4,8 +4,6 @@ import IORedis from "ioredis";
 import { BullMQOtel } from "bullmq-otel";
 import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
 
-export type QueueFunction = () => Queue<any, any, string, any, any, string>;
-
 let extractQueue: Queue;
 let loggingQueue: Queue;
 let indexQueue: Queue;
@@ -27,12 +25,10 @@ export function getRedisConnection(): IORedis {
   return redisConnection;
 }
 
-export const extractQueueName = "{extractQueue}";
-export const loggingQueueName = "{loggingQueue}";
-export const indexQueueName = "{indexQueue}";
-export const generateLlmsTxtQueueName = "{generateLlmsTxtQueue}";
-export const deepResearchQueueName = "{deepResearchQueue}";
-export const billingQueueName = "{billingQueue}";
+const extractQueueName = "{extractQueue}";
+const generateLlmsTxtQueueName = "{generateLlmsTxtQueue}";
+const deepResearchQueueName = "{deepResearchQueue}";
+const billingQueueName = "{billingQueue}";
 export const precrawlQueueName = "{precrawlQueue}";
 
 export function getExtractQueue() {

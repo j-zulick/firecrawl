@@ -47,45 +47,7 @@ export async function billTeam(
   )(team_id, subscription_id, credits, api_key_id, logger, is_extract);
 }
 
-export async function supaBillTeam(
-  team_id: string,
-  subscription_id: string | null | undefined,
-  credits: number,
-  api_key_id: number | null,
-  __logger?: Logger,
-  is_extract: boolean = false,
-) {
-  // This function should no longer be called directly
-  // It has been moved to batch_billing.ts
-  const _logger = (__logger ?? logger).child({
-    module: "credit_billing",
-    method: "supaBillTeam",
-    teamId: team_id,
-    subscriptionId: subscription_id,
-    credits,
-  });
-
-  _logger.warn(
-    "supaBillTeam was called directly. This function is deprecated and should only be called from batch_billing.ts",
-  );
-  queueBillingOperation(
-    team_id,
-    subscription_id,
-    credits,
-    api_key_id,
-    is_extract,
-  ).catch(err => {
-    _logger.error("Error queuing billing operation", { err });
-    Sentry.captureException(err);
-  });
-  // Forward to the batch billing system
-  return {
-    success: true,
-    message: "Billing operation queued",
-  };
-}
-
-export type CheckTeamCreditsResponse = {
+type CheckTeamCreditsResponse = {
   success: boolean;
   message: string;
   remainingCredits: number;
@@ -105,7 +67,7 @@ export async function checkTeamCredits(
 }
 
 // if team has enough credits for the operation, return true, else return false
-export async function supaCheckTeamCredits(
+async function supaCheckTeamCredits(
   chunk: AuthCreditUsageChunk | null,
   team_id: string,
   credits: number,
@@ -225,98 +187,5 @@ export async function supaCheckTeamCredits(
     message: "Sufficient credits available",
     remainingCredits: chunk.remaining_credits,
     chunk,
-  };
-}
-
-// Count the total credits used by a team within the current billing period and return the remaining credits.
-export async function countCreditsAndRemainingForCurrentBillingPeriod(
-  team_id: string,
-) {
-  // 1. Retrieve the team's active subscription based on the team_id.
-  const { data: subscription, error: subscriptionError } =
-    await supabase_service
-      .from("subscriptions")
-      .select("id, price_id, current_period_start, current_period_end")
-      .eq("team_id", team_id)
-      .single();
-
-  const { data: coupons } = await supabase_service
-    .from("coupons")
-    .select("credits")
-    .eq("team_id", team_id)
-    .eq("status", "active");
-
-  let couponCredits = 0;
-  if (coupons && coupons.length > 0) {
-    couponCredits = coupons.reduce(
-      (total, coupon) => total + coupon.credits,
-      0,
-    );
-  }
-
-  if (subscriptionError || !subscription) {
-    // Free
-    const { data: creditUsages, error: creditUsageError } =
-      await supabase_service
-        .from("credit_usage")
-        .select("credits_used")
-        .is("subscription_id", null)
-        .eq("team_id", team_id);
-
-    if (creditUsageError || !creditUsages) {
-      throw new Error(
-        `Failed to retrieve credit usage for team_id: ${team_id}`,
-      );
-    }
-
-    const totalCreditsUsed = creditUsages.reduce(
-      (acc, usage) => acc + usage.credits_used,
-      0,
-    );
-
-    const remainingCredits = FREE_CREDITS + couponCredits - totalCreditsUsed;
-    return {
-      totalCreditsUsed: totalCreditsUsed,
-      remainingCredits,
-      totalCredits: FREE_CREDITS + couponCredits,
-    };
-  }
-
-  const { data: creditUsages, error: creditUsageError } = await supabase_service
-    .from("credit_usage")
-    .select("credits_used")
-    .eq("subscription_id", subscription.id)
-    .gte("created_at", subscription.current_period_start)
-    .lte("created_at", subscription.current_period_end);
-
-  if (creditUsageError || !creditUsages) {
-    throw new Error(
-      `Failed to retrieve credit usage for subscription_id: ${subscription.id}`,
-    );
-  }
-
-  const totalCreditsUsed = creditUsages.reduce(
-    (acc, usage) => acc + usage.credits_used,
-    0,
-  );
-
-  const { data: price, error: priceError } = await supabase_service
-    .from("prices")
-    .select("credits")
-    .eq("id", subscription.price_id)
-    .single();
-
-  if (priceError || !price) {
-    throw new Error(
-      `Failed to retrieve price for price_id: ${subscription.price_id}`,
-    );
-  }
-
-  const remainingCredits = price.credits + couponCredits - totalCreditsUsed;
-
-  return {
-    totalCreditsUsed,
-    remainingCredits,
-    totalCredits: price.credits,
   };
 }

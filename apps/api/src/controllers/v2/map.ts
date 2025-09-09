@@ -86,7 +86,7 @@ async function queryIndex(
   }
 }
 
-export async function getMapResults({
+async function getMapResults({
   url,
   search,
   limit = MAX_MAP_LIMIT,

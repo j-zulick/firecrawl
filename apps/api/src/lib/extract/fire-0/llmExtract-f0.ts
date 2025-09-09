@@ -31,7 +31,7 @@ const getModelLimits_F0 = (model: string) => {
   };
 };
 
-export class LLMRefusalError extends Error {
+class LLMRefusalError extends Error {
   public refusal: string;
 
   constructor(refusal: string) {
@@ -96,7 +96,7 @@ interface TrimResult {
   warning?: string;
 }
 
-export function trimToTokenLimit_F0(
+function trimToTokenLimit_F0(
   text: string,
   maxTokens: number,
   modelId: string = "gpt-4o",
@@ -446,7 +446,7 @@ export async function generateCompletions_F0({
   }
 }
 
-export function removeDefaultProperty_F0(schema: any): any {
+function removeDefaultProperty_F0(schema: any): any {
   if (typeof schema !== "object" || schema === null) return schema;
 
   const rest = { ...schema };

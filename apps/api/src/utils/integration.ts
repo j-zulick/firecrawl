@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export enum IntegrationEnum {
+enum IntegrationEnum {
   DIFY = "dify",
   ZAPIER = "zapier",
   PIPEDREAM = "pipedream",

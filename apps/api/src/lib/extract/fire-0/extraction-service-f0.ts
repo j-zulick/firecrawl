@@ -50,7 +50,7 @@ interface ExtractServiceOptions {
   apiKeyId: number | null;
 }
 
-export interface ExtractResult {
+interface ExtractResult {
   success: boolean;
   data?: any;
   extractId: string;

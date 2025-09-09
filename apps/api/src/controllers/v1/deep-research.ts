@@ -5,7 +5,7 @@ import * as Sentry from "@sentry/node";
 import { saveDeepResearch } from "../../lib/deep-research/deep-research-redis";
 import { z } from "zod";
 
-export const deepResearchRequestSchema = z
+const deepResearchRequestSchema = z
   .object({
     query: z.string().describe("The query or topic to search for").optional(),
     maxDepth: z
@@ -60,9 +60,9 @@ export const deepResearchRequestSchema = z
     query: data.topic || data.query, // Use topic as query if provided
   }));
 
-export type DeepResearchRequest = z.infer<typeof deepResearchRequestSchema>;
+type DeepResearchRequest = z.infer<typeof deepResearchRequestSchema>;
 
-export type DeepResearchResponse =
+type DeepResearchResponse =
   | ErrorResponse
   | {
       success: boolean;

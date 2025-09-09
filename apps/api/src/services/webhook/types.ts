@@ -29,13 +29,13 @@ export type WebhookEventDataMap = {
 
 export type WebhookConfig = z.infer<typeof webhookSchema>;
 
-export interface WebhookDocument {
+interface WebhookDocument {
   content?: string;
   markdown: string;
   metadata: Record<string, any>;
 }
 
-export interface WebhookDocumentLink {
+interface WebhookDocumentLink {
   content: WebhookDocument;
   source: string;
 }
@@ -46,55 +46,50 @@ interface BaseWebhookData {
 }
 
 // crawl
-export interface CrawlStartedData extends BaseWebhookData {
+interface CrawlStartedData extends BaseWebhookData {
   success: true;
 }
 
-export interface CrawlPageData extends BaseWebhookData {
+interface CrawlPageData extends BaseWebhookData {
   success: boolean;
   data: Document[] | WebhookDocumentLink[]; // links or documents (v0 compatible)
   scrapeId: string;
   error?: string;
 }
 
-export interface CrawlCompletedData extends BaseWebhookData {
+interface CrawlCompletedData extends BaseWebhookData {
   success: true;
   data: Document[] | WebhookDocumentLink[]; // empty array or links (v0 compatible)
 }
 
-export interface CrawlFailedData extends BaseWebhookData {
-  success: false;
-  error: string;
-}
-
 // batch scrape
-export interface BatchScrapeStartedData extends BaseWebhookData {
+interface BatchScrapeStartedData extends BaseWebhookData {
   success: true;
 }
 
-export interface BatchScrapePageData extends BaseWebhookData {
+interface BatchScrapePageData extends BaseWebhookData {
   success: boolean;
   data: Document[];
   scrapeId: string;
   error?: string; // more v0 tomfoolery
 }
 
-export interface BatchScrapeCompletedData extends BaseWebhookData {
+interface BatchScrapeCompletedData extends BaseWebhookData {
   success: true;
   data: WebhookDocumentLink[];
 }
 
 // extract
-export interface ExtractStartedData extends BaseWebhookData {
+interface ExtractStartedData extends BaseWebhookData {
   success: true;
 }
 
-export interface ExtractCompletedData extends BaseWebhookData {
+interface ExtractCompletedData extends BaseWebhookData {
   success: true;
   data: ExtractResult[];
 }
 
-export interface ExtractFailedData extends BaseWebhookData {
+interface ExtractFailedData extends BaseWebhookData {
   success: false;
   error: string;
 }

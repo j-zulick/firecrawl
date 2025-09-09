@@ -292,7 +292,7 @@ export type InternalOptions = {
   v1OriginalFormat?: "extract" | "json"; // Track original v1 format for backward compatibility
 };
 
-export type EngineScrapeResultWithContext = {
+type EngineScrapeResultWithContext = {
   engine: Engine;
   unsupportedFeatures: Set<FeatureFlag>;
   result: EngineScrapeResult;

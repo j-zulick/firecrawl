@@ -1,7 +1,7 @@
 import { redisEvictConnection } from "../../services/redis";
 import { logger as _logger } from "../logger";
 
-export interface GenerationData {
+interface GenerationData {
   id: string;
   team_id: string;
   createdAt: number;
@@ -62,7 +62,7 @@ export async function getGeneratedLlmsTxtExpiry(id: string): Promise<Date> {
 }
 
 // Convenience method for status updates
-export async function updateGeneratedLlmsTxtStatus(
+async function updateGeneratedLlmsTxtStatus(
   id: string,
   status: "processing" | "completed" | "failed",
   generatedText?: string,

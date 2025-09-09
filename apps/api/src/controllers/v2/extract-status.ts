@@ -19,7 +19,7 @@ type ExtractPseudoJob<T> = {
   failedReason?: string;
 };
 
-export async function getExtractJob(
+async function getExtractJob(
   id: string,
 ): Promise<ExtractPseudoJob<ExtractResult> | null> {
   const [bullJob, dbJob] = await Promise.all([

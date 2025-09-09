@@ -20,19 +20,6 @@ import Ajv from "ajv";
 import { integrationSchema } from "../../utils/integration";
 import { webhookSchema } from "../../services/webhook/schema";
 
-export type Format =
-  | "markdown"
-  | "html"
-  | "rawHtml"
-  | "links"
-  | "images"
-  | "screenshot"
-  | "screenshot@fullPage"
-  | "extract"
-  | "json"
-  | "summary"
-  | "changeTracking";
-
 export const url = z.preprocess(
   x => {
     if (!protocolIncluded(x as string)) {
@@ -98,7 +85,7 @@ function calculateTotalWaitTime(
   return waitFor + actionWaitTime;
 }
 
-export const actionSchema = z.union([
+const actionSchema = z.union([
   z
     .object({
       type: z.literal("wait"),
@@ -172,9 +159,7 @@ export const actionSchema = z.union([
   }),
 ]);
 
-export type Action = z.infer<typeof actionSchema>;
-
-export const actionsSchema = z
+const actionsSchema = z
   .array(actionSchema)
   .refine(actions => actions.length <= MAX_ACTIONS, {
     message: `Number of actions cannot exceed ${MAX_ACTIONS}`,
@@ -186,7 +171,7 @@ export const actionsSchema = z
     },
   );
 
-export const jsonFormatWithOptions = z
+const jsonFormatWithOptions = z
   .object({
     type: z.literal("json"),
     schema: z.any().optional(),
@@ -196,7 +181,7 @@ export const jsonFormatWithOptions = z
 
 export type JsonFormatWithOptions = z.output<typeof jsonFormatWithOptions>;
 
-export const changeTrackingFormatWithOptions = z
+const changeTrackingFormatWithOptions = z
   .object({
     type: z.literal("changeTracking"),
     prompt: z.string().optional(),
@@ -206,11 +191,11 @@ export const changeTrackingFormatWithOptions = z
   })
   .strict();
 
-export type ChangeTrackingFormatWithOptions = z.output<
+type ChangeTrackingFormatWithOptions = z.output<
   typeof changeTrackingFormatWithOptions
 >;
 
-export const screenshotFormatWithOptions = z.object({
+const screenshotFormatWithOptions = z.object({
   type: z.literal("screenshot"),
   fullPage: z.boolean().default(false),
   quality: z.number().min(1).max(100).optional(),
@@ -222,11 +207,9 @@ export const screenshotFormatWithOptions = z.object({
     .optional(),
 });
 
-export type ScreenshotFormatWithOptions = z.output<
-  typeof screenshotFormatWithOptions
->;
+type ScreenshotFormatWithOptions = z.output<typeof screenshotFormatWithOptions>;
 
-export const attributesFormatWithOptions = z
+const attributesFormatWithOptions = z
   .object({
     type: z.literal("attributes"),
     selectors: z
@@ -244,9 +227,7 @@ export const attributesFormatWithOptions = z
   })
   .strict();
 
-export type AttributesFormatWithOptions = z.output<
-  typeof attributesFormatWithOptions
->;
+type AttributesFormatWithOptions = z.output<typeof attributesFormatWithOptions>;
 
 export type FormatObject =
   | { type: "markdown" }
@@ -260,18 +241,18 @@ export type FormatObject =
   | ScreenshotFormatWithOptions
   | AttributesFormatWithOptions;
 
-export const pdfParserWithOptions = z
+const pdfParserWithOptions = z
   .object({
     type: z.literal("pdf"),
     maxPages: z.number().int().positive().finite().max(10000).optional(),
   })
   .strict();
 
-export const parsersSchema = z
+const parsersSchema = z
   .array(z.union([z.literal("pdf"), pdfParserWithOptions]))
   .default(["pdf"]);
 
-export type Parsers = z.infer<typeof parsersSchema>;
+type Parsers = z.infer<typeof parsersSchema>;
 
 export function shouldParsePDF(parsers?: Parsers): boolean {
   if (!parsers) return true;
@@ -307,7 +288,7 @@ function transformIframeSelector(selector: string): string {
 
 const SPECIAL_COUNTRIES = ["us-generic", "us-whitelist"];
 
-export const locationSchema = z
+const locationSchema = z
   .object({
     country: z
       .string()
@@ -473,7 +454,7 @@ export type ScrapeOptions = BaseScrapeOptions;
 
 const ajv = new Ajv();
 
-export const extractOptions = z
+const extractOptions = z
   .object({
     urls: url
       .array()
@@ -543,7 +524,6 @@ export const extractOptions = z
       : x.scrapeOptions,
   }));
 
-export type ExtractOptions = z.infer<typeof extractOptions>;
 export const extractRequestSchema = extractOptions;
 export type ExtractRequest = z.infer<typeof extractRequestSchema>;
 export type ExtractRequestInput = z.input<typeof extractRequestSchema>;
@@ -623,7 +603,7 @@ const crawlerOptions = z
 //   ignoreSitemap?: boolean;
 // };
 
-export type CrawlerOptions = z.infer<typeof crawlerOptions>;
+type CrawlerOptions = z.infer<typeof crawlerOptions>;
 
 export const crawlRequestSchema = crawlerOptions
   .extend({
@@ -811,12 +791,6 @@ export type ScrapeResponse =
       scrape_id?: string;
     };
 
-export interface ScrapeResponseRequestTest {
-  statusCode: number;
-  body: ScrapeResponse;
-  error?: string;
-}
-
 export interface URLTrace {
   url: string;
   status: "mapped" | "scraped" | "error";
@@ -849,12 +823,6 @@ export interface ExtractResponse {
     [key: string]: string[];
   };
   tokensUsed?: number;
-}
-
-export interface ExtractResponseRequestTest {
-  statusCode: number;
-  body: ExtractResponse;
-  error?: string;
 }
 
 export type CrawlResponse =
@@ -964,21 +932,12 @@ export type TeamFlags = {
   ipWhitelist?: boolean;
 } | null;
 
-export interface RequestWithMaybeACUC<
+interface RequestWithMaybeACUC<
   ReqParams = {},
   ReqBody = undefined,
   ResBody = undefined,
 > extends Request<ReqParams, ReqBody, ResBody> {
   acuc?: AuthCreditUsageChunk;
-}
-
-export interface RequestWithMaybeAuth<
-  ReqParams = {},
-  ReqBody = undefined,
-  ResBody = undefined,
-> extends RequestWithMaybeACUC<ReqParams, ReqBody, ResBody> {
-  auth?: AuthObject;
-  account?: Account;
 }
 
 export interface RequestWithAuth<
@@ -988,11 +947,6 @@ export interface RequestWithAuth<
 > extends RequestWithMaybeACUC<ReqParams, ReqBody, ResBody> {
   auth: AuthObject;
   account?: Account;
-}
-
-export interface ResponseWithSentry<ResBody = undefined>
-  extends Response<ResBody> {
-  sentry?: string;
 }
 
 export function toV0CrawlerOptions(x: CrawlerOptions) {
@@ -1035,7 +989,7 @@ export function toV2CrawlerOptions(x: any): CrawlerOptions {
   };
 }
 
-export function fromV0CrawlerOptions(
+function fromV0CrawlerOptions(
   x: any,
   teamId: string,
 ): {
@@ -1257,39 +1211,11 @@ export function fromV0Combo(
   return { scrapeOptions, internalOptions: Object.assign(i1, i2) };
 }
 
-export function toLegacyDocument(
-  document: Document,
-  internalOptions: InternalOptions,
-): V0Document | { url: string } {
-  if (internalOptions.v0CrawlOnlyUrls) {
-    return { url: document.metadata.sourceURL! };
-  }
-
-  return {
-    content: document.markdown!,
-    markdown: document.markdown!,
-    html: document.html,
-    rawHtml: document.rawHtml,
-    linksOnPage: document.links,
-    llm_extraction: document.extract,
-    metadata: {
-      ...document.metadata,
-      error: undefined,
-      statusCode: undefined,
-      pageError: document.metadata.error,
-      pageStatusCode: document.metadata.statusCode,
-      screenshot: document.screenshot,
-    },
-    actions: document.actions,
-    warning: document.warning,
-  };
-}
-
 // Search source type definitions
 // These allow fine-grained control over each search source type
 // Similar to how scrape formats work with jsonFormatWithOptions, etc.
 
-export const webSearchSourceOptions = z
+const webSearchSourceOptions = z
   .object({
     type: z.literal("web"),
     tbs: z.string().optional(), // Time-based search (e.g., "qdr:d" for past day)
@@ -1300,39 +1226,30 @@ export const webSearchSourceOptions = z
   })
   .strict();
 
-export const imagesSearchSourceOptions = z
+const imagesSearchSourceOptions = z
   .object({
     type: z.literal("images"),
   })
   .strict();
 
-export const newsSearchSourceOptions = z
+const newsSearchSourceOptions = z
   .object({
     type: z.literal("news"),
   })
   .strict();
 
-export type WebSearchSourceOptions = z.infer<typeof webSearchSourceOptions>;
-export type ImagesSearchSourceOptions = z.infer<
-  typeof imagesSearchSourceOptions
->;
-export type NewsSearchSourceOptions = z.infer<typeof newsSearchSourceOptions>;
-
 // Category source type definitions
-export const githubCategoryOptions = z
+const githubCategoryOptions = z
   .object({
     type: z.literal("github"),
   })
   .strict();
 
-export const researchCategoryOptions = z
+const researchCategoryOptions = z
   .object({
     type: z.literal("research"),
   })
   .strict();
-
-export type GithubCategoryOptions = z.infer<typeof githubCategoryOptions>;
-export type ResearchCategoryOptions = z.infer<typeof researchCategoryOptions>;
 
 export const searchRequestSchema = z
   .object({
@@ -1526,7 +1443,7 @@ export type TokenUsage = {
   model?: string;
 };
 
-export const generateLLMsTextRequestSchema = z.object({
+const generateLLMsTextRequestSchema = z.object({
   url: url.describe("The URL to generate text from"),
   maxUrls: z
     .number()
@@ -1545,6 +1462,4 @@ export const generateLLMsTextRequestSchema = z.object({
   __experimental_stream: z.boolean().optional(),
 });
 
-export type GenerateLLMsTextRequest = z.infer<
-  typeof generateLLMsTextRequestSchema
->;
+type GenerateLLMsTextRequest = z.infer<typeof generateLLMsTextRequestSchema>;

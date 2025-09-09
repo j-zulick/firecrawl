@@ -174,7 +174,7 @@ export async function processWebhookInsertJobs() {
   }
 }
 
-export async function logWebhook(data: {
+async function logWebhook(data: {
   success: boolean;
   error?: string;
   teamId: string;

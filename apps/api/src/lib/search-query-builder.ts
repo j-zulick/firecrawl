@@ -3,14 +3,14 @@
  * Builds search queries with category filters for the search API
  */
 
-export interface CategoryInput {
+interface CategoryInput {
   type: "github" | "research";
   sites?: string[];
 }
 
 export type CategoryOption = string | CategoryInput;
 
-export interface QueryBuilderResult {
+interface QueryBuilderResult {
   query: string;
   categoryMap: Map<string, string>;
 }

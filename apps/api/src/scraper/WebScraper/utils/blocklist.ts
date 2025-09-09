@@ -8,15 +8,6 @@ configDotenv();
 const hashKey = Buffer.from(process.env.HASH_KEY || "", "utf-8");
 const algorithm = "aes-256-ecb";
 
-export function encryptAES(plaintext: string, key: Buffer): string {
-  const cipher = crypto.createCipheriv(algorithm, key, null);
-  const encrypted = Buffer.concat([
-    cipher.update(plaintext, "utf-8"),
-    cipher.final(),
-  ]);
-  return encrypted.toString("base64");
-}
-
 export function decryptAES(ciphertext: string, key: Buffer): string {
   const decipher = crypto.createDecipheriv(algorithm, key, null);
   const decrypted = Buffer.concat([
@@ -102,7 +93,7 @@ const allowedKeywords = [
   "://www.aa.org",
 ];
 
-export function decryptedBlocklist(list: string[]): string[] {
+function decryptedBlocklist(list: string[]): string[] {
   return hashKey.length > 0
     ? list.map(ciphertext => decryptAES(ciphertext, hashKey))
     : [];

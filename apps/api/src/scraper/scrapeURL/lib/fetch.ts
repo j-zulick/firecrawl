@@ -8,7 +8,7 @@ import { cacheableLookup } from "./cacheableLookup";
 import dns from "dns";
 import { AbortManagerThrownError } from "./abortManager";
 
-export type RobustFetchParams<Schema extends z.Schema<any>> = {
+type RobustFetchParams<Schema extends z.Schema<any>> = {
   url: string;
   logger: Logger;
   method: "GET" | "POST" | "DELETE" | "PUT";

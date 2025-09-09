@@ -152,7 +152,7 @@ const successSchema = z.object({
   usedMobileProxy: z.boolean().optional(),
 });
 
-export type FireEngineCheckStatusSuccess = z.infer<typeof successSchema>;
+type FireEngineCheckStatusSuccess = z.infer<typeof successSchema>;
 
 const processingSchema = z.object({
   jobId: z.string(),

@@ -42,7 +42,7 @@ export async function startWebScraperPipeline({
   });
 }
 
-export async function runWebScraper({
+async function runWebScraper({
   url,
   mode,
   scrapeOptions,

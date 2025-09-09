@@ -2,13 +2,13 @@ import { load } from "cheerio";
 import { logger } from "../../../lib/logger";
 import { extractAttributes as _extractAttributes } from "@mendable/firecrawl-rs";
 
-export type AttributeResult = {
+type AttributeResult = {
   selector: string;
   attribute: string;
   values: string[];
 };
 
-export type AttributeSelector = {
+type AttributeSelector = {
   selector: string;
   attribute: string;
 };

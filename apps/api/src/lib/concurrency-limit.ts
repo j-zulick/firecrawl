@@ -54,14 +54,11 @@ export async function pushConcurrencyLimitActiveJob(
   await redisEvictConnection.zadd(constructKey(team_id), now + timeout, id);
 }
 
-export async function removeConcurrencyLimitActiveJob(
-  team_id: string,
-  id: string,
-) {
+async function removeConcurrencyLimitActiveJob(team_id: string, id: string) {
   await redisEvictConnection.zrem(constructKey(team_id), id);
 }
 
-export type ConcurrencyLimitedJob = {
+type ConcurrencyLimitedJob = {
   id: string;
   data: any;
   priority: number;
@@ -76,22 +73,6 @@ export async function cleanOldConcurrencyLimitedJobs(
     -Infinity,
     now,
   );
-}
-
-export async function takeConcurrencyLimitedJob(
-  team_id: string,
-): Promise<ConcurrencyLimitedJob | null> {
-  await cleanOldConcurrencyLimitedJobs(team_id);
-  const res = await redisEvictConnection.zmpop(
-    1,
-    constructQueueKey(team_id),
-    "MIN",
-  );
-  if (res === null || res === undefined) {
-    return null;
-  }
-
-  return JSON.parse(res[1][0][0]);
 }
 
 export async function pushConcurrencyLimitedJob(
@@ -123,7 +104,7 @@ export async function getConcurrencyQueueJobsCount(
   );
 }
 
-export async function cleanOldCrawlConcurrencyLimitEntries(
+async function cleanOldCrawlConcurrencyLimitEntries(
   crawl_id: string,
   now: number = Date.now(),
 ) {
@@ -158,7 +139,7 @@ export async function pushCrawlConcurrencyLimitActiveJob(
   );
 }
 
-export async function removeCrawlConcurrencyLimitActiveJob(
+async function removeCrawlConcurrencyLimitActiveJob(
   crawl_id: string,
   id: string,
 ) {

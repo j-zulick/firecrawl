@@ -42,7 +42,7 @@ const usePlaywright =
   process.env.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
   process.env.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
 
-export const engines: Engine[] = [
+const engines: Engine[] = [
   ...(useIndex ? ["index" as const, "index;documents" as const] : []),
   ...(useFireEngine
     ? [
@@ -62,7 +62,7 @@ export const engines: Engine[] = [
   "docx",
 ];
 
-export const featureFlags = [
+const featureFlags = [
   "actions",
   "waitFor",
   "screenshot",
@@ -80,7 +80,7 @@ export const featureFlags = [
 
 export type FeatureFlag = (typeof featureFlags)[number];
 
-export const featureFlagOptions: {
+const featureFlagOptions: {
   [F in FeatureFlag]: {
     priority: number;
   };
@@ -176,7 +176,7 @@ const engineMRTs: {
   docx: docxMaxReasonableTime,
 };
 
-export const engineOptions: {
+const engineOptions: {
   [E in Engine]: {
     // A list of feature flags the engine supports.
     features: { [F in FeatureFlag]: boolean };

@@ -98,5 +98,3 @@ async function performRanking_F0(
     return [];
   }
 }
-
-export { performRanking_F0 };

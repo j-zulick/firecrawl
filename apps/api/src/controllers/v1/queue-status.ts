@@ -10,7 +10,7 @@ import {
   getConcurrencyQueueJobsCount,
 } from "../../lib/concurrency-limit";
 
-export type QueueStatusResponse = {
+type QueueStatusResponse = {
   success: boolean;
   jobsInQueue: number;
   activeJobsInQueue: number;

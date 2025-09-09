@@ -297,7 +297,7 @@ export async function addIndexInsertJob(data: any) {
   );
 }
 
-export async function getIndexInsertJobs(): Promise<any[]> {
+async function getIndexInsertJobs(): Promise<any[]> {
   const jobs =
     (await redisEvictConnection.lpop(
       INDEX_INSERT_QUEUE_KEY,
@@ -345,7 +345,7 @@ export async function addIndexRFInsertJob(data: any) {
   );
 }
 
-export async function getIndexRFInsertJobs(): Promise<any[]> {
+async function getIndexRFInsertJobs(): Promise<any[]> {
   const jobs =
     (await redisEvictConnection.lpop(
       INDEX_RF_INSERT_QUEUE_KEY,
@@ -392,7 +392,7 @@ export async function addOMCEJob(data: [number, string]) {
   await redisEvictConnection.sadd(OMCE_JOB_QUEUE_KEY, JSON.stringify(data));
 }
 
-export async function getOMCEJobs(): Promise<[number, string][]> {
+async function getOMCEJobs(): Promise<[number, string][]> {
   const jobs =
     (await redisEvictConnection.spop(
       OMCE_JOB_QUEUE_KEY,
@@ -445,7 +445,7 @@ export async function getOMCEQueueLength(): Promise<number> {
 const DOMAIN_FREQUENCY_QUEUE_KEY = "domain-frequency-queue";
 const DOMAIN_FREQUENCY_BATCH_SIZE = 100;
 
-export function extractDomainFromUrl(url: string): string | null {
+function extractDomainFromUrl(url: string): string | null {
   try {
     const urlObj = new URL(url);
     // Remove www. prefix for consistency
@@ -469,7 +469,7 @@ export async function addDomainFrequencyJob(url: string) {
   await redisEvictConnection.rpush(DOMAIN_FREQUENCY_QUEUE_KEY, domain);
 }
 
-export async function getDomainFrequencyJobs(): Promise<Map<string, number>> {
+async function getDomainFrequencyJobs(): Promise<Map<string, number>> {
   const domains =
     (await redisEvictConnection.lpop(
       DOMAIN_FREQUENCY_QUEUE_KEY,

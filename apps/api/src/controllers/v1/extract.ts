@@ -19,7 +19,7 @@ import { logger as _logger } from "../../lib/logger";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 
-export async function oldExtract(
+async function oldExtract(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
   res: Response<ExtractResponse>,
   extractId: string,

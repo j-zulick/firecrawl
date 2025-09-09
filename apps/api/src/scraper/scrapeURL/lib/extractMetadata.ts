@@ -3,7 +3,7 @@ import { Document } from "../../../controllers/v1/types";
 import { Meta } from "..";
 import { extractMetadata as _extractMetadata } from "@mendable/firecrawl-rs";
 
-export async function extractMetadataRust(
+async function extractMetadataRust(
   meta: Meta,
   html: string,
 ): Promise<Partial<Document["metadata"]>> {
