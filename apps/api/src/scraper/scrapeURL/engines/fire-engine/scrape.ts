@@ -17,6 +17,7 @@ import {
   UnsupportedFileError,
 } from "../../error";
 import { Meta } from "../..";
+import { abTestFireEngine } from "../../../../services/ab-test";
 
 export type FireEngineScrapeRequestCommon = {
   url: string;
@@ -181,6 +182,8 @@ export async function fireEngineScrape<
   abort?: AbortSignal,
   production = true,
 ): Promise<z.infer<typeof processingSchema> | FireEngineCheckStatusSuccess> {
+  abTestFireEngine(request);
+
   let status = await robustFetch({
     url: `${production ? fireEngineURL : fireEngineStagingURL}/scrape`,
     method: "POST",
