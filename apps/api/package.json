@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "tsc-watch --onSuccess \"node dist/src/harness.js --start-built\"",
-    "start:production": "tsx src/harness.ts --start",
+    "start": "tsc && node dist/src/harness.js --start-built",
+    "dev": "tsx src/harness.ts --start",
     "server": "tsc-watch --onSuccess \"node dist/src/index.js\"",
     "server:production": "tsc && node dist/src/index.js",
     "server:production:nobuild": "node dist/src/index.js",
