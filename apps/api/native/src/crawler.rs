@@ -110,7 +110,8 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
   }
 
   let base_url = Url::parse(&data.base_url).map_err(|e| format!("Base URL parse error: {}", e))?;
-  let initial_url = Url::parse(&data.initial_url).map_err(|e| format!("Initial URL parse error: {}", e))?;
+  let initial_url =
+    Url::parse(&data.initial_url).map_err(|e| format!("Initial URL parse error: {}", e))?;
 
   let excludes_regex = data
     .excludes
@@ -236,7 +237,8 @@ fn _parse_sitemap_xml(xml_content: &str) -> std::result::Result<ParsedSitemap, S
       allow_dtd: true,
       ..Default::default()
     },
-  ).map_err(|e| format!("XML parsing error: {}", e))?;
+  )
+  .map_err(|e| format!("XML parsing error: {}", e))?;
   let root = doc.root_element();
 
   match root.tag_name().name() {
@@ -303,9 +305,7 @@ pub fn parse_sitemap_xml(xml_content: String) -> Result<ParsedSitemap> {
   })
 }
 
-fn _process_sitemap(
-  xml_content: &str,
-) -> std::result::Result<SitemapProcessingResult, String> {
+fn _process_sitemap(xml_content: &str) -> std::result::Result<SitemapProcessingResult, String> {
   let parsed = _parse_sitemap_xml(xml_content)?;
   let mut instructions = Vec::new();
   let mut total_count: u32 = 0;
@@ -338,7 +338,7 @@ fn _process_sitemap(
     for url_entry in urlset.url {
       if !url_entry.loc.is_empty() {
         let url = url_entry.loc[0].trim();
-        if url.to_lowercase().ends_with(".xml") {
+        if url.to_lowercase().ends_with(".xml") || url.to_lowercase().ends_with(".xml.gz") {
           xml_sitemaps.push(url.to_string());
         } else if let Ok(parsed_url) = Url::parse(url) {
           if !_is_file(&parsed_url) {

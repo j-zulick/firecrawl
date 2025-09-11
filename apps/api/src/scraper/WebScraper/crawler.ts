@@ -833,7 +833,8 @@ export class WebCrawler {
     maxAge?: number,
   ): Promise<number> {
     const sitemapUrl =
-      url.endsWith(".xml") || url.endsWith(".xml.gz")
+      url.toLowerCase().endsWith(".xml") ||
+      url.toLowerCase().endsWith(".xml.gz")
         ? url
         : `${url}${url.endsWith("/") ? "" : "/"}sitemap.xml`;
 
