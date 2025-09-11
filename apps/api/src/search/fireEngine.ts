@@ -2,38 +2,16 @@ import dotenv from "dotenv";
 import { SearchResult } from "../../src/lib/entities";
 import * as Sentry from "@sentry/node";
 import { logger } from "../lib/logger";
-import { executeWithRetry } from "../lib/retry-utils";
+import { executeWithRetry, attemptRequest } from "../lib/retry-utils";
 
 dotenv.config();
 
+const useFireEngine =
+  process.env.FIRE_ENGINE_BETA_URL !== "" &&
+  process.env.FIRE_ENGINE_BETA_URL !== undefined;
+
 function hasResults(results: unknown): results is SearchResult[] {
   return Array.isArray(results) && results.length > 0;
-}
-
-async function attemptRequest(
-  url: string,
-  data: string,
-  abort?: AbortSignal,
-): Promise<SearchResult[] | null> {
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Disable-Cache": "true",
-      },
-      body: data,
-      signal: abort,
-    });
-
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch (error) {
-    logger.error("Request attempt failed:", error);
-    Sentry.captureException(error);
-  }
-  return null;
 }
 
 export async function fire_engine_search(
@@ -49,7 +27,7 @@ export async function fire_engine_search(
   },
   abort?: AbortSignal,
 ): Promise<SearchResult[]> {
-  if (!process.env.FIRE_ENGINE_BETA_URL) {
+  if (!useFireEngine) {
     return [];
   }
 
@@ -67,7 +45,7 @@ export async function fire_engine_search(
   const data = JSON.stringify(payload);
 
   const result = await executeWithRetry<SearchResult[]>(
-    () => attemptRequest(url, data, abort),
+    () => attemptRequest<SearchResult[]>(url, data, abort),
     hasResults,
     abort,
   );
@@ -88,7 +66,7 @@ export async function fireEngineMap(
   },
   abort?: AbortSignal,
 ): Promise<SearchResult[]> {
-  if (!process.env.FIRE_ENGINE_BETA_URL) {
+  if (!useFireEngine) {
     logger.warn(
       "(v1/map Beta) Results might differ from cloud offering currently.",
     );
@@ -109,7 +87,7 @@ export async function fireEngineMap(
   const data = JSON.stringify(payload);
 
   const result = await executeWithRetry<SearchResult[]>(
-    () => attemptRequest(url, data, abort),
+    () => attemptRequest<SearchResult[]>(url, data, abort),
     hasResults,
     abort,
   );

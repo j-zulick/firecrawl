@@ -6,9 +6,13 @@ import {
 } from "../../lib/entities";
 import * as Sentry from "@sentry/node";
 import { logger } from "../../lib/logger";
-import { executeWithRetry } from "../../lib/retry-utils";
+import { executeWithRetry, attemptRequest } from "../../lib/retry-utils";
 
 dotenv.config();
+
+const useFireEngine =
+  process.env.FIRE_ENGINE_BETA_URL !== "" &&
+  process.env.FIRE_ENGINE_BETA_URL !== undefined;
 
 function normalizeSearchTypes(
   type?: SearchResultType | SearchResultType[],
@@ -27,32 +31,6 @@ function hasCompleteResults(
   });
 }
 
-async function attemptSearch(
-  url: string,
-  data: string,
-  abort?: AbortSignal,
-): Promise<SearchV2Response | null> {
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Disable-Cache": "true",
-      },
-      body: data,
-      signal: abort,
-    });
-
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch (error) {
-    logger.error("Search attempt failed:", error);
-    Sentry.captureException(error);
-  }
-  return null;
-}
-
 export async function fire_engine_search_v2(
   q: string,
   options: {
@@ -67,7 +45,10 @@ export async function fire_engine_search_v2(
   },
   abort?: AbortSignal,
 ): Promise<SearchV2Response> {
-  if (!process.env.FIRE_ENGINE_BETA_URL) {
+  if (!useFireEngine) {
+    logger.warn(
+      "FIRE_ENGINE_BETA_URL is not configured, returning empty search results",
+    );
     return {};
   }
 
@@ -87,7 +68,7 @@ export async function fire_engine_search_v2(
   const data = JSON.stringify(payload);
 
   const result = await executeWithRetry<SearchV2Response>(
-    () => attemptSearch(url, data, abort),
+    () => attemptRequest<SearchV2Response>(url, data, abort),
     (response): response is SearchV2Response =>
       response !== null && hasCompleteResults(response, requestedTypes),
     abort,

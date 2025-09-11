@@ -5,6 +5,52 @@ const RETRY_DELAYS = [500, 1500, 3000] as const;
 const MAX_ATTEMPTS = RETRY_DELAYS.length + 1;
 
 /**
+ * Generic HTTP request function for Fire Engine API calls
+ */
+export async function attemptRequest<T>(
+  url: string,
+  data: string,
+  abort?: AbortSignal,
+): Promise<T | null> {
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Disable-Cache": "true",
+      },
+      body: data,
+      signal: abort,
+    });
+
+    if (response.ok) {
+      return await response.json();
+    } else {
+      // Log non-OK responses for better observability
+      const statusText = response.statusText || "Unknown Error";
+      let bodySnippet = "";
+      try {
+        const body = await response.text();
+        bodySnippet = body.length > 200 ? body.substring(0, 200) + "..." : body;
+      } catch {
+        bodySnippet = "[Unable to read response body]";
+      }
+
+      logger.warn(`Fire Engine API returned ${response.status} ${statusText}`, {
+        url,
+        status: response.status,
+        statusText,
+        bodySnippet,
+      });
+    }
+  } catch (error) {
+    logger.error("Fire Engine API request failed:", error);
+    Sentry.captureException(error);
+  }
+  return null;
+}
+
+/**
  * Abortable sleep function that resolves immediately if the signal is aborted
  */
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -53,6 +99,11 @@ export async function executeWithRetry<T>(
         return result;
       }
     } catch (error) {
+      // Don't log or report expected abort errors to reduce noise
+      if (error instanceof Error && error.name === "AbortError") {
+        break;
+      }
+
       logger.error(`Attempt ${attempt + 1} failed:`, error);
       Sentry.captureException(error);
     }
