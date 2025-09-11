@@ -47,4 +47,56 @@ describe("Search tests", () => {
     },
     125000,
   );
+
+  it.concurrent(
+    "works for news",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl",
+          sources: ["news"],
+        },
+        identity,
+      );
+      expect(res.news).toBeDefined();
+      expect(res.news?.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "works for images",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl",
+          sources: ["images"],
+        },
+        identity,
+      );
+      expect(res.images).toBeDefined();
+      expect(res.images?.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "works for multiple sources",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl",
+          sources: ["web", "news", "images"],
+        },
+        identity,
+      );
+      expect(res.web).toBeDefined();
+      expect(res.web?.length).toBeGreaterThan(0);
+      expect(res.news).toBeDefined();
+      expect(res.news?.length).toBeGreaterThan(0);
+      expect(res.images).toBeDefined();
+      expect(res.images?.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
 });
