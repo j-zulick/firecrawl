@@ -48,7 +48,7 @@ REDIS_RATE_LIMIT_URL=redis://localhost:6379
 USE_DB_AUTHENTICATION=false
 
 ## Using the PostgreSQL for queuing -- change if credentials, host, or DB is different
-NUQ_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
+NUQ_DATABASE_URL=postgres://postgres:postgres@localhost:5433/postgres
 
 # ===== Optional ENVS ======
 
