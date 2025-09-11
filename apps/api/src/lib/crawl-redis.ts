@@ -197,7 +197,7 @@ async function isCrawlFinished(id: string) {
   return (
     (await redisEvictConnection.scard("crawl:" + id + ":jobs_done")) ===
       (await redisEvictConnection.scard("crawl:" + id + ":jobs")) &&
-    (await redisEvictConnection.get("crawl:" + id + ":kickoff:finish")) !== null
+    (await isCrawlKickoffFinished(id))
   );
 }
 
@@ -207,7 +207,10 @@ export async function isCrawlKickoffFinished(id: string) {
     24 * 60 * 60,
   );
   return (
-    (await redisEvictConnection.get("crawl:" + id + ":kickoff:finish")) !== null
+    (await redisEvictConnection.get("crawl:" + id + ":kickoff:finish")) !==
+      null &&
+    (await redisEvictConnection.scard("crawl:" + id + ":sitemap_jobs_done")) ===
+      (await redisEvictConnection.scard("crawl:" + id + ":sitemap_jobs"))
   );
 }
 

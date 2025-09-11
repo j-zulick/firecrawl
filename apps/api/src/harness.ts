@@ -103,10 +103,12 @@ const logger = {
       `${symbolColor}${symbol}${colors.reset} ${color}${colors.bold}${name}${colors.reset} ${timing}${codeInfo}`,
     );
   },
-  processOutput(name: string, line: string) {
+  processOutput(name: string, line: string, isReduceNoise: boolean) {
     const color = getProcessColor(name);
     const label = `${color}${name.padEnd(12)}${colors.reset}`;
-    console.log(`${label} ${line}`);
+    if (!(line.includes("[nuq/metrics:") && isReduceNoise)) {
+      console.log(`${label} ${line}`);
+    }
     stream.write(`${name.padEnd(12)} ${line}\n`);
   },
 };
@@ -152,6 +154,9 @@ function execForward(
   let displayCommand = "";
   const isWindows = process.platform === "win32";
 
+  const isReduceNoise = env.NUQ_REDUCE_NOISE === "true";
+  delete env.NUQ_REDUCE_NOISE;
+
   if (typeof command === "string") {
     displayCommand = command;
     if (isWindows) {
@@ -194,7 +199,7 @@ function execForward(
       const remainingBuffer = lines[lines.length - 1];
 
       completeLines.forEach(line => {
-        if (line.trim()) logger.processOutput(name, line);
+        if (line.trim()) logger.processOutput(name, line, isReduceNoise);
       });
 
       if (isError) stderrBuffer = remainingBuffer;
@@ -317,6 +322,9 @@ function startServices(command?: string[]): Services {
     process.argv[2] === "--start-docker"
       ? "node dist/src/index.js"
       : "pnpm server:production:nobuild",
+    {
+      NUQ_REDUCE_NOISE: "true",
+    },
   );
 
   const worker = execForward(
@@ -324,6 +332,9 @@ function startServices(command?: string[]): Services {
     process.argv[2] === "--start-docker"
       ? "node dist/src/services/queue-worker.js"
       : "pnpm worker:production",
+    {
+      NUQ_REDUCE_NOISE: "true",
+    },
   );
 
   const nuqWorkers = Array.from({ length: 5 }, (_, i) =>
@@ -346,6 +357,9 @@ function startServices(command?: string[]): Services {
           process.argv[2] === "--start-docker"
             ? "node dist/src/services/indexing/index-worker.js"
             : "pnpm index-worker:production",
+          {
+            NUQ_REDUCE_NOISE: "true",
+          },
         )
       : undefined;
 

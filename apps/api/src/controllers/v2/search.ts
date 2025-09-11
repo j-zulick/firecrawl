@@ -12,7 +12,6 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { v4 as uuidv4 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { logJob } from "../../services/logging/log_job";
-import { Mode } from "../../types";
 import { search } from "../../search/v2";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import * as Sentry from "@sentry/node";
@@ -22,7 +21,7 @@ import { getJobPriority } from "../../lib/job-priority";
 import { CostTracking } from "../../lib/cost-tracking";
 import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
 import { supabase_service } from "../../services/supabase";
-import { SearchResult, SearchV2Response } from "../../lib/entities";
+import { SearchV2Response } from "../../lib/entities";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq";
 import { z } from "zod";
@@ -78,7 +77,7 @@ async function startScrapeJob(
   await addScrapeJob(
     {
       url: searchResult.url,
-      mode: "single_urls" as Mode,
+      mode: "single_urls",
       team_id: options.teamId,
       scrapeOptions: {
         ...options.scrapeOptions,
@@ -140,7 +139,7 @@ async function scrapeSearchResult(
       origin: options.origin,
     });
 
-    await scrapeQueue.removeJob(jobId);
+    await scrapeQueue.removeJob(jobId, logger);
 
     const document = {
       title: searchResult.title,

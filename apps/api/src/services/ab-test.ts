@@ -1,4 +1,4 @@
-import { WebScraperOptions } from "../types";
+import { ScrapeJobData } from "../types";
 import { logger as _logger } from "../lib/logger";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
 import {
@@ -8,7 +8,7 @@ import {
   FireEngineScrapeRequestTLSClient,
 } from "../scraper/scrapeURL/engines/fire-engine/scrape";
 
-export function abTestJob(webScraperOptions: WebScraperOptions) {
+export function abTestJob(webScraperOptions: ScrapeJobData) {
   // Global A/B test: mirror request to staging /v1/scrape based on SCRAPEURL_AB_RATE
   const abLogger = _logger.child({ method: "ABTestToStaging" });
   try {

@@ -123,7 +123,7 @@ export async function scrapeController(
     });
 
     if (zeroDataRetention) {
-      await scrapeQueue.removeJob(jobId);
+      await scrapeQueue.removeJob(jobId, logger);
     }
 
     if (e instanceof TransportableError) {
@@ -143,7 +143,7 @@ export async function scrapeController(
 
   logger.info("Done with waitForJob");
 
-  await scrapeQueue.removeJob(jobId);
+  await scrapeQueue.removeJob(jobId, logger);
 
   logger.info("Removed job from queue");
 

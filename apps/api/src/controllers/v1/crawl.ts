@@ -134,8 +134,8 @@ export async function crawlController(
 
   await _addScrapeJobToBullMQ(
     {
-      url: req.body.url,
       mode: "kickoff" as const,
+      url: req.body.url,
       team_id: req.auth.team_id,
       crawlerOptions,
       scrapeOptions: sc.scrapeOptions,

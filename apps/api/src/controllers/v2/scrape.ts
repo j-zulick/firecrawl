@@ -120,7 +120,7 @@ export async function scrapeController(
     });
 
     if (zeroDataRetention) {
-      await scrapeQueue.removeJob(jobId);
+      await scrapeQueue.removeJob(jobId, logger);
     }
 
     if (e instanceof TransportableError) {
@@ -137,7 +137,7 @@ export async function scrapeController(
     }
   }
 
-  await scrapeQueue.removeJob(jobId);
+  await scrapeQueue.removeJob(jobId, logger);
 
   if (!hasFormatOfType(req.body.formats, "rawHtml")) {
     if (doc && doc.rawHtml) {

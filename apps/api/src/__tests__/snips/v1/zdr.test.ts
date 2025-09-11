@@ -23,6 +23,13 @@ const logIgnoreList = [
   "No jobs to process",
   "nuqHealthCheck metrics",
   "nuqGetJobToProcess metrics",
+  "Domain frequency processor",
+  "billing operation to batch queue",
+  "billing operation to queue",
+  "billing operation for team",
+  "Added billing operation to queue",
+  "Index RF inserter found",
+  "Redis connected",
 ];
 
 if (process.env.TEST_SUITE_SELF_HOSTED) {

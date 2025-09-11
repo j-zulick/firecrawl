@@ -22,6 +22,7 @@ import { logger } from "../../lib/logger";
 import { supabase_rr_service, supabase_service } from "../../services/supabase";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { scrapeQueue, NuQJob, NuQJobStatus } from "../../services/worker/nuq";
+import { ScrapeJobSingleUrls } from "../../types";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -47,7 +48,7 @@ export type DBJob = {
 
 export async function getJob(id: string): Promise<PseudoJob<any> | null> {
   const [nuqJob, dbJob, gcsJob] = await Promise.all([
-    scrapeQueue.getJob(id),
+    scrapeQueue.getJob(id) as Promise<NuQJob<ScrapeJobSingleUrls> | null>,
     (process.env.USE_DB_AUTHENTICATION === "true"
       ? supabaseGetJobById(id)
       : null) as Promise<DBJob | null>,
@@ -57,6 +58,10 @@ export async function getJob(id: string): Promise<PseudoJob<any> | null> {
   ]);
 
   if (!nuqJob && !dbJob) return null;
+
+  if (nuqJob && nuqJob.data.mode !== "single_urls") {
+    return null;
+  }
 
   const data = gcsJob ?? dbJob?.docs ?? nuqJob?.returnvalue;
   if (gcsJob === null && data) {
@@ -83,7 +88,7 @@ export async function getJob(id: string): Promise<PseudoJob<any> | null> {
 
 export async function getJobs(ids: string[]): Promise<PseudoJob<any>[]> {
   const [nuqJobs, dbJobs, gcsJobs] = await Promise.all([
-    scrapeQueue.getJobs(ids),
+    scrapeQueue.getJobs(ids) as Promise<NuQJob<ScrapeJobSingleUrls>[]>,
     process.env.USE_DB_AUTHENTICATION === "true"
       ? supabaseGetJobsById(ids)
       : [],

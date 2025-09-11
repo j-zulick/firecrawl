@@ -74,7 +74,7 @@ export async function scrapeDocument_F0(
 
     const doc = await waitForJob(jobId, timeout, false, logger);
     try {
-      await scrapeQueue.removeJob(jobId);
+      await scrapeQueue.removeJob(jobId, logger);
     } catch (error) {
       logger.warn("Error removing job from queue", { error, scrapeId: jobId });
     }
