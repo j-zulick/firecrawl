@@ -12,7 +12,7 @@ First, start by installing dependencies:
 2. pnpm [instructions](https://pnpm.io/installation)
 3. redis [instructions](https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/)
 4. postgresql
-5. Docker (for running postgres)
+5. Docker (optional) (for running postgres)
 
 You need to set up the PostgreSQL database by running the SQL file at `apps/nuq-postgres/nuq.sql`. Easiest way is to use the docker image inside `apps/nuq-postgres`. With Docker running, build the image:
 
