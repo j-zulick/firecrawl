@@ -6,16 +6,12 @@ import {
 } from "../../lib/entities";
 import * as Sentry from "@sentry/node";
 import { logger } from "../../lib/logger";
+import { executeWithRetry } from "../../lib/retry-utils";
 
 dotenv.config();
 
-const RETRY_DELAYS = [500, 1500, 3000] as const;
-const MAX_ATTEMPTS = RETRY_DELAYS.length + 1;
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 function normalizeSearchTypes(
-  type?: SearchResultType | SearchResultType[]
+  type?: SearchResultType | SearchResultType[],
 ): SearchResultType[] {
   if (!type) return ["web"];
   return Array.isArray(type) ? type : [type];
@@ -23,9 +19,9 @@ function normalizeSearchTypes(
 
 function hasCompleteResults(
   response: SearchV2Response,
-  requestedTypes: SearchResultType[]
+  requestedTypes: SearchResultType[],
 ): boolean {
-  return requestedTypes.every((type) => {
+  return requestedTypes.every(type => {
     const results = response[type];
     return Array.isArray(results) && results.length > 0;
   });
@@ -34,7 +30,7 @@ function hasCompleteResults(
 async function attemptSearch(
   url: string,
   data: string,
-  abort?: AbortSignal
+  abort?: AbortSignal,
 ): Promise<SearchV2Response | null> {
   try {
     const response = await fetch(url, {
@@ -85,25 +81,17 @@ export async function fire_engine_search_v2(
     page: options.page ?? 1,
     type: options.type || "web",
   };
-  
+
   const requestedTypes = normalizeSearchTypes(options.type);
   const url = `${process.env.FIRE_ENGINE_BETA_URL}/v2/search`;
   const data = JSON.stringify(payload);
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    if (abort?.aborted) break;
+  const result = await executeWithRetry<SearchV2Response>(
+    () => attemptSearch(url, data, abort),
+    (response): response is SearchV2Response =>
+      response !== null && hasCompleteResults(response, requestedTypes),
+    abort,
+  );
 
-    const responseData = await attemptSearch(url, data, abort);
-    
-    if (responseData && hasCompleteResults(responseData, requestedTypes)) {
-      return responseData;
-    }
-
-    // Wait before retry (except on last attempt)
-    if (attempt < RETRY_DELAYS.length) {
-      await sleep(RETRY_DELAYS[attempt]);
-    }
-  }
-
-  return {};
+  return result ?? {};
 }

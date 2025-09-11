@@ -2,13 +2,9 @@ import dotenv from "dotenv";
 import { SearchResult } from "../../src/lib/entities";
 import * as Sentry from "@sentry/node";
 import { logger } from "../lib/logger";
+import { executeWithRetry } from "../lib/retry-utils";
 
 dotenv.config();
-
-const RETRY_DELAYS = [500, 1500, 3000] as const;
-const MAX_ATTEMPTS = RETRY_DELAYS.length + 1;
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function hasResults(results: unknown): results is SearchResult[] {
   return Array.isArray(results) && results.length > 0;
@@ -17,7 +13,7 @@ function hasResults(results: unknown): results is SearchResult[] {
 async function attemptRequest(
   url: string,
   data: string,
-  abort?: AbortSignal
+  abort?: AbortSignal,
 ): Promise<SearchResult[] | null> {
   try {
     const response = await fetch(url, {
@@ -38,31 +34,6 @@ async function attemptRequest(
     Sentry.captureException(error);
   }
   return null;
-}
-
-async function executeWithRetry(
-  url: string,
-  payload: Record<string, any>,
-  abort?: AbortSignal
-): Promise<SearchResult[]> {
-  const data = JSON.stringify(payload);
-
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    if (abort?.aborted) break;
-
-    const responseData = await attemptRequest(url, data, abort);
-    
-    if (hasResults(responseData)) {
-      return responseData;
-    }
-
-    // Wait before retry (except on last attempt)
-    if (attempt < RETRY_DELAYS.length) {
-      await sleep(RETRY_DELAYS[attempt]);
-    }
-  }
-
-  return [];
 }
 
 export async function fire_engine_search(
@@ -93,7 +64,15 @@ export async function fire_engine_search(
   };
 
   const url = `${process.env.FIRE_ENGINE_BETA_URL}/search`;
-  return executeWithRetry(url, payload, abort);
+  const data = JSON.stringify(payload);
+
+  const result = await executeWithRetry<SearchResult[]>(
+    () => attemptRequest(url, data, abort),
+    hasResults,
+    abort,
+  );
+
+  return result ?? [];
 }
 
 export async function fireEngineMap(
@@ -127,5 +106,13 @@ export async function fireEngineMap(
   };
 
   const url = `${process.env.FIRE_ENGINE_BETA_URL}/map`;
-  return executeWithRetry(url, payload, abort);
+  const data = JSON.stringify(payload);
+
+  const result = await executeWithRetry<SearchResult[]>(
+    () => attemptRequest(url, data, abort),
+    hasResults,
+    abort,
+  );
+
+  return result ?? [];
 }
