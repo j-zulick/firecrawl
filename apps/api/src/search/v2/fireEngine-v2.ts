@@ -9,6 +9,54 @@ import { logger } from "../../lib/logger";
 
 dotenv.config();
 
+const RETRY_DELAYS = [500, 1500, 3000] as const;
+const MAX_ATTEMPTS = RETRY_DELAYS.length + 1;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function normalizeSearchTypes(
+  type?: SearchResultType | SearchResultType[]
+): SearchResultType[] {
+  if (!type) return ["web"];
+  return Array.isArray(type) ? type : [type];
+}
+
+function hasCompleteResults(
+  response: SearchV2Response,
+  requestedTypes: SearchResultType[]
+): boolean {
+  return requestedTypes.every((type) => {
+    const results = response[type];
+    return Array.isArray(results) && results.length > 0;
+  });
+}
+
+async function attemptSearch(
+  url: string,
+  data: string,
+  abort?: AbortSignal
+): Promise<SearchV2Response | null> {
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Disable-Cache": "true",
+      },
+      body: data,
+      signal: abort,
+    });
+
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    logger.error("Search attempt failed:", error);
+    Sentry.captureException(error);
+  }
+  return null;
+}
+
 export async function fire_engine_search_v2(
   q: string,
   options: {
@@ -23,44 +71,39 @@ export async function fire_engine_search_v2(
   },
   abort?: AbortSignal,
 ): Promise<SearchV2Response> {
-  try {
-    let data = JSON.stringify({
-      query: q,
-      lang: options.lang,
-      country: options.country,
-      location: options.location,
-      tbs: options.tbs,
-      numResults: options.numResults,
-      page: options.page ?? 1,
-      type: options.type || "web",
-    });
-
-    if (!process.env.FIRE_ENGINE_BETA_URL) {
-      return {};
-    }
-
-    const response = await fetch(
-      `${process.env.FIRE_ENGINE_BETA_URL}/v2/search`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Disable-Cache": "true",
-        },
-        body: data,
-        signal: abort,
-      },
-    );
-
-    if (response.ok) {
-      const responseData = await response.json();
-      return responseData;
-    } else {
-      return {};
-    }
-  } catch (error) {
-    logger.error(error);
-    Sentry.captureException(error);
+  if (!process.env.FIRE_ENGINE_BETA_URL) {
     return {};
   }
+
+  const payload = {
+    query: q,
+    lang: options.lang,
+    country: options.country,
+    location: options.location,
+    tbs: options.tbs,
+    numResults: options.numResults,
+    page: options.page ?? 1,
+    type: options.type || "web",
+  };
+  
+  const requestedTypes = normalizeSearchTypes(options.type);
+  const url = `${process.env.FIRE_ENGINE_BETA_URL}/v2/search`;
+  const data = JSON.stringify(payload);
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (abort?.aborted) break;
+
+    const responseData = await attemptSearch(url, data, abort);
+    
+    if (responseData && hasCompleteResults(responseData, requestedTypes)) {
+      return responseData;
+    }
+
+    // Wait before retry (except on last attempt)
+    if (attempt < RETRY_DELAYS.length) {
+      await sleep(RETRY_DELAYS[attempt]);
+    }
+  }
+
+  return {};
 }
