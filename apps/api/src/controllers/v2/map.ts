@@ -45,16 +45,19 @@ interface MapResult {
 }
 
 function dedupeMapDocumentArray(documents: MapDocument[]): MapDocument[] {
-  let urlSet = new Set<string>(documents.map(x => x.url));
+  const urlMap = new Map<string, MapDocument>();
 
-  let newDocuments: MapDocument[] = [
-    ...Array.from(urlSet).map(x => {
-      let localDocs = documents.filter(y => y.url === x);
-      return localDocs.find(x => x.title !== undefined) || localDocs[0];
-    }),
-  ];
+  for (const doc of documents) {
+    const existing = urlMap.get(doc.url);
 
-  return newDocuments;
+    if (!existing) {
+      urlMap.set(doc.url, doc);
+    } else if (doc.title !== undefined && existing.title === undefined) {
+      urlMap.set(doc.url, doc);
+    }
+  }
+
+  return Array.from(urlMap.values());
 }
 
 async function queryIndex(
@@ -116,6 +119,8 @@ async function getMapResults({
   useIndex?: boolean;
   location?: ScrapeOptions["location"];
 }): Promise<MapResult> {
+  const functionStartTime = Date.now();
+
   const id = uuidv4();
   let mapResults: MapDocument[] = [];
   const zeroDataRetention = flags?.forceZDR ?? false;
@@ -141,7 +146,9 @@ async function getMapResults({
   try {
     sc.robots = await crawler.getRobotsTxt(false, abort);
     crawler.importRobotsTxt(sc.robots);
-  } catch (_) {}
+  } catch (_) {
+    // Robots.txt fetch failed, continue without it
+  }
 
   // If sitemapOnly is true, only get links from sitemap
   if (crawlerOptions.sitemap === "only") {
@@ -159,6 +166,7 @@ async function getMapResults({
       abort,
       crawlerOptions.useMock,
     );
+
     if (sitemap > 0) {
       mapResults = mapResults
         .slice(1)
@@ -176,7 +184,6 @@ async function getMapResults({
     }
   } else {
     let urlWithoutWww = url.replace("www.", "");
-
     let mapUrl =
       search && allowExternalLinks
         ? `${search} ${urlWithoutWww}`
@@ -198,7 +205,7 @@ async function getMapResults({
       pagePromises = JSON.parse(cachedResult);
     } else {
       const fetchPage = async (page: number) => {
-        return fireEngineMap(
+        return await fireEngineMap(
           mapUrl,
           {
             numResults: resultsPerPage,
@@ -213,7 +220,6 @@ async function getMapResults({
       );
     }
 
-    // Parallelize sitemap index query with search results
     const [indexResults, searchResults] = await Promise.all([
       queryIndex(url, limit, useIndex, includeSubdomains),
       Promise.all(pagePromises),
@@ -232,8 +238,6 @@ async function getMapResults({
       mapResults.push(...indexResults);
     }
 
-    // If sitemap is not ignored, fetch sitemap
-    // This will attempt to find it in the index at first, or fetch a fresh one if it's older than 2 days
     if (crawlerOptions.sitemap === "include") {
       try {
         await crawler.tryGetSitemap(
@@ -285,66 +289,64 @@ async function getMapResults({
       const searchQuery = search.toLowerCase();
       mapResults = performCosineSimilarityV2(mapResults, searchQuery);
     }
-
-    mapResults = mapResults
-      .map(x => {
-        try {
-          return {
-            ...x,
-            url: checkAndUpdateURLForMap(
-              x.url,
-              crawlerOptions.ignoreQueryParameters ?? true,
-            ).url.trim(),
-          };
-        } catch (_) {
-          return null;
-        }
-      })
-      .filter(x => x !== null) as MapDocument[];
-
-    // allows for subdomains to be included
-    mapResults = mapResults.filter(x => isSameDomain(x.url, url));
-
-    // if includeSubdomains is false, filter out subdomains
-    if (!includeSubdomains) {
-      mapResults = mapResults.filter(x => isSameSubdomain(x.url, url));
-    }
-
-    // Filter by path if enabled
-    if (filterByPath && !allowExternalLinks) {
-      try {
-        const urlObj = new URL(url);
-        const urlPath = urlObj.pathname;
-        // Only apply path filtering if the URL has a significant path (not just '/' or empty)
-        // This means we only filter by path if the user has not selected a root domain
-        if (urlPath && urlPath !== "/" && urlPath.length > 1) {
-          mapResults = mapResults.filter(x => {
-            try {
-              const linkObj = new URL(x.url);
-              return linkObj.pathname.startsWith(urlPath);
-            } catch (e) {
-              return false;
-            }
-          });
-        }
-      } catch (e) {
-        // If URL parsing fails, continue without path filtering
-        logger.warn(`Failed to parse URL for path filtering: ${url}`, {
-          error: e,
-        });
-      }
-    }
-
-    mapResults = dedupeMapDocumentArray(mapResults);
   }
 
+  mapResults = mapResults
+    .map(x => {
+      try {
+        return {
+          ...x,
+          url: checkAndUpdateURLForMap(
+            x.url,
+            crawlerOptions.ignoreQueryParameters ?? true,
+          ).url.trim(),
+        };
+      } catch (_) {
+        return null;
+      }
+    })
+    .filter(x => x !== null) as MapDocument[];
+
+  mapResults = mapResults.filter(x => isSameDomain(x.url, url));
+
+  if (!includeSubdomains) {
+    mapResults = mapResults.filter(x => isSameSubdomain(x.url, url));
+  }
+
+  if (filterByPath && !allowExternalLinks) {
+    try {
+      const urlObj = new URL(url);
+      const urlPath = urlObj.pathname;
+      // Only apply path filtering if the URL has a significant path (not just '/' or empty)
+      // This means we only filter by path if the user has not selected a root domain
+      if (urlPath && urlPath !== "/" && urlPath.length > 1) {
+        mapResults = mapResults.filter(x => {
+          try {
+            const linkObj = new URL(x.url);
+            return linkObj.pathname.startsWith(urlPath);
+          } catch (e) {
+            return false;
+          }
+        });
+      }
+    } catch (e) {
+      // If URL parsing fails, continue without path filtering
+      logger.warn(`Failed to parse URL for path filtering: ${url}`, {
+        error: e,
+      });
+    }
+  }
+
+  mapResults = dedupeMapDocumentArray(mapResults);
   mapResults = mapResults.slice(0, limit);
+
+  const totalTimeMs = Date.now() - functionStartTime;
 
   return {
     success: true,
     mapResults,
     job_id: id,
-    time_taken: (new Date().getTime() - Date.now()) / 1000,
+    time_taken: totalTimeMs,
   };
 }
 
