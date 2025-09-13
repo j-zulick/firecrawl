@@ -2,7 +2,7 @@
 
 Welcome to [Firecrawl](https://firecrawl.dev) 🔥! Here are some instructions on how to get the project locally, so you can run it on your own (and contribute)
 
-If you're contributing, note that the process is similar to other open source repos i.e. (fork firecrawl, make changes, run tests, PR). If you have any questions, and would like help gettin on board, reach out to help@firecrawl.com for more or submit an issue!
+If you're contributing, note that the process is similar to other open source repos i.e. (fork firecrawl, make changes, run tests, PR). If you have any questions, and would like help getting on board, reach out to help@firecrawl.com for more or submit an issue!
 
 ## Running the project locally
 
@@ -32,7 +32,7 @@ docker run --name nuqdb \
 
 Set environment variables in a .env in the /apps/api/ directory you can copy over the template in .env.example.
 
-To start, we wont set up authentication, or any optional sub services (pdf parsing, JS blocking support, AI features )
+To start, we won't set up authentication, or any optional sub services (pdf parsing, JS blocking support, AI features)
 
 .env:
 
