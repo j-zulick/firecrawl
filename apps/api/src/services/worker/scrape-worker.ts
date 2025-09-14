@@ -713,6 +713,16 @@ async function addKickoffSitemapJob(
   sc: StoredCrawl,
   logger: Logger,
 ) {
+  // TEMP: max 20 sitemaps per crawl
+  if (
+    (await redisEvictConnection.scard(
+      "crawl:" + sourceJob.data.crawl_id + ":sitemaps",
+    )) >= 20
+  ) {
+    logger.debug("Sitemap limit reached, skipping...", { sitemap: sitemapUrl });
+    return;
+  }
+
   const sitemapLocked =
     (await redisEvictConnection.sadd(
       "crawl:" + sourceJob.data.crawl_id + ":sitemaps",
