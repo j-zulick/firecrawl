@@ -90,6 +90,8 @@ const allowedKeywords = [
   "://creditcards.aa.com",
   "://aa.org",
   "://www.aa.org",
+  "://www.reddit.com/dev/api",
+  "://ads-api.reddit.com",
 ];
 
 function decryptedBlocklist(list: string[]): string[] {
