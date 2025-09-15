@@ -198,28 +198,39 @@ export async function crawlStatusController(
       .eq("job_id", req.params.jobId)
       .limit(1);
 
-    if (crawlJobError) {
-      logger.error("Error getting crawl job", { error: crawlJobError });
-      throw new Error("Error getting crawl job", { cause: crawlJobError });
+    let crawlAdded: Date;
+    let crawlTeamId: string;
+
+    if (crawlJobError || !crawlJobs || crawlJobs.length === 0) {
+      const { data: scrapeJobs, error: scrapeJobError } =
+        await supabase_rr_service
+          .from("firecrawl_jobs")
+          .select("*")
+          .eq("crawl_id", req.params.jobId)
+          .order("date_added", { ascending: false })
+          .limit(1);
+
+      if (scrapeJobError || !scrapeJobs || scrapeJobs.length === 0) {
+        return res.status(404).json({ success: false, error: "Job not found" });
+      }
+
+      const scrapeJob = scrapeJobs[0];
+      crawlAdded = new Date(scrapeJob.date_added); // use last scrape as date added for crawl
+      crawlTeamId = scrapeJob.team_id;
+    } else {
+      const crawlJob = crawlJobs[0];
+      crawlAdded = new Date(crawlJob.date_added);
+      crawlTeamId = crawlJob.team_id;
     }
 
-    if (!crawlJobs || crawlJobs.length === 0) {
-      return res.status(404).json({ success: false, error: "Job not found" });
-    }
-
-    const crawlJob = crawlJobs[0];
-
-    if (crawlJob.team_id !== req.auth.team_id) {
+    if (crawlTeamId !== req.auth.team_id) {
       return res.status(404).json({ success: false, error: "Job not found" });
     }
 
     const crawlTtlHours = req.acuc?.flags?.crawlTtlHours ?? 24;
     const crawlTtlMs = crawlTtlHours * 60 * 60 * 1000;
 
-    if (
-      new Date().valueOf() - new Date(crawlJob.date_added).valueOf() >
-      crawlTtlMs
-    ) {
+    if (new Date().valueOf() - crawlAdded.valueOf() > crawlTtlMs) {
       return res.status(404).json({ success: false, error: "Job expired" });
     }
   } else {
