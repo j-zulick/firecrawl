@@ -8,6 +8,7 @@ const config: KnipConfig = {
     },
   },
   ignore: ["native/**"],
+  ignoreDependencies: ["openai"],
 };
 
 export default config;
