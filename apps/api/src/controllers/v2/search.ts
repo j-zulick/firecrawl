@@ -262,13 +262,6 @@ export async function searchController(
       type: searchTypes,
     })) as SearchV2Response;
 
-    // Apply URL filtering if needed
-    if (req.body.ignoreInvalidURLs && searchResponse.web) {
-      searchResponse.web = searchResponse.web.filter(
-        result => !isUrlBlocked(result.url, req.acuc?.flags ?? null),
-      );
-    }
-
     // Add category labels to web results
     if (searchResponse.web && searchResponse.web.length > 0) {
       searchResponse.web = searchResponse.web.map(result => ({
