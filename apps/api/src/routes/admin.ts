@@ -7,7 +7,10 @@ import { cclogController } from "../controllers/v0/admin/cclog";
 import { indexQueuePrometheus } from "../controllers/v0/admin/index-queue-prometheus";
 import { zdrcleanerController } from "../controllers/v0/admin/zdrcleaner";
 import { triggerPrecrawl } from "../controllers/v0/admin/precrawl";
-import { metricsController } from "../controllers/v0/admin/metrics";
+import {
+  metricsController,
+  nuqMetricsController,
+} from "../controllers/v0/admin/metrics";
 
 export const adminRouter = express.Router();
 
@@ -49,4 +52,9 @@ adminRouter.get(
 adminRouter.get(
   `/admin/${process.env.BULL_AUTH_KEY}/metrics`,
   wrap(metricsController),
+);
+
+adminRouter.get(
+  `/admin/${process.env.BULL_AUTH_KEY}/nuq-metrics`,
+  wrap(nuqMetricsController),
 );

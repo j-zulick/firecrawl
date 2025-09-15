@@ -41,3 +41,7 @@ ${await scrapeQueue.getMetrics()}
 ${nuqGetLocalMetrics()}
 `);
 }
+
+export async function nuqMetricsController(_: Request, res: Response) {
+  res.contentType("text/plain").send(await scrapeQueue.getMetrics());
+}
