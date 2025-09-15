@@ -12,11 +12,9 @@ import {
   addIndexInsertJob,
   generateDomainSplits,
   addOMCEJob,
-  addDomainFrequencyJob,
 } from "../../../../services";
 import { EngineError, IndexMissError } from "../../error";
 import { shouldParsePDF } from "../../../../controllers/v2/types";
-import { storage } from "../../../../lib/gcs-jobs";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
   const shouldCache =
@@ -300,6 +298,12 @@ export async function scrapeURLWithIndex(
   }
 
   if (selectedRow === null || selectedRow === undefined) {
+    meta.logger.debug("Index metrics", {
+      module: "index/metrics",
+      hit: false,
+      maxAge,
+      dynamicMaxAge: meta.options.maxAge === undefined,
+    });
     throw new IndexMissError();
   }
 
@@ -332,6 +336,14 @@ export async function scrapeURLWithIndex(
       throw new IndexMissError();
     }
   }
+
+  meta.logger.debug("Index metrics", {
+    module: "index/metrics",
+    hit: true,
+    age: Date.now() - new Date(selectedRow.created_at).getTime(),
+    maxAge,
+    dynamicMaxAge: meta.options.maxAge === undefined,
+  });
 
   return {
     url: doc.url,
