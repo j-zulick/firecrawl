@@ -241,38 +241,21 @@ export async function scrapeURLWithIndex(
     }
   }
 
-  let selector = index_supabase_service
-    .from("index")
-    .select("id, created_at, status")
-    .eq("url_hash", urlHash)
-    .is("invalidated_at", null)
-    .gte("created_at", new Date(Date.now() - maxAge).toISOString())
-    .eq("is_mobile", meta.options.mobile)
-    .eq("block_ads", meta.options.blockAds);
-
-  if (meta.featureFlags.has("screenshot")) {
-    selector = selector.eq("has_screenshot", true);
-  }
-  if (meta.featureFlags.has("screenshot@fullScreen")) {
-    selector = selector.eq("has_screenshot_fullscreen", true);
-  }
-  if (meta.options.location?.country) {
-    selector = selector.eq("location_country", meta.options.location.country);
-  } else {
-    selector = selector.is("location_country", null);
-  }
-  if (meta.options.location?.languages) {
-    selector = selector.eq(
-      "location_languages",
-      meta.options.location.languages,
-    );
-  } else {
-    selector = selector.is("location_languages", null);
-  }
-
-  const { data, error } = await selector
-    .order("created_at", { ascending: false })
-    .limit(5);
+  const { data, error } = await index_supabase_service.rpc("index_get_recent", {
+    p_url_hash: urlHash,
+    p_max_age_ms: maxAge,
+    p_is_mobile: meta.options.mobile,
+    p_block_ads: meta.options.blockAds,
+    p_feature_screenshot: meta.featureFlags.has("screenshot"),
+    p_feature_screenshot_fullscreen: meta.featureFlags.has(
+      "screenshot@fullScreen",
+    ),
+    p_location_country: meta.options.location?.country ?? null,
+    p_location_languages:
+      (meta.options.location?.languages?.length ?? 0) > 0
+        ? meta.options.location?.languages
+        : null,
+  });
 
   if (error || !data) {
     throw new EngineError("Failed to retrieve URL from DB index", {

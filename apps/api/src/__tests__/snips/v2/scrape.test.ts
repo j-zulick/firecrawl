@@ -688,7 +688,7 @@ describe("Scrape tests", () => {
           const response1 = await scrape(
             {
               url,
-              location: { country: "DE" },
+              location: { country: "DE", languages: ["hu-HU", "de-DE"] },
               maxAge: scrapeTimeout * 2,
             },
             identity,
@@ -701,7 +701,7 @@ describe("Scrape tests", () => {
           const response2 = await scrape(
             {
               url,
-              location: { country: "DE" },
+              location: { country: "DE", languages: ["de-DE", "hu-HU"] },
               maxAge: scrapeTimeout * 3,
             },
             identity,
