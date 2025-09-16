@@ -1,6 +1,6 @@
 import { parseMarkdown } from "../../../lib/html-to-markdown";
 import { Meta } from "..";
-import { Document } from "../../../controllers/v1/types";
+import { Document } from "../../../controllers/v2/types";
 import { htmlTransform } from "../lib/removeUnwantedElements";
 import { extractLinks } from "../lib/extractLinks";
 import { extractImages } from "../lib/extractImages";
@@ -70,6 +70,10 @@ async function deriveMarkdownFromHTML(
     throw new Error(
       "html is undefined -- this transformer is being called out of order",
     );
+  }
+
+  if (document.metadata.postprocessorsUsed?.includes("youtube")) {
+    return document;
   }
 
   if (document.metadata.contentType?.includes("application/json")) {

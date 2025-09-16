@@ -150,6 +150,7 @@ export async function saveIndexToGCS(
     screenshot?: string;
     pdfMetadata?: PdfMetadata;
     contentType?: string;
+    postprocessorsUsed?: string[];
   },
 ): Promise<void> {
   try {

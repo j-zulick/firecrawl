@@ -1297,6 +1297,25 @@ describe("Scrape tests", () => {
         scrapeTimeout * 5,
       );
     });
+
+    describe("YouTube (f-e dependant)", () => {
+      it.concurrent(
+        "scrapes YouTube videos and transcripts",
+        async () => {
+          const response = await scrape(
+            {
+              url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+              formats: ["markdown"],
+            },
+            identity,
+          );
+
+          expect(response.markdown).toContain("Rick Astley");
+          expect(response.markdown).toContain("Never gonna let you down");
+        },
+        scrapeTimeout,
+      );
+    });
   }
 
   describe("URL rewriting", () => {

@@ -65,6 +65,7 @@ import {
 } from "./lib/abortManager";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { htmlTransform } from "./lib/removeUnwantedElements";
+import { postprocessors } from "./postprocessors";
 
 export type ScrapeUrlResponse =
   | {
@@ -612,34 +613,64 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     throw new NoEnginesLeftError(fallbackList.map(x => x.engine));
   }
 
+  let engineResult: EngineScrapeResult = result.result;
+
+  for (const postprocessor of postprocessors) {
+    if (
+      postprocessor.shouldRun(
+        meta,
+        new URL(engineResult.url),
+        engineResult.postprocessorsUsed,
+      )
+    ) {
+      meta.logger.info("Running postprocessor " + postprocessor.name);
+      try {
+        engineResult = await postprocessor.run(
+          {
+            ...meta,
+            logger: meta.logger.child({
+              method: "postprocessors/" + postprocessor.name,
+            }),
+          },
+          engineResult,
+        );
+      } catch (error) {
+        meta.logger.warn("Failed to run postprocessor " + postprocessor.name, {
+          error,
+        });
+      }
+    }
+  }
+
   let document: Document = {
-    markdown: result.result.markdown,
-    rawHtml: result.result.html,
-    screenshot: result.result.screenshot,
-    actions: result.result.actions,
+    markdown: engineResult.markdown,
+    rawHtml: engineResult.html,
+    screenshot: engineResult.screenshot,
+    actions: engineResult.actions,
     metadata: {
       sourceURL: meta.internalOptions.unnormalizedSourceURL ?? meta.url,
-      url: result.result.url,
-      statusCode: result.result.statusCode,
-      error: result.result.error,
-      numPages: result.result.pdfMetadata?.numPages,
-      ...(result.result.pdfMetadata?.title
-        ? { title: result.result.pdfMetadata.title }
+      url: engineResult.url,
+      statusCode: engineResult.statusCode,
+      error: engineResult.error,
+      numPages: engineResult.pdfMetadata?.numPages,
+      ...(engineResult.pdfMetadata?.title
+        ? { title: engineResult.pdfMetadata.title }
         : {}),
-      contentType: result.result.contentType,
+      contentType: engineResult.contentType,
       proxyUsed: meta.featureFlags.has("stealthProxy") ? "stealth" : "basic",
       ...(fallbackList.find(x =>
         ["index", "index;documents"].includes(x.engine),
       )
-        ? result.result.cacheInfo
+        ? engineResult.cacheInfo
           ? {
               cacheState: "hit",
-              cachedAt: result.result.cacheInfo.created_at.toISOString(),
+              cachedAt: engineResult.cacheInfo.created_at.toISOString(),
             }
           : {
               cacheState: "miss",
             }
         : {}),
+      postprocessorsUsed: engineResult.postprocessorsUsed,
     },
   };
 

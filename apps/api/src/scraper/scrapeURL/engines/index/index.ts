@@ -82,6 +82,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
                 }
               : undefined,
           contentType: document.metadata.contentType,
+          postprocessorsUsed: document.metadata.postprocessorsUsed,
         });
       } catch (error) {
         meta.logger.error("Failed to save document to index", {
@@ -364,6 +365,8 @@ export async function scrapeURLWithIndex(
     cacheInfo: {
       created_at: new Date(data[0].created_at),
     },
+
+    postprocessorsUsed: doc.postprocessorsUsed,
 
     proxyUsed: doc.proxyUsed ?? "basic",
   };

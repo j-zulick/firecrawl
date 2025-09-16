@@ -50,7 +50,7 @@ export type FireEngineScrapeRequestChromeCDP = {
   engine: "chrome-cdp";
   skipTlsVerification?: boolean;
   actions?: Action[];
-  blockMedia?: true; // cannot be false
+  blockMedia?: boolean;
   mobile?: boolean;
   disableSmartWaitCache?: boolean;
 };
@@ -151,6 +151,7 @@ const successSchema = z.object({
   docUrl: z.string().optional(),
 
   usedMobileProxy: z.boolean().optional(),
+  youtubeTranscriptContent: z.any().optional(),
 });
 
 type FireEngineCheckStatusSuccess = z.infer<typeof successSchema>;

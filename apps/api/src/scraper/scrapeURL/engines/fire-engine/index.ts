@@ -31,6 +31,7 @@ import { getInnerJson } from "@mendable/firecrawl-rs";
 import { hasFormatOfType } from "../../../../lib/format-utils";
 import { Action } from "../../../../controllers/v1/types";
 import { AbortManagerThrownError } from "../../lib/abortManager";
+import { youtubePostprocessor } from "../../postprocessors/youtube";
 
 // This function does not take `Meta` on purpose. It may not access any
 // meta values to construct the request -- that must be done by the
@@ -247,6 +248,12 @@ export async function scrapeURLWithFireEngineChromeCDP(
       !meta.internalOptions.zeroDataRetention &&
       meta.internalOptions.saveScrapeResultToGCS,
     zeroDataRetention: meta.internalOptions.zeroDataRetention,
+    ...(youtubePostprocessor.shouldRun(
+      meta,
+      new URL(meta.rewrittenUrl ?? meta.url),
+    )
+      ? { blockMedia: false }
+      : {}),
   };
 
   let response = await performFireEngineScrape(
@@ -314,6 +321,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       : {}),
 
     proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
+    youtubeTranscriptContent: response.youtubeTranscriptContent,
   };
 }
 

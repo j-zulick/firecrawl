@@ -127,6 +127,9 @@ export type EngineScrapeResult = {
 
   contentType?: string;
 
+  youtubeTranscriptContent?: any;
+  postprocessorsUsed?: string[];
+
   proxyUsed: "basic" | "stealth";
 };
 

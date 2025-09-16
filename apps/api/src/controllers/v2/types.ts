@@ -766,6 +766,7 @@ export type Document = {
     cacheState?: "hit" | "miss";
     cachedAt?: string;
     creditsUsed?: number;
+    postprocessorsUsed?: string[];
     // [key: string]: string | string[] | number | { smartScrape: number; other: number; total: number } | undefined;
   };
   serpResults?: {
