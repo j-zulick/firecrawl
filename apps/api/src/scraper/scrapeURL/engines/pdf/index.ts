@@ -12,6 +12,7 @@ import {
   PDFInsufficientTimeError,
   PDFPrefetchFailed,
   RemoveFeatureError,
+  EngineUnsuccessfulError,
 } from "../../error";
 import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -200,7 +201,12 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       if (ct && !ct.includes("application/pdf")) {
         // if downloaded file wasn't a PDF
         if (meta.pdfPrefetch === undefined) {
-          throw new PDFAntibotError();
+          // for non-PDF URLs, this is expected, not anti-bot
+          if (!meta.featureFlags.has("pdf")) {
+            throw new EngineUnsuccessfulError("pdf");
+          } else {
+            throw new PDFAntibotError();
+          }
         } else {
           throw new PDFPrefetchFailed();
         }
@@ -233,7 +239,12 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     if (ct && !ct.includes("application/pdf")) {
       // if downloaded file wasn't a PDF
       if (meta.pdfPrefetch === undefined) {
-        throw new PDFAntibotError();
+        // for non-PDF URLs, this is expected, not anti-bot
+        if (!meta.featureFlags.has("pdf")) {
+          throw new EngineUnsuccessfulError("pdf");
+        } else {
+          throw new PDFAntibotError();
+        }
       } else {
         throw new PDFPrefetchFailed();
       }
