@@ -16,6 +16,7 @@ import {
   FeatureFlag,
   getEngineMaxReasonableTime,
   scrapeURLWithEngine,
+  shouldUseIndex,
 } from "./engines";
 import { parseMarkdown } from "../../lib/html-to-markdown";
 import { hasFormatOfType } from "../../lib/format-utils";
@@ -709,6 +710,8 @@ export async function scrapeURL(
     costTracking,
   );
 
+  const startTime = Date.now();
+
   meta.logger.info("scrapeURL entered");
 
   if (meta.rewrittenUrl) {
@@ -811,9 +814,11 @@ export async function scrapeURL(
   }
 
   try {
+    let result: ScrapeUrlResponse;
     while (true) {
       try {
-        return await scrapeURLLoop(meta);
+        result = await scrapeURLLoop(meta);
+        break;
       } catch (error) {
         if (
           error instanceof AddFeatureError &&
@@ -866,6 +871,17 @@ export async function scrapeURL(
         }
       }
     }
+
+    meta.logger.debug("scrapeURL metrics", {
+      module: "scrapeURL/metrics",
+      timeTaken: Date.now() - startTime,
+      maxAgeValid: (meta.options.maxAge ?? 0) > 0,
+      shouldUseIndex: shouldUseIndex(meta),
+      success: result.success,
+      indexHit: result.success && result.document.metadata.cacheState === "hit",
+    });
+
+    return result;
   } catch (error) {
     // if (Object.values(meta.results).length > 0 && Object.values(meta.results).every(x => x.state === "error" && x.error instanceof FEPageLoadFailed)) {
     //   throw new FEPageLoadFailed();

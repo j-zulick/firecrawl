@@ -443,6 +443,22 @@ const engineOptions: {
   },
 };
 
+export function shouldUseIndex(meta: Meta) {
+  return (
+    useIndex &&
+    process.env.FIRECRAWL_INDEX_WRITE_ONLY !== "true" &&
+    meta.options.waitFor === 0 &&
+    !hasFormatOfType(meta.options.formats, "changeTracking") &&
+    // Skip index if a non-default PDF maxPages is specified
+    getPDFMaxPages(meta.options.parsers) === undefined &&
+    meta.options.maxAge !== 0 &&
+    (meta.options.headers === undefined ||
+      Object.keys(meta.options.headers).length === 0) &&
+    (meta.options.actions === undefined || meta.options.actions.length === 0) &&
+    meta.options.proxy !== "stealth"
+  );
+}
+
 export function buildFallbackList(meta: Meta): {
   engine: Engine;
   unsupportedFeatures: Set<FeatureFlag>;
@@ -465,20 +481,7 @@ export function buildFallbackList(meta: Meta): {
       : []),
   ];
 
-  const shouldUseIndex =
-    useIndex &&
-    process.env.FIRECRAWL_INDEX_WRITE_ONLY !== "true" &&
-    meta.options.waitFor === 0 &&
-    !hasFormatOfType(meta.options.formats, "changeTracking") &&
-    // Skip index if a non-default PDF maxPages is specified
-    getPDFMaxPages(meta.options.parsers) === undefined &&
-    meta.options.maxAge !== 0 &&
-    (meta.options.headers === undefined ||
-      Object.keys(meta.options.headers).length === 0) &&
-    (meta.options.actions === undefined || meta.options.actions.length === 0) &&
-    meta.options.proxy !== "stealth";
-
-  if (!shouldUseIndex) {
+  if (!shouldUseIndex(meta)) {
     const indexIndex = _engines.indexOf("index");
     if (indexIndex !== -1) {
       _engines.splice(indexIndex, 1);
