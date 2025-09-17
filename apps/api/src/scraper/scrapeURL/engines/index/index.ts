@@ -290,6 +290,9 @@ export async function scrapeURLWithIndex(
       hit: false,
       maxAge,
       dynamicMaxAge: meta.options.maxAge === undefined,
+      timingsFull: Date.now() - startTime,
+      timingsMaxAge: checkpoint1 - startTime,
+      timingsSupa: Date.now() - checkpoint1,
     });
     throw new IndexMissError();
   }
