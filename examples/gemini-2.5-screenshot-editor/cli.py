@@ -459,7 +459,9 @@ def validate_environment():
 def main():
     """Enhanced CLI with all features."""
     parser = argparse.ArgumentParser(
-        description="Advanced Firecrawl + Gemini 2.5 Flash Image CLI",
+        prog='cli.py',
+        usage='%(prog)s [URL] [MODE] [OPTIONS]',
+        description="Firecrawl + Gemini 2.5 Flash Image CLI - Transform website screenshots with AI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 EXAMPLES:
@@ -507,43 +509,50 @@ PRESET STYLES:
     # Main input arguments
     parser.add_argument('urls', nargs='*', help='Website URLs or image files')
 
-    # Operation modes
+    # Operation modes (mutually exclusive)
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument('--generate', metavar='PROMPT',
                            help='Generate image from text prompt')
-    mode_group.add_argument('--style', choices=['cyberpunk', 'vintage', 'artistic', 'dramatic', 'minimal'],
-                           help='Apply preset style to screenshot')
-    mode_group.add_argument('--artistic', choices=list(FirecrawlGeminiEditor.ARTISTIC_STYLES.keys()),
-                           help='Apply artistic style transfer')
+    mode_group.add_argument('--style',
+                           choices=['cyberpunk', 'vintage', 'artistic', 'dramatic', 'minimal'],
+                           help='Apply preset style')
+    mode_group.add_argument('--artistic',
+                           choices=['van_gogh', 'monet', 'picasso', 'warhol', 'dali',
+                                   'ukiyo_e', 'watercolor', 'oil_painting', 'pencil_sketch', 'comic_book'],
+                           help='Apply artistic style')
     mode_group.add_argument('--edit', metavar='PROMPT',
                            help='Custom editing instruction')
     mode_group.add_argument('--composite', metavar='PROMPT',
-                           help='Combine multiple images/URLs')
+                           help='Combine multiple images')
     mode_group.add_argument('--refine', nargs='+', metavar='STEP',
-                           help='Apply iterative refinements')
+                           help='Apply step-by-step refinements')
 
     # Input/Output options
-    parser.add_argument('--output', '-o', help='Output filename')
-    parser.add_argument('--output-dir', default='output', help='Output directory for batch operations')
-    parser.add_argument('--batch', metavar='FILE', help='Process URLs from file')
-    parser.add_argument('--compose', nargs='+', metavar='IMAGE', help='Images to compose')
+    io_group = parser.add_argument_group('Input/Output')
+    io_group.add_argument('--output', '-o', help='Output filename')
+    io_group.add_argument('--output-dir', default='output', help='Output directory')
+    io_group.add_argument('--batch', metavar='FILE', help='Process URLs from file')
+    io_group.add_argument('--compose', nargs='+', metavar='IMAGE', help='Additional images')
 
     # Screenshot options
-    parser.add_argument('--mobile', action='store_true', help='Mobile viewport')
-    parser.add_argument('--viewport-only', action='store_true', help='Capture viewport only')
-    parser.add_argument('--wait', type=int, default=3, help='Wait time before screenshot (seconds)')
+    screenshot_group = parser.add_argument_group('Screenshot Options')
+    screenshot_group.add_argument('--mobile', action='store_true', help='Mobile viewport')
+    screenshot_group.add_argument('--viewport-only', action='store_true', help='Viewport only')
+    screenshot_group.add_argument('--wait', type=int, default=3, help='Wait seconds before capture')
 
     # Processing options
-    parser.add_argument('--preserve-content', action='store_true',
-                       help='Preserve original content in style transfer')
-    parser.add_argument('--save-intermediates', action='store_true',
-                       help='Save intermediate refinement steps')
-    parser.add_argument('--high-quality', action='store_true', default=True,
-                       help='Generate maximum quality images (default: enabled)')
-    parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    process_group = parser.add_argument_group('Processing Options')
+    process_group.add_argument('--preserve-content', action='store_true',
+                              help='Preserve original layout')
+    process_group.add_argument('--save-intermediates', action='store_true',
+                              help='Save refinement steps')
+    process_group.add_argument('--high-quality', action='store_true', default=True,
+                              help='Maximum quality (default: on)')
+    process_group.add_argument('--verbose', '-v', action='store_true', help='Show details')
 
     # API configuration
-    parser.add_argument('--firecrawl-url', help='Custom Firecrawl API URL')
+    api_group = parser.add_argument_group('API Configuration')
+    api_group.add_argument('--firecrawl-url', help='Custom Firecrawl endpoint')
 
     args = parser.parse_args()
 

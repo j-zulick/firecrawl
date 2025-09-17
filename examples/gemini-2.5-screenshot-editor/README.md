@@ -63,6 +63,58 @@ python cli.py --generate "A futuristic dashboard with neon colors"
 
 ## 📚 Comprehensive Examples
 
+### 🎯 Basic Argument Examples
+
+```bash
+# --edit: Custom transformation
+python cli.py https://github.com --edit "Make it look like a cyberpunk interface"
+
+# --style: Preset style
+python cli.py https://stripe.com --style vintage
+
+# --artistic: Famous art style
+python cli.py https://apple.com --artistic van_gogh
+
+# --generate: Text-to-image (no URL needed)
+python cli.py --generate "Modern e-commerce website with dark theme"
+
+# --mobile: Mobile viewport
+python cli.py https://tailwindcss.com --mobile
+
+# --viewport-only: No scrolling
+python cli.py https://example.com --viewport-only
+
+# --output: Custom filename
+python cli.py https://site.com --style cyberpunk --output my_result.png
+
+# --verbose: Debug information
+python cli.py https://github.com --artistic monet --verbose
+
+# --high-quality: Maximum quality
+python cli.py https://portfolio.com --edit "Make artistic" --high-quality
+
+# --refine: Step-by-step improvements
+python cli.py https://example.com --refine "Add dark theme" "Add neon accents"
+
+# --composite: Combine multiple sites
+python cli.py https://github.com https://gitlab.com --composite "Merge these designs"
+
+# --batch: Process multiple URLs
+python cli.py --batch urls.txt --style cyberpunk
+
+# --save-intermediates: Save each refinement step
+python cli.py https://site.com --refine "Step 1" "Step 2" --save-intermediates
+
+# --output-dir: Custom directory for outputs
+python cli.py --batch urls.txt --artistic monet --output-dir art_gallery
+
+# --preserve-content: Keep original layout
+python cli.py https://apple.com --artistic van_gogh --preserve-content
+
+# --wait: Wait before screenshot
+python cli.py https://slow-site.com --wait 10 --style minimal
+```
+
 ### 🎨 Artistic Style Transfer
 
 Transform website screenshots into famous art styles:
