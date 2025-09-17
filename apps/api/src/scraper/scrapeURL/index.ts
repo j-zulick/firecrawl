@@ -886,6 +886,15 @@ export async function scrapeURL(
     // if (Object.values(meta.results).length > 0 && Object.values(meta.results).every(x => x.state === "error" && x.error instanceof FEPageLoadFailed)) {
     //   throw new FEPageLoadFailed();
     // } else
+    meta.logger.debug("scrapeURL metrics", {
+      module: "scrapeURL/metrics",
+      timeTaken: Date.now() - startTime,
+      maxAgeValid: (meta.options.maxAge ?? 0) > 0,
+      shouldUseIndex: shouldUseIndex(meta),
+      success: false,
+      indexHit: false,
+    });
+
     if (error instanceof NoEnginesLeftError) {
       meta.logger.warn("scrapeURL: All scraping engines failed!", { error });
     } else if (error instanceof LLMRefusalError) {
