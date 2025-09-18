@@ -1081,8 +1081,8 @@ export async function performSummary(
       },
       markdown: document.markdown,
       previousWarning: document.warning,
-      model: getModel("gpt-5-mini", "openai"),
-      retryModel: getModel("gpt-4o-mini", "openai"),
+      model: getModel("gpt-4o-mini", "openai"),
+      retryModel: getModel("gpt-5", "openai"),
       costTrackingOptions: {
         costTracking: meta.costTracking,
         metadata: {
