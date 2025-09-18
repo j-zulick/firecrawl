@@ -1061,6 +1061,22 @@ export async function performSummary(
       return document;
     }
 
+    if (document.markdown === undefined) {
+      document.warning =
+        "Summary mode is not supported without the markdown format." +
+        (document.warning ? " " + document.warning : "");
+      return document;
+    }
+
+    const trimOutput = trimToTokenLimit(
+      document.markdown!,
+      120000,
+      "gpt-4o-mini",
+      document.warning,
+    );
+
+    document.warning = trimOutput.warning;
+
     const generationOptions: GenerateCompletionsOptions = {
       logger: meta.logger.child({
         method: "performSummary/generateCompletions",
@@ -1079,10 +1095,10 @@ export async function performSummary(
           required: ["summary"],
         },
       },
-      markdown: document.markdown,
+      markdown: trimOutput.text,
       previousWarning: document.warning,
       model: getModel("gpt-4o-mini", "openai"),
-      retryModel: getModel("gpt-5", "openai"),
+      retryModel: getModel("gpt-4o", "openai"),
       costTrackingOptions: {
         costTracking: meta.costTracking,
         metadata: {

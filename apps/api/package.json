@@ -112,7 +112,6 @@
     "langfuse": "^3.38.4",
     "langfuse-vercel": "^3.38.4",
     "lodash": "^4.17.21",
-    "mammoth": "^1.7.2",
     "marked": "^14.1.2",
     "ollama-ai-provider": "^1.2.0",
     "openai": "^5.20.2",
