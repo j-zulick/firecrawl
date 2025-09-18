@@ -1,6 +1,6 @@
 import { ScrapeActionContent } from "../../../lib/entities";
 import { Meta } from "..";
-import { docxMaxReasonableTime, scrapeDOCX } from "./docx";
+import { documentMaxReasonableTime, scrapeDocument } from "./document";
 import {
   fireEngineMaxReasonableTime,
   scrapeURLWithFireEngineChromeCDP,
@@ -31,7 +31,7 @@ export type Engine =
   | "playwright"
   | "fetch"
   | "pdf"
-  | "docx"
+  | "document"
   | "index"
   | "index;documents";
 
@@ -59,7 +59,7 @@ const engines: Engine[] = [
   ...(usePlaywright ? ["playwright" as const] : []),
   "fetch",
   "pdf",
-  "docx",
+  "document",
 ];
 
 const featureFlags = [
@@ -68,7 +68,7 @@ const featureFlags = [
   "screenshot",
   "screenshot@fullScreen",
   "pdf",
-  "docx",
+  "document",
   "atsv",
   "location",
   "mobile",
@@ -90,7 +90,7 @@ const featureFlagOptions: {
   screenshot: { priority: 10 },
   "screenshot@fullScreen": { priority: 10 },
   pdf: { priority: 100 },
-  docx: { priority: 100 },
+  document: { priority: 100 },
   atsv: { priority: 90 }, // NOTE: should atsv force to tlsclient? adjust priority if not
   useFastMode: { priority: 90 },
   location: { priority: 10 },
@@ -149,7 +149,7 @@ const engineHandlers: {
   playwright: scrapeURLWithPlaywright,
   fetch: scrapeURLWithFetch,
   pdf: scrapePDF,
-  docx: scrapeDOCX,
+  document: scrapeDocument,
 };
 
 const engineMRTs: {
@@ -176,7 +176,7 @@ const engineMRTs: {
   playwright: playwrightMaxReasonableTime,
   fetch: fetchMaxReasonableTime,
   pdf: pdfMaxReasonableTime,
-  docx: docxMaxReasonableTime,
+  document: documentMaxReasonableTime,
 };
 
 const engineOptions: {
@@ -196,7 +196,7 @@ const engineOptions: {
       screenshot: true,
       "screenshot@fullScreen": true,
       pdf: false,
-      docx: false,
+      document: false,
       atsv: false,
       mobile: true,
       location: true,
@@ -214,7 +214,7 @@ const engineOptions: {
       screenshot: true, // through actions transform
       "screenshot@fullScreen": true, // through actions transform
       pdf: false,
-      docx: false,
+      document: false,
       atsv: false,
       location: true,
       mobile: true,
@@ -232,7 +232,7 @@ const engineOptions: {
       screenshot: true, // through actions transform
       "screenshot@fullScreen": true, // through actions transform
       pdf: false,
-      docx: false,
+      document: false,
       atsv: false,
       location: true,
       mobile: true,
@@ -250,7 +250,7 @@ const engineOptions: {
       screenshot: true,
       "screenshot@fullScreen": true,
       pdf: true,
-      docx: true,
+      document: true,
       atsv: false,
       location: true,
       mobile: true,
@@ -268,7 +268,7 @@ const engineOptions: {
       screenshot: true, // through actions transform
       "screenshot@fullScreen": true, // through actions transform
       pdf: false,
-      docx: false,
+      document: false,
       atsv: false,
       location: true,
       mobile: true,
@@ -286,7 +286,7 @@ const engineOptions: {
       screenshot: true, // through actions transform
       "screenshot@fullScreen": true, // through actions transform
       pdf: false,
-      docx: false,
+      document: false,
       atsv: false,
       location: true,
       mobile: true,
@@ -304,7 +304,7 @@ const engineOptions: {
       screenshot: true,
       "screenshot@fullScreen": true,
       pdf: false,
-      docx: false,
+      document: false,
       atsv: false,
       location: false,
       mobile: false,
@@ -322,7 +322,7 @@ const engineOptions: {
       screenshot: true,
       "screenshot@fullScreen": true,
       pdf: false,
-      docx: false,
+      document: false,
       atsv: false,
       location: false,
       mobile: false,
@@ -340,7 +340,7 @@ const engineOptions: {
       screenshot: false,
       "screenshot@fullScreen": false,
       pdf: false,
-      docx: false,
+      document: false,
       atsv: false,
       location: false,
       mobile: false,
@@ -358,7 +358,7 @@ const engineOptions: {
       screenshot: false,
       "screenshot@fullScreen": false,
       pdf: false,
-      docx: false,
+      document: false,
       atsv: true,
       location: true,
       mobile: false,
@@ -376,7 +376,7 @@ const engineOptions: {
       screenshot: false,
       "screenshot@fullScreen": false,
       pdf: false,
-      docx: false,
+      document: false,
       atsv: true,
       location: true,
       mobile: false,
@@ -394,7 +394,7 @@ const engineOptions: {
       screenshot: false,
       "screenshot@fullScreen": false,
       pdf: false,
-      docx: false,
+      document: false,
       atsv: false,
       location: false,
       mobile: false,
@@ -412,7 +412,7 @@ const engineOptions: {
       screenshot: false,
       "screenshot@fullScreen": false,
       pdf: true,
-      docx: false,
+      document: false,
       atsv: false,
       location: false,
       mobile: false,
@@ -423,14 +423,14 @@ const engineOptions: {
     },
     quality: -20,
   },
-  docx: {
+  document: {
     features: {
       actions: false,
       waitFor: false,
       screenshot: false,
       "screenshot@fullScreen": false,
       pdf: false,
-      docx: true,
+      document: true,
       atsv: false,
       location: false,
       mobile: false,

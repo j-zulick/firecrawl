@@ -844,7 +844,8 @@ export async function performExtraction(
 
       if (docsMap.size == 0) {
         // All urls are invalid
-        const errorMessage = "All provided URLs are either invalid, unsupported or failed to be scraped.";
+        const errorMessage =
+          "All provided URLs are either invalid, unsupported or failed to be scraped.";
         logger.error(errorMessage);
         const tokens_billed = 300 + calculateThinkingCost(costTracking);
         await billTeam(
@@ -976,11 +977,11 @@ export async function performExtraction(
 
     let finalResult = reqSchema
       ? await mixSchemaObjects(
-        reqSchema,
-        singleAnswerResult,
-        multiEntityResult,
-        logger.child({ method: "mixSchemaObjects" }),
-      )
+          reqSchema,
+          singleAnswerResult,
+          multiEntityResult,
+          logger.child({ method: "mixSchemaObjects" }),
+        )
       : singleAnswerResult || multiEntityResult;
 
     // Tokenize final result to get token count
