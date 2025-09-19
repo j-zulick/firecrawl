@@ -11,20 +11,6 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
 #[napi]
-#[derive(Debug)]
-pub enum ConversionError {
-  UnsupportedFormat,
-  Provider(String),
-  Io(String),
-}
-
-impl From<std::io::Error> for ConversionError {
-  fn from(e: std::io::Error) -> Self {
-    ConversionError::Io(e.to_string())
-  }
-}
-
-#[napi]
 pub struct DocumentConverter {
   factory: ProviderFactory,
   html_renderer: HtmlRenderer,
