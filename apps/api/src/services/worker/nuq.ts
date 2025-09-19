@@ -401,7 +401,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
               return reject(new Error("Timed out"));
             }
 
-            setTimeout(poll.bind(this), 250);
+            setTimeout(poll.bind(this), 500);
           }.bind(this);
 
           poll();
