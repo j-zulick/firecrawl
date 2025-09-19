@@ -36,8 +36,6 @@ ${Object.entries(metrics)
   )
   .join("\n")}
 
-${await scrapeQueue.getMetrics()}
-
 ${nuqGetLocalMetrics()}
 `);
 }
