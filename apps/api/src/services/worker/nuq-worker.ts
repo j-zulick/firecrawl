@@ -4,8 +4,16 @@ import { processJobInternal } from "./scrape-worker";
 import { scrapeQueue, nuqGetLocalMetrics, nuqHealthCheck } from "./nuq";
 import Express from "express";
 import { _ } from "ajv";
+import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
 
 (async () => {
+  try {
+    await initializeBlocklist();
+  } catch (error) {
+    _logger.error("Failed to initialize blocklist", { error });
+    process.exit(1);
+  }
+
   let isShuttingDown = false;
   const myLock = crypto.randomUUID();
 

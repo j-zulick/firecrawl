@@ -39,6 +39,7 @@ import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
+import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -138,7 +139,14 @@ app.use(domainFrequencyRouter);
 const DEFAULT_PORT = process.env.PORT ?? 3002;
 const HOST = process.env.HOST ?? "localhost";
 
-function startServer(port = DEFAULT_PORT) {
+async function startServer(port = DEFAULT_PORT) {
+  try {
+    await initializeBlocklist();
+  } catch (error) {
+    logger.error("Failed to initialize blocklist", { error });
+    throw error;
+  }
+  
   // Attach WebSocket proxy to the Express app
   attachWsProxy(app);
 
@@ -175,7 +183,10 @@ function startServer(port = DEFAULT_PORT) {
 }
 
 if (require.main === module) {
-  startServer();
+  startServer().catch(error => {
+    logger.error("Failed to start server", { error });
+    process.exit(1);
+  });
 }
 
 app.get("/is-production", (req, res) => {
