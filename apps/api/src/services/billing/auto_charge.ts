@@ -126,7 +126,12 @@ async function _autoChargeScale(
           if (priceError || !price) {
             logger.error("Error fetching price", {
               error: priceError,
-              priceId: chunk.price_associated_auto_recharge_price_id,
+              priceId:
+                chunk.price_associated_auto_recharge_price_id === undefined
+                  ? "undefined"
+                  : JSON.stringify(
+                      chunk.price_associated_auto_recharge_price_id,
+                    ),
             });
             return {
               success: false,
