@@ -897,23 +897,8 @@ export async function performLLMExtract(
       options: jsonFormat,
       markdown: document.markdown,
       previousWarning: document.warning,
-      // ... existing model and provider options ...
-      // model: getModel("o3-mini", "openai"), // Keeping existing model selection
-      // model: getModel("o3-mini", "openai"),
-      // model: getModel("qwen-qwq-32b", "groq"),
-      // model: getModel("gemini-2.0-flash", "google"),
-      // model: getModel("gemini-2.5-pro-preview-03-25", "vertex"),
-      // model: getModel("gpt-4o-mini", "openai"),
-      // retryModel: getModel("gpt-4o", "openai"),
-      ...(process.env.VERTEX_CREDENTIALS
-        ? {
-            model: getModel("gemini-2.5-flash-lite", "vertex"),
-            retryModel: getModel("gpt-4o-mini", "openai"),
-          }
-        : {
-            model: getModel("gpt-4o-mini", "openai"),
-            retryModel: getModel("gpt-4o", "openai"),
-          }),
+      model: getModel("gpt-4o-mini", "openai"),
+      retryModel: getModel("gpt-4o", "openai"),
       costTrackingOptions: {
         costTracking: meta.costTracking,
         metadata: {
