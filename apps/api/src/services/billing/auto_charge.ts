@@ -69,6 +69,8 @@ async function _autoChargeScale(
     teamId: chunk.team_id,
   });
 
+  logger.info("Scale auto-recharge triggered", {});
+
   const resource = `auto-recharge:${chunk.team_id}`;
 
   try {
@@ -122,7 +124,10 @@ async function _autoChargeScale(
             .eq("id", chunk.price_associated_auto_recharge_price_id)
             .single();
           if (priceError || !price) {
-            logger.error("Error fetching price", { error: priceError });
+            logger.error("Error fetching price", {
+              error: priceError,
+              priceId: chunk.price_associated_auto_recharge_price_id,
+            });
             return {
               success: false,
               message: "Error fetching price",
