@@ -36,6 +36,7 @@ import { paymentMiddleware } from "x402-express";
 import { queueStatusController } from "../controllers/v1/queue-status";
 import { creditUsageHistoricalController } from "../controllers/v1/credit-usage-historical";
 import { tokenUsageHistoricalController } from "../controllers/v1/token-usage-historical";
+import { facilitator } from "@coinbase/x402";
 
 expressWs(express());
 
@@ -45,8 +46,10 @@ export const v1Router = express.Router();
 // This middleware handles payment verification and processing for premium API features
 // x402 payments protocol - https://github.com/coinbase/x402
 v1Router.use(
-  paymentMiddleware( (process.env.X402_PAY_TO_ADDRESS as `0x${string}`) ||
-      "0x0000000000000000000000000000000000000000", {
+  paymentMiddleware(
+    (process.env.X402_PAY_TO_ADDRESS as `0x${string}`) ||
+      "0x0000000000000000000000000000000000000000",
+    {
       "POST /x402/search": {
         price: process.env.X402_ENDPOINT_PRICE_USD as string,
         network: process.env.X402_NETWORK as
@@ -66,19 +69,19 @@ v1Router.use(
               query: {
                 type: "string",
                 description: "Search query to find relevant web pages",
-                required: true
+                required: true,
               },
               limit: {
                 type: "number",
                 description: "Maximum number of results to return (max 10)",
-                required: false
+                required: false,
               },
               scrapeOptions: {
                 type: "object",
                 description: "Options for scraping the found pages",
-                required: false
-              }
-            }
+                required: false,
+              },
+            },
           },
           outputSchema: {
             type: "object",
@@ -92,15 +95,16 @@ v1Router.use(
                     url: { type: "string" },
                     title: { type: "string" },
                     description: { type: "string" },
-                    markdown: { type: "string" }
-                  }
-                }
-              }
-            }
-          }
+                    markdown: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },
+    facilitator,
   ),
 );
 
