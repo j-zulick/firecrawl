@@ -429,6 +429,19 @@ export async function mapController(
   });
 
   // Log the job
+  const mapCrawlerOptions = {
+    search: req.body.search,
+    sitemap: req.body.sitemap,
+    includeSubdomains: req.body.includeSubdomains,
+    ignoreQueryParameters: req.body.ignoreQueryParameters,
+    limit: req.body.limit,
+    timeout: req.body.timeout,
+  };
+
+  const mapScrapeOptions = {
+    location: req.body.location,
+  };
+
   logJob({
     job_id: result.job_id,
     success: result.mapResults.length > 0,
@@ -439,8 +452,8 @@ export async function mapController(
     team_id: req.auth.team_id,
     mode: "map",
     url: req.body.url,
-    crawlerOptions: {},
-    scrapeOptions: {},
+    crawlerOptions: mapCrawlerOptions,
+    scrapeOptions: mapScrapeOptions,
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     num_tokens: 0,
