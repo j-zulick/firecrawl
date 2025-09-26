@@ -1145,7 +1145,9 @@ export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
 };
 
 const shouldOtel =
-  process.env.LANGFUSE_PUBLIC_KEY || process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  process.env.LANGFUSE_PUBLIC_KEY ||
+  process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
+  process.env.AXIOM_API_KEY;
 const otelSdk = shouldOtel
   ? new NodeSDK({
       resource: resourceFromAttributes({
@@ -1160,6 +1162,19 @@ const otelSdk = shouldOtel
               new BatchSpanProcessor(
                 new OTLPTraceExporter({
                   url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
+                }),
+              ),
+            ]
+          : []),
+        ...(process.env.AXIOM_API_KEY
+          ? [
+              new BatchSpanProcessor(
+                new OTLPTraceExporter({
+                  url: "https://api.axiom.co/v1/traces",
+                  headers: {
+                    Authorization: `Bearer ${process.env.AXIOM_API_KEY}`,
+                    "X-Axiom-Dataset": "firecrawl",
+                  },
                 }),
               ),
             ]

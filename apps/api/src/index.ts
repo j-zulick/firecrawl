@@ -58,7 +58,9 @@ cacheableLookup.install(http.globalAgent);
 cacheableLookup.install(https.globalAgent);
 
 const shouldOtel =
-  process.env.LANGFUSE_PUBLIC_KEY || process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  process.env.LANGFUSE_PUBLIC_KEY ||
+  process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
+  process.env.AXIOM_API_KEY;
 const otelSdk = shouldOtel
   ? new NodeSDK({
       resource: resourceFromAttributes({
@@ -73,6 +75,19 @@ const otelSdk = shouldOtel
               new BatchSpanProcessor(
                 new OTLPTraceExporter({
                   url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
+                }),
+              ),
+            ]
+          : []),
+        ...(process.env.AXIOM_API_KEY
+          ? [
+              new BatchSpanProcessor(
+                new OTLPTraceExporter({
+                  url: "https://api.axiom.co/v1/traces",
+                  headers: {
+                    Authorization: `Bearer ${process.env.AXIOM_API_KEY}`,
+                    "X-Axiom-Dataset": "firecrawl",
+                  },
                 }),
               ),
             ]
@@ -149,7 +164,7 @@ async function startServer(port = DEFAULT_PORT) {
     logger.error("Failed to initialize blocklist", { error });
     throw error;
   }
-  
+
   // Attach WebSocket proxy to the Express app
   attachWsProxy(app);
 
