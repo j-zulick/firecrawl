@@ -157,6 +157,7 @@ export async function scrapeController(
   logger.info("Request metrics", {
     version: "v2",
     scrapeId: jobId,
+    mode: "scrape",
     middlewareStartTime,
     controllerStartTime,
     middlewareTime,

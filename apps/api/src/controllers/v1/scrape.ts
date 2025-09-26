@@ -165,6 +165,7 @@ export async function scrapeController(
   const controllerTime = new Date().getTime() - controllerStartTime;
   logger.info("Request metrics", {
     version: "v1",
+    mode: "scrape",
     scrapeId: jobId,
     middlewareStartTime,
     controllerStartTime,

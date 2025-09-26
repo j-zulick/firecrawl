@@ -451,8 +451,9 @@ export async function searchController(
     // Log final timing information
     const totalRequestTime = new Date().getTime() - middlewareStartTime;
     const controllerTime = new Date().getTime() - controllerStartTime;
-    logger.info("Search completed successfully", {
+    logger.info("Request metrics", {
       version: "v1",
+      mode: "search",
       jobId,
       middlewareStartTime,
       controllerStartTime,

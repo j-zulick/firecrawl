@@ -675,6 +675,7 @@ export async function searchController(
     logger.info("Request metrics", {
       version: "v2",
       jobId,
+      mode: "search",
       middlewareStartTime,
       controllerStartTime,
       middlewareTime,
