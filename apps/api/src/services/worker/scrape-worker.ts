@@ -1147,7 +1147,7 @@ export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
 const shouldOtel =
   process.env.LANGFUSE_PUBLIC_KEY ||
   process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
-  process.env.AXIOM_API_KEY;
+  process.env.HONEYCOMB_TEAM_ID;
 const otelSdk = shouldOtel
   ? new NodeSDK({
       resource: resourceFromAttributes({
@@ -1166,14 +1166,13 @@ const otelSdk = shouldOtel
               ),
             ]
           : []),
-        ...(process.env.AXIOM_API_KEY
+        ...(process.env.HONEYCOMB_TEAM_ID
           ? [
               new BatchSpanProcessor(
                 new OTLPTraceExporter({
-                  url: "https://api.axiom.co/v1/traces",
+                  url: "https://api.honeycomb.io/v1/traces",
                   headers: {
-                    Authorization: `Bearer ${process.env.AXIOM_API_KEY}`,
-                    "X-Axiom-Dataset": "firecrawl",
+                    "x-honeycomb-team": process.env.HONEYCOMB_TEAM_ID,
                   },
                 }),
               ),
