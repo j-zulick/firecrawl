@@ -19,6 +19,11 @@ export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse>,
 ) {
+  // Get timing data from middleware (includes all middleware processing time)
+  const middlewareStartTime =
+    (req as any).requestTiming?.startTime || new Date().getTime();
+  const controllerStartTime = new Date().getTime();
+
   const jobId: string = uuidv4();
   const preNormalizedBody = { ...req.body };
   req.body = scrapeRequestSchema.parse(req.body);
@@ -43,7 +48,10 @@ export async function scrapeController(
     zeroDataRetention,
   });
 
+  const middlewareTime = controllerStartTime - middlewareStartTime;
+
   logger.debug("Scrape " + jobId + " starting", {
+    version: "v1",
     scrapeId: jobId,
     request: req.body,
     originalRequest: preNormalizedBody,
@@ -89,7 +97,7 @@ export async function scrapeController(
       },
       origin,
       integration: req.body.integration,
-      startTime,
+      startTime: controllerStartTime,
       zeroDataRetention: zeroDataRetention ?? false,
       apiKeyId: req.acuc?.api_key_id ?? null,
     },
@@ -118,7 +126,7 @@ export async function scrapeController(
     );
   } catch (e) {
     logger.error(`Error in scrapeController`, {
-      startTime,
+      version: "v1",
       error: e,
     });
 
@@ -152,6 +160,18 @@ export async function scrapeController(
       delete doc.rawHtml;
     }
   }
+
+  const totalRequestTime = new Date().getTime() - middlewareStartTime;
+  const controllerTime = new Date().getTime() - controllerStartTime;
+  logger.info("Request metrics", {
+    version: "v1",
+    scrapeId: jobId,
+    middlewareStartTime,
+    controllerStartTime,
+    middlewareTime,
+    controllerTime,
+    totalRequestTime,
+  });
 
   return res.status(200).json({
     success: true,

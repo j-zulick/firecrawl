@@ -223,6 +223,10 @@ export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
   res: Response<SearchResponse>,
 ) {
+  // Get timing data from middleware (includes all middleware processing time)
+  const middlewareStartTime = (req as any).requestTiming?.startTime || new Date().getTime();
+  const controllerStartTime = new Date().getTime();
+
   const jobId = uuidv4();
   let logger = _logger.child({
     jobId,
@@ -245,7 +249,7 @@ export async function searchController(
     success: true,
     data: [],
   };
-  const startTime = new Date().getTime();
+  const middlewareTime = controllerStartTime - middlewareStartTime;
   const isSearchPreview =
     process.env.SEARCH_PREVIEW_TOKEN !== undefined &&
     process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
@@ -257,6 +261,7 @@ export async function searchController(
     req.body = searchRequestSchema.parse(req.body);
 
     logger = logger.child({
+      version: "v1",
       query: req.body.query,
       origin: req.body.origin,
     });
@@ -411,7 +416,7 @@ export async function searchController(
     }
 
     const endTime = new Date().getTime();
-    const timeTakenInSeconds = (endTime - startTime) / 1000;
+    const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
     logger.info("Logging job", {
       num_docs: responseData.data.length,
@@ -443,6 +448,20 @@ export async function searchController(
       isSearchPreview,
     );
 
+    // Log final timing information
+    const totalRequestTime = new Date().getTime() - middlewareStartTime;
+    const controllerTime = new Date().getTime() - controllerStartTime;
+    logger.info("Search completed successfully", {
+      version: "v1",
+      jobId,
+      middlewareStartTime,
+      controllerStartTime,
+      middlewareTime,
+      controllerTime,
+      totalRequestTime,
+      creditsUsed: credits_billed,
+    });
+
     return res.status(200).json(responseData);
   } catch (error) {
     if (error instanceof ScrapeJobTimeoutError) {
@@ -454,7 +473,10 @@ export async function searchController(
     }
 
     Sentry.captureException(error);
-    logger.error("Unhandled error occurred in search", { error });
+    logger.error("Unhandled error occurred in search", { 
+      version: "v1",
+      error 
+    });
     return res.status(500).json({
       success: false,
       error: error.message,

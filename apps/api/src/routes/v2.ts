@@ -24,6 +24,7 @@ import {
   blocklistMiddleware,
   countryCheck,
   idempotencyMiddleware,
+  requestTimingMiddleware,
   wrap,
 } from "./shared";
 import { queueStatusController } from "../controllers/v2/queue-status";
@@ -33,6 +34,9 @@ import { tokenUsageHistoricalController } from "../controllers/v2/token-usage-hi
 expressWs(express());
 
 export const v2Router = express.Router();
+
+// Add timing middleware to all v2 routes
+v2Router.use(requestTimingMiddleware("v2"));
 
 v2Router.post(
   "/search",

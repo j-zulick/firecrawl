@@ -30,6 +30,7 @@ import {
   blocklistMiddleware,
   countryCheck,
   idempotencyMiddleware,
+  requestTimingMiddleware,
   wrap,
 } from "./shared";
 import { paymentMiddleware } from "x402-express";
@@ -41,6 +42,9 @@ import { facilitator } from "@coinbase/x402";
 expressWs(express());
 
 export const v1Router = express.Router();
+
+// Add timing middleware to all v1 routes
+v1Router.use(requestTimingMiddleware("v1"));
 
 // Configure payment middleware to enable micropayment-protected endpoints
 // This middleware handles payment verification and processing for premium API features
