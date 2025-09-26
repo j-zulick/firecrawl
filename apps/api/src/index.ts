@@ -37,6 +37,7 @@ import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
+import { OTLPTraceExporter as OTLPHTTPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
@@ -82,7 +83,7 @@ const otelSdk = shouldOtel
         ...(process.env.HONEYCOMB_TEAM_ID
           ? [
               new BatchSpanProcessor(
-                new OTLPTraceExporter({
+                new OTLPHTTPTraceExporter({
                   url: "https://api.honeycomb.io",
                   headers: {
                     "x-honeycomb-team": process.env.HONEYCOMB_TEAM_ID,
