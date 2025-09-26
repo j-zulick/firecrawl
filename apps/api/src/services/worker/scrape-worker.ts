@@ -1170,7 +1170,7 @@ const otelSdk = shouldOtel
           ? [
               new BatchSpanProcessor(
                 new OTLPTraceExporter({
-                  url: "https://api.honeycomb.io/v1/traces",
+                  url: "https://api.honeycomb.io",
                   headers: {
                     "x-honeycomb-team": process.env.HONEYCOMB_TEAM_ID,
                   },
