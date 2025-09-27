@@ -4,7 +4,13 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 
 const otelSdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter(),
-  instrumentations: [getNodeAutoInstrumentations()],
+  instrumentations: [
+    getNodeAutoInstrumentations({
+      "@opentelemetry/instrumentation-undici": {
+        enabled: false,
+      },
+    }),
+  ],
 });
 
 otelSdk.start();
