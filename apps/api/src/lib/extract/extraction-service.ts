@@ -40,7 +40,6 @@ import { normalizeUrl } from "../canonical-url";
 import { search } from "../../search";
 import { buildRephraseToSerpPrompt } from "./build-prompts";
 import { getACUCTeam } from "../../controllers/auth";
-import { langfuse } from "../../services/langfuse";
 import { CostLimitExceededError, CostTracking } from "../cost-tracking";
 
 interface ExtractServiceOptions {
@@ -101,16 +100,6 @@ export async function performExtraction(
     method: "performExtraction",
     extractId,
     teamId,
-  });
-
-  langfuse.trace({
-    id: "extract:" + extractId,
-    name: "performExtraction",
-    metadata: {
-      teamId,
-      extractId,
-      model: "fire-1",
-    },
   });
 
   try {

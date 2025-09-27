@@ -66,24 +66,12 @@ importers:
       '@opentelemetry/core':
         specifier: ^2.0.1
         version: 2.0.1(@opentelemetry/api@1.9.0)
-      '@opentelemetry/exporter-trace-otlp-grpc':
-        specifier: ^0.203.0
-        version: 0.203.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/exporter-trace-otlp-http':
         specifier: ^0.205.0
         version: 0.205.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/resources':
-        specifier: ^2.0.1
-        version: 2.0.1(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-node':
         specifier: ^0.203.0
         version: 0.203.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/sdk-trace-node':
-        specifier: ^2.0.1
-        version: 2.0.1(@opentelemetry/api@1.9.0)
-      '@opentelemetry/semantic-conventions':
-        specifier: ^1.36.0
-        version: 1.36.0
       '@sentry/cli':
         specifier: ^2.33.1
         version: 2.33.1(encoding@0.1.13)
@@ -165,12 +153,6 @@ importers:
       koffi:
         specifier: ^2.9.0
         version: 2.9.0
-      langfuse:
-        specifier: ^3.38.4
-        version: 3.38.4
-      langfuse-vercel:
-        specifier: ^3.38.4
-        version: 3.38.4(ai@4.3.5(react@18.3.1)(zod@3.24.2))
       lodash:
         specifier: ^4.17.21
         version: 4.17.21
@@ -5222,20 +5204,6 @@ packages:
   kuler@2.0.0:
     resolution: {integrity: sha512-Xq9nH7KlWZmXAtodXDDRE7vs6DU1gTU8zYDHDiWLSip45Egwq3plLHzPn27NgvzL2r1LMPC1vdqh98sQxtqj4A==}
 
-  langfuse-core@3.38.4:
-    resolution: {integrity: sha512-onTAqcEGhoXuBgqDFXe2t+bt9Vi+5YChRgdz3voM49JKoHwtVZQiUdqTfjSivGR75eSbYoiaIL8IRoio+jaqwg==}
-    engines: {node: '>=18'}
-
-  langfuse-vercel@3.38.4:
-    resolution: {integrity: sha512-gyhQuim2b1qpI7yiGnww9qzqsdpD59XagD+QB3eGHIrX+1ao7vbcrwL14H0GlsLIUM10Nud9wtEbxiFZP1PB7g==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      ai: '>=3.2.44'
-
-  langfuse@3.38.4:
-    resolution: {integrity: sha512-2UqMeHLl3DGNX1Nh/cO4jGhk7TzDJ6gjQLlyS9rwFCKVO81xot6b58yeTsTB5YrWupWsOxQtMNoQYIQGOUlH9Q==}
-    engines: {node: '>=18'}
-
   leac@0.6.0:
     resolution: {integrity: sha512-y+SqErxb8h7nE/fiEX07jsbuhrpO9lL8eca7/Y1nuWV2moNlXhyd59iDGcRf6moVyDMbmTNzL40SUyrFU/yDpg==}
 
@@ -5482,10 +5450,6 @@ packages:
 
   multiformats@9.9.0:
     resolution: {integrity: sha512-HoMUjhH9T8DDBNT+6xzkrd9ga/XiBI4xLr58LJACwK6G3HTOPeMz4nB4KJs33L2BelrIJa7P0VuNaVF3hMYfjg==}
-
-  mustache@4.2.0:
-    resolution: {integrity: sha512-71ippSywq5Yb7/tVYyGbkBggbU8H3u5Rz56fH60jGFgr8uHwxs+aSKeqmluIVzM0m0kB7xQjKS6qPfd0b2ZoqQ==}
-    hasBin: true
 
   mute-stream@2.0.0:
     resolution: {integrity: sha512-WWdIxpyjEn+FhQJQQv9aQAYlHoNVdzIzUySNV1gHUPDSdZJ3yZn7pAAbQcV7B56Mvu881q9FZV+0Vx2xC44VWA==}
@@ -13742,20 +13706,6 @@ snapshots:
 
   kuler@2.0.0: {}
 
-  langfuse-core@3.38.4:
-    dependencies:
-      mustache: 4.2.0
-
-  langfuse-vercel@3.38.4(ai@4.3.5(react@18.3.1)(zod@3.24.2)):
-    dependencies:
-      ai: 4.3.5(react@18.3.1)(zod@3.24.2)
-      langfuse: 3.38.4
-      langfuse-core: 3.38.4
-
-  langfuse@3.38.4:
-    dependencies:
-      langfuse-core: 3.38.4
-
   leac@0.6.0: {}
 
   leven@3.1.0: {}
@@ -13988,8 +13938,6 @@ snapshots:
       msgpackr-extract: 3.0.3
 
   multiformats@9.9.0: {}
-
-  mustache@4.2.0: {}
 
   mute-stream@2.0.0: {}
 

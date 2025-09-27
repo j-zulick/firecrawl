@@ -50,7 +50,6 @@ import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
 import { getBillingQueue } from "../queue-service";
 import type { Logger } from "winston";
 import { finishCrawlIfNeeded } from "./crawl-logic";
-import { LangfuseExporter } from "langfuse-vercel";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import {
@@ -60,10 +59,7 @@ import {
   UnknownError,
 } from "../../lib/error";
 import { serializeTransportableError } from "../../lib/error-serde";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
-import { resourceFromAttributes } from "@opentelemetry/resources";
-import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import type { NuQJob } from "./nuq";
 import {
   ScrapeJobData,
@@ -1144,56 +1140,18 @@ export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
   }
 };
 
-const shouldOtel =
-  process.env.LANGFUSE_PUBLIC_KEY ||
-  process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
-  process.env.HONEYCOMB_TEAM_ID;
-const otelSdk = shouldOtel
-  ? new NodeSDK({
-      resource: resourceFromAttributes({
-        [ATTR_SERVICE_NAME]: "firecrawl-worker-scrape",
-      }),
-      spanProcessors: [
-        ...(process.env.LANGFUSE_PUBLIC_KEY
-          ? [new BatchSpanProcessor(new LangfuseExporter())]
-          : []),
-        ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT
-          ? [
-              new BatchSpanProcessor(
-                new OTLPTraceExporter({
-                  url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
-                }),
-              ),
-            ]
-          : []),
-        ...(process.env.HONEYCOMB_TEAM_ID
-          ? [
-              new BatchSpanProcessor(
-                new OTLPTraceExporter({
-                  url: "https://api.honeycomb.io",
-                  headers: {
-                    "x-honeycomb-team": process.env.HONEYCOMB_TEAM_ID,
-                  },
-                }),
-              ),
-            ]
-          : []),
-      ],
-      instrumentations: [getNodeAutoInstrumentations()],
-    })
-  : null;
+const otelSdk = new NodeSDK({
+  traceExporter: new OTLPTraceExporter(),
+  instrumentations: [getNodeAutoInstrumentations()],
+});
 
-if (otelSdk) {
-  otelSdk.start();
-}
+otelSdk.start();
 
 const exitHandler = () => {
-  if (otelSdk) {
-    otelSdk.shutdown().finally(() => {
-      _logger.debug("OTEL shutdown");
-      process.exit(0);
-    });
-  }
+  otelSdk.shutdown().finally(() => {
+    _logger.debug("OTEL shutdown");
+    process.exit(0);
+  });
 };
 
 process.on("SIGINT", exitHandler);

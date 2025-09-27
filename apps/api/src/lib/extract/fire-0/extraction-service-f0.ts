@@ -39,7 +39,6 @@ import {
 } from "./usage/llm-cost-f0";
 import { SourceTracker_F0 } from "./helpers/source-tracker-f0";
 import { getACUCTeam } from "../../../controllers/auth";
-import { langfuse } from "../../../services/langfuse";
 
 interface ExtractServiceOptions {
   request: ExtractRequest;
@@ -92,16 +91,6 @@ export async function performExtraction_F0(
     method: "performExtraction",
     extractId,
     teamId,
-  });
-
-  langfuse.trace({
-    id: "extract:" + extractId,
-    name: "performExtraction",
-    metadata: {
-      teamId,
-      extractId,
-      model: "fire-0",
-    },
   });
 
   // If no URLs are provided, generate URLs from the prompt
