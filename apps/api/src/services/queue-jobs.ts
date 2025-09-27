@@ -21,6 +21,7 @@ import { ScrapeJobTimeoutError, TransportableError } from "../lib/error";
 import { deserializeTransportableError } from "../lib/error-serde";
 import { abTestJob } from "./ab-test";
 import { NuQJob, scrapeQueue } from "./worker/nuq";
+import { serializeTraceContext } from "../lib/otel-tracer";
 
 /**
  * Checks if a job is a crawl or batch scrape based on its options
@@ -189,8 +190,15 @@ export async function addScrapeJob(
   priority: number = 0,
   directToBullMQ: boolean = false,
 ): Promise<NuQJob<ScrapeJobData> | null> {
+  // Capture trace context to propagate to worker
+  const traceContext = serializeTraceContext();
+  const optionsWithTrace: ScrapeJobData = {
+    ...webScraperOptions,
+    traceContext,
+  };
+
   return await addScrapeJobRaw(
-    webScraperOptions,
+    optionsWithTrace,
     jobId,
     priority,
     directToBullMQ,
@@ -205,6 +213,9 @@ export async function addScrapeJobs(
   }[],
 ) {
   if (jobs.length === 0) return true;
+
+  // Capture trace context for all jobs
+  const traceContext = serializeTraceContext();
 
   const jobsByTeam = new Map<
     string,
@@ -349,7 +360,7 @@ export async function addScrapeJobs(
       addToCQ.map(async job => {
         const size = JSON.stringify(job.data).length;
         await _addScrapeJobToConcurrencyQueue(
-          job.data,
+          { ...job.data, traceContext },
           job.jobId,
           job.priority,
         );
@@ -358,7 +369,11 @@ export async function addScrapeJobs(
 
     await Promise.all(
       addToBull.map(async job => {
-        await _addScrapeJobToBullMQ(job.data, job.jobId, job.priority);
+        await _addScrapeJobToBullMQ(
+          { ...job.data, traceContext },
+          job.jobId,
+          job.priority,
+        );
       }),
     );
   }

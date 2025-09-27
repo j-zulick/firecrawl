@@ -60,6 +60,9 @@ importers:
       '@openrouter/ai-sdk-provider':
         specifier: ^0.4.5
         version: 0.4.5(zod@3.24.2)
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.0
       '@opentelemetry/auto-instrumentations-node':
         specifier: ^0.62.0
         version: 0.62.0(@opentelemetry/api@1.9.0)(@opentelemetry/core@2.0.1(@opentelemetry/api@1.9.0))(encoding@0.1.13)

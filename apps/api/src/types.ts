@@ -10,11 +10,13 @@ import { ExtractorOptions, Document } from "./lib/entities";
 import { InternalOptions } from "./scraper/scrapeURL";
 import type { CostTracking } from "./lib/cost-tracking";
 import { webhookSchema } from "./services/webhook/schema";
+import { SerializedTraceContext } from "./lib/otel-tracer";
 
 type ScrapeJobCommon = {
   concurrencyLimited?: boolean;
   team_id: string;
   zeroDataRetention: boolean;
+  traceContext?: SerializedTraceContext;
 };
 
 export type ScrapeJobData = ScrapeJobCommon &
