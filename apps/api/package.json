@@ -73,6 +73,7 @@
     "@bull-board/express": "^6.11.2",
     "@coinbase/x402": "^0.6.4",
     "@dqbd/tiktoken": "^1.0.22",
+    "@google-cloud/bigquery": "^8.1.1",
     "@google-cloud/storage": "^7.16.0",
     "@mendable/firecrawl-rs": "workspace:*",
     "@openrouter/ai-sdk-provider": "^0.4.5",
