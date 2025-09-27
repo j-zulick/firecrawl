@@ -451,6 +451,7 @@ export async function searchController(
     // Log final timing information
     const totalRequestTime = new Date().getTime() - middlewareStartTime;
     const controllerTime = new Date().getTime() - controllerStartTime;
+    const scrapeful = !!(req.body.scrapeOptions.formats && req.body.scrapeOptions.formats.length > 0);
     logger.info("Request metrics", {
       version: "v1",
       mode: "search",
@@ -461,6 +462,7 @@ export async function searchController(
       controllerTime,
       totalRequestTime,
       creditsUsed: credits_billed,
+      scrapeful,
     });
 
     return res.status(200).json(responseData);

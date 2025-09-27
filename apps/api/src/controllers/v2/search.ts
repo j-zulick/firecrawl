@@ -523,6 +523,7 @@ export async function searchController(
           controllerTime,
           totalRequestTime,
           creditsUsed: credits_billed,
+          scrapeful: shouldScrape,
         });
 
         return res.status(200).json({
@@ -682,6 +683,7 @@ export async function searchController(
       controllerTime,
       totalRequestTime,
       creditsUsed: credits_billed,
+      scrapeful: shouldScrape,
     });
 
     // For sync scraping or no scraping, don't include scrapeIds
