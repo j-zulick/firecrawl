@@ -1,9 +1,10 @@
 import { Response } from "express";
 import { z } from "zod";
-import { ErrorResponse, RequestWithAuth, crawlRequestSchema } from "./types";
+import { ErrorResponse, RequestWithAuth } from "./types";
 import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
+import { getMapResults } from "../../lib/map-utils";
 
 // Define the request schema for params preview
 // Only url and prompt are required/relevant for preview
@@ -60,10 +61,40 @@ export async function crawlParamsPreviewController(
       prompt: parsedBody.prompt,
     });
 
-    // Generate crawler options from prompt
+    // First, get the website structure by mapping URLs
+    logger.debug("Getting website structure for crawl params preview");
+    const mapResult = await getMapResults({
+      url: parsedBody.url,
+      limit: 120, // Limit to 120 URLs as requested
+      includeSubdomains: true,
+      crawlerOptions: {},
+      teamId: req.auth.team_id,
+      flags: req.acuc?.flags ?? null,
+      allowExternalLinks: false,
+      useIndex: true,
+      maxFireEngineResults: 500, // Use smaller limit for preview
+    });
+
+    const websiteUrls = mapResult.mapResults.map(doc => doc.url);
+    
+    logger.debug("Found website URLs for crawl params preview", {
+      urlCount: websiteUrls.length,
+      sampleUrls: websiteUrls.slice(0, 5), // Log first 5 URLs for debugging
+    });
+
+    // Create enhanced prompt with website structure
+    const enhancedPrompt = `${parsedBody.prompt}
+
+--- WEBSITE STRUCTURE ---
+The website has the following URL structure (${websiteUrls.length} URLs found, here is a sample of the first 120 URLs):
+${websiteUrls.slice(0, 120).join('\n')}
+
+Based on this structure and the user's request, generate appropriate crawler options.`;
+
+    // Generate crawler options from enhanced prompt
     const costTracking = new CostTracking();
     const { extract } = await generateCrawlerOptionsFromPrompt(
-      parsedBody.prompt,
+      enhancedPrompt,
       logger,
       costTracking,
       { teamId: req.auth.team_id },
@@ -71,8 +102,9 @@ export async function crawlParamsPreviewController(
 
     const generatedOptions = extract || {};
 
-    logger.debug("Generated crawler options from prompt", {
-      prompt: parsedBody.prompt,
+    logger.debug("Generated crawler options from enhanced prompt", {
+      originalPrompt: parsedBody.prompt,
+      websiteUrlCount: websiteUrls.length,
       generatedOptions: generatedOptions,
     });
 
