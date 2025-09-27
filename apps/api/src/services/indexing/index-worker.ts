@@ -32,6 +32,7 @@ import {
 import { StoredCrawl, crawlToCrawler, saveCrawl } from "../../lib/crawl-redis";
 import { _addScrapeJobToBullMQ } from "../queue-jobs";
 import { BullMQOtel } from "bullmq-otel";
+import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 
 const workerLockDuration = Number(process.env.WORKER_LOCK_DURATION) || 60000;
 const workerStalledCheckInterval =
@@ -350,7 +351,13 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
       return;
     }
 
-    await processIndexInsertJobs();
+    await withSpan("firecrawl-index-worker-process-insert-jobs", async span => {
+      setSpanAttributes(span, {
+        "index.worker.operation": "process_insert_jobs",
+        "index.worker.type": "scheduled",
+      });
+      await processIndexInsertJobs();
+    });
   }, INDEX_INSERT_INTERVAL);
 
   const webhookInserterInterval = setInterval(async () => {
@@ -364,21 +371,45 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
     if (isShuttingDown) {
       return;
     }
-    await processIndexRFInsertJobs();
+    await withSpan(
+      "firecrawl-index-worker-process-rf-insert-jobs",
+      async span => {
+        setSpanAttributes(span, {
+          "index.worker.operation": "process_rf_insert_jobs",
+          "index.worker.type": "scheduled",
+        });
+        await processIndexRFInsertJobs();
+      },
+    );
   }, INDEX_INSERT_INTERVAL);
 
   const omceInserterInterval = setInterval(async () => {
     if (isShuttingDown) {
       return;
     }
-    await processOMCEJobs();
+    await withSpan("firecrawl-index-worker-process-omce-jobs", async span => {
+      setSpanAttributes(span, {
+        "index.worker.operation": "process_omce_jobs",
+        "index.worker.type": "scheduled",
+      });
+      await processOMCEJobs();
+    });
   }, OMCE_INSERT_INTERVAL);
 
   const domainFrequencyInterval = setInterval(async () => {
     if (isShuttingDown) {
       return;
     }
-    await processDomainFrequencyJobs();
+    await withSpan(
+      "firecrawl-index-worker-process-domain-frequency-jobs",
+      async span => {
+        setSpanAttributes(span, {
+          "index.worker.operation": "process_domain_frequency_jobs",
+          "index.worker.type": "scheduled",
+        });
+        await processDomainFrequencyJobs();
+      },
+    );
   }, DOMAIN_FREQUENCY_INTERVAL);
 
   // Wait for all workers to complete (which should only happen on shutdown)
