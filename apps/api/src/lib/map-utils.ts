@@ -6,6 +6,7 @@ import { fireEngineMap } from "../search/fireEngine";
 import { redisEvictConnection } from "../services/redis";
 import { generateURLSplits, queryIndexAtDomainSplitLevelWithMeta, queryIndexAtSplitLevelWithMeta } from "../services/index";
 import { performCosineSimilarityV2 } from "./map-cosine";
+import { Logger } from "winston";
 
 // Max Links that "Smart /map" can return
 const MAX_FIRE_ENGINE_RESULTS = 500;
@@ -321,4 +322,61 @@ export async function getMapResults({
     job_id: id,
     time_taken: totalTimeMs,
   };
+}
+
+export async function buildPromptWithWebsiteStructure({
+  basePrompt,
+  url,
+  teamId,
+  flags,
+  logger,
+  limit = 120,
+  includeSubdomains = true,
+  allowExternalLinks = false,
+  useIndex = true,
+  maxFireEngineResults = 500,
+}: {
+  basePrompt: string;
+  url: string;
+  teamId: string;
+  flags: TeamFlags | null;
+  logger: Logger;
+  limit?: number;
+  includeSubdomains?: boolean;
+  allowExternalLinks?: boolean;
+  useIndex?: boolean;
+  maxFireEngineResults?: number;
+}): Promise<{ prompt: string; websiteUrls: string[] }> {
+  try {
+    logger.debug("Getting website structure for prompt enhancement");
+    const mapResult = await getMapResults({
+      url,
+      limit,
+      includeSubdomains,
+      crawlerOptions: {},
+      teamId,
+      flags,
+      allowExternalLinks,
+      useIndex,
+      maxFireEngineResults,
+    });
+
+    const websiteUrls = mapResult.mapResults.map(doc => doc.url);
+    logger.debug("Found website URLs for prompt enhancement", {
+      urlCount: websiteUrls.length,
+      sampleUrls: websiteUrls.slice(0, 5),
+    });
+
+    const prompt = `${basePrompt}\n\n--- WEBSITE STRUCTURE ---\nThe website has the following URL structure (${websiteUrls.length} URLs found, here is a sample of the first ${Math.min(
+      120,
+      websiteUrls.length,
+    )} URLs):\n${websiteUrls.slice(0, 120).join("\n")}\n\nBased on this structure and the user's request, generate appropriate crawler options.`;
+
+    return { prompt, websiteUrls };
+  } catch (e) {
+    logger.warn("Failed to get website structure for prompt enhancement", {
+      error: (e as any)?.message ?? e,
+    });
+    return { prompt: basePrompt, websiteUrls: [] };
+  }
 }
