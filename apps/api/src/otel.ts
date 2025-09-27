@@ -9,6 +9,12 @@ const otelSdk = new NodeSDK({
       "@opentelemetry/instrumentation-undici": {
         enabled: false,
       },
+      "@opentelemetry/instrumentation-express": {
+        enabled: false,
+      },
+      "@opentelemetry/instrumentation-pg": {
+        enabled: false,
+      },
     }),
   ],
 });
