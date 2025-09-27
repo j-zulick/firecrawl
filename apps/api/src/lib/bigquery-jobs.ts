@@ -262,7 +262,7 @@ export async function saveJobToBigQuery(
 
   try {
     // Ensure table exists before attempting to insert
-    await ensureBigQueryTable();
+    // await ensureBigQueryTable();
 
     const datasetId = process.env.BIGQUERY_DATASET_ID;
     const tableId = process.env.BIGQUERY_TABLE_ID || "firecrawl_jobs";
