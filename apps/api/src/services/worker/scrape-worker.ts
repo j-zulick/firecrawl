@@ -50,8 +50,6 @@ import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
 import { getBillingQueue } from "../queue-service";
 import type { Logger } from "winston";
 import { finishCrawlIfNeeded } from "./crawl-logic";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { NodeSDK } from "@opentelemetry/sdk-node";
 import {
   RacedRedirectError,
   ScrapeJobTimeoutError,
@@ -59,7 +57,6 @@ import {
   UnknownError,
 } from "../../lib/error";
 import { serializeTransportableError } from "../../lib/error-serde";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import type { NuQJob } from "./nuq";
 import {
   ScrapeJobData,
@@ -68,7 +65,7 @@ import {
   ScrapeJobSingleUrls,
 } from "../../types";
 import { scrapeSitemap } from "../../scraper/crawler/sitemap";
-import { filterUrl } from "@mendable/firecrawl-rs";
+import { shutdownOtel } from "../../otel";
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -1140,15 +1137,8 @@ export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
   }
 };
 
-const otelSdk = new NodeSDK({
-  traceExporter: new OTLPTraceExporter(),
-  instrumentations: [getNodeAutoInstrumentations()],
-});
-
-otelSdk.start();
-
 const exitHandler = () => {
-  otelSdk.shutdown().finally(() => {
+  shutdownOtel().finally(() => {
     _logger.debug("OTEL shutdown");
     process.exit(0);
   });

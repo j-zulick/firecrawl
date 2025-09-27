@@ -345,26 +345,26 @@ export async function saveJobToBigQuery(
 /**
  * Queries jobs from BigQuery
  */
-export async function queryJobsFromBigQuery(
-  query: string,
-  params?: any[]
-): Promise<any[]> {
-  if (!bigquery || !process.env.BIGQUERY_DATASET_ID) {
-    logger.warn("BigQuery not configured");
-    return [];
-  }
+// export async function queryJobsFromBigQuery(
+//   query: string,
+//   params?: any[]
+// ): Promise<any[]> {
+//   if (!bigquery || !process.env.BIGQUERY_DATASET_ID) {
+//     logger.warn("BigQuery not configured");
+//     return [];
+//   }
 
-  try {
-    const options = {
-      query,
-      params,
-      location: process.env.BIGQUERY_LOCATION || "US",
-    };
+//   try {
+//     const options = {
+//       query,
+//       params,
+//       location: process.env.BIGQUERY_LOCATION || "US",
+//     };
 
-    const [rows] = await bigquery.query(options);
-    return rows;
-  } catch (error) {
-    logger.error("Error querying jobs from BigQuery", { error, query });
-    throw error;
-  }
-}
+//     const [rows] = await bigquery.query(options);
+//     return rows;
+//   } catch (error) {
+//     logger.error("Error querying jobs from BigQuery", { error, query });
+//     throw error;
+//   }
+// }

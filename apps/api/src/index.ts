@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { shutdownOtel } from "./otel";
 import "./services/sentry";
 import * as Sentry from "@sentry/node";
 import express, { NextFunction, Request, Response } from "express";
@@ -30,9 +31,6 @@ import { attachWsProxy } from "./services/agentLivecastWS";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
 import domainFrequencyRouter from "./routes/domain-frequency";
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
@@ -52,13 +50,6 @@ logger.info("Network info dump", {
 // Install cacheable lookup for all other requests
 cacheableLookup.install(http.globalAgent);
 cacheableLookup.install(https.globalAgent);
-
-const otelSdk = new NodeSDK({
-  traceExporter: new OTLPTraceExporter(),
-  instrumentations: [getNodeAutoInstrumentations()],
-});
-
-otelSdk.start();
 
 // Initialize Express with WebSocket support
 const expressApp = express();
@@ -142,7 +133,7 @@ async function startServer(port = DEFAULT_PORT) {
       logger.info("Server closed.");
       nuqShutdown().finally(() => {
         logger.info("NUQ shutdown complete");
-        otelSdk.shutdown().finally(() => {
+        shutdownOtel().finally(() => {
           logger.info("OTEL shutdown");
           process.exit(0);
         });

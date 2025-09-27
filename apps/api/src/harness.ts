@@ -320,7 +320,7 @@ function startServices(command?: string[]): Services {
   const api = execForward(
     "api",
     process.argv[2] === "--start-docker"
-      ? "node dist/src/index.js"
+      ? "node --import ./dist/src/otel.js dist/src/index.js"
       : "pnpm server:production:nobuild",
     {
       NUQ_REDUCE_NOISE: "true",
@@ -330,7 +330,7 @@ function startServices(command?: string[]): Services {
   const worker = execForward(
     "worker",
     process.argv[2] === "--start-docker"
-      ? "node dist/src/services/queue-worker.js"
+      ? "node --import ./dist/src/otel.js dist/src/services/queue-worker.js"
       : "pnpm worker:production",
     {
       NUQ_REDUCE_NOISE: "true",
@@ -341,7 +341,7 @@ function startServices(command?: string[]): Services {
     execForward(
       `nuq-worker-${i}`,
       process.argv[2] === "--start-docker"
-        ? "node dist/src/services/worker/nuq-worker.js"
+        ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-worker.js"
         : "pnpm nuq-worker:production",
       {
         NUQ_WORKER_PORT: String(3006 + i),
@@ -355,7 +355,7 @@ function startServices(command?: string[]): Services {
       ? execForward(
           "index-worker",
           process.argv[2] === "--start-docker"
-            ? "node dist/src/services/indexing/index-worker.js"
+            ? "node --import ./dist/src/otel.js dist/src/services/indexing/index-worker.js"
             : "pnpm index-worker:production",
           {
             NUQ_REDUCE_NOISE: "true",

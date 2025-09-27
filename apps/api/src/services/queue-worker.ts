@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { shutdownOtel } from "../otel";
 import "./sentry";
 import * as Sentry from "@sentry/node";
 import {
@@ -28,9 +29,6 @@ import http from "http";
 import https from "https";
 import { cacheableLookup } from "../scraper/scrapeURL/lib/cacheableLookup";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { BullMQOtel } from "bullmq-otel";
 import { getErrorContactMessage } from "../lib/deployment";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
@@ -55,13 +53,6 @@ const runningJobs: Set<string> = new Set();
 // Install cacheable lookup for all other requests
 cacheableLookup.install(http.globalAgent);
 cacheableLookup.install(https.globalAgent);
-
-const otelSdk = new NodeSDK({
-  traceExporter: new OTLPTraceExporter(),
-  instrumentations: [getNodeAutoInstrumentations()],
-});
-
-otelSdk.start();
 
 const processExtractJobInternal = async (
   token: string,
@@ -488,6 +479,6 @@ app.listen(workerPort, () => {
   }
 
   console.log("All jobs finished. Worker out!");
-  await otelSdk.shutdown();
+  await shutdownOtel();
   process.exit(0);
 })();

@@ -14,7 +14,7 @@ function cleanOfNull<T>(x: T): T {
   }
 }
 
-export interface TransformOptions {
+interface TransformOptions {
   /** Whether to include timestamp field (for BigQuery) */
   includeTimestamp?: boolean;
   /** Whether to serialize objects to JSON strings (for BigQuery) */
@@ -28,7 +28,7 @@ export interface TransformOptions {
  */
 export function transformJobForLogging(
   job: FirecrawlJob,
-  options: TransformOptions = {}
+  options: TransformOptions = {},
 ) {
   const {
     includeTimestamp = false,
@@ -39,16 +39,22 @@ export function transformJobForLogging(
   const zeroDataRetention = job.zeroDataRetention ?? false;
 
   // Determine if docs should be included based on zero data retention and GCS usage
-  const shouldIncludeDocs = !zeroDataRetention &&
-    !((job.mode === "single_urls" || job.mode === "scrape") && process.env.GCS_BUCKET_NAME);
+  const shouldIncludeDocs =
+    !zeroDataRetention &&
+    !(
+      (job.mode === "single_urls" || job.mode === "scrape") &&
+      process.env.GCS_BUCKET_NAME
+    );
 
   const baseTransform = {
     job_id: job.job_id ? job.job_id : null,
     success: job.success,
     message: zeroDataRetention ? null : job.message,
     num_docs: job.num_docs,
-    docs: shouldIncludeDocs 
-      ? (cleanNullValues ? cleanOfNull(job.docs) : job.docs)
+    docs: shouldIncludeDocs
+      ? cleanNullValues
+        ? cleanOfNull(job.docs)
+        : job.docs
       : null,
     time_taken: job.time_taken,
     team_id:
@@ -56,9 +62,7 @@ export function transformJobForLogging(
         ? null
         : job.team_id,
     mode: job.mode,
-    url: zeroDataRetention
-      ? "<redacted due to zero data retention>"
-      : job.url,
+    url: zeroDataRetention ? "<redacted due to zero data retention>" : job.url,
     crawler_options: zeroDataRetention ? null : job.crawlerOptions,
     page_options: zeroDataRetention ? null : job.scrapeOptions,
     origin: zeroDataRetention ? null : job.origin,
@@ -90,14 +94,14 @@ export function transformJobForLogging(
     return {
       ...withTimestamp,
       docs: withTimestamp.docs ? JSON.stringify(withTimestamp.docs) : null,
-      crawler_options: withTimestamp.crawler_options 
-        ? JSON.stringify(withTimestamp.crawler_options) 
+      crawler_options: withTimestamp.crawler_options
+        ? JSON.stringify(withTimestamp.crawler_options)
         : null,
-      page_options: withTimestamp.page_options 
-        ? JSON.stringify(withTimestamp.page_options) 
+      page_options: withTimestamp.page_options
+        ? JSON.stringify(withTimestamp.page_options)
         : null,
-      cost_tracking: withTimestamp.cost_tracking 
-        ? JSON.stringify(withTimestamp.cost_tracking) 
+      cost_tracking: withTimestamp.cost_tracking
+        ? JSON.stringify(withTimestamp.cost_tracking)
         : null,
     };
   }
