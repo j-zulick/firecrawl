@@ -83,7 +83,7 @@ export type Meta = {
   id: string;
   url: string;
   rewrittenUrl?: string;
-  options: ScrapeOptions;
+  options: ScrapeOptions & { skipTlsVerification: boolean };
   internalOptions: InternalOptions;
   logger: Logger;
   abort: AbortManager;
@@ -247,7 +247,15 @@ async function buildMetaObject(
     id,
     url,
     rewrittenUrl: rewriteUrl(url),
-    options,
+    options: {
+      ...options,
+      skipTlsVerification:
+        options.skipTlsVerification ??
+        ((options.headers && Object.keys(options.headers).length > 0) ||
+        (options.actions && options.actions.length > 0)
+          ? false
+          : true),
+    },
     internalOptions,
     logger,
     abort: new AbortManager(
