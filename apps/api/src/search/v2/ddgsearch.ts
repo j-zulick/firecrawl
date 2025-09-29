@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosProxyConfig } from "axios";
 import { JSDOM } from "jsdom";
 import { SearchV2Response, WebSearchResult } from "../../lib/entities";
 import { logger } from "../../lib/logger";
@@ -101,13 +101,17 @@ export async function ddgSearch(
     timeout = 5000,
   } = options;
 
-  let proxies: any = null;
+  let proxies: AxiosProxyConfig | false = false;
   if (proxy) {
-    if (proxy.startsWith("https")) {
-      proxies = { https: proxy };
-    } else {
-      proxies = { http: proxy };
-    }
+    const url = new URL(proxy);
+    proxies = {
+      protocol: url.protocol.slice(0, -1) as "http" | "https",
+      host: url.hostname,
+      port: parseInt(url.port) || (url.protocol === "https:" ? 443 : 80),
+      ...(url.username && {
+        auth: { username: url.username, password: url.password },
+      }),
+    };
   }
 
   try {
