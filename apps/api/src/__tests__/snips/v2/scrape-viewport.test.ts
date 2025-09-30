@@ -40,9 +40,9 @@ describe("V2 Scrape Screenshot Viewport", () => {
     );
 
     test(
-      "should take full page screenshot with custom viewport width",
+      "should reject fullPage=true with viewport",
       async () => {
-        const data = await scrape(
+        const response = await scrapeRaw(
           {
             url: "https://example.com",
             formats: [
@@ -59,8 +59,11 @@ describe("V2 Scrape Screenshot Viewport", () => {
           identity,
         );
 
-        expect(data).toBeDefined();
-        expect(data.screenshot).toBeDefined();
+        expect(response.status).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.error).toContain(
+          "Cannot specify viewport dimensions when fullPage is true",
+        );
       },
       scrapeTimeout,
     );

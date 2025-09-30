@@ -62,6 +62,7 @@ export type FireEngineScrapeRequestPlaywright = {
   // mutually exclusive, default: false
   screenshot?: boolean;
   fullPageScreenshot?: boolean;
+  viewport?: { width: number; height: number };
 
   wait?: number; // default: 0
 };
