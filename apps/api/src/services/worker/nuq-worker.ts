@@ -15,7 +15,6 @@ import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
   }
 
   let isShuttingDown = false;
-  const myLock = crypto.randomUUID();
 
   const app = Express();
 
@@ -47,12 +46,14 @@ import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
   let noJobTimeout = 500;
 
   while (!isShuttingDown) {
-    const job = await scrapeQueue.getJobToProcess(myLock);
+    const job = await scrapeQueue.getJobToProcess();
 
     if (job === null) {
       _logger.info("No jobs to process", { module: "nuq/metrics" });
       await new Promise(resolve => setTimeout(resolve, noJobTimeout));
-      noJobTimeout = Math.min(noJobTimeout * 2, 10000);
+      if (!process.env.NUQ_RABBITMQ_URL) {
+        noJobTimeout = Math.min(noJobTimeout * 2, 10000);
+      }
       continue;
     }
 
@@ -68,7 +69,7 @@ import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
 
     const lockRenewInterval = setInterval(async () => {
       logger.info("Renewing lock");
-      if (!(await scrapeQueue.renewLock(job.id, myLock, logger))) {
+      if (!(await scrapeQueue.renewLock(job.id, job.lock!, logger))) {
         logger.warn("Failed to renew lock");
         clearInterval(lockRenewInterval);
         return;
@@ -92,7 +93,7 @@ import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
       if (
         !(await scrapeQueue.jobFinish(
           job.id,
-          myLock,
+          job.lock!,
           processResult.data,
           logger,
         ))
@@ -103,7 +104,7 @@ import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
       if (
         !(await scrapeQueue.jobFail(
           job.id,
-          myLock,
+          job.lock!,
           processResult.error instanceof Error
             ? processResult.error.message
             : typeof processResult.error === "string"

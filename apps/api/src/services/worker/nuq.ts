@@ -27,6 +27,7 @@ export type NuQJob<Data = any, ReturnValue = any> = {
   listenChannelId?: string;
   returnvalue?: ReturnValue;
   failedReason?: string;
+  lock?: string;
 };
 
 const listenChannelId = process.env.NUQ_POD_NAME ?? "main";
@@ -58,6 +59,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
     if (process.env.NUQ_RABBITMQ_URL) {
       const connection = await amqp.connect(process.env.NUQ_RABBITMQ_URL);
       const channel = await connection.createChannel();
+      await channel.prefetch(1);
       const queue = await channel.assertQueue(this.queueName + ".listen." + listenChannelId, {
         exclusive: true,
         autoDelete: true,
@@ -199,16 +201,34 @@ class NuQ<JobData = any, JobReturnValue = any> {
     if (process.env.NUQ_RABBITMQ_URL) {
       const connection = await amqp.connect(process.env.NUQ_RABBITMQ_URL);
       const channel = await connection.createChannel();
+      await channel.assertQueue(this.queueName + ".prefetch", {
+        durable: true,
+        arguments: {
+          "x-message-ttl": 30000,
+          "x-max-length": 20000,
+        },
+      });
 
       this.sender = {
         type: "rabbitmq",
         connection,
         channel,
       };
+
+      channel.on("close", () => {
+        logger.info("NuQ sender channel closed", { module: "nuq/rabbitmq" });
+        connection.close().catch(() => {});
+        this.sender = null;
+      });
+
+      connection.on("close", () => {
+        logger.info("NuQ sender connection closed", { module: "nuq/rabbitmq" });
+        this.sender = null;
+      });
     }
   }
 
-  private async sendJob(id: string, status: "completed" | "failed", listenChannelId: string, _logger: Logger = logger) {
+  private async sendJobEnd(id: string, status: "completed" | "failed", listenChannelId: string, _logger: Logger = logger) {
     await this.startSender();
 
     if (this.sender) {
@@ -216,6 +236,20 @@ class NuQ<JobData = any, JobReturnValue = any> {
         correlationId: id,
       });
       _logger.info("NuQ job sent", { module: "nuq/rabbitmq" });
+    } else {
+      _logger.warn("NuQ sender not started", { module: "nuq/rabbitmq" });
+    }
+  }
+
+  private async sendJobPrefetch(job: NuQJob<JobData, JobReturnValue>, _logger: Logger = logger) {
+    await this.startSender();
+
+    if (this.sender) {
+      await this.sender.channel.sendToQueue(this.queueName + ".prefetch", Buffer.from(JSON.stringify(job), "utf8"), {
+        correlationId: job.id,
+        persistent: true,
+      });
+      _logger.info("NuQ job prefetch sent", { module: "nuq/rabbitmq" });
     } else {
       _logger.warn("NuQ sender not started", { module: "nuq/rabbitmq" });
     }
@@ -233,6 +267,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
     "listen_channel_id",
     "returnvalue",
     "failedreason",
+    "lock",
   ];
 
   private rowToJob(row: any): NuQJob<JobData, JobReturnValue> | null {
@@ -247,6 +282,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
       listenChannelId: row.listen_channel_id ?? undefined,
       returnvalue: row.returnvalue ?? undefined,
       failedReason: row.failedreason ?? undefined,
+      lock: row.lock ?? undefined,
     };
   }
 
@@ -577,20 +613,64 @@ class NuQ<JobData = any, JobReturnValue = any> {
       return result;
     });
   }
+  
+  // === Prefetch
+
+  public async prefetchJobs(_logger: Logger = logger): Promise<number> {
+    const start = Date.now();
+    try {
+      const jobs = (
+        await nuqPool.query(
+          `
+            WITH next AS (SELECT id FROM ${this.queueName} WHERE ${this.queueName}.status = 'queued'::nuq.job_status ORDER BY ${this.queueName}.priority ASC, ${this.queueName}.created_at ASC FOR UPDATE SKIP LOCKED LIMIT 500)
+            UPDATE ${this.queueName} q SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now() FROM next WHERE q.id = next.id RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")};
+          `
+        )
+      ).rows.map(row => this.rowToJob(row)!);
+  
+      for (const job of jobs) {
+        await this.sendJobPrefetch(job, _logger.child({ jobId: job.id, zeroDataRetention: !!((job.data || {} as any).zeroDataRetention) }));
+      }
+  
+      _logger.info("Prefetched jobs", { module: "nuq/metrics", jobCount: jobs.length });
+  
+      return jobs.length;
+    } finally {
+      _logger.info("nuqPrefetchJobs metrics", {
+        module: "nuq/metrics",
+        method: "nuqPrefetchJobs",
+        duration: Date.now() - start,
+      });
+    }
+  }
 
   // === Consumer
 
-  public async getJobToProcess(lock: string): Promise<NuQJob<any, any> | null> {
+  public async getJobToProcess(): Promise<NuQJob<any, any> | null> {
     const start = Date.now();
     try {
+      if (process.env.NUQ_RABBITMQ_URL) {
+        await this.startSender();
+
+        if (this.sender) {
+          const job = await this.sender.channel.get(this.queueName + ".prefetch", { noAck: true });
+          if (job !== false) {
+            return this.rowToJob(JSON.parse(job.content.toString()));
+          } else {
+            return null;
+          }
+        } else {
+          logger.warn("NuQ sender not started, falling back to postgres", { module: "nuq/rabbitmq" });
+        }
+      }
+
       return this.rowToJob(
         (
           await nuqPool.query(
             `
               WITH next AS (SELECT ${this.jobReturning.join(", ")} FROM ${this.queueName} WHERE ${this.queueName}.status = 'queued'::nuq.job_status ORDER BY ${this.queueName}.priority ASC, ${this.queueName}.created_at ASC FOR UPDATE SKIP LOCKED LIMIT 1)
-              UPDATE ${this.queueName} q SET status = 'active'::nuq.job_status, lock = $1, locked_at = now() FROM next WHERE q.id = next.id RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")};
-          `,
-            [lock],
+              UPDATE ${this.queueName} q SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now() FROM next WHERE q.id = next.id RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")};
+            `,
           )
         ).rows[0],
       )!;
@@ -654,7 +734,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           if (this.nuqWaitMode === "listen" && !process.env.NUQ_RABBITMQ_URL) {
             await nuqPool.query(`SELECT pg_notify('${this.queueName}', $1);`, [job.id + "|completed"]);
           } else if (process.env.NUQ_RABBITMQ_URL && job.listen_channel_id) {
-            await this.sendJob(job.id, "completed", job.listen_channel_id, _logger);
+            await this.sendJobEnd(job.id, "completed", job.listen_channel_id, _logger);
           }
         }
         
@@ -704,7 +784,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           if (this.nuqWaitMode === "listen" && !process.env.NUQ_RABBITMQ_URL) {
             await nuqPool.query(`SELECT pg_notify('${this.queueName}', $1);`, [job.id + "|failed"]);
           } else if (process.env.NUQ_RABBITMQ_URL && job.listen_channel_id) {
-            await this.sendJob(job.id, "failed", job.listen_channel_id, _logger);
+            await this.sendJobEnd(job.id, "failed", job.listen_channel_id, _logger);
           }
         }
 

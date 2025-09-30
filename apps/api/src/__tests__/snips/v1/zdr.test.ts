@@ -30,6 +30,9 @@ const logIgnoreList = [
   "Added billing operation to queue",
   "Index RF inserter found",
   "Redis connected",
+  "Prefetched jobs",
+  "nuqPrefetchJobs metrics",
+  "request completed",
 ];
 
 if (process.env.TEST_SUITE_SELF_HOSTED) {
