@@ -142,6 +142,7 @@ async function scrapeSearchResult(
       jobId,
       jobPriority,
       directToBullMQ,
+      true,
     );
 
     const doc: Document = await waitForJob(

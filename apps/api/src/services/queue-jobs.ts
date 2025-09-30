@@ -41,6 +41,7 @@ async function _addScrapeJobToConcurrencyQueue(
   webScraperOptions: any,
   jobId: string,
   priority: number = 0,
+  listenable: boolean = false,
 ) {
   await pushConcurrencyLimitedJob(
     webScraperOptions.team_id,
@@ -48,6 +49,7 @@ async function _addScrapeJobToConcurrencyQueue(
       id: jobId,
       data: webScraperOptions,
       priority,
+      listenable,
     },
     webScraperOptions.crawl_id
       ? Infinity
@@ -59,6 +61,7 @@ export async function _addScrapeJobToBullMQ(
   webScraperOptions: ScrapeJobData,
   jobId: string,
   priority: number = 0,
+  listenable: boolean = false,
 ): Promise<NuQJob<ScrapeJobData>> {
   if (webScraperOptions.mode === "single_urls") {
     abTestJob(webScraperOptions);
@@ -83,7 +86,7 @@ export async function _addScrapeJobToBullMQ(
     }
   }
 
-  return await scrapeQueue.addJob(jobId, webScraperOptions, priority);
+  return await scrapeQueue.addJob(jobId, webScraperOptions, priority, listenable);
 }
 
 async function addScrapeJobRaw(
@@ -91,6 +94,7 @@ async function addScrapeJobRaw(
   jobId: string,
   priority: number = 0,
   directToBullMQ: boolean = false,
+  listenable: boolean = false,
 ): Promise<NuQJob<ScrapeJobData> | null> {
   let concurrencyLimited: "yes" | "yes-crawl" | "no" | null = null;
   let currentActiveConcurrency = 0;
@@ -177,10 +181,10 @@ async function addScrapeJobRaw(
 
     webScraperOptions.concurrencyLimited = true;
 
-    await _addScrapeJobToConcurrencyQueue(webScraperOptions, jobId);
+    await _addScrapeJobToConcurrencyQueue(webScraperOptions, jobId, priority, listenable);
     return null;
   } else {
-    return await _addScrapeJobToBullMQ(webScraperOptions, jobId, priority);
+    return await _addScrapeJobToBullMQ(webScraperOptions, jobId, priority, listenable);
   }
 }
 
@@ -189,6 +193,7 @@ export async function addScrapeJob(
   jobId: string = uuidv4(),
   priority: number = 0,
   directToBullMQ: boolean = false,
+  listenable: boolean = false,
 ): Promise<NuQJob<ScrapeJobData> | null> {
   // Capture trace context to propagate to worker
   const traceContext = serializeTraceContext();
@@ -202,6 +207,7 @@ export async function addScrapeJob(
     jobId,
     priority,
     directToBullMQ,
+    listenable,
   );
 }
 
@@ -210,6 +216,7 @@ export async function addScrapeJobs(
     jobId: string;
     data: ScrapeJobData;
     priority: number;
+    listenable?: boolean;
   }[],
 ) {
   if (jobs.length === 0) return true;
@@ -223,6 +230,7 @@ export async function addScrapeJobs(
       jobId: string;
       data: ScrapeJobData;
       priority: number;
+      listenable?: boolean;
     }[]
   >();
 
@@ -239,12 +247,14 @@ export async function addScrapeJobs(
       data: ScrapeJobData;
       jobId: string;
       priority: number;
+      listenable?: boolean;
     }[] = [];
 
     let jobsPotentiallyInCQ: {
       data: ScrapeJobData;
       jobId: string;
       priority: number;
+      listenable?: boolean;
     }[] = [];
 
     // == Select jobs by crawl ID ==
@@ -254,6 +264,7 @@ export async function addScrapeJobs(
         data: ScrapeJobData;
         jobId: string;
         priority: number;
+        listenable?: boolean;
       }[]
     >();
 
@@ -261,6 +272,7 @@ export async function addScrapeJobs(
       data: ScrapeJobData;
       jobId: string;
       priority: number;
+      listenable?: boolean;
     }[] = [];
 
     for (const job of teamJobs) {
@@ -363,6 +375,7 @@ export async function addScrapeJobs(
           { ...job.data, traceContext },
           job.jobId,
           job.priority,
+          job.listenable,
         );
       }),
     );
@@ -373,6 +386,7 @@ export async function addScrapeJobs(
           { ...job.data, traceContext },
           job.jobId,
           job.priority,
+          job.listenable,
         );
       }),
     );

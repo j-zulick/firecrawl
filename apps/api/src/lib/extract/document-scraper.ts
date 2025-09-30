@@ -71,6 +71,8 @@ export async function scrapeDocument(
       },
       jobId,
       jobPriority,
+      false,
+      true,
     );
 
     const doc = await waitForJob(jobId, timeout, false, logger);

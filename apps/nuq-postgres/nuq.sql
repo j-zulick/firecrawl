@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS nuq.queue_scrape (
   locked_at timestamp with time zone,
   stalls integer,
   finished_at timestamp with time zone,
+  listen_channel_id text, -- for listenable jobs over rabbitmq
   returnvalue jsonb, -- only for selfhost
   failedreason text, -- only for selfhost
   CONSTRAINT queue_scrape_pkey PRIMARY KEY (id)

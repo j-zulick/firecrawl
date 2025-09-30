@@ -99,6 +99,7 @@ async function startScrapeJob(
     jobId,
     jobPriority,
     directToBullMQ,
+    true,
   );
 
   return jobId;

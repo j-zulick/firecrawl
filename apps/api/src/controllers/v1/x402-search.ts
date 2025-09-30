@@ -95,6 +95,7 @@ async function scrapeX402SearchResult(
         basePriority: 10,
       }),
       directToBullMQ,
+      true,
     );
 
     const doc: Document = await waitForJob(

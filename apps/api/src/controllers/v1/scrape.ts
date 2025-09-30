@@ -104,6 +104,7 @@ export async function scrapeController(
     jobId,
     jobPriority,
     isDirectToBullMQ,
+    true,
   );
   logger.info(
     "Added scrape job now" + (bullJob ? "" : " (to concurrency queue)"),

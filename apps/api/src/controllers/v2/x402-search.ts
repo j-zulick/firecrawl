@@ -97,6 +97,7 @@ async function startX420ScrapeJob(
     jobId,
     jobPriority,
     directToBullMQ,
+    true,
   );
 
   return jobId;

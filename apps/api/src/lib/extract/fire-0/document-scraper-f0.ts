@@ -70,6 +70,8 @@ export async function scrapeDocument_F0(
       },
       jobId,
       jobPriority,
+      false,
+      true,
     );
 
     const doc = await waitForJob(jobId, timeout, false, logger);
