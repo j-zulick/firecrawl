@@ -385,7 +385,6 @@ export async function scrapeURLWithFireEnginePlaywright(
         hasFormatOfType(meta.options.formats, "screenshot") !== undefined,
       fullPageScreenshot: hasFormatOfType(meta.options.formats, "screenshot")
         ?.fullPage,
-      viewport: hasFormatOfType(meta.options.formats, "screenshot")?.viewport,
       wait: meta.options.waitFor,
       geolocation: meta.options.location,
       blockAds: meta.options.blockAds,
