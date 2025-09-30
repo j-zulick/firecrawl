@@ -68,6 +68,9 @@ function formatDuration(nanoseconds: bigint): string {
 
 const stream = createWriteStream("firecrawl.log");
 
+// Get the port from environment variable, defaulting to 3002
+const PORT = process.env.PORT ?? "3002";
+
 const logger = {
   section(message: string) {
     console.log(
@@ -400,8 +403,8 @@ async function runDevMode(): Promise<void> {
 
     currentServices = startServices();
 
-    logger.info("Waiting for API on localhost:3002");
-    await waitForPort(3002, "localhost");
+    logger.info(`Waiting for API on localhost:${PORT}`);
+    await waitForPort(Number(PORT), "localhost");
     logger.success("API is ready");
 
     isFirstStart = false;
@@ -416,7 +419,7 @@ async function runDevMode(): Promise<void> {
 
       currentServices = startServices();
 
-      await waitForPort(3002, "localhost");
+      await waitForPort(Number(PORT), "localhost");
       logger.success("Services restarted");
     }
   });
@@ -442,8 +445,8 @@ async function runDevMode(): Promise<void> {
 async function runProductionMode(command: string[]): Promise<void> {
   const services = startServices(command);
 
-  logger.info("Waiting for API on localhost:3002");
-  await waitForPort(3002, "localhost");
+  logger.info(`Waiting for API on localhost:${PORT}`);
+  await waitForPort(Number(PORT), "localhost");
 
   await waitForTermination(services);
 }
