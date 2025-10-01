@@ -9,10 +9,11 @@ import {
 import { configDotenv } from "dotenv";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logJob } from "../../services/logging/log_job";
-import { logger } from "../../lib/logger";
+import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
 import { getMapResults, MapResult } from "../../lib/map-utils";
+import { v4 as uuidv4 } from "uuid";
 
 configDotenv();
 
@@ -20,6 +21,13 @@ export async function mapController(
   req: RequestWithAuth<{}, MapResponse, MapRequest>,
   res: Response<MapResponse>,
 ) {
+  const logger = _logger.child({
+    jobId: uuidv4(),
+    teamId: req.auth.team_id,
+    module: "api/v2",
+    method: "mapController",
+    zeroDataRetention: req.acuc?.flags?.forceZDR,
+  });
   // Get timing data from middleware (includes all middleware processing time)
   const middlewareStartTime =
     (req as any).requestTiming?.startTime || new Date().getTime();
