@@ -54,6 +54,11 @@ export class HttpClient {
         if (cfg.method && ["post", "put", "patch"].includes(cfg.method.toLowerCase())) {
           const data = (cfg.data ?? {}) as Record<string, unknown>;
           cfg.data = { ...data, origin: typeof data.origin === "string" && data.origin.includes("mcp") ? data.origin : `js-sdk@${version}` };
+          
+          // If timeout is specified in the body, use it to override the request timeout
+          if (typeof data.timeout === "number") {
+            cfg.timeout = data.timeout + 5000;
+          }
         }
         const res = await this.instance.request<T>(cfg);
         if (res.status === 502 && attempt < this.maxRetries - 1) {
