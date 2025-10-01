@@ -773,7 +773,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
       const start = Date.now();
       try {
-        const result = await nuqPool.query(`UPDATE ${this.queueName} SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = $3 WHERE id = $1 AND lock = $2 RETURNING id`,
+        const result = await nuqPool.query(`UPDATE ${this.queueName} SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`,
           [id, lock, failedReason],
         );
 
