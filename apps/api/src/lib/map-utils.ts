@@ -98,6 +98,7 @@ export async function getMapResults({
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
 
+
   const id = uuidv4();
   let mapResults: MapDocument[] = [];
   const zeroDataRetention = flags?.forceZDR ?? false;
@@ -330,7 +331,7 @@ export async function buildPromptWithWebsiteStructure({
   teamId,
   flags,
   logger,
-  limit = 120,
+  limit = 50,
   includeSubdomains = true,
   allowExternalLinks = false,
   useIndex = true,
@@ -353,10 +354,11 @@ export async function buildPromptWithWebsiteStructure({
       url,
       limit,
       includeSubdomains,
-      crawlerOptions: {},
+      crawlerOptions: { sitemap: "include" },
       teamId,
       flags,
       allowExternalLinks,
+      filterByPath: false,
       useIndex,
       maxFireEngineResults,
     });
