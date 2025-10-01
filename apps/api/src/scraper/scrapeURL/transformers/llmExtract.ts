@@ -1062,6 +1062,13 @@ export async function performSummary(
 
     document.warning = trimOutput.warning;
 
+    if (!trimOutput.text || trimOutput.text.trim() === "") {
+      document.warning =
+        "Summary generation was skipped because the markdown content is empty." +
+        (document.warning ? " " + document.warning : "");
+      return document;
+    }
+
     const generationOptions: GenerateCompletionsOptions = {
       logger: meta.logger.child({
         method: "performSummary/generateCompletions",
