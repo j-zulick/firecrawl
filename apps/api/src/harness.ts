@@ -120,7 +120,7 @@ const logger = {
 function waitForPort(
   port: number,
   host: string,
-  timeoutMs = 20000,
+  timeoutMs = 30000,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -354,19 +354,18 @@ function startServices(command?: string[]): Services {
     ),
   );
 
-  const nuqPrefetchWorker =
-    process.env.NUQ_RABBITMQ_URL
-      ? execForward(
-          "nuq-prefetch-worker",
-          process.argv[2] === "--start-docker"
-            ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js"
-            : "pnpm nuq-prefetch-worker:production",
-          {
-            NUQ_PREFETCH_WORKER_PORT: String(3011),
-            NUQ_REDUCE_NOISE: "true",
-          },
-        )
-      : undefined;
+  const nuqPrefetchWorker = process.env.NUQ_RABBITMQ_URL
+    ? execForward(
+        "nuq-prefetch-worker",
+        process.argv[2] === "--start-docker"
+          ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js"
+          : "pnpm nuq-prefetch-worker:production",
+        {
+          NUQ_PREFETCH_WORKER_PORT: String(3011),
+          NUQ_REDUCE_NOISE: "true",
+        },
+      )
+    : undefined;
 
   const indexWorker =
     process.env.USE_DB_AUTHENTICATION === "true"
@@ -386,7 +385,14 @@ function startServices(command?: string[]): Services {
       ? execForward("command", command)
       : undefined;
 
-  return { api, worker, nuqWorkers, nuqPrefetchWorker, indexWorker, command: commandProcess };
+  return {
+    api,
+    worker,
+    nuqWorkers,
+    nuqPrefetchWorker,
+    indexWorker,
+    command: commandProcess,
+  };
 }
 
 async function stopServices(services: Services) {
@@ -394,7 +400,8 @@ async function stopServices(services: Services) {
     services.api && terminateProcess(services.api.process),
     services.worker && terminateProcess(services.worker.process),
     ...services.nuqWorkers.map(w => terminateProcess(w.process)),
-    services.nuqPrefetchWorker && terminateProcess(services.nuqPrefetchWorker.process),
+    services.nuqPrefetchWorker &&
+      terminateProcess(services.nuqPrefetchWorker.process),
     services.indexWorker && terminateProcess(services.indexWorker.process),
     services.command && terminateProcess(services.command.process),
   ].filter(Boolean);
@@ -481,7 +488,8 @@ async function waitForTermination(services: Services): Promise<void> {
   if (services.api) promises.push(services.api.promise);
   if (services.worker) promises.push(services.worker.promise);
   if (services.indexWorker) promises.push(services.indexWorker.promise);
-  if (services.nuqPrefetchWorker) promises.push(services.nuqPrefetchWorker.promise);
+  if (services.nuqPrefetchWorker)
+    promises.push(services.nuqPrefetchWorker.promise);
 
   promises.push(...services.nuqWorkers.map(w => w.promise));
 
