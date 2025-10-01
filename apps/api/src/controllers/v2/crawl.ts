@@ -13,6 +13,7 @@ import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
 import { checkPermissions } from "../../lib/permissions";
+import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -64,9 +65,22 @@ export async function crawlController(
   let promptGeneratedOptions = {};
   if (req.body.prompt) {
     try {
+      // Enhance prompt with discovered site URLs (up to 120) to improve option generation
+      const { prompt: enhancedPrompt } = await buildPromptWithWebsiteStructure({
+        basePrompt: req.body.prompt,
+        url: req.body.url,
+        teamId: req.auth.team_id,
+        flags: req.acuc?.flags ?? null,
+        logger,
+        limit: 50,
+        includeSubdomains: false,
+        allowExternalLinks: false,
+        useIndex: true,
+        maxFireEngineResults: 500,
+      });
       const costTracking = new CostTracking();
       const { extract } = await generateCrawlerOptionsFromPrompt(
-        req.body.prompt,
+        enhancedPrompt,
         logger,
         costTracking,
         { teamId: req.auth.team_id, crawlId: id },
