@@ -330,7 +330,8 @@ export async function buildPromptWithWebsiteStructure({
   teamId,
   flags,
   logger,
-  limit = 120,
+  limit = 50,
+  
   includeSubdomains = true,
   allowExternalLinks = false,
   useIndex = true,
@@ -353,10 +354,11 @@ export async function buildPromptWithWebsiteStructure({
       url,
       limit,
       includeSubdomains,
-      crawlerOptions: {},
+      crawlerOptions: { sitemap: "include" },
       teamId,
       flags,
       allowExternalLinks,
+      filterByPath: false,
       useIndex,
       maxFireEngineResults,
     });

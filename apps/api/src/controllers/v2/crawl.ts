@@ -73,7 +73,7 @@ export async function crawlController(
         flags: req.acuc?.flags ?? null,
         logger,
         limit: 120,
-        includeSubdomains: true,
+        includeSubdomains: false,
         allowExternalLinks: false,
         useIndex: true,
         maxFireEngineResults: 500,
