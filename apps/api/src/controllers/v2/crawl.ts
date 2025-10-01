@@ -72,7 +72,7 @@ export async function crawlController(
         teamId: req.auth.team_id,
         flags: req.acuc?.flags ?? null,
         logger,
-        limit: 120,
+        limit: 50,
         includeSubdomains: false,
         allowExternalLinks: false,
         useIndex: true,

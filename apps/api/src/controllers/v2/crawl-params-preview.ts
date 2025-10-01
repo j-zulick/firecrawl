@@ -69,7 +69,7 @@ export async function crawlParamsPreviewController(
         teamId: req.auth.team_id,
         flags: req.acuc?.flags ?? null,
         logger,
-        limit: 120,
+        limit: 50,
         includeSubdomains: true,
         allowExternalLinks: false,
         useIndex: true,

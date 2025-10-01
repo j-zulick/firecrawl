@@ -331,7 +331,6 @@ export async function buildPromptWithWebsiteStructure({
   flags,
   logger,
   limit = 50,
-  
   includeSubdomains = true,
   allowExternalLinks = false,
   useIndex = true,
