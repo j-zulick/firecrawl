@@ -51,8 +51,8 @@ const gotJobInterval = Number(process.env.CONNECTION_MONITOR_INTERVAL) || 20;
 const runningJobs: Set<string> = new Set();
 
 // Install cacheable lookup for all other requests
-cacheableLookup.install(http.globalAgent);
-cacheableLookup.install(https.globalAgent);
+// cacheableLookup.install(http.globalAgent);
+// cacheableLookup.install(https.globalAgent);
 
 const processExtractJobInternal = async (
   token: string,
