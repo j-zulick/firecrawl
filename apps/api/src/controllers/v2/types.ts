@@ -19,8 +19,10 @@ import { ErrorCodes } from "../../lib/error";
 import Ajv from "ajv";
 import { integrationSchema } from "../../utils/integration";
 import { webhookSchema } from "../../services/webhook/schema";
+import { modifyCrawlUrl } from "../../utils/url-utils";
 
-export const url = z.preprocess(
+// Base URL schema with common validation logic
+const BASE_URL_SCHEMA = z.preprocess(
   x => {
     if (!protocolIncluded(x as string)) {
       x = `http://${x}`;
@@ -59,6 +61,12 @@ export const url = z.preprocess(
     }, "Invalid URL"),
   // .refine((x) => !isUrlBlocked(x as string), BLOCKLISTED_URL_MESSAGE),
 );
+
+// Standard URL schema
+const URL = BASE_URL_SCHEMA;
+
+// Crawl URL schema with modification handling
+const CRAWL_URL = BASE_URL_SCHEMA.transform(url => modifyCrawlUrl(url));
 
 const strictMessage =
   "Unrecognized key in body -- please review the v2 API documentation for request body changes";
@@ -563,8 +571,7 @@ const ajv = new Ajv();
 
 const extractOptions = z
   .object({
-    urls: url
-      .array()
+    urls: URL.array()
       .max(10, "Maximum of 10 URLs allowed per request while in beta.")
       .optional(),
     prompt: z.string().max(10000).optional(),
@@ -641,7 +648,7 @@ export type ExtractRequestInput = z.input<typeof extractRequestSchema>;
 
 export const scrapeRequestSchema = baseScrapeOptions
   .extend({
-    url,
+    url: URL,
     origin: z.string().optional().default("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     zeroDataRetention: z.boolean().optional(),
@@ -655,7 +662,7 @@ export type ScrapeRequestInput = z.input<typeof scrapeRequestSchema>;
 
 export const batchScrapeRequestSchema = baseScrapeOptions
   .extend({
-    urls: url.array(),
+    urls: URL.array(),
     origin: z.string().optional().default("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     webhook: webhookSchema.optional(),
@@ -718,7 +725,7 @@ type CrawlerOptions = z.infer<typeof crawlerOptions>;
 
 export const crawlRequestSchema = crawlerOptions
   .extend({
-    url,
+    url: CRAWL_URL,
     origin: z.string().optional().default("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     scrapeOptions: baseScrapeOptions.default({}),
@@ -733,6 +740,7 @@ export const crawlRequestSchema = crawlerOptions
   .transform(x => {
     return {
       ...x,
+      url: x.url.url, // Extract the actual URL from the CRAWL_URL result
       scrapeOptions: extractTransform(x.scrapeOptions),
     };
   });
@@ -757,7 +765,7 @@ export const MAX_MAP_LIMIT = 100000;
 export const mapRequestSchema = crawlerOptions
   .omit({ sitemap: true, ignoreQueryParameters: true })
   .extend({
-    url,
+    url: URL,
     origin: z.string().optional().default("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     includeSubdomains: z.boolean().default(true),
@@ -943,6 +951,7 @@ export type CrawlResponse =
       success: true;
       id: string;
       url: string;
+      warning?: string;
     };
 
 export type BatchScrapeResponse =
@@ -1556,7 +1565,7 @@ export type TokenUsage = {
 };
 
 const generateLLMsTextRequestSchema = z.object({
-  url: url.describe("The URL to generate text from"),
+  url: URL.describe("The URL to generate text from"),
   maxUrls: z
     .number()
     .min(1)
