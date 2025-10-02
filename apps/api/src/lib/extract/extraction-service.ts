@@ -100,6 +100,7 @@ export async function performExtraction(
   const logger = _logger.child({
     module: "extract",
     method: "performExtraction",
+    extractModel: "fire-1",
     extractId,
     teamId,
   });
