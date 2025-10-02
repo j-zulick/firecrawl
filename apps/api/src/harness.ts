@@ -343,6 +343,17 @@ function startServices(command?: string[]): Services {
     },
   );
 
+  const extractWorker = execForward(
+    "extract-worker",
+    process.argv[2] === "--start-docker"
+      ? "node --import ./dist/src/otel.js dist/src/services/extract-worker.js"
+      : "pnpm extract-worker:production",
+    {
+      NUQ_REDUCE_NOISE: "true",
+      NUQ_POD_NAME: "extract-worker",
+    },
+  );
+
   const nuqWorkers = Array.from({ length: 5 }, (_, i) =>
     execForward(
       `nuq-worker-${i}`,

@@ -467,7 +467,6 @@ app.listen(workerPort, () => {
   });
 
   await Promise.all([
-    workerFun(getExtractQueue(), processExtractJobInternal),
     workerFun(getDeepResearchQueue(), processDeepResearchJobInternal),
     workerFun(getGenerateLlmsTxtQueue(), processGenerateLlmsTxtJobInternal),
   ]);
