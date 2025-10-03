@@ -340,6 +340,7 @@ function startServices(command?: string[]): Services {
     {
       NUQ_REDUCE_NOISE: "true",
       NUQ_POD_NAME: "worker",
+      WORKER_PORT: String(3005),
     },
   );
 
@@ -351,6 +352,7 @@ function startServices(command?: string[]): Services {
     {
       NUQ_REDUCE_NOISE: "true",
       NUQ_POD_NAME: "extract-worker",
+      EXTRACT_WORKER_PORT: String(3012),
     },
   );
 
@@ -368,20 +370,19 @@ function startServices(command?: string[]): Services {
     ),
   );
 
-  const nuqPrefetchWorker =
-    process.env.NUQ_RABBITMQ_URL
-      ? execForward(
-          "nuq-prefetch-worker",
-          process.argv[2] === "--start-docker"
-            ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js"
-            : "pnpm nuq-prefetch-worker:production",
-          {
-            NUQ_PREFETCH_WORKER_PORT: String(3011),
-            NUQ_REDUCE_NOISE: "true",
-            NUQ_POD_NAME: "nuq-prefetch-worker",
-          },
-        )
-      : undefined;
+  const nuqPrefetchWorker = process.env.NUQ_RABBITMQ_URL
+    ? execForward(
+        "nuq-prefetch-worker",
+        process.argv[2] === "--start-docker"
+          ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js"
+          : "pnpm nuq-prefetch-worker:production",
+        {
+          NUQ_PREFETCH_WORKER_PORT: String(3011),
+          NUQ_REDUCE_NOISE: "true",
+          NUQ_POD_NAME: "nuq-prefetch-worker",
+        },
+      )
+    : undefined;
 
   const indexWorker =
     process.env.USE_DB_AUTHENTICATION === "true"

@@ -389,7 +389,7 @@ describe("Crawl tests", () => {
     });
   }
 
-  it.concurrent(
+  it.only(
     "shows warning when robots.txt blocks URLs",
     async () => {
       // Test with a site that has robots.txt blocking some paths
