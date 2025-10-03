@@ -149,7 +149,12 @@
     ]
   },
   "pnpm": {
+    "allowScripts": {
+      "@coinbase/x402": true,
+      "oxc-resolver": true
+    },
     "onlyBuiltDependencies": [
+      "@coinbase/x402",
       "@mendable/firecrawl-rs",
       "@sentry-internal/node-cpu-profiler",
       "@sentry/cli",
@@ -160,13 +165,15 @@
       "koffi",
       "libpq",
       "msgpackr-extract",
+      "oxc-resolver",
       "protobufjs",
       "supabase",
       "utf-8-validate",
       "wordpos"
     ],
     "overrides": {
-      "brace-expansion@>=2.0.0 <=2.0.1": "2.0.2"
+      "brace-expansion@>=2.0.0 <=2.0.1": "2.0.2",
+      "debug": ">=4.4.3"
     }
   },
   "lint-staged": {

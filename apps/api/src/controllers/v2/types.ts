@@ -63,7 +63,7 @@ const BASE_URL_SCHEMA = z.preprocess(
 );
 
 // Standard URL schema
-const URL = BASE_URL_SCHEMA;
+export const URL = BASE_URL_SCHEMA;
 
 // Crawl URL schema with modification handling
 const CRAWL_URL = BASE_URL_SCHEMA.transform(url => modifyCrawlUrl(url));
