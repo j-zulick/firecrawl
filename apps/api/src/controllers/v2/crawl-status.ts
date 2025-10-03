@@ -23,6 +23,7 @@ import { supabase_rr_service, supabase_service } from "../../services/supabase";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { scrapeQueue, NuQJob, NuQJobStatus } from "../../services/worker/nuq";
 import { ScrapeJobSingleUrls } from "../../types";
+import { redisEvictConnection } from "../../services/redis";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -467,6 +468,21 @@ export async function crawlStatusController(
     };
   }
 
+  // Check for robots.txt blocked URLs and add warning if found
+  let warning: string | undefined;
+  try {
+    const robotsBlocked = await redisEvictConnection.smembers(
+      "crawl:" + req.params.jobId + ":robots_blocked",
+    );
+    if (robotsBlocked && robotsBlocked.length > 0) {
+      warning =
+        "One or more pages were unable to be crawled because the robots.txt file prevented this. Please use the /scrape endpoint instead.";
+    }
+  } catch (error) {
+    // If we can't check robots blocked URLs, continue without warning
+    logger.debug("Failed to check robots blocked URLs", { error });
+  }
+
   return res.status(200).json({
     success: true,
     status: outputBulkA.status ?? "scraping",
@@ -476,5 +492,6 @@ export async function crawlStatusController(
     expiresAt: (await getCrawlExpiry(req.params.jobId)).toISOString(),
     next: outputBulkB.next,
     data: outputBulkB.data,
+    ...(warning && { warning }),
   });
 }

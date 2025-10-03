@@ -1101,6 +1101,7 @@ export type MapResponse =
       success: true;
       links: string[];
       scrape_id?: string;
+      warning?: string;
     };
 
 export type CrawlStatusParams = {

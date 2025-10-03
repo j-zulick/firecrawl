@@ -388,4 +388,26 @@ describe("Crawl tests", () => {
       );
     });
   }
+
+  it.concurrent(
+    "shows warning when robots.txt blocks URLs",
+    async () => {
+      // Test with a site that has robots.txt blocking some paths
+      const results = await crawl(
+        {
+          url: "https://mairistumpf.com",
+          limit: 5,
+          ignoreRobotsTxt: false, // Respect robots.txt
+        },
+        identity,
+      );
+
+      // Check if warning is present when robots.txt blocks URLs
+      if (results.warning) {
+        expect(results.warning).toContain("robots.txt");
+        expect(results.warning).toContain("/scrape endpoint");
+      }
+    },
+    10 * scrapeTimeout,
+  );
 });

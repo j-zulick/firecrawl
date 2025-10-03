@@ -976,6 +976,7 @@ export type MapResponse =
   | {
       success: true;
       links?: MapDocument[];
+      warning?: string;
     };
 
 export type CrawlStatusParams = {
@@ -1005,6 +1006,7 @@ export type CrawlStatusResponse =
       expiresAt: string;
       next?: string;
       data: Document[];
+      warning?: string;
     };
 
 export type OngoingCrawlsResponse =

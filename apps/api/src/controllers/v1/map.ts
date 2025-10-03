@@ -18,6 +18,7 @@ import {
 } from "../../lib/validateUrl";
 import { fireEngineMap } from "../../search/fireEngine";
 import { billTeam } from "../../services/billing/credit_billing";
+import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { logJob } from "../../services/logging/log_job";
 import { performCosineSimilarity } from "../../lib/map-cosine";
 import { logger } from "../../lib/logger";
@@ -474,10 +475,20 @@ export async function mapController(
     linksCount: result.links.length,
   });
 
+  // Check if we should warn about base domain
+  let warning: string | undefined;
+  if (result.links.length <= 1 && !isBaseDomain(req.body.url)) {
+    const baseDomain = extractBaseDomain(req.body.url);
+    if (baseDomain) {
+      warning = `Only ${result.links.length} result(s) found. For broader coverage, try mapping the base domain: ${baseDomain}`;
+    }
+  }
+
   const response = {
     success: true as const,
     links: result.links,
     scrape_id: result.scrape_id,
+    ...(warning && { warning }),
   };
 
   return res.status(200).json(response);

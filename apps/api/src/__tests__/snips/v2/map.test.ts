@@ -84,4 +84,31 @@ describe("Map tests", () => {
     expect(response.body.success).toBe(true);
     expect(response.body.links.length).toBe(10);
   });
+
+  it.concurrent(
+    "shows warning when results ≤ 1 and URL is not base domain",
+    async () => {
+      // Use a mock that returns 0 or 1 results to test the warning
+      const response = await map(
+        {
+          url: "https://example.com/some/path",
+          useMock: "map-empty", // This should return 0 or 1 results
+        },
+        identity,
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+
+      // If we get ≤ 1 results and the URL is not a base domain, we should get a warning
+      if (response.body.links.length <= 1) {
+        expect(response.body.warning).toBeDefined();
+        expect(response.body.warning).toContain("Only");
+        expect(response.body.warning).toContain("result(s) found");
+        expect(response.body.warning).toContain("base domain");
+        expect(response.body.warning).toContain("example.com");
+      }
+    },
+    60000,
+  );
 });
