@@ -340,7 +340,6 @@ function startServices(command?: string[]): Services {
     {
       NUQ_REDUCE_NOISE: "true",
       NUQ_POD_NAME: "worker",
-      WORKER_PORT: String(3005),
     },
   );
 
@@ -352,7 +351,7 @@ function startServices(command?: string[]): Services {
     {
       NUQ_REDUCE_NOISE: "true",
       NUQ_POD_NAME: "extract-worker",
-      EXTRACT_WORKER_PORT: String(3012),
+      NUQ_WORKER_PORT: String(3005),
     },
   );
 
