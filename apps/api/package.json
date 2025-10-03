@@ -26,6 +26,8 @@
     "nuq-worker:production": "node --import ./dist/src/otel.js dist/src/services/worker/nuq-worker.js",
     "nuq-prefetch-worker": "tsc-watch --onSuccess \"node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js\"",
     "nuq-prefetch-worker:production": "node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js",
+    "extract-worker": "tsc-watch --onSuccess \"node --import ./dist/src/otel.js dist/src/services/extract-worker.js\"",
+    "extract-worker:production": "node --import ./dist/src/otel.js dist/src/services/extract-worker.js",
     "index-worker": "tsc-watch --onSuccess \"node --import ./dist/src/otel.js dist/src/services/indexing/index-worker.js\"",
     "index-worker:production": "node --import ./dist/src/otel.js dist/src/services/indexing/index-worker.js",
     "mongo-docker": "docker run -d -p 2717:27017 -v ./mongo-data:/data/db --name mongodb mongo:latest",

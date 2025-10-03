@@ -79,7 +79,9 @@ export async function performExtraction(
   options: ExtractServiceOptions,
 ): Promise<ExtractResult> {
   const { request, teamId, subId, apiKeyId } = options;
-  const createdAt = options.createdAt ? new Date(options.createdAt) : new Date();
+  const createdAt = options.createdAt
+    ? new Date(options.createdAt)
+    : new Date();
   const urlTraces: URLTrace[] = [];
   let docsMap: Map<string, Document> = new Map();
   let singleAnswerCompletions: completions | null = null;
@@ -100,6 +102,7 @@ export async function performExtraction(
   const logger = _logger.child({
     module: "extract",
     method: "performExtraction",
+    extractModel: "fire-1",
     extractId,
     teamId,
   });
