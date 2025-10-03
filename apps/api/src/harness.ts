@@ -39,8 +39,9 @@ const colors = {
 const processGroupColors: Record<string, string> = {
   api: colors.green,
   worker: colors.blue,
+  extract: colors.magenta,
   nuq: colors.cyan,
-  index: colors.magenta,
+  index: colors.yellow,
   go: colors.yellow,
   command: colors.white,
 };
@@ -69,7 +70,6 @@ function formatDuration(nanoseconds: bigint): string {
 
 const stream = createWriteStream("firecrawl.log");
 
-// Get the port from environment variable, defaulting to 3002
 const PORT = process.env.PORT ?? "3002";
 
 const logger = {
@@ -109,11 +109,11 @@ const logger = {
   },
   processOutput(name: string, line: string, isReduceNoise: boolean) {
     const color = getProcessColor(name);
-    const label = `${color}${name.padEnd(12)}${colors.reset}`;
+    const label = `${color}${name.padEnd(14)}${colors.reset}`;
     if (!(line.includes("[nuq/metrics:") && isReduceNoise)) {
       console.log(`${label} ${line}`);
     }
-    stream.write(`${name.padEnd(12)} ${line}\n`);
+    stream.write(`${name.padEnd(14)} ${line}\n`);
   },
 };
 
@@ -351,6 +351,7 @@ function startServices(command?: string[]): Services {
     {
       NUQ_REDUCE_NOISE: "true",
       NUQ_POD_NAME: "extract-worker",
+      NUQ_WORKER_PORT: String(3005),
     },
   );
 
@@ -368,20 +369,19 @@ function startServices(command?: string[]): Services {
     ),
   );
 
-  const nuqPrefetchWorker =
-    process.env.NUQ_RABBITMQ_URL
-      ? execForward(
-          "nuq-prefetch-worker",
-          process.argv[2] === "--start-docker"
-            ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js"
-            : "pnpm nuq-prefetch-worker:production",
-          {
-            NUQ_PREFETCH_WORKER_PORT: String(3011),
-            NUQ_REDUCE_NOISE: "true",
-            NUQ_POD_NAME: "nuq-prefetch-worker",
-          },
-        )
-      : undefined;
+  const nuqPrefetchWorker = process.env.NUQ_RABBITMQ_URL
+    ? execForward(
+        "nuq-prefetch-worker",
+        process.argv[2] === "--start-docker"
+          ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js"
+          : "pnpm nuq-prefetch-worker:production",
+        {
+          NUQ_PREFETCH_WORKER_PORT: String(3011),
+          NUQ_REDUCE_NOISE: "true",
+          NUQ_POD_NAME: "nuq-prefetch-worker",
+        },
+      )
+    : undefined;
 
   const indexWorker =
     process.env.USE_DB_AUTHENTICATION === "true"

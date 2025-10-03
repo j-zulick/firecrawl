@@ -1,10 +1,23 @@
 import { v4 as uuidv4 } from "uuid";
-import { TeamFlags, MapDocument, scrapeOptions, ScrapeOptions } from "../controllers/v2/types";
+import {
+  TeamFlags,
+  MapDocument,
+  scrapeOptions,
+  ScrapeOptions,
+} from "../controllers/v2/types";
 import { crawlToCrawler, StoredCrawl } from "./crawl-redis";
-import { checkAndUpdateURLForMap, isSameDomain, isSameSubdomain } from "./validateUrl";
+import {
+  checkAndUpdateURLForMap,
+  isSameDomain,
+  isSameSubdomain,
+} from "./validateUrl";
 import { fireEngineMap } from "../search/fireEngine";
 import { redisEvictConnection } from "../services/redis";
-import { generateURLSplits, queryIndexAtDomainSplitLevelWithMeta, queryIndexAtSplitLevelWithMeta } from "../services/index";
+import {
+  generateURLSplits,
+  queryIndexAtDomainSplitLevelWithMeta,
+  queryIndexAtSplitLevelWithMeta,
+} from "../services/index";
 import { performCosineSimilarityV2 } from "./map-cosine";
 import { Logger } from "winston";
 
@@ -19,7 +32,7 @@ export interface MapResult {
   mapResults: MapDocument[];
 }
 
-export function dedupeMapDocumentArray(documents: MapDocument[]): MapDocument[] {
+function dedupeMapDocumentArray(documents: MapDocument[]): MapDocument[] {
   const urlMap = new Map<string, MapDocument>();
 
   for (const doc of documents) {
@@ -35,7 +48,7 @@ export function dedupeMapDocumentArray(documents: MapDocument[]): MapDocument[] 
   return Array.from(urlMap.values());
 }
 
-export async function queryIndex(
+async function queryIndex(
   url: string,
   limit: number,
   useIndex: boolean,
