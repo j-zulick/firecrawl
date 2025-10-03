@@ -162,7 +162,12 @@ export async function mapController(
 
   // Check if we should warn about base domain
   let warning: string | undefined;
-  if (result.mapResults.length <= 1 && !isBaseDomain(req.body.url)) {
+  // Only show warning if results <= 1 AND user didn't explicitly request limit=1 AND URL is not base domain
+  if (
+    result.mapResults.length <= 1 &&
+    req.body.limit !== 1 &&
+    !isBaseDomain(req.body.url)
+  ) {
     const baseDomain = extractBaseDomain(req.body.url);
     if (baseDomain) {
       warning = `Only ${result.mapResults.length} result(s) found. For broader coverage, try mapping the base domain: ${baseDomain}`;
