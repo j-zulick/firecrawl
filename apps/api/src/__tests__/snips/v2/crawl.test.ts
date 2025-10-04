@@ -389,7 +389,7 @@ describe("Crawl tests", () => {
     });
   }
 
-  it.only(
+  it.concurrent(
     "shows warning when robots.txt blocks URLs",
     async () => {
       // Test with a site that has robots.txt blocking some paths
@@ -400,12 +400,49 @@ describe("Crawl tests", () => {
           ignoreRobotsTxt: false, // Respect robots.txt
         },
         identity,
+        false, // Don't expect to succeed (robots.txt might block everything)
       );
 
-      // Check if warning is present when robots.txt blocks URLs
-      if (results.warning) {
+      expect(results.success).toBe(true);
+      expect(results.status).toBe("completed");
+
+      // Check specifically for robots.txt warning
+      if (results.warning && results.warning.includes("robots.txt")) {
         expect(results.warning).toContain("robots.txt");
         expect(results.warning).toContain("/scrape endpoint");
+      }
+    },
+    10 * scrapeTimeout,
+  );
+
+  it.concurrent(
+    "shows warning when crawl results ≤ 1 and URL is not base domain",
+    async () => {
+      // Test with a specific path that should return few results
+      const results = await crawl(
+        {
+          url: "https://mairistumpf.com/some/specific/path",
+          limit: 10,
+          ignoreRobotsTxt: false,
+        },
+        identity,
+        false, // Don't expect to succeed (might get limitedresults)
+      );
+
+      expect(results.success).toBe(true);
+      expect(results.status).toBe("completed");
+
+      // Check specifically for crawl results warning
+      if (
+        results.warning &&
+        results.warning.includes("Only") &&
+        results.warning.includes("result(s) found")
+      ) {
+        expect(results.warning).toContain("Only");
+        expect(results.warning).toContain("result(s) found");
+        expect(results.warning).toContain("crawlEntireDomain=true");
+        expect(results.warning).toContain("higher-level path");
+        expect(results.warning).toContain("mairistumpf.com");
       }
     },
     10 * scrapeTimeout,

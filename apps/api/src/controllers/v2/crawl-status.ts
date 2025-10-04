@@ -24,6 +24,7 @@ import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { scrapeQueue, NuQJob, NuQJobStatus } from "../../services/worker/nuq";
 import { ScrapeJobSingleUrls } from "../../types";
 import { redisEvictConnection } from "../../services/redis";
+import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -380,7 +381,7 @@ export async function crawlStatusController(
         scrapes.push(scrape);
         bytes += JSON.stringify(scrape).length;
       } else {
-        logger.warn("Job was considered done, but returnvalue is undefined!", {
+        logger.warn("Job was considered done, but return value is undefined!", {
           jobId: id,
           returnvalue: scrape,
         });
@@ -431,7 +432,7 @@ export async function crawlStatusController(
             bytes += JSON.stringify(job.returnvalue).length;
           } else {
             logger.warn(
-              "Job was considered done, but returnvalue is undefined!",
+              "Job was considered done, but return value is undefined!",
               {
                 scrapeId: job.id,
                 crawlId: req.params.jobId,
@@ -481,6 +482,24 @@ export async function crawlStatusController(
   } catch (error) {
     // If we can't check robots blocked URLs, continue without warning
     logger.debug("Failed to check robots blocked URLs", { error });
+  }
+
+  // Check if we should warn about base domain for crawl results
+  const resultCount = outputBulkB.data.length;
+  if (!warning && resultCount <= 1) {
+    // Get the original crawl URL and options from stored crawl data
+    const crawl = await getCrawl(req.params.jobId);
+    if (crawl && crawl.originUrl && !isBaseDomain(crawl.originUrl)) {
+      // Don't show warning if user is already using crawlEntireDomain
+      const isUsingCrawlEntireDomain =
+        crawl.crawlerOptions?.crawlEntireDomain === true;
+      if (!isUsingCrawlEntireDomain) {
+        const baseDomain = extractBaseDomain(crawl.originUrl);
+        if (baseDomain) {
+          warning = `Only ${resultCount} result(s) found. For broader coverage, try crawling with crawlEntireDomain=true or start from a higher-level path like ${baseDomain}`;
+        }
+      }
+    }
   }
 
   return res.status(200).json({
