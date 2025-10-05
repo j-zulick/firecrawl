@@ -281,7 +281,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
         {
           correlationId: job.id,
           persistent: true,
-          expiration: "30000",
+          expiration: "15000", // has to expire in 15s otherwise locks will fail to be acquired for jobs that got picked up late
         },
       );
       _logger.info("NuQ job prefetch sent", { module: "nuq/rabbitmq" });
