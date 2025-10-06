@@ -76,7 +76,7 @@
     "@apidevtools/json-schema-ref-parser": "^11.7.3",
     "@bull-board/api": "^6.11.2",
     "@bull-board/express": "^6.11.2",
-    "@coinbase/x402": "^0.6.4",
+    "@coinbase/x402": "^0.6.6",
     "@dqbd/tiktoken": "^1.0.22",
     "@google-cloud/bigquery": "^8.1.1",
     "@google-cloud/storage": "^7.16.0",
