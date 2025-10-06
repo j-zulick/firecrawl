@@ -373,9 +373,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 },
                 jobId,
                 jobPriority,
-                false,
-                false,
-                logger,
               );
 
               await addCrawlJob(job.data.crawl_id, jobId, logger);
