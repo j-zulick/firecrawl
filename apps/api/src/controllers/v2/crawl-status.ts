@@ -23,7 +23,7 @@ import { supabase_rr_service, supabase_service } from "../../services/supabase";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { scrapeQueue, NuQJob, NuQJobStatus } from "../../services/worker/nuq";
 import { ScrapeJobSingleUrls } from "../../types";
-import { redisEvictConnection } from "../../services/redis";
+import { redisEvictConnection } from "../../../src/services/redis";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 configDotenv();
 
@@ -348,7 +348,68 @@ export async function crawlStatusController(
     next: string | undefined;
   };
 
-  if (process.env.USE_DB_AUTHENTICATION === "true" && !isPreviewTeam) {
+  if (sc || process.env.USE_DB_AUTHENTICATION !== "true" || isPreviewTeam) {
+    const doneJobs = await getDoneJobsOrderedUntil(
+      req.params.jobId,
+      djoCutoff,
+      start,
+      end !== undefined ? end - start : 100,
+    );
+
+    let scrapes: Document[] = [];
+    let iteratedOver = 0;
+    let bytes = 0;
+    const bytesLimit = 10485760; // 10 MiB in bytes
+
+    for (let i = 0; i < Math.ceil(doneJobs.length / 50); i++) {
+      const jobIds = doneJobs.slice(i * 50, (i + 1) * 50);
+      const jobs = await getJobs(jobIds, logger);
+
+      for (const job of jobs) {
+        if (job.status === "failed") {
+          continue;
+        } else {
+          if (job?.returnvalue) {
+            scrapes.push(job.returnvalue);
+            bytes += JSON.stringify(job.returnvalue).length;
+          } else {
+            logger.warn(
+              "Job was considered done, but returnvalue is undefined!",
+              {
+                scrapeId: job.id,
+                crawlId: req.params.jobId,
+                state: job.status,
+                returnvalue: job?.returnvalue,
+              },
+            );
+          }
+
+          iteratedOver++;
+        }
+
+        if (bytes > bytesLimit) {
+          break;
+        }
+      }
+
+      if (bytes > bytesLimit) {
+        break;
+      }
+    }
+
+    if (bytes > bytesLimit && scrapes.length !== 1) {
+      scrapes.splice(scrapes.length - 1, 1);
+      iteratedOver--;
+    }
+
+    outputBulkB = {
+      data: scrapes,
+      next:
+        (outputBulkA.total ?? 0) > start + iteratedOver
+          ? `${process.env.ENV === "local" ? req.protocol : "https"}://${req.get("host")}/v2/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
+          : undefined,
+    };
+  } else {
     // new DB-based path
     const { data, error } = await supabase_service.rpc(
       "crawl_status_1",
@@ -381,74 +442,13 @@ export async function crawlStatusController(
         scrapes.push(scrape);
         bytes += JSON.stringify(scrape).length;
       } else {
-        logger.warn("Job was considered done, but return value is undefined!", {
+        logger.warn("Job was considered done, but returnvalue is undefined!", {
           jobId: id,
           returnvalue: scrape,
         });
       }
 
       iteratedOver++;
-
-      if (bytes > bytesLimit) {
-        break;
-      }
-    }
-
-    if (bytes > bytesLimit && scrapes.length !== 1) {
-      scrapes.splice(scrapes.length - 1, 1);
-      iteratedOver--;
-    }
-
-    outputBulkB = {
-      data: scrapes,
-      next:
-        (outputBulkA.total ?? 0) > start + iteratedOver
-          ? `${process.env.ENV === "local" ? req.protocol : "https"}://${req.get("host")}/v2/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
-          : undefined,
-    };
-  } else {
-    const doneJobs = await getDoneJobsOrderedUntil(
-      req.params.jobId,
-      djoCutoff,
-      start,
-      end !== undefined ? end - start : 100,
-    );
-
-    let scrapes: Document[] = [];
-    let iteratedOver = 0;
-    let bytes = 0;
-    const bytesLimit = 10485760; // 10 MiB in bytes
-
-    for (let i = 0; i < Math.ceil(doneJobs.length / 50); i++) {
-      const jobIds = doneJobs.slice(i * 50, (i + 1) * 50);
-      const jobs = await getJobs(jobIds, logger);
-
-      for (const job of jobs) {
-        if (job.status === "failed") {
-          continue;
-        } else {
-          if (job?.returnvalue) {
-            scrapes.push(job.returnvalue);
-            bytes += JSON.stringify(job.returnvalue).length;
-          } else {
-            logger.warn(
-              "Job was considered done, but return value is undefined!",
-              {
-                scrapeId: job.id,
-                crawlId: req.params.jobId,
-                state: job.status,
-                returnvalue: job?.returnvalue,
-              },
-            );
-          }
-
-          iteratedOver++;
-        }
-
-        if (bytes > bytesLimit) {
-          break;
-        }
-      }
 
       if (bytes > bytesLimit) {
         break;
