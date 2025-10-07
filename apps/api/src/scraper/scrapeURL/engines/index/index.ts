@@ -306,6 +306,9 @@ export async function scrapeURLWithIndex(
     meta.logger.child({ module: "index", method: "getIndexFromGCS" }),
   );
   if (!doc) {
+    meta.logger.warn("Index document not found in GCS", {
+      indexDocumentId: id,
+    });
     throw new EngineError("Document not found in GCS");
   }
 
