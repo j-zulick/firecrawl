@@ -100,14 +100,15 @@ describe("Map tests", () => {
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
 
-      // If we get ≤ 1 results and the URL is not a base domain, we should get a warning
-      if (response.body.links.length <= 1) {
-        expect(response.body.warning).toBeDefined();
-        expect(response.body.warning).toContain("Only");
-        expect(response.body.warning).toContain("result(s) found");
-        expect(response.body.warning).toContain("base domain");
-        expect(response.body.warning).toContain("example.com");
-      }
+      // Assert the prerequisite condition
+      expect(response.body.links.length).toBeLessThanOrEqual(1);
+
+      // Check that the warning is present
+      expect(response.body.warning).toBeDefined();
+      expect(response.body.warning).toContain("Only");
+      expect(response.body.warning).toContain("result(s) found");
+      expect(response.body.warning).toContain("base domain");
+      expect(response.body.warning).toContain("example.com");
     },
     60000,
   );
