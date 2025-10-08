@@ -13,24 +13,22 @@ export function isBaseDomain(url: string): boolean {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname;
 
-    // Remove www. prefix for consistency
-    const cleanHostname = hostname.startsWith("www.")
-      ? hostname.slice(4)
-      : hostname;
-
-    // Check if there are subdomains (more than 2 parts when split by dots)
-    const parts = cleanHostname.split(".");
-    if (parts.length > 2) {
-      return false; // Has subdomains
-    }
-
     // Check if there's a path beyond the root
     const pathname = urlObj.pathname;
     if (pathname && pathname !== "/" && pathname.trim() !== "") {
       return false; // Has a path
     }
 
-    return true;
+    // Remove www. prefix for consistency
+    const cleanHostname = hostname.startsWith("www.")
+      ? hostname.slice(4)
+      : hostname;
+
+    // Compare against extracted base domain (handles multi-part TLDs)
+    const baseDomain = extractBaseDomain(url);
+    if (!baseDomain) return false;
+
+    return cleanHostname === baseDomain;
   } catch (error) {
     // If URL parsing fails, consider it not a base domain
     return false;
