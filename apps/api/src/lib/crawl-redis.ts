@@ -221,6 +221,9 @@ export async function getDoneJobsOrderedUntil(
     "crawl:" + id + ":jobs_donez_ordered",
     -Infinity,
     until,
+    "LIMIT",
+    start,
+    count,
   );
 }
 
