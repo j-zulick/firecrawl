@@ -485,7 +485,7 @@ export async function crawlStatusController(
   }
 
   // Check if we should warn about base domain for crawl results
-  const resultCount = outputBulkB.data.length;
+  const resultCount = outputBulkA.completed ?? outputBulkA.total ?? outputBulkB.data.length;
   if (!warning && resultCount <= 1) {
     // Get the original crawl URL and options from stored crawl data
     const crawl = await getCrawl(req.params.jobId);
