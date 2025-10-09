@@ -7,7 +7,12 @@ import {
   RequestWithAuth,
   toV0CrawlerOptions,
 } from "./types";
-import { crawlToCrawler, saveCrawl, StoredCrawl } from "../../lib/crawl-redis";
+import {
+  crawlToCrawler,
+  saveCrawl,
+  StoredCrawl,
+  markCrawlActive,
+} from "../../lib/crawl-redis";
 import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
@@ -193,6 +198,8 @@ export async function crawlController(
   }
 
   await saveCrawl(id, sc);
+
+  await markCrawlActive(id);
 
   await _addScrapeJobToBullMQ(
     {
