@@ -4,7 +4,7 @@ import {
   BatchScrapeRequest,
   batchScrapeRequestSchema,
   batchScrapeRequestSchemaNoURLValidation,
-  url as urlSchema,
+  URL as urlSchema,
   RequestWithAuth,
   ScrapeOptions,
   BatchScrapeResponse,

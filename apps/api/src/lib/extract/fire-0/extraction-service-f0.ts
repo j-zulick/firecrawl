@@ -76,7 +76,9 @@ export async function performExtraction_F0(
   options: ExtractServiceOptions,
 ): Promise<ExtractResult> {
   const { request, teamId, subId, apiKeyId } = options;
-  const createdAt = options.createdAt ? new Date(options.createdAt) : new Date();
+  const createdAt = options.createdAt
+    ? new Date(options.createdAt)
+    : new Date();
   const urlTraces: URLTrace[] = [];
   let docsMap: Map<string, Document> = new Map();
   let singleAnswerCompletions: completions | null = null;

@@ -76,7 +76,7 @@
     "@apidevtools/json-schema-ref-parser": "^11.7.3",
     "@bull-board/api": "^6.11.2",
     "@bull-board/express": "^6.11.2",
-    "@coinbase/x402": "^0.6.4",
+    "@coinbase/x402": "^0.6.6",
     "@dqbd/tiktoken": "^1.0.22",
     "@google-cloud/bigquery": "^8.1.1",
     "@google-cloud/storage": "^7.16.0",
@@ -151,7 +151,12 @@
     ]
   },
   "pnpm": {
+    "allowScripts": {
+      "@coinbase/x402": true,
+      "oxc-resolver": true
+    },
     "onlyBuiltDependencies": [
+      "@coinbase/x402",
       "@mendable/firecrawl-rs",
       "@sentry-internal/node-cpu-profiler",
       "@sentry/cli",
@@ -162,13 +167,15 @@
       "koffi",
       "libpq",
       "msgpackr-extract",
+      "oxc-resolver",
       "protobufjs",
       "supabase",
       "utf-8-validate",
       "wordpos"
     ],
     "overrides": {
-      "brace-expansion@>=2.0.0 <=2.0.1": "2.0.2"
+      "brace-expansion@>=2.0.0 <=2.0.1": "2.0.2",
+      "debug": ">=4.4.3"
     }
   },
   "lint-staged": {

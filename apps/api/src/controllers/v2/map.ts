@@ -14,6 +14,7 @@ import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
 import { getMapResults, MapResult } from "../../lib/map-utils";
 import { v4 as uuidv4 } from "uuid";
+import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 
 configDotenv();
 
@@ -159,9 +160,24 @@ export async function mapController(
     linksCount: result.mapResults.length,
   });
 
+  // Check if we should warn about base domain
+  let warning: string | undefined;
+  // Only show warning if results <= 1 AND user didn't explicitly request limit=1 AND URL is not base domain
+  if (
+    result.mapResults.length <= 1 &&
+    req.body.limit !== 1 &&
+    !isBaseDomain(req.body.url)
+  ) {
+    const baseDomain = extractBaseDomain(req.body.url);
+    if (baseDomain) {
+      warning = `Only ${result.mapResults.length} result(s) found. For broader coverage, try mapping the base domain: ${baseDomain}`;
+    }
+  }
+
   const response = {
     success: true as const,
     links: result.mapResults,
+    ...(warning && { warning }),
   };
 
   return res.status(200).json(response);

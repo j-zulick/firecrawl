@@ -23,6 +23,8 @@ import { supabase_rr_service, supabase_service } from "../../services/supabase";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { scrapeQueue, NuQJob, NuQJobStatus } from "../../services/worker/nuq";
 import { ScrapeJobSingleUrls } from "../../types";
+import { redisEvictConnection } from "../../../src/services/redis";
+import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -467,6 +469,39 @@ export async function crawlStatusController(
     };
   }
 
+  // Check for robots.txt blocked URLs and add warning if found
+  let warning: string | undefined;
+  try {
+    const robotsBlocked = await redisEvictConnection.smembers(
+      "crawl:" + req.params.jobId + ":robots_blocked",
+    );
+    if (robotsBlocked && robotsBlocked.length > 0) {
+      warning =
+        "One or more pages were unable to be crawled because the robots.txt file prevented this. Please use the /scrape endpoint instead.";
+    }
+  } catch (error) {
+    // If we can't check robots blocked URLs, continue without warning
+    logger.debug("Failed to check robots blocked URLs", { error });
+  }
+
+  // Check if we should warn about base domain for crawl results
+  const resultCount = outputBulkA.completed ?? outputBulkA.total ?? outputBulkB.data.length;
+  if (!warning && resultCount <= 1) {
+    // Get the original crawl URL and options from stored crawl data
+    const crawl = await getCrawl(req.params.jobId);
+    if (crawl && crawl.originUrl && !isBaseDomain(crawl.originUrl)) {
+      // Don't show warning if user is already using crawlEntireDomain
+      const isUsingCrawlEntireDomain =
+        crawl.crawlerOptions?.crawlEntireDomain === true;
+      if (!isUsingCrawlEntireDomain) {
+        const baseDomain = extractBaseDomain(crawl.originUrl);
+        if (baseDomain) {
+          warning = `Only ${resultCount} result(s) found. For broader coverage, try crawling with crawlEntireDomain=true or start from a higher-level path like ${baseDomain}`;
+        }
+      }
+    }
+  }
+
   return res.status(200).json({
     success: true,
     status: outputBulkA.status ?? "scraping",
@@ -476,5 +511,6 @@ export async function crawlStatusController(
     expiresAt: (await getCrawlExpiry(req.params.jobId)).toISOString(),
     next: outputBulkB.next,
     data: outputBulkB.data,
+    ...(warning && { warning }),
   });
 }
