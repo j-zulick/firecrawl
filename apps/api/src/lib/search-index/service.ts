@@ -257,6 +257,7 @@ export async function indexDocumentForSearch(
             description: input.description?.slice(0, 500) ?? null,
             language: input.language ?? "en",
             gcs_path: input.gcsPath ?? null,
+            gcp_path_id: input.gcsPath ?? null,
             screenshot_url: input.screenshotUrl ?? null,
             content_ts: contentTsVector,
             country: input.country ?? null,
@@ -477,8 +478,6 @@ function normalizeSearchURL(url: string): string {
     urlObj.hash = "";
     urlObj.search = ""; // Remove query params for canonical URL
     // Note: Preserve original protocol (don't force https) to avoid:
-    // 1. Making HTTP-only pages unreachable
-    // 2. Collisions between distinct HTTP/HTTPS resources
     
     if (urlObj.hostname.startsWith("www.")) {
       urlObj.hostname = urlObj.hostname.slice(4);
