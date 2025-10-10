@@ -1,16 +1,3 @@
-/**
- * Search Index Module
- * 
- * Real-time search index on top of Firecrawl's web scraping infrastructure.
- * Combines keyword (BM25) and semantic (vector) search with RRF ranking.
- * 
- * 
- * Architecture:
- * - Ingest: Crawler → Text Normalization → Chunking → Embeddings → Postgres
- * - Query: Hybrid Search (BM25 + Vector) → RRF → Filters → Results
- * - Storage: search_documents + search_chunks tables
- * - Embeddings: OpenAI text-embedding-3-small (1536 dims)
- */
 
 export {
   chunkText,
