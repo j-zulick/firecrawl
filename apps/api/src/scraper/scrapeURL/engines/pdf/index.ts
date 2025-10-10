@@ -71,7 +71,9 @@ async function scrapePDFWithRunPodMU(
 
   if (
     process.env.PDF_MU_V2_EXPERIMENT === "true" &&
-    process.env.PDF_MU_V2_BASE_URL
+    process.env.PDF_MU_V2_BASE_URL &&
+    Math.random() * 100 <
+      Number(process.env.PDF_MU_V2_EXPERIMENT_PERCENT ?? "100")
   ) {
     (async () => {
       const startedAt = Date.now();
