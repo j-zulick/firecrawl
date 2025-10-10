@@ -469,13 +469,16 @@ export async function indexDocumentForSearch(
 
 /**
  * Normalize URL for search index (remove query params, fragments, etc.)
+ * Preserves the original protocol (http/https) to avoid collisions and maintain reachability
  */
 function normalizeSearchURL(url: string): string {
   try {
     const urlObj = new URL(url);
     urlObj.hash = "";
     urlObj.search = ""; // Remove query params for canonical URL
-    urlObj.protocol = "https:";
+    // Note: Preserve original protocol (don't force https) to avoid:
+    // 1. Making HTTP-only pages unreachable
+    // 2. Collisions between distinct HTTP/HTTPS resources
     
     if (urlObj.hostname.startsWith("www.")) {
       urlObj.hostname = urlObj.hostname.slice(4);

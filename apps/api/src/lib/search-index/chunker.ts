@@ -191,8 +191,10 @@ export async function chunkText(
               endOffset: sentenceChunkOffset + chunkLength,
             });
             
-            // Update offset for next chunk
-            sentenceChunkOffset += chunkLength;
+            // Update offset for next chunk - account for overlap
+            // The next chunk will start with overlapText, so its offset should point
+            // to where the overlap begins in the source (not where previous chunk ended)
+            sentenceChunkOffset += chunkLength - overlapText.length;
             
             // Start new chunk with overlap from previous chunk + new sentence
             sentenceChunk = overlapText + " " + sentence;
@@ -279,11 +281,14 @@ export async function chunkText(
           endOffset: currentOffset + chunkLength,
         });
         
-        // Update offset for next chunk
-        currentOffset += chunkLength;
-        
         // Add overlap for context
         const lastSentences = currentChunk.split(/[.!?]+\s+/).slice(-2).join(". ");
+        
+        // Update offset for next chunk - account for overlap
+        // The next chunk will start with lastSentences, so its offset should point
+        // to where the overlap begins in the source (not where previous chunk ended)
+        currentOffset += chunkLength - lastSentences.length;
+        
         currentChunk = lastSentences + " " + sentence;
         currentTokens = estimateTokenCount(currentChunk);
       } else {
