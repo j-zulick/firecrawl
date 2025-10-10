@@ -96,6 +96,13 @@ export async function batchScrapeController(
     }
   }
 
+  if (urls.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: "No valid URLs provided",
+    });
+  }
+
   logger.debug("Batch scrape " + id + " starting", {
     urlsLength: urls.length,
     appendToId: req.body.appendToId,
