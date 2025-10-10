@@ -23,6 +23,7 @@ import {
   processOMCEJobs,
   processDomainFrequencyJobs,
 } from "..";
+import { processSearchIndexJobs } from "../../lib/search-index/queue";
 import { processWebhookInsertJobs } from "../webhook";
 import {
   scrapeOptions as scrapeOptionsSchema,
@@ -331,6 +332,7 @@ const INDEX_INSERT_INTERVAL = 3000;
 const WEBHOOK_INSERT_INTERVAL = 15000;
 const OMCE_INSERT_INTERVAL = 5000;
 const DOMAIN_FREQUENCY_INTERVAL = 10000;
+const SEARCH_INDEX_INTERVAL = 10000; // Process search index queue every 10 seconds
 
 // Start the workers
 (async () => {
@@ -412,6 +414,35 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
     );
   }, DOMAIN_FREQUENCY_INTERVAL);
 
+  // Search index queue processor
+  const searchIndexInterval = setInterval(async () => {
+    if (isShuttingDown) {
+      return;
+    }
+    
+    // Only process if search index is enabled
+    if (process.env.ENABLE_SEARCH_INDEX !== "true") {
+      return;
+    }
+    
+    await withSpan(
+      "firecrawl-index-worker-process-search-index-jobs",
+      async span => {
+        setSpanAttributes(span, {
+          "index.worker.operation": "process_search_index_jobs",
+          "index.worker.type": "scheduled",
+        });
+        
+        try {
+          await processSearchIndexJobs();
+        } catch (error) {
+          logger.error("Error processing search index jobs", { error });
+          Sentry.captureException(error);
+        }
+      },
+    );
+  }, SEARCH_INDEX_INTERVAL);
+
   // Wait for all workers to complete (which should only happen on shutdown)
   await Promise.all([billingWorkerPromise, precrawlWorkerPromise]);
 
@@ -420,4 +451,5 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
   clearInterval(indexRFInserterInterval);
   clearInterval(omceInserterInterval);
   clearInterval(domainFrequencyInterval);
+  clearInterval(searchIndexInterval);
 })();

@@ -1,6 +1,6 @@
 import express from "express";
 import { redisHealthController } from "../controllers/v0/admin/redis-health";
-import { wrap } from "./shared";
+import { authMiddleware, blocklistMiddleware, wrap } from "./shared";
 import { acucCacheClearController } from "../controllers/v0/admin/acuc-cache-clear";
 import { checkFireEngine } from "../controllers/v0/admin/check-fire-engine";
 import { cclogController } from "../controllers/v0/admin/cclog";
@@ -12,6 +12,7 @@ import {
   nuqMetricsController,
 } from "../controllers/v0/admin/metrics";
 import { crawlCheckController } from "../controllers/v0/admin/crawl-check";
+import { realtimeSearchController } from "../controllers/v2/f-search";
 
 export const adminRouter = express.Router();
 
@@ -63,4 +64,10 @@ adminRouter.get(
 adminRouter.get(
   `/admin/${process.env.BULL_AUTH_KEY}/crawl-check`,
   wrap(crawlCheckController),
+);
+
+
+adminRouter.post(
+  `/admin/${process.env.BULL_AUTH_KEY}/fsearch`,
+  wrap(realtimeSearchController),
 );

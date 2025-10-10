@@ -12,8 +12,9 @@ import { performAgent } from "./agent";
 import { performAttributes } from "./performAttributes";
 
 import { deriveDiff } from "./diff";
-import { useIndex } from "../../../services/index";
+import { useIndex, useSearchIndex } from "../../../services/index";
 import { sendDocumentToIndex } from "../engines/index/index";
+import { sendDocumentToSearchIndex } from "./sendToSearchIndex";
 import {
   hasFormatOfType,
   hasAnyFormatOfTypes,
@@ -336,6 +337,7 @@ const transformerStack: Transformer[] = [
   deriveMetadataFromRawHTML,
   uploadScreenshot,
   ...(useIndex ? [sendDocumentToIndex] : []),
+  ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
   performLLMExtract,
   performSummary,
   performAttributes,
