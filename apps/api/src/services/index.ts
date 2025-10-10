@@ -203,6 +203,10 @@ export const useIndex =
   process.env.INDEX_SUPABASE_URL !== "" &&
   process.env.INDEX_SUPABASE_URL !== undefined;
 
+export const useSearchIndex =
+  process.env.SEARCH_INDEX_SUPABASE_URL !== "" &&
+  process.env.SEARCH_INDEX_SUPABASE_URL !== undefined;
+
 export function normalizeURLForIndex(url: string): string {
   const urlObj = new URL(url);
   urlObj.hash = "";
