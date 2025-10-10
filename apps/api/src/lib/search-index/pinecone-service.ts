@@ -1,20 +1,3 @@
-/**
- * Pinecone Vector Database Service
- * 
- * Handles billion-scale vector storage and similarity search.
- * Replaces pgvector for scalability.
- * 
- * Architecture:
- * - Pinecone: Vector embeddings (HNSW index)
- * - Postgres: Metadata + BM25 (full-text search)
- * 
- * Benefits:
- * - Scales to 10B+ vectors
- * - 50-100ms query latency
- * - Auto-scaling and replication
- * - No RAM limitations
- */
-
 import { Pinecone } from "@pinecone-database/pinecone";
 import { logger as _logger } from "../logger";
 import type { Logger } from "winston";
