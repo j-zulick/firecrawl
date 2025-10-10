@@ -366,7 +366,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
       }
     }
 
-    logger.info(`Found ${topUrls.length} top URLs for precrawl`);
+    logger.info(`Found ${topUrls.length} URLs for precrawl`);
 
     const bucketedByDomain: { [key: string]: TopUrlResult[] } = {};
     for (const item of topUrls) {
@@ -528,7 +528,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
       }
     } else {
       logger.info("------------------------------");
-      logger.info(`DRY RUN - no precrawl jobs submitted: ${crawlTargets.size}`);
+      logger.info(`DRY RUN - no crawl jobs submitted: ${crawlTargets.size}`);
       console.log(
         `Calculated pre-crawl targets: (${crawlTargets.size}) ${JSON.stringify(Array.from(crawlTargets.values()).slice(0, 2), null, 2)} ...`,
       );
