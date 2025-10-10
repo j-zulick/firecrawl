@@ -22,6 +22,7 @@ import {
   processIndexRFInsertJobs,
   processOMCEJobs,
   processDomainFrequencyJobs,
+  queryDomainsForPrecrawl,
 } from "..";
 import { getSearchIndexClient } from "../../lib/search-index-client";
 // Search indexing is now handled by the separate search service
@@ -255,71 +256,89 @@ const processPrecrawlJob = async (token: string, job: Job) => {
   // set to false to enable actual crawling
   const DRY_RUN = true;
 
-  const MAX_PRE_CRAWL_BUDGET = 100_000; // maximum number of pages to precrawl this job
+  const MAX_PRE_CRAWL_BUDGET = 10_000; // maximum number of pages to precrawl this job
 
-  const MAX_PRE_CRAWL_DOMAINS = 200; // maximum number of domains to precrawl
+  const MAX_PRE_CRAWL_DOMAINS = 2000; // maximum number of domains to precrawl
   const MIN_DOMAIN_PRIORITY = 2.0; // minimum priority score to consider a domain
   const MIN_DOMAIN_EVENTS = 1000; // minimum number of events to consider a domain
 
   const DOMAIN_URL_BATCH_SIZE = 25; // number of domain hashes to query in parallel
-  const URLS_PER_DOMAIN = 25; // number of top URLs to fetch per domain
+
+  const MIN_URLS_PER_DOMAIN = 10;
+  const MAX_URLS_PER_DOMAIN = 500;
 
   const teamId = process.env.PRECRAWL_TEAM_ID;
 
   try {
     const dateFuture = new Date();
-    dateFuture.setHours(dateFuture.getHours() + 1); // one hour in the future for now
+    dateFuture.setHours(dateFuture.getHours() + 1);
 
-    type DomainPriority = {
-      example_url: string;
-      domain_hash: string;
-      priority: number;
-    };
+    const domains = await queryDomainsForPrecrawl(
+      dateFuture,
+      MIN_DOMAIN_EVENTS,
+      MIN_DOMAIN_PRIORITY,
+      MAX_PRE_CRAWL_DOMAINS,
+      logger,
+    ).then(domains => {
+      return domains
+        .map(d => ({
+          ...d,
+          priority: Math.sqrt(d.priority),
+        }))
+        .sort((a, b) => b.priority - a.priority);
+    });
 
-    const { data: _domainsDueFuture, error: nextHourError } =
-      await index_supabase_service.rpc("query_domain_priority", {
-        p_min_total: MIN_DOMAIN_EVENTS,
-        p_min_priority: MIN_DOMAIN_PRIORITY,
-        p_lim: MAX_PRE_CRAWL_DOMAINS,
-        p_time: dateFuture.toISOString(),
-      });
-
-    if (nextHourError || !_domainsDueFuture) {
-      logger.error("Error getting domain priorities for next hour", {
-        error: nextHourError,
-      });
-      throw nextHourError;
-    }
-
-    const domainsDueFuture = _domainsDueFuture as DomainPriority[];
-
-    if (domainsDueFuture.length === 0) {
+    if (domains.length === 0) {
       logger.info("No domains due for precrawl, skipping job");
       await job.moveToCompleted({ success: true }, token, false);
       return;
     }
 
-    logger.info(`Pre-crawling ${domainsDueFuture.length} domains`);
+    logger.info(`Found ${domains.length} domains for precrawl`);
 
-    // budget calculation should be tweaked
+    const minPriority = Math.min(...domains.map(d => d.priority));
+    const maxPriority = Math.max(...domains.map(d => d.priority));
+
+    logger.info(
+      `Domain priority range: ${minPriority.toFixed(
+        2,
+      )} - ${maxPriority.toFixed(2)}`,
+    );
+
+    // TODO: tweak total budget calculation
     const totalBudget = (() => {
-      const n = domainsDueFuture.length;
+      const n = domains.length;
       if (n <= 25) return Math.min(MAX_PRE_CRAWL_BUDGET, 3000 + (n - 1) * 500);
       if (n <= 100)
         return Math.min(MAX_PRE_CRAWL_BUDGET, 10000 + (n - 5) * 200);
       return MAX_PRE_CRAWL_BUDGET;
     })();
 
-    const totalPriority = domainsDueFuture.reduce(
+    const totalPriority = domains.reduce(
       (sum, x) => Number(sum) + Number(x.priority),
       0,
     );
 
-    const domainHashes = domainsDueFuture.map(d => d.domain_hash);
+    const domainQueries = domains.map(d => {
+      const normalizedPriority =
+        (d.priority - minPriority) / (maxPriority - minPriority);
 
-    const batches: string[][] = [];
-    for (let i = 0; i < domainHashes.length; i += DOMAIN_URL_BATCH_SIZE) {
-      batches.push(domainHashes.slice(i, i + DOMAIN_URL_BATCH_SIZE));
+      const urlsToFetch = Math.round(
+        MIN_URLS_PER_DOMAIN +
+          Math.pow(normalizedPriority, 2) *
+            (MAX_URLS_PER_DOMAIN - MIN_URLS_PER_DOMAIN),
+      );
+
+      return {
+        hash: d.domain_hash,
+        priority: d.priority,
+        urlsToFetch,
+      };
+    });
+
+    const batches: (typeof domainQueries)[] = [];
+    for (let i = 0; i < domainQueries.length; i += DOMAIN_URL_BATCH_SIZE) {
+      batches.push(domainQueries.slice(i, i + DOMAIN_URL_BATCH_SIZE));
     }
 
     type TopUrlResult = {
@@ -334,46 +353,66 @@ const processPrecrawlJob = async (token: string, job: Job) => {
       error: any;
     }>[] = [];
 
-    for (const batch of batches) {
-      const batchFutures = batch.map(domainHash =>
-        index_supabase_service
+    // TODO: optimise this
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+
+      const batchFutures = batch.map(({ hash, urlsToFetch }) => {
+        return index_supabase_service
           .rpc("query_top_urls_for_domain", {
-            p_domain_hash: domainHash,
+            p_domain_hash: hash,
             p_time_window: "7 days",
-            p_top_n: URLS_PER_DOMAIN,
+            p_top_n: urlsToFetch,
           })
-          .overrideTypes<TopUrlResult[]>(),
-      );
+          .overrideTypes<TopUrlResult[]>();
+      });
 
       const batchResults = (await Promise.allSettled(
         batchFutures,
       )) as PromiseSettledResult<{ data: TopUrlResult[] | null; error: any }>[];
 
       topUrlResults.push(...batchResults);
+
+      if (i < batches.length - 1) {
+        const waitTime = Math.min(1000 + i * 100, 3000);
+        logger.info(
+          `Completed batch ${i + 1}/${batches.length} of URL fetches (failed: ${batchResults.filter(r => r.status === "rejected" || (r.status === "fulfilled" && r.value.error)).length}) -> waiting for ${waitTime}ms before next batch...`,
+        );
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
     }
 
+    let failedBatches = 0;
     const topUrls: TopUrlResult[] = [];
     for (const r of topUrlResults) {
       if (r.status === "fulfilled") {
         if (r.value.error) {
-          logger.error("Pre-crawl RPC error", { error: r.value.error });
+          if (r.value.error.code !== "57014") {
+            // query cancelled (likely timeout, need to monitor this)
+            logger.error("Pre-crawl RPC error", { error: r.value.error });
+          }
+
+          failedBatches++;
           continue;
         }
 
         topUrls.push(...(r.value.data as TopUrlResult[]));
       } else {
         logger.error("Pre-crawl RPC failed", { error: r.reason });
+        failedBatches++;
       }
     }
 
-    logger.info(`Found ${topUrls.length} URLs for precrawl`);
+    logger.info(
+      `Found ${topUrls.length} URLs for precrawl (${topUrlResults.length - failedBatches}/${failedBatches})`,
+    );
 
-    const bucketedByDomain: { [key: string]: TopUrlResult[] } = {};
+    const bucketedByDomain: Map<string, TopUrlResult[]> = new Map();
     for (const item of topUrls) {
-      if (!bucketedByDomain[item.domain_hash]) {
-        bucketedByDomain[item.domain_hash] = [];
+      if (!bucketedByDomain.has(item.domain_hash)) {
+        bucketedByDomain.set(item.domain_hash, []);
       }
-      bucketedByDomain[item.domain_hash].push(item);
+      bucketedByDomain.get(item.domain_hash)!.push(item);
     }
 
     const crawlTargets: Map<
@@ -386,9 +425,9 @@ const processPrecrawlJob = async (token: string, job: Job) => {
       }
     > = new Map();
 
-    for (const domain of domainsDueFuture) {
+    for (const domain of domains) {
       try {
-        const pages = (bucketedByDomain[domain.domain_hash] || []) as {
+        const pages = (bucketedByDomain.get(domain.domain_hash) || []) as {
           url: string;
           domain_hash: string;
           event_count: number;
@@ -421,8 +460,8 @@ const processPrecrawlJob = async (token: string, job: Job) => {
             eventCount: -1,
           });
 
-          // ignore sitemap - crawler should handle this for domain
-          if (page.url && !page.url.endsWith("/sitemap.xml")) {
+          if (page.url) {
+            // TODO: check sitemap
             crawlTargets.set(page.url, {
               url: page.url,
               budget: pageBudget,
