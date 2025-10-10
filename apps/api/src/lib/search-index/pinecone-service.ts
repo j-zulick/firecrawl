@@ -46,12 +46,10 @@ export function getPineconeIndex() {
 
 /**
  * Check if Pinecone is enabled
+ * Note: PINECONE_INDEX_NAME is optional and defaults to "firecrawl-search" in getPineconeIndex()
  */
 export function isPineconeEnabled(): boolean {
-  return !!(
-    process.env.PINECONE_API_KEY &&
-    process.env.PINECONE_INDEX_NAME
-  );
+  return !!process.env.PINECONE_API_KEY;
 }
 
 export interface PineconeRecord {

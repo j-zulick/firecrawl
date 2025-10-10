@@ -177,6 +177,9 @@ export async function chunkText(
           const sentenceTokenCount = estimateTokenCount(sentence);
           
           if (sentenceTokens + sentenceTokenCount > opts.maxTokens && sentenceChunk.length > 0) {
+            // Save overlap from the previous chunk before flushing
+            const overlapText = sentenceChunk.slice(-opts.overlapTokens * 4); // Rough char estimate
+            
             chunks.push({
               text: sentenceChunk.trim(),
               ordinal: chunks.length,
@@ -186,8 +189,7 @@ export async function chunkText(
               endOffset: section.offset + sentenceChunk.length,
             });
             
-            // Add overlap
-            const overlapText = sentence.slice(-opts.overlapTokens * 4); // Rough char estimate
+            // Start new chunk with overlap from previous chunk + new sentence
             sentenceChunk = overlapText + " " + sentence;
             sentenceTokens = estimateTokenCount(sentenceChunk);
           } else {

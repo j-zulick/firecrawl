@@ -85,21 +85,24 @@ export async function search(
       };
     }
     
-    try {
-      let results: SearchResult[] = [];
-      
-      // Choose search strategy based on mode
-      if (mode === "keyword") {
-        results = await keywordSearch(supabase, query, limit, filters, log);
-      } else if (mode === "semantic") {
-        results = await semanticSearch(supabase, query, limit, filters, log);
-      } else {
-        // Hybrid: combine BM25 + vector with RRF
-        results = await hybridSearch(supabase, query, limit, filters, log);
-      }
-      
-      // Apply offset
-      const paginatedResults = results.slice(offset, offset + limit);
+  try {
+    let results: SearchResult[] = [];
+    
+    // Fetch enough results to support pagination
+    const fetchLimit = limit + offset;
+    
+    // Choose search strategy based on mode
+    if (mode === "keyword") {
+      results = await keywordSearch(supabase, query, fetchLimit, filters, log);
+    } else if (mode === "semantic") {
+      results = await semanticSearch(supabase, query, fetchLimit, filters, log);
+    } else {
+      // Hybrid: combine BM25 + vector with RRF
+      results = await hybridSearch(supabase, query, fetchLimit, filters, log);
+    }
+    
+    // Apply offset and limit for pagination
+    const paginatedResults = results.slice(offset, offset + limit);
       
       const took = Date.now() - startTime;
       
