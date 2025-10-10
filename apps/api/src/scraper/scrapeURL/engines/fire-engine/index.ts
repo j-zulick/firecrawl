@@ -358,6 +358,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
 
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
       youtubeTranscriptContent: response.youtubeTranscriptContent,
+      gcsPath: response.docUrl?.split("/").pop(), // Extract just the filename/ID from the path
     };
   });
 }
@@ -434,6 +435,7 @@ export async function scrapeURLWithFireEnginePlaywright(
         : {}),
 
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
+      gcsPath: response.docUrl?.split("/").pop(), // Extract just the filename/ID from the path
     };
   });
 }
@@ -499,6 +501,7 @@ export async function scrapeURLWithFireEngineTLSClient(
         ) ?? [])[1] ?? undefined,
 
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
+      gcsPath: response.docUrl?.split("/").pop(), // Extract just the filename/ID from the path
     };
   });
 }

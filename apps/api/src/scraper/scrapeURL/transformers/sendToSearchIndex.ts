@@ -131,7 +131,7 @@ export async function sendDocumentToSearchIndex(
         markdown: document.markdown ?? "",
         html: document.rawHtml ?? "",
         statusCode: document.metadata.statusCode,
-        gcsPath: undefined, // Can be populated from GCS if needed
+        gcsPath: meta.gcsPath ?? undefined, // GCS path from fire-engine
         screenshotUrl: document.screenshot ?? undefined,
         language: document.metadata.language ?? "en",
         country: meta.options.location?.country ?? undefined,

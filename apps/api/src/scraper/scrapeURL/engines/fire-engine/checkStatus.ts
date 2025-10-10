@@ -154,7 +154,8 @@ export async function fireEngineCheckStatus(
     const doc = await getDocFromGCS(status.docUrl.split("/").pop() ?? "");
     if (doc) {
       status = { ...status, ...doc };
-      delete status.docUrl;
+      // Keep docUrl so handlers can extract ID from it
+      // It's converted to gcsPath in handlers and not carried forward in EngineScrapeResult
     }
   }
 

@@ -131,6 +131,8 @@ export type EngineScrapeResult = {
   postprocessorsUsed?: string[];
 
   proxyUsed: "basic" | "stealth";
+  
+  gcsPath?: string; // GCS path for raw HTML storage
 };
 
 const engineHandlers: {

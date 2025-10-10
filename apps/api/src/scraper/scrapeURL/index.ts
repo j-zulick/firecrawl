@@ -100,6 +100,7 @@ export type Meta = {
     | undefined; // undefined: no prefetch yet, null: prefetch came back empty
   costTracking: CostTracking;
   winnerEngine?: Engine;
+  gcsPath?: string; // GCS path for raw HTML storage (from fire-engine)
 };
 
 function buildFeatureFlags(
@@ -660,6 +661,11 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     meta.winnerEngine = result.engine;
     let engineResult: EngineScrapeResult = result.result;
+    
+    // Store GCS path from engine result for downstream use (e.g., search index)
+    if (engineResult.gcsPath) {
+      meta.gcsPath = engineResult.gcsPath;
+    }
 
     for (const postprocessor of postprocessors) {
       if (
