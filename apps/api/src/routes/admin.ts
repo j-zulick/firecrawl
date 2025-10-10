@@ -11,6 +11,7 @@ import {
   metricsController,
   nuqMetricsController,
 } from "../controllers/v0/admin/metrics";
+import { crawlCheckController } from "../controllers/v0/admin/crawl-check";
 
 export const adminRouter = express.Router();
 
@@ -57,4 +58,9 @@ adminRouter.get(
 adminRouter.get(
   `/admin/${process.env.BULL_AUTH_KEY}/nuq-metrics`,
   wrap(nuqMetricsController),
+);
+
+adminRouter.get(
+  `/admin/${process.env.BULL_AUTH_KEY}/crawl-check`,
+  wrap(crawlCheckController),
 );
