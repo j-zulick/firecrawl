@@ -114,7 +114,8 @@ export async function realtimeSearchController(
         pagination: {
           limit,
           offset,
-          hasMore: result.total > offset + limit,
+          // hasMore is true if we got a full page of results, suggesting there may be more
+          hasMore: result.results.length >= limit,
         },
       },
       costTracking: costTracking.toJSON(),

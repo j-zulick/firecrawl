@@ -59,14 +59,12 @@ export const search_index_supabase_service: SupabaseClient = new Proxy(
     get: function (target, prop, receiver) {
       const client = target.getClient();
       
-      // If client is not initialized, provide meaningful error
+      // If client is not initialized, throw immediately to prevent nested access errors
       if (client === null) {
-        return () => {
-          throw new Error(
-            "Search index database is not configured. " +
-            "Set SEARCH_INDEX_SUPABASE_URL and SEARCH_INDEX_SUPABASE_SERVICE_TOKEN environment variables."
-          );
-        };
+        throw new Error(
+          "Search index database is not configured. " +
+          "Set SEARCH_INDEX_SUPABASE_URL and SEARCH_INDEX_SUPABASE_SERVICE_TOKEN environment variables."
+        );
       }
       
       // Direct access to service properties

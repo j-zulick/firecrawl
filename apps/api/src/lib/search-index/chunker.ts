@@ -172,6 +172,7 @@ export async function chunkText(
         const sentences = splitIntoSentences(section.text);
         let sentenceChunk = "";
         let sentenceTokens = 0;
+        let sentenceChunkOffset = section.offset;
         
         for (const sentence of sentences) {
           const sentenceTokenCount = estimateTokenCount(sentence);
@@ -179,15 +180,19 @@ export async function chunkText(
           if (sentenceTokens + sentenceTokenCount > opts.maxTokens && sentenceChunk.length > 0) {
             // Save overlap from the previous chunk before flushing
             const overlapText = sentenceChunk.slice(-opts.overlapTokens * 4); // Rough char estimate
+            const chunkLength = sentenceChunk.length;
             
             chunks.push({
               text: sentenceChunk.trim(),
               ordinal: chunks.length,
               tokenCount: sentenceTokens,
-              charCount: sentenceChunk.length,
-              startOffset: section.offset,
-              endOffset: section.offset + sentenceChunk.length,
+              charCount: chunkLength,
+              startOffset: sentenceChunkOffset,
+              endOffset: sentenceChunkOffset + chunkLength,
             });
+            
+            // Update offset for next chunk
+            sentenceChunkOffset += chunkLength;
             
             // Start new chunk with overlap from previous chunk + new sentence
             sentenceChunk = overlapText + " " + sentence;
@@ -204,8 +209,8 @@ export async function chunkText(
             ordinal: chunks.length,
             tokenCount: sentenceTokens,
             charCount: sentenceChunk.length,
-            startOffset: section.offset,
-            endOffset: section.offset + sentenceChunk.length,
+            startOffset: sentenceChunkOffset,
+            endOffset: sentenceChunkOffset + sentenceChunk.length,
           });
         }
         
@@ -264,14 +269,18 @@ export async function chunkText(
       const sentenceTokens = estimateTokenCount(sentence);
       
       if (currentTokens + sentenceTokens > opts.maxTokens && currentChunk.length > 0) {
+        const chunkLength = currentChunk.length;
         chunks.push({
           text: currentChunk.trim(),
           ordinal: chunks.length,
           tokenCount: currentTokens,
-          charCount: currentChunk.length,
+          charCount: chunkLength,
           startOffset: currentOffset,
-          endOffset: currentOffset + currentChunk.length,
+          endOffset: currentOffset + chunkLength,
         });
+        
+        // Update offset for next chunk
+        currentOffset += chunkLength;
         
         // Add overlap for context
         const lastSentences = currentChunk.split(/[.!?]+\s+/).slice(-2).join(". ");
@@ -295,7 +304,7 @@ export async function chunkText(
         tokenCount: currentTokens,
         charCount: currentChunk.length,
         startOffset: currentOffset,
-        endOffset: text.length,
+        endOffset: currentOffset + currentChunk.length,
       });
     }
   }

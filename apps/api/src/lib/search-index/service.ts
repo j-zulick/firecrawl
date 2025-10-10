@@ -123,6 +123,7 @@ export async function indexDocumentForSearch(
       let chunkEmbeddings: number[][] = [];
       let totalTokens = 0;
       let pineconeRecords: PineconeRecord[] = [];
+      let embeddingsActuallyGenerated = false;
       
       if (embeddingsEnabled) {
         try {
@@ -185,6 +186,9 @@ export async function indexDocumentForSearch(
             }
           });
           
+          // Mark as successfully generated
+          embeddingsActuallyGenerated = true;
+          
           setSpanAttributes(span, {
             "search.embeddings_generated": true,
             "search.embedding_tokens": totalTokens,
@@ -199,6 +203,8 @@ export async function indexDocumentForSearch(
             "search.embeddings_error": true,
             "search.embeddings_error_message": (error as Error).message,
           });
+          // Reset flag since embeddings failed
+          embeddingsActuallyGenerated = false;
         }
       }
       
@@ -415,7 +421,7 @@ export async function indexDocumentForSearch(
       await updateSyncState(supabase, {
         documentsIndexed: 1,
         chunksIndexed: Math.min(chunks.length, 2), // Only inserted first 2
-        embeddingsGenerated: embeddingsEnabled ? 1 + chunks.length : 0,
+        embeddingsGenerated: embeddingsActuallyGenerated ? 1 + chunks.length : 0,
       });
       
       log.info("Document indexed successfully", {
@@ -423,7 +429,7 @@ export async function indexDocumentForSearch(
         documentId,
         chunks: chunks.length,
         totalTokens,
-        embeddingsGenerated: embeddingsEnabled,
+        embeddingsGenerated: embeddingsActuallyGenerated,
         isUpdate,
       });
       
@@ -437,7 +443,7 @@ export async function indexDocumentForSearch(
         documentId,
         chunkCount: chunks.length,
         totalTokens,
-        embeddingsGenerated: embeddingsEnabled,
+        embeddingsGenerated: embeddingsActuallyGenerated,
       };
     } catch (error) {
       log.error("Failed to index document", {
