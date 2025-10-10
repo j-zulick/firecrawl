@@ -113,7 +113,7 @@ const processBillingJobInternal = async (token: string, job: Job) => {
   return err;
 };
 
-const processPrecrawlJobInternal = async (token: string, job: Job) => {
+const processPrecrawlJobInternal_legacy = async (token: string, job: Job) => {
   const logger = _logger.child({
     module: "index-worker",
     method: "processPrecrawlJobInternal",
@@ -240,10 +240,11 @@ const processPrecrawlJobInternal = async (token: string, job: Job) => {
   }
 };
 
-const processPrecrawlJobNew = async (token: string, job: Job) => {
+// TODO: cron job for triggering this + updating index
+const processPrecrawlJob = async (token: string, job: Job) => {
   const logger = _logger.child({
     module: "index-worker",
-    method: "processPrecrawlJobNew",
+    method: "processPrecrawlJob",
   });
 
   const extendLockInterval = setInterval(async () => {
@@ -251,11 +252,23 @@ const processPrecrawlJobNew = async (token: string, job: Job) => {
     await job.extendLock(token, jobLockExtensionTime);
   }, jobLockExtendInterval);
 
-  // const teamId = process.env.PRECRAWL_TEAM_ID!;
+  // set to false to enable actual crawling
+  const DRY_RUN = true;
+
+  const MAX_PRE_CRAWL_BUDGET = 100_000; // maximum number of pages to precrawl this job
+
+  const MAX_PRE_CRAWL_DOMAINS = 200; // maximum number of domains to precrawl
+  const MIN_DOMAIN_PRIORITY = 2.0; // minimum priority score to consider a domain
+  const MIN_DOMAIN_EVENTS = 1000; // minimum number of events to consider a domain
+
+  const DOMAIN_URL_BATCH_SIZE = 25; // number of domain hashes to query in parallel
+  const URLS_PER_DOMAIN = 25; // number of top URLs to fetch per domain
+
+  const teamId = process.env.PRECRAWL_TEAM_ID;
 
   try {
     const dateFuture = new Date();
-    dateFuture.setHours(dateFuture.getHours() + 1);
+    dateFuture.setHours(dateFuture.getHours() + 1); // one hour in the future for now
 
     type DomainPriority = {
       example_url: string;
@@ -263,15 +276,13 @@ const processPrecrawlJobNew = async (token: string, job: Job) => {
       priority: number;
     };
 
-    console.time("queryDomainPrioritiesFuture");
     const { data: _domainsDueFuture, error: nextHourError } =
       await index_supabase_service.rpc("query_domain_priority", {
-        p_min_total: 100,
-        p_min_priority: 2.0,
-        p_lim: 250,
+        p_min_total: MIN_DOMAIN_EVENTS,
+        p_min_priority: MIN_DOMAIN_PRIORITY,
+        p_lim: MAX_PRE_CRAWL_DOMAINS,
         p_time: dateFuture.toISOString(),
       });
-    console.timeEnd("queryDomainPrioritiesFuture");
 
     if (nextHourError || !_domainsDueFuture) {
       logger.error("Error getting domain priorities for next hour", {
@@ -282,16 +293,21 @@ const processPrecrawlJobNew = async (token: string, job: Job) => {
 
     const domainsDueFuture = _domainsDueFuture as DomainPriority[];
 
-    console.log("Domains due for precrawl:", domainsDueFuture.length);
+    if (domainsDueFuture.length === 0) {
+      logger.info("No domains due for precrawl, skipping job");
+      await job.moveToCompleted({ success: true }, token, false);
+      return;
+    }
 
-    // need to tweak the budgeting system a bit, unsure what the best approach is here
-    const maxTotalBudget = 10000;
+    logger.info(`Pre-crawling ${domainsDueFuture.length} domains`);
+
+    // budget calculation should be tweaked
     const totalBudget = (() => {
       const n = domainsDueFuture.length;
-      if (n === 1) return 500;
-      if (n <= 5) return Math.min(maxTotalBudget, 1000 + (n - 1) * 500);
-      if (n <= 20) return Math.min(maxTotalBudget, 3000 + (n - 5) * 200);
-      return maxTotalBudget;
+      if (n <= 25) return Math.min(MAX_PRE_CRAWL_BUDGET, 3000 + (n - 1) * 500);
+      if (n <= 100)
+        return Math.min(MAX_PRE_CRAWL_BUDGET, 10000 + (n - 5) * 200);
+      return MAX_PRE_CRAWL_BUDGET;
     })();
 
     const totalPriority = domainsDueFuture.reduce(
@@ -299,14 +315,11 @@ const processPrecrawlJobNew = async (token: string, job: Job) => {
       0,
     );
 
-    console.log("Total priority:", totalPriority);
-
     const domainHashes = domainsDueFuture.map(d => d.domain_hash);
 
-    const BATCH_SIZE = 50; // number of domain hashes to query in parallel, can be tuned if it causes issues
     const batches: string[][] = [];
-    for (let i = 0; i < domainHashes.length; i += BATCH_SIZE) {
-      batches.push(domainHashes.slice(i, i + BATCH_SIZE));
+    for (let i = 0; i < domainHashes.length; i += DOMAIN_URL_BATCH_SIZE) {
+      batches.push(domainHashes.slice(i, i + DOMAIN_URL_BATCH_SIZE));
     }
 
     type TopUrlResult = {
@@ -316,48 +329,44 @@ const processPrecrawlJobNew = async (token: string, job: Job) => {
       rank: number;
     };
 
-    console.time("topUrlResults");
     const topUrlResults: PromiseSettledResult<{
       data: TopUrlResult[] | null;
       error: any;
     }>[] = [];
 
-    // we use batches of N domain hashes run in parallel, to prevent overloading pg
     for (const batch of batches) {
       const batchFutures = batch.map(domainHash =>
         index_supabase_service
-          .rpc("query_top_urls_per_domain", {
-            p_domain_hashes: [domainHash],
+          .rpc("query_top_urls_for_domain", {
+            p_domain_hash: domainHash,
             p_time_window: "7 days",
-            p_top_n: 25,
+            p_top_n: URLS_PER_DOMAIN,
           })
           .overrideTypes<TopUrlResult[]>(),
       );
 
-      // maybe if some fail due to timeout we can retry in a moment
       const batchResults = (await Promise.allSettled(
         batchFutures,
       )) as PromiseSettledResult<{ data: TopUrlResult[] | null; error: any }>[];
+
       topUrlResults.push(...batchResults);
     }
-
-    console.timeEnd("topUrlResults");
 
     const topUrls: TopUrlResult[] = [];
     for (const r of topUrlResults) {
       if (r.status === "fulfilled") {
         if (r.value.error) {
-          console.error("RPC error:", r.value.error);
+          logger.error("Pre-crawl RPC error", { error: r.value.error });
           continue;
         }
 
         topUrls.push(...(r.value.data as TopUrlResult[]));
       } else {
-        console.error("RPC failed", { error: r.reason });
+        logger.error("Pre-crawl RPC failed", { error: r.reason });
       }
     }
 
-    console.log("Top URLs to consider for crawl:", topUrls.length);
+    logger.info(`Found ${topUrls.length} top URLs for precrawl`);
 
     const bucketedByDomain: { [key: string]: TopUrlResult[] } = {};
     for (const item of topUrls) {
@@ -377,121 +386,51 @@ const processPrecrawlJobNew = async (token: string, job: Job) => {
       }
     > = new Map();
 
-    for (const item of domainsDueFuture) {
+    for (const domain of domainsDueFuture) {
       try {
-        const urls = (bucketedByDomain[item.domain_hash] || []) as {
+        const pages = (bucketedByDomain[domain.domain_hash] || []) as {
           url: string;
           domain_hash: string;
           event_count: number;
           rank: number;
         }[];
 
-        const totalEvents = urls.reduce(
+        const totalEvents = pages.reduce(
           (sum: number, s) => sum + s.event_count,
           0,
         );
 
-        const urlsFiltered = urls.map(s => {
-          const urlObj = new URL(s.url);
-          urlObj.pathname = "/";
-          urlObj.search = "";
-          urlObj.hash = "";
+        const filteredPages = pages.map(s => ({
+          domain: new URL(s.url).hostname,
+          url: s.url,
+          event_count: s.event_count,
+          rank: s.rank,
+        }));
 
-          return {
-            subdomain: urlObj.hostname,
-            url: s.url,
-            event_count: s.event_count,
-            rank: s.rank,
-          };
-        });
+        const domainBudget = (domain.priority / totalPriority) * totalBudget;
 
-        const domainBudget = (item.priority / totalPriority) * totalBudget;
-
-        for (const url of urlsFiltered) {
-          const subdomainBudget = Math.round(
-            (url.event_count / totalEvents) * domainBudget,
+        for (const page of filteredPages) {
+          const pageBudget = Math.round(
+            (page.event_count / totalEvents) * domainBudget,
           );
 
-          crawlTargets.set(`https://${url.subdomain}/`, {
-            url: `https://${url.subdomain}/`,
-            budget: subdomainBudget,
+          crawlTargets.set(`https://${page.domain}/`, {
+            url: `https://${page.domain}/`,
+            budget: pageBudget,
             domainBudget,
             eventCount: -1,
           });
 
-          if (url.url && url.url !== url.subdomain) {
-            crawlTargets.set(url.url, {
-              url: url.url,
-              budget: subdomainBudget,
+          // ignore sitemap - crawler should handle this for domain
+          if (page.url && !page.url.endsWith("/sitemap.xml")) {
+            crawlTargets.set(page.url, {
+              url: page.url,
+              budget: pageBudget,
               domainBudget,
-              eventCount: url.event_count,
+              eventCount: page.event_count,
             });
           }
         }
-
-        // const crawlerOptions = {
-        //   ...crawlRequestSchema.parse({ url, limit }),
-        //   url: undefined,
-        //   scrapeOptions: undefined,
-        // };
-        // const scrapeOptions = scrapeOptionsSchema.parse({});
-
-        // const sc: StoredCrawl = {
-        //   originUrl: url,
-        //   crawlerOptions: toV0CrawlerOptions(crawlerOptions),
-        //   scrapeOptions,
-        //   internalOptions: {
-        //     disableSmartWaitCache: true,
-        //     teamId,
-        //     saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
-        //       ? true
-        //       : false,
-        //     zeroDataRetention: true,
-        //   }, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
-        //   team_id: teamId,
-        //   createdAt: Date.now(),
-        //   maxConcurrency: undefined,
-        //   zeroDataRetention: false,
-        // };
-
-        // const crawlId = uuidv4();
-
-        // const crawler = crawlToCrawler(crawlId, sc, null);
-
-        // try {
-        //   sc.robots = await crawler.getRobotsTxt(
-        //     scrapeOptions.skipTlsVerification,
-        //   );
-        //   const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
-        //   if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
-        //     sc.crawlerOptions.delay = robotsCrawlDelay;
-        //   }
-        // } catch (e) {
-        //   logger.debug("Failed to get robots.txt (this is probably fine!)", {
-        //     error: e,
-        //   });
-        // }
-
-        // await saveCrawl(crawlId, sc);
-
-        // await _addScrapeJobToBullMQ(
-        //   {
-        //     url: url,
-        //     mode: "kickoff" as const,
-        //     team_id: teamId,
-        //     crawlerOptions,
-        //     scrapeOptions: sc.scrapeOptions,
-        //     internalOptions: sc.internalOptions,
-        //     origin: "precrawl",
-        //     integration: null,
-        //     crawl_id: crawlId,
-        //     webhook: undefined,
-        //     v1: true,
-        //     zeroDataRetention: false,
-        //     apiKeyId: null,
-        //   },
-        //   crypto.randomUUID(),
-        // );
       } catch (e) {
         logger.error("Error processing one cycle of the precrawl job", {
           error: e,
@@ -499,15 +438,104 @@ const processPrecrawlJobNew = async (token: string, job: Job) => {
       }
     }
 
-    console.log("------------------------------");
-    console.log(
-      "Final pre-crawl targets:",
-      crawlTargets.size,
-      Array.from(crawlTargets.values()).slice(0, 2),
-      "...",
-    );
-    console.log("Using total budget:", totalBudget);
-    console.log("------------------------------");
+    if (!DRY_RUN && teamId && crawlTargets.size > 0) {
+      logger.info(
+        `Pre-crawling ${crawlTargets.size} urls using total budget: ${totalBudget}`,
+      );
+
+      let submittedCrawls = 0;
+
+      for (const target of crawlTargets.values()) {
+        try {
+          const { url, budget: limit } = target;
+
+          const crawlerOptions = {
+            ...crawlRequestSchema.parse({ url, limit }),
+            url: undefined,
+            scrapeOptions: undefined,
+          };
+
+          const scrapeOptions = scrapeOptionsSchema.parse({});
+          const sc: StoredCrawl = {
+            originUrl: url,
+            crawlerOptions: toV0CrawlerOptions(crawlerOptions),
+            scrapeOptions,
+            internalOptions: {
+              disableSmartWaitCache: true, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
+              teamId,
+              saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
+                ? true
+                : false,
+              zeroDataRetention: true,
+            },
+            team_id: teamId,
+            createdAt: Date.now(),
+            maxConcurrency: undefined,
+            zeroDataRetention: false,
+          };
+
+          const crawlId = uuidv4();
+
+          // robots disabled for now
+          // const crawler = crawlToCrawler(crawlId, sc, null);
+          // try {
+          //   sc.robots = await crawler.getRobotsTxt(
+          //     scrapeOptions.skipTlsVerification,
+          //   );
+          //   const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
+          //   if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
+          //     sc.crawlerOptions.delay = robotsCrawlDelay;
+          //   }
+          // } catch (e) {
+          //   logger.debug("Failed to get robots.txt (this is probably fine!)", {
+          //     error: e,
+          //   });
+          // }
+
+          await saveCrawl(crawlId, sc);
+
+          await _addScrapeJobToBullMQ(
+            {
+              url: url,
+              mode: "kickoff" as const,
+              team_id: teamId,
+              crawlerOptions,
+              scrapeOptions: sc.scrapeOptions,
+              internalOptions: sc.internalOptions,
+              origin: "precrawl",
+              integration: null,
+              crawl_id: crawlId,
+              webhook: undefined,
+              v1: true,
+              zeroDataRetention: false,
+              apiKeyId: null,
+            },
+            crypto.randomUUID(),
+          );
+
+          submittedCrawls++;
+        } catch (e) {
+          logger.error("Error adding precrawl job to queue", { error: e });
+        }
+      }
+
+      if (submittedCrawls !== crawlTargets.size) {
+        logger.info(
+          `Submitted ${submittedCrawls} crawls, but had ${crawlTargets.size} targets`,
+        );
+      } else {
+        logger.info(`Submitted ${submittedCrawls} crawls`);
+      }
+    } else {
+      logger.info("------------------------------");
+      logger.info(`DRY RUN - no precrawl jobs submitted: ${crawlTargets.size}`);
+      console.log(
+        `Calculated pre-crawl targets: (${crawlTargets.size}) ${JSON.stringify(Array.from(crawlTargets.values()).slice(0, 2), null, 2)} ...`,
+      );
+      logger.info(`Total budget: ${totalBudget}`);
+      logger.info("------------------------------");
+    }
+
     await job.moveToCompleted({ success: true }, token, false);
   } catch (error) {
     logger.error("Error processing precrawl job", { error });
@@ -560,7 +588,6 @@ const workerFun = async (
     const canAcceptConnection = await monitor.acceptConnection();
 
     if (!canAcceptConnection) {
-      console.log("Can't accept connection due to RAM/CPU load");
       logger.info("Can't accept connection due to RAM/CPU load");
       cantAcceptConnectionCount++;
 
@@ -622,8 +649,9 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
     getBillingQueue(),
     processBillingJobInternal,
   );
+
   const precrawlWorkerPromise = process.env.PRECRAWL_TEAM_ID
-    ? workerFun(getPrecrawlQueue(), processPrecrawlJobNew)
+    ? workerFun(getPrecrawlQueue(), processPrecrawlJob)
     : (async () => {
         logger.warn("PRECRAWL_TEAM_ID not set, skipping precrawl worker");
       })();
