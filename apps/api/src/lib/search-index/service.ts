@@ -306,6 +306,7 @@ export async function indexDocumentForSearch(
             description: input.description?.slice(0, 500) ?? null,
             language: input.language ?? "en",
             gcs_path: input.gcsPath ?? null,
+            gcp_path_id: input.gcsPath ?? null,
             screenshot_url: input.screenshotUrl ?? null,
             content_ts: contentTsVector,
             domain,

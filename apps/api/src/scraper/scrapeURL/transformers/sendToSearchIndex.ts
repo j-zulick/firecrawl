@@ -112,6 +112,13 @@ export async function sendDocumentToSearchIndex(
     return document;
   }
   
+  // Get the indexId from document metadata (set by sendDocumentToIndex transformer)
+  // Format as GCS path: {indexId}.json
+  const gcsPath = document.metadata.indexId 
+  
+  // Remove indexId from metadata after extracting it (internal field, shouldn't be exposed to user)
+  delete document.metadata.indexId;
+  
   // Queue job for async processing (don't block scraper)
   (async () => {
     try {
@@ -131,7 +138,7 @@ export async function sendDocumentToSearchIndex(
         markdown: document.markdown ?? "",
         html: document.rawHtml ?? "",
         statusCode: document.metadata.statusCode,
-        gcsPath: undefined, // Can be populated from GCS if needed
+        gcsPath: gcsPath,
         screenshotUrl: document.screenshot ?? undefined,
         language: document.metadata.language ?? "en",
         country: meta.options.location?.country ?? undefined,

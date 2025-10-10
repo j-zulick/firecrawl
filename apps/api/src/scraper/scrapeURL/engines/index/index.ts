@@ -84,6 +84,9 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
           contentType: document.metadata.contentType,
           postprocessorsUsed: document.metadata.postprocessorsUsed,
         });
+        
+        // Store the indexId in document metadata so it can be used by other transformers (e.g., search index)
+        document.metadata.indexId = indexId;
       } catch (error) {
         meta.logger.error("Failed to save document to index", {
           error,
