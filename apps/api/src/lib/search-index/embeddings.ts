@@ -236,10 +236,10 @@ export async function generateEmbeddingsBatch(
 
 /**
  * Estimate embedding cost for text
- * Based on OpenAI pricing: $0.0001 / 1M tokens
+ * Based on OpenAI pricing: $0.02 / 1M tokens
  */
 export function estimateEmbeddingCost(tokenCount: number): number {
-  return (tokenCount / 1_000_000) * 0.0001;
+  return (tokenCount / 1_000_000) * 0.02;
 }
 
 /**
