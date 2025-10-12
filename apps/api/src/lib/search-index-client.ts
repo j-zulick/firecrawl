@@ -33,7 +33,7 @@ export interface SearchRequest {
   query: string;
   limit?: number;
   offset?: number;
-  mode?: "hybrid" | "keyword" | "semantic";
+  mode?: "hybrid" | "keyword" | "semantic" | "bm25";
   filters?: {
     domain?: string;
     country?: string;
