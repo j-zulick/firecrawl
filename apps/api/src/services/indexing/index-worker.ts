@@ -154,6 +154,8 @@ const processPrecrawlJob = async (token: string, job: Job) => {
         "precrawl.dry_run": DRY_RUN,
       });
 
+      await new Promise(resolve => setTimeout(resolve, 20000));
+
       const dateFuture = new Date();
       dateFuture.setHours(dateFuture.getHours() + 1);
 
@@ -182,7 +184,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
         "precrawl.domain_count": domains.length,
       });
 
-      logger.info(`Found ${domains.length} domains for precrawl`);
+      logger.info(`Found ${domains.length} domains for precrawl test`);
 
       const minPriority = Math.min(...domains.map(d => d.priority));
       const maxPriority = Math.max(...domains.map(d => d.priority));
@@ -732,4 +734,6 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
   clearInterval(indexRFInserterInterval);
   clearInterval(omceInserterInterval);
   clearInterval(domainFrequencyInterval);
+
+  logger.info("All workers shut down, exiting process");
 })();
