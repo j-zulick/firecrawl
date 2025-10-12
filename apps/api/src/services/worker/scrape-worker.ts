@@ -974,6 +974,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       location: job.data.location,
       crawlId: job.data.crawl_id,
       logger,
+      isPreCrawl: sc.internalOptions?.isPreCrawl ?? false,
     });
 
     const passingURLs = (

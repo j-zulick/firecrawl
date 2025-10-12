@@ -114,137 +114,10 @@ const processBillingJobInternal = async (token: string, job: Job) => {
   return err;
 };
 
-const processPrecrawlJobInternal_legacy = async (token: string, job: Job) => {
-  const logger = _logger.child({
-    module: "index-worker",
-    method: "processPrecrawlJobInternal",
-  });
-
-  const extendLockInterval = setInterval(async () => {
-    logger.info(`🔄 Worker extending lock on precrawl job ${job.id}`);
-    await job.extendLock(token, jobLockExtensionTime);
-  }, jobLockExtendInterval);
-
-  const teamId = process.env.PRECRAWL_TEAM_ID!;
-
-  try {
-    const budget = 100000;
-    const { data, error } = await index_supabase_service.rpc(
-      "precrawl_get_top_domains",
-      {
-        i_newer_than: new Date(
-          Date.now() - 1000 * 60 * 60 * 24 * 7,
-        ).toISOString(),
-      },
-    );
-
-    if (error) {
-      logger.error("Error getting top domains", { error });
-      throw error;
-    }
-
-    const total_hits = data.reduce((a, x) => a + x.count, 0);
-    for (const item of data) {
-      try {
-        const urlObj = new URL(item.example_url);
-        urlObj.pathname = "/";
-        urlObj.search = "";
-        urlObj.hash = "";
-
-        const url = urlObj.toString();
-
-        const limit = Math.round((item.count / total_hits) * budget);
-
-        logger.info("Running pre-crawl", {
-          url,
-          limit,
-          hits: item.count,
-          budget,
-        });
-
-        const crawlerOptions = {
-          ...crawlRequestSchema.parse({ url, limit }),
-          url: undefined,
-          scrapeOptions: undefined,
-        };
-        const scrapeOptions = scrapeOptionsSchema.parse({});
-
-        const sc: StoredCrawl = {
-          originUrl: url,
-          crawlerOptions: toV0CrawlerOptions(crawlerOptions),
-          scrapeOptions,
-          internalOptions: {
-            disableSmartWaitCache: true,
-            teamId,
-            saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
-              ? true
-              : false,
-            zeroDataRetention: true,
-          }, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
-          team_id: teamId,
-          createdAt: Date.now(),
-          maxConcurrency: undefined,
-          zeroDataRetention: false,
-        };
-
-        const crawlId = uuidv4();
-
-        const crawler = crawlToCrawler(crawlId, sc, null);
-
-        try {
-          sc.robots = await crawler.getRobotsTxt(
-            scrapeOptions.skipTlsVerification,
-          );
-          // const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
-          // if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
-          //   sc.crawlerOptions.delay = robotsCrawlDelay;
-          // }
-        } catch (e) {
-          logger.debug("Failed to get robots.txt (this is probably fine!)", {
-            error: e,
-          });
-        }
-
-        await saveCrawl(crawlId, sc);
-
-        await _addScrapeJobToBullMQ(
-          {
-            url: url,
-            mode: "kickoff" as const,
-            team_id: teamId,
-            crawlerOptions,
-            scrapeOptions: sc.scrapeOptions,
-            internalOptions: sc.internalOptions,
-            origin: "precrawl",
-            integration: null,
-            crawl_id: crawlId,
-            webhook: undefined,
-            v1: true,
-            zeroDataRetention: false,
-            apiKeyId: null,
-          },
-          crypto.randomUUID(),
-        );
-      } catch (e) {
-        logger.error("Error processing one cycle of the precrawl job", {
-          error: e,
-        });
-      }
-    }
-
-    await job.moveToCompleted({ success: true }, token, false);
-  } catch (error) {
-    logger.error("Error processing precrawl job", { error });
-    await job.moveToFailed(error, token, false);
-  } finally {
-    clearInterval(extendLockInterval);
-  }
-};
-
 // TODO: cron job for triggering this + updating index
 const processPrecrawlJob = async (token: string, job: Job) => {
   const logger = _logger.child({
-    module: "index-worker",
+    module: "precrawl-worker",
     method: "processPrecrawlJob",
   });
 
@@ -253,10 +126,14 @@ const processPrecrawlJob = async (token: string, job: Job) => {
     await job.extendLock(token, jobLockExtensionTime);
   }, jobLockExtendInterval);
 
-  // set to false to enable actual crawling
+  // set to true to prevent crawl job submissions
   const DRY_RUN = true;
 
-  const MAX_PRE_CRAWL_BUDGET = 10_000; // maximum number of pages to precrawl this job
+  // set to true to only run domain precrawl, no individual URLs or crawl jobs
+  const DOMAIN_ONLY_RUN = false;
+
+  const MAX_PRE_CRAWL_BUDGET = 10000; // maximum number of pages to precrawl this job
+  const MIN_PAGE_BUDGET = 25; // minimum budget per page
 
   const MAX_PRE_CRAWL_DOMAINS = 2000; // maximum number of domains to precrawl
   const MIN_DOMAIN_PRIORITY = 2.0; // minimum priority score to consider a domain
@@ -270,315 +147,380 @@ const processPrecrawlJob = async (token: string, job: Job) => {
   const teamId = process.env.PRECRAWL_TEAM_ID;
 
   try {
-    const dateFuture = new Date();
-    dateFuture.setHours(dateFuture.getHours() + 1);
-
-    const domains = await queryDomainsForPrecrawl(
-      dateFuture,
-      MIN_DOMAIN_EVENTS,
-      MIN_DOMAIN_PRIORITY,
-      MAX_PRE_CRAWL_DOMAINS,
-      logger,
-    ).then(domains => {
-      return domains
-        .map(d => ({
-          ...d,
-          priority: Math.sqrt(d.priority),
-        }))
-        .sort((a, b) => b.priority - a.priority);
-    });
-
-    if (domains.length === 0) {
-      logger.info("No domains due for precrawl, skipping job");
-      await job.moveToCompleted({ success: true }, token, false);
-      return;
-    }
-
-    logger.info(`Found ${domains.length} domains for precrawl`);
-
-    const minPriority = Math.min(...domains.map(d => d.priority));
-    const maxPriority = Math.max(...domains.map(d => d.priority));
-
-    logger.info(
-      `Domain priority range: ${minPriority.toFixed(
-        2,
-      )} - ${maxPriority.toFixed(2)}`,
-    );
-
-    // TODO: tweak total budget calculation
-    const totalBudget = (() => {
-      const n = domains.length;
-      if (n <= 25) return Math.min(MAX_PRE_CRAWL_BUDGET, 3000 + (n - 1) * 500);
-      if (n <= 100)
-        return Math.min(MAX_PRE_CRAWL_BUDGET, 10000 + (n - 5) * 200);
-      return MAX_PRE_CRAWL_BUDGET;
-    })();
-
-    const totalPriority = domains.reduce(
-      (sum, x) => Number(sum) + Number(x.priority),
-      0,
-    );
-
-    const domainQueries = domains.map(d => {
-      const normalizedPriority =
-        (d.priority - minPriority) / (maxPriority - minPriority);
-
-      const urlsToFetch = Math.round(
-        MIN_URLS_PER_DOMAIN +
-          Math.pow(normalizedPriority, 2) *
-            (MAX_URLS_PER_DOMAIN - MIN_URLS_PER_DOMAIN),
-      );
-
-      return {
-        hash: d.domain_hash,
-        priority: d.priority,
-        urlsToFetch,
-      };
-    });
-
-    const batches: (typeof domainQueries)[] = [];
-    for (let i = 0; i < domainQueries.length; i += DOMAIN_URL_BATCH_SIZE) {
-      batches.push(domainQueries.slice(i, i + DOMAIN_URL_BATCH_SIZE));
-    }
-
-    type TopUrlResult = {
-      url: string;
-      domain_hash: string;
-      event_count: number;
-      rank: number;
-    };
-
-    const topUrlResults: PromiseSettledResult<{
-      data: TopUrlResult[] | null;
-      error: any;
-    }>[] = [];
-
-    // TODO: optimise this
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
-
-      const batchFutures = batch.map(({ hash, urlsToFetch }) => {
-        return index_supabase_service
-          .rpc("query_top_urls_for_domain", {
-            p_domain_hash: hash,
-            p_time_window: "7 days",
-            p_top_n: urlsToFetch,
-          })
-          .overrideTypes<TopUrlResult[]>();
+    await withSpan("precrawl.job", async span => {
+      setSpanAttributes(span, {
+        "precrawl.id": job.id,
+        "precrawl.team_id": teamId,
+        "precrawl.dry_run": DRY_RUN,
       });
 
-      const batchResults = (await Promise.allSettled(
-        batchFutures,
-      )) as PromiseSettledResult<{ data: TopUrlResult[] | null; error: any }>[];
+      const dateFuture = new Date();
+      dateFuture.setHours(dateFuture.getHours() + 1);
 
-      topUrlResults.push(...batchResults);
+      const domains = await queryDomainsForPrecrawl(
+        dateFuture,
+        MIN_DOMAIN_EVENTS,
+        MIN_DOMAIN_PRIORITY,
+        MAX_PRE_CRAWL_DOMAINS,
+        logger,
+      ).then(domains => {
+        return domains
+          .map(d => ({
+            ...d,
+            priority: Math.sqrt(d.priority),
+          }))
+          .sort((a, b) => b.priority - a.priority);
+      });
 
-      if (i < batches.length - 1) {
-        const waitTime = Math.min(1000 + i * 100, 3000);
-        logger.info(
-          `Completed batch ${i + 1}/${batches.length} of URL fetches (failed: ${batchResults.filter(r => r.status === "rejected" || (r.status === "fulfilled" && r.value.error)).length}) -> waiting for ${waitTime}ms before next batch...`,
+      if (domains.length === 0) {
+        logger.info("No domains due for precrawl, skipping job");
+        await job.moveToCompleted({ success: true }, token, false);
+        return;
+      }
+
+      setSpanAttributes(span, {
+        "precrawl.domain_count": domains.length,
+      });
+
+      logger.info(`Found ${domains.length} domains for precrawl`);
+
+      const minPriority = Math.min(...domains.map(d => d.priority));
+      const maxPriority = Math.max(...domains.map(d => d.priority));
+
+      logger.debug(
+        `Domain priority range: ${minPriority.toFixed(
+          2,
+        )} - ${maxPriority.toFixed(2)}`,
+      );
+
+      // TODO: tweak total budget calculation
+      const totalBudget = (() => {
+        const n = domains.length;
+        if (n <= 25)
+          return Math.min(MAX_PRE_CRAWL_BUDGET, 3000 + (n - 1) * 500);
+        if (n <= 100)
+          return Math.min(MAX_PRE_CRAWL_BUDGET, 10000 + (n - 5) * 200);
+        return MAX_PRE_CRAWL_BUDGET;
+      })();
+
+      const totalPriority = domains.reduce(
+        (sum, x) => Number(sum) + Number(x.priority),
+        0,
+      );
+
+      const domainQueries = domains.map(d => {
+        const normalizedPriority =
+          (d.priority - minPriority) / (maxPriority - minPriority);
+
+        const urlsToFetch = Math.round(
+          MIN_URLS_PER_DOMAIN +
+            normalizedPriority * (MAX_URLS_PER_DOMAIN - MIN_URLS_PER_DOMAIN),
         );
-        await new Promise(resolve => setTimeout(resolve, waitTime));
+
+        return {
+          hash: d.domain_hash,
+          priority: d.priority,
+          urlsToFetch,
+        };
+      });
+
+      if (DOMAIN_ONLY_RUN) {
+        logger.debug(`------------------------------`);
+        logger.debug(`DOMAIN ONLY RUN - no crawl jobs submitted`);
+        logger.debug(
+          `Total budget: ${totalBudget} for ${domains.length} domains`,
+        );
+        logger.debug(`------------------------------`);
+        console.log(
+          `Precrawl domains: (${domainQueries.length}) ${JSON.stringify(domainQueries.slice(0, 5), null, 2)} ...`,
+        );
+        await job.moveToCompleted({ success: true }, token, false);
+        return;
       }
-    }
 
-    let failedBatches = 0;
-    const topUrls: TopUrlResult[] = [];
-    for (const r of topUrlResults) {
-      if (r.status === "fulfilled") {
-        if (r.value.error) {
-          if (r.value.error.code !== "57014") {
-            // query cancelled (likely timeout, need to monitor this)
-            logger.error("Pre-crawl RPC error", { error: r.value.error });
-          }
-
-          failedBatches++;
-          continue;
-        }
-
-        topUrls.push(...(r.value.data as TopUrlResult[]));
-      } else {
-        logger.error("Pre-crawl RPC failed", { error: r.reason });
-        failedBatches++;
+      const batches: (typeof domainQueries)[] = [];
+      for (let i = 0; i < domainQueries.length; i += DOMAIN_URL_BATCH_SIZE) {
+        batches.push(domainQueries.slice(i, i + DOMAIN_URL_BATCH_SIZE));
       }
-    }
 
-    logger.info(
-      `Found ${topUrls.length} URLs for precrawl (${topUrlResults.length - failedBatches}/${failedBatches})`,
-    );
-
-    const bucketedByDomain: Map<string, TopUrlResult[]> = new Map();
-    for (const item of topUrls) {
-      if (!bucketedByDomain.has(item.domain_hash)) {
-        bucketedByDomain.set(item.domain_hash, []);
-      }
-      bucketedByDomain.get(item.domain_hash)!.push(item);
-    }
-
-    const crawlTargets: Map<
-      string,
-      {
+      type DomainUrlResult = {
         url: string;
-        budget: number;
-        domainBudget: number;
-        eventCount: number;
+        domain_hash: string;
+        event_count: number;
+        rank: number;
+      };
+
+      const urlResults: PromiseSettledResult<{
+        data: DomainUrlResult[] | null;
+        error: any;
+      }>[] = [];
+
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+
+        const batchFutures = batch.map(({ hash, urlsToFetch }) => {
+          return index_supabase_service
+            .rpc("query_top_urls_for_domain", {
+              p_domain_hash: hash,
+              p_time_window: "8 days", // increasing window can significantly slow down the query, modify with caution
+              p_top_n: urlsToFetch,
+            })
+            .overrideTypes<DomainUrlResult[]>();
+        });
+
+        const batchResults = (await Promise.allSettled(
+          batchFutures,
+        )) as PromiseSettledResult<{
+          data: DomainUrlResult[] | null;
+          error: any;
+        }>[];
+
+        urlResults.push(...batchResults);
+
+        if (i < batches.length - 1) {
+          const backoff = Math.min(1000 + i * 100, 3000);
+          logger.debug(
+            `Completed batch ${i + 1}/${batches.length} of URL fetches (failed: ${batchResults.filter(r => r.status === "rejected" || (r.status === "fulfilled" && r.value.error)).length})... Waiting for ${backoff}ms before next batch...`,
+          );
+          await new Promise(resolve => setTimeout(resolve, backoff));
+        }
       }
-    > = new Map();
 
-    for (const domain of domains) {
-      try {
-        const pages = (bucketedByDomain.get(domain.domain_hash) || []) as {
+      let failedBatches = 0;
+      const urls: DomainUrlResult[] = [];
+      for (const r of urlResults) {
+        if (r.status === "fulfilled") {
+          if (r.value.error) {
+            if (r.value.error.code !== "57014") {
+              // query cancelled (likely timeout, need to monitor this)
+              logger.error("Pre-crawl RPC error", { error: r.value.error });
+            }
+            failedBatches++;
+            continue;
+          }
+
+          urls.push(...(r.value.data as DomainUrlResult[]));
+        } else {
+          logger.error("Pre-crawl RPC failed", { error: r.reason });
+          failedBatches++;
+        }
+      }
+
+      if (urls.length === 0) {
+        logger.warn("No URLs found for precrawl, skipping job");
+        await job.moveToCompleted({ success: true }, token, false);
+        return;
+      }
+
+      setSpanAttributes(span, {
+        "precrawl.url_count": urls.length,
+        "precrawl.total_batches": urlResults.length,
+        "precrawl.failed_batches": failedBatches,
+      });
+
+      logger.info(
+        `Found ${urls.length} URLs for precrawl (${urlResults.length - failedBatches}/${failedBatches})`,
+      );
+
+      const bucketedByDomain: Map<string, DomainUrlResult[]> = new Map();
+      for (const item of urls) {
+        if (!bucketedByDomain.has(item.domain_hash)) {
+          bucketedByDomain.set(item.domain_hash, []);
+        }
+        bucketedByDomain.get(item.domain_hash)!.push(item);
+      }
+
+      const crawlTargets: Map<
+        string,
+        {
           url: string;
-          domain_hash: string;
-          event_count: number;
-          rank: number;
-        }[];
+          budget: number;
+          domainBudget: number;
+          eventCount: number;
+        }
+      > = new Map();
 
-        const totalEvents = pages.reduce(
-          (sum: number, s) => sum + s.event_count,
-          0,
-        );
+      for (const domain of domains) {
+        try {
+          const pages = bucketedByDomain.get(domain.domain_hash);
+          if (!pages || pages.length === 0) {
+            // if this doesn't have any pages, do we want to locate the domain itself and add root only?
+            logger.debug(
+              `No pages found for domain ${domain.domain_hash} (${domain.priority}), skipping`,
+            );
+            continue;
+          }
 
-        const filteredPages = pages.map(s => ({
-          domain: new URL(s.url).hostname,
-          url: s.url,
-          event_count: s.event_count,
-          rank: s.rank,
-        }));
-
-        const domainBudget = (domain.priority / totalPriority) * totalBudget;
-
-        for (const page of filteredPages) {
-          const pageBudget = Math.round(
-            (page.event_count / totalEvents) * domainBudget,
+          const totalEvents = pages.reduce(
+            (sum: number, s) => sum + s.event_count,
+            0,
           );
 
-          crawlTargets.set(`https://${page.domain}/`, {
-            url: `https://${page.domain}/`,
-            budget: pageBudget,
-            domainBudget,
-            eventCount: -1,
-          });
+          const filteredPages = pages.map(s => ({
+            domain: new URL(s.url).hostname,
+            url: s.url,
+            event_count: s.event_count,
+            rank: s.rank,
+          }));
 
-          if (page.url) {
-            // TODO: check sitemap
-            crawlTargets.set(page.url, {
-              url: page.url,
-              budget: pageBudget,
-              domainBudget,
-              eventCount: page.event_count,
-            });
+          const domainBudget = (domain.priority / totalPriority) * totalBudget;
+
+          for (const page of filteredPages) {
+            const pageBudget = Math.max(
+              Math.round((page.event_count / totalEvents) * domainBudget),
+              MIN_PAGE_BUDGET,
+            );
+
+            const rootUrl = `https://${page.domain}/`;
+            if (!crawlTargets.get(rootUrl)) {
+              crawlTargets.set(rootUrl, {
+                url: rootUrl,
+                budget: pageBudget,
+                domainBudget,
+                eventCount: -1,
+              });
+            }
+
+            // should be able to ignore sitemap, it will be fetched by the root crawl
+            if (page.url && !page.url.endsWith("/sitemap.xml")) {
+              const existingEntry = crawlTargets.get(page.url);
+              if (existingEntry) {
+                if (existingEntry.eventCount < 0) {
+                  existingEntry.eventCount = page.event_count;
+                } else {
+                  existingEntry.eventCount += page.event_count;
+                }
+
+                existingEntry.budget += pageBudget;
+                existingEntry.domainBudget += domainBudget;
+                crawlTargets.set(page.url, existingEntry);
+                continue;
+              }
+
+              crawlTargets.set(page.url, {
+                url: page.url,
+                budget: pageBudget,
+                domainBudget,
+                eventCount: page.event_count,
+              });
+            }
+          }
+        } catch (e) {
+          logger.error("Error processing one cycle of the precrawl job", {
+            error: e,
+          });
+        }
+      }
+
+      setSpanAttributes(span, {
+        "precrawl.targets": crawlTargets.size,
+      });
+
+      if (!DRY_RUN && teamId && crawlTargets.size > 0) {
+        logger.info(
+          `Pre-crawling ${crawlTargets.size} urls using total budget: ${totalBudget}`,
+        );
+
+        let submittedCrawls = 0;
+
+        for (const target of crawlTargets.values()) {
+          try {
+            const { url, budget: limit } = target;
+
+            const crawlerOptions = {
+              ...crawlRequestSchema.parse({ url, limit }),
+              url: undefined, // unsure why this is needed but leaving for now
+              scrapeOptions: undefined, // same here
+            };
+
+            const scrapeOptions = scrapeOptionsSchema.parse({});
+            const sc: StoredCrawl = {
+              originUrl: url,
+              crawlerOptions: toV0CrawlerOptions(crawlerOptions),
+              scrapeOptions,
+              internalOptions: {
+                disableSmartWaitCache: true, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
+                teamId,
+                saveScrapeResultToGCS:
+                  !!process.env.GCS_FIRE_ENGINE_BUCKET_NAME,
+                zeroDataRetention: true, // is this meant to be true?
+                isPreCrawl: true, // NOTE: must be added to internal options for indexing, if not it will be treated as a normal scrape in the index
+              },
+              team_id: teamId,
+              createdAt: Date.now(),
+              maxConcurrency: undefined,
+              zeroDataRetention: false,
+            };
+
+            const crawlId = uuidv4();
+
+            // robots disabled for now
+            // const crawler = crawlToCrawler(crawlId, sc, null);
+            // try {
+            //   sc.robots = await crawler.getRobotsTxt(
+            //     scrapeOptions.skipTlsVerification,
+            //   );
+            //   const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
+            //   if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
+            //     sc.crawlerOptions.delay = robotsCrawlDelay;
+            //   }
+            // } catch (e) {
+            //   logger.debug("Failed to get robots.txt (this is probably fine!)", {
+            //     error: e,
+            //   });
+            // }
+
+            await saveCrawl(crawlId, sc);
+
+            await _addScrapeJobToBullMQ(
+              {
+                url: url,
+                mode: "kickoff" as const,
+                team_id: teamId,
+                crawlerOptions,
+                scrapeOptions: sc.scrapeOptions,
+                internalOptions: sc.internalOptions,
+                origin: "precrawl",
+                integration: null,
+                crawl_id: crawlId,
+                webhook: undefined,
+                v1: true,
+                zeroDataRetention: false,
+                apiKeyId: null,
+              },
+              crypto.randomUUID(),
+            );
+
+            submittedCrawls++;
+          } catch (e) {
+            logger.error("Error adding precrawl job to queue", { error: e });
+            Sentry.captureException(e);
           }
         }
-      } catch (e) {
-        logger.error("Error processing one cycle of the precrawl job", {
-          error: e,
-        });
-      }
-    }
 
-    if (!DRY_RUN && teamId && crawlTargets.size > 0) {
-      logger.info(
-        `Pre-crawling ${crawlTargets.size} urls using total budget: ${totalBudget}`,
-      );
-
-      let submittedCrawls = 0;
-
-      for (const target of crawlTargets.values()) {
-        try {
-          const { url, budget: limit } = target;
-
-          const crawlerOptions = {
-            ...crawlRequestSchema.parse({ url, limit }),
-            url: undefined,
-            scrapeOptions: undefined,
-          };
-
-          const scrapeOptions = scrapeOptionsSchema.parse({});
-          const sc: StoredCrawl = {
-            originUrl: url,
-            crawlerOptions: toV0CrawlerOptions(crawlerOptions),
-            scrapeOptions,
-            internalOptions: {
-              disableSmartWaitCache: true, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
-              teamId,
-              saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
-                ? true
-                : false,
-              zeroDataRetention: true,
-            },
-            team_id: teamId,
-            createdAt: Date.now(),
-            maxConcurrency: undefined,
-            zeroDataRetention: false,
-          };
-
-          const crawlId = uuidv4();
-
-          // robots disabled for now
-          // const crawler = crawlToCrawler(crawlId, sc, null);
-          // try {
-          //   sc.robots = await crawler.getRobotsTxt(
-          //     scrapeOptions.skipTlsVerification,
-          //   );
-          //   const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
-          //   if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
-          //     sc.crawlerOptions.delay = robotsCrawlDelay;
-          //   }
-          // } catch (e) {
-          //   logger.debug("Failed to get robots.txt (this is probably fine!)", {
-          //     error: e,
-          //   });
-          // }
-
-          await saveCrawl(crawlId, sc);
-
-          await _addScrapeJobToBullMQ(
-            {
-              url: url,
-              mode: "kickoff" as const,
-              team_id: teamId,
-              crawlerOptions,
-              scrapeOptions: sc.scrapeOptions,
-              internalOptions: sc.internalOptions,
-              origin: "precrawl",
-              integration: null,
-              crawl_id: crawlId,
-              webhook: undefined,
-              v1: true,
-              zeroDataRetention: false,
-              apiKeyId: null,
-            },
-            crypto.randomUUID(),
+        if (submittedCrawls !== crawlTargets.size) {
+          logger.info(
+            `Submitted ${submittedCrawls} crawls, but had ${crawlTargets.size} targets`,
           );
-
-          submittedCrawls++;
-        } catch (e) {
-          logger.error("Error adding precrawl job to queue", { error: e });
+        } else {
+          logger.info(`Submitted ${submittedCrawls} crawls`);
         }
-      }
-
-      if (submittedCrawls !== crawlTargets.size) {
-        logger.info(
-          `Submitted ${submittedCrawls} crawls, but had ${crawlTargets.size} targets`,
-        );
       } else {
-        logger.info(`Submitted ${submittedCrawls} crawls`);
+        logger.debug("------------------------------");
+        logger.debug(`DRY RUN - no crawl jobs submitted: ${crawlTargets.size}`);
+        logger.debug(
+          `Calculated pre-crawl targets: (${crawlTargets.size}) ${JSON.stringify(Array.from(crawlTargets.values()).slice(0, 2), null, 2)} ...`,
+        );
+        logger.debug(`Total budget: ${totalBudget}`);
+        logger.debug("------------------------------");
       }
-    } else {
-      logger.info("------------------------------");
-      logger.info(`DRY RUN - no crawl jobs submitted: ${crawlTargets.size}`);
-      console.log(
-        `Calculated pre-crawl targets: (${crawlTargets.size}) ${JSON.stringify(Array.from(crawlTargets.values()).slice(0, 2), null, 2)} ...`,
-      );
-      logger.info(`Total budget: ${totalBudget}`);
-      logger.info("------------------------------");
-    }
 
-    await job.moveToCompleted({ success: true }, token, false);
-  } catch (error) {
-    logger.error("Error processing precrawl job", { error });
-    await job.moveToFailed(error, token, false);
+      await job.moveToCompleted({ success: true }, token, false);
+    });
+  } catch (e) {
+    logger.error("Error processing precrawl job", { error: e });
+    Sentry.captureException(e);
+    await job.moveToFailed(e, token, false);
   } finally {
     clearInterval(extendLockInterval);
   }
@@ -764,19 +706,22 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
   // Search indexing is now handled by separate search service
   // The search service has its own worker that processes the queue
   // This worker no longer needs to process search index jobs
-  
+
   // Health check for search service (optional)
   const searchClient = getSearchIndexClient();
   if (searchClient) {
-    searchClient.health().then(healthy => {
-      if (healthy) {
-        logger.info("Search service is healthy");
-      } else {
-        logger.warn("Search service health check failed");
-      }
-    }).catch(error => {
-      logger.error("Search service health check error", { error });
-    });
+    searchClient
+      .health()
+      .then(healthy => {
+        if (healthy) {
+          logger.info("Search service is healthy");
+        } else {
+          logger.warn("Search service health check failed");
+        }
+      })
+      .catch(error => {
+        logger.error("Search service health check error", { error });
+      });
   }
 
   // Wait for all workers to complete (which should only happen on shutdown)
