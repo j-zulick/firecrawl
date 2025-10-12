@@ -83,27 +83,38 @@ class NuQ<JobData = any, JobReturnValue = any> {
         queue: queue.queue,
       };
 
+      let reconnectTimeout: NodeJS.Timeout | null = null;
+
+      const onClose = (function onClose() {
+        logger.info("NuQ listener channel closed", {
+          module: "nuq/rabbitmq",
+        });
+        this.listener = null;
+
+        if (reconnectTimeout) clearTimeout(reconnectTimeout);
+        reconnectTimeout = setTimeout(
+          (() => {
+            this.startListener().catch(err =>
+              logger.error("Error in NuQ listener reconnect", {
+                err,
+                module: "nuq/rabbitmq",
+              }),
+            );
+          }).bind(this),
+          250,
+        );
+        return;
+      }).bind(this);
+
+      connection.on("close", onClose);
+      channel.on("close", onClose);
+
       await this.listener.channel.consume(
         this.listener.queue,
         (msg => {
           if (msg === null) {
-            logger.info("NuQ listener channel closed", {
-              module: "nuq/rabbitmq",
-            });
-            this.listener = null;
-
-            setTimeout(
-              (() => {
-                this.startListener().catch(err =>
-                  logger.error("Error in NuQ listener reconnect", {
-                    err,
-                    module: "nuq/rabbitmq",
-                  }),
-                );
-              }).bind(this),
-              250,
-            );
-            return;
+            onClose();
+            return;            
           }
 
           logger.info("NuQ job received", {
