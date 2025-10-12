@@ -66,7 +66,6 @@ adminRouter.get(
   wrap(crawlCheckController),
 );
 
-
 adminRouter.post(
   `/admin/${process.env.BULL_AUTH_KEY}/fsearch`,
   wrap(realtimeSearchController),
