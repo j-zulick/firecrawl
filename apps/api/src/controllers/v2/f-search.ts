@@ -1,18 +1,12 @@
 import { Request, Response } from "express";
 import { z } from "zod";
-import {
-  search_index_supabase_service,
-  isSearchIndexEnabled,
-} from "../../services/search-index-db";
-import {
-  search,
-  searchChunks,
-  getSearchStats,
-  type SearchQuery,
-  type SearchFilters,
-} from "../../lib/search-index";
 import { logger as _logger } from "../../lib/logger";
 import { CostTracking } from "../../lib/cost-tracking";
+import {
+  getSearchIndexClient,
+  SearchIndexClient,
+  type SearchRequest,
+} from "../../lib/search-index-client";
 
 // Validation schemas
 const searchRequestSchema = z.object({
@@ -75,29 +69,27 @@ export async function realtimeSearchController(
       filters,
     });
 
-    // Check if search index is enabled
-    if (!isSearchIndexEnabled()) {
+    // Get search index client
+    const client = getSearchIndexClient();
+    
+    if (!client) {
       res.status(503).json({
         success: false,
-        error: "Search index is not configured",
+        error: "Search index service is not configured",
       });
       return;
     }
 
-    // Perform search
-    const searchQuery: SearchQuery = {
+    // Perform search via HTTP client
+    const searchRequest: SearchRequest = {
       query,
       limit,
       offset,
       mode,
-      filters: filters as SearchFilters,
+      filters,
     };
 
-    const result = await search(
-      search_index_supabase_service,
-      searchQuery,
-      logger,
-    );
+    const result = await client.search(searchRequest, logger);
 
     // Track cost (if applicable)
     const costTracking = new CostTracking();
@@ -105,19 +97,7 @@ export async function realtimeSearchController(
 
     res.status(200).json({
       success: true,
-      data: {
-        results: result.results,
-        total: result.total,
-        query: result.query,
-        mode: result.mode,
-        took: result.took,
-        pagination: {
-          limit,
-          offset,
-          // hasMore is true if we got a full page of results, suggesting there may be more
-          hasMore: result.results.length >= limit,
-        },
-      },
+      data: result,
       costTracking: costTracking.toJSON(),
     });
   } catch (error) {
