@@ -10,7 +10,7 @@
  */
 
 import { Document } from "../../../controllers/v1/types";
-import { addSearchIndexJob } from "../../../lib/search-index/queue";
+import { indexDocumentIfEnabled } from "../../../lib/search-index-client";
 import { logger as _logger } from "../../../lib/logger";
 import { Meta } from "..";
 
@@ -80,15 +80,16 @@ export async function sendDocumentToSearchIndex(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
-  // Check if search indexing is enabled
+  // Check if search indexing is enabled via the SEARCH_SERVICE_URL
   const searchIndexEnabled =
     process.env.ENABLE_SEARCH_INDEX === "true" &&
-    process.env.SEARCH_INDEX_SUPABASE_URL &&
-    process.env.SEARCH_INDEX_SUPABASE_SERVICE_TOKEN;
+    process.env.SEARCH_SERVICE_URL;
   
-    meta.logger.debug("Sending document to search index", {
-      url: meta.url,
-    });
+  meta.logger.debug("Sending document to search index", {
+    url: meta.url,
+    searchIndexEnabled,
+  });
+  
   if (!searchIndexEnabled) {
     return document;
   }
@@ -119,10 +120,10 @@ export async function sendDocumentToSearchIndex(
   // Remove indexId from metadata after extracting it (internal field, shouldn't be exposed to user)
   delete document.metadata.indexId;
   
-  // Queue job for async processing (don't block scraper)
+  // Send to search service via HTTP (async, don't block scraper)
   (async () => {
     try {
-      await addSearchIndexJob({
+      await indexDocumentIfEnabled({
         url: meta.url,
         resolvedUrl:
           document.metadata.url ??
@@ -143,13 +144,13 @@ export async function sendDocumentToSearchIndex(
         language: document.metadata.language ?? "en",
         country: meta.options.location?.country ?? undefined,
         isMobile: meta.options.mobile ?? false,
-      });
+      }, meta.logger);
       
-      meta.logger.debug("Queued document for search indexing", {
+      meta.logger.debug("Sent document to search service", {
         url: meta.url,
       });
     } catch (error) {
-      meta.logger.error("Failed to queue document for search indexing", {
+      meta.logger.error("Failed to send document to search service", {
         error: (error as Error).message,
         url: meta.url,
       });
