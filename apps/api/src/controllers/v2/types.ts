@@ -1413,6 +1413,12 @@ const researchCategoryOptions = z
   })
   .strict();
 
+const pdfCategoryOptions = z
+  .object({
+    type: z.literal("pdf"),
+  })
+  .strict();
+
 export const searchRequestSchema = z
   .object({
     query: z.string(),
@@ -1445,9 +1451,9 @@ export const searchRequestSchema = z
     categories: z
       .union([
         // Array of strings (simple format)
-        z.array(z.enum(["github", "research"])),
+        z.array(z.enum(["github", "research", "pdf"])),
         // Array of objects (advanced format)
-        z.array(z.union([githubCategoryOptions, researchCategoryOptions])),
+        z.array(z.union([githubCategoryOptions, researchCategoryOptions, pdfCategoryOptions])),
       ])
       .optional(),
     lang: z.string().optional().default("en"),
@@ -1551,6 +1557,10 @@ export const searchRequestSchema = z
             case "research":
               return {
                 type: "research" as const,
+              };
+            case "pdf":
+              return {
+                type: "pdf" as const,
               };
             default:
               return { type: c as any };

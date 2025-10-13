@@ -286,7 +286,7 @@ export interface SearchData {
 }
 
 export interface CategoryOption {
-  type: 'github' | 'research';
+  type: 'github' | 'research' | 'pdf';
 }
 
 export interface SearchRequest {
@@ -294,7 +294,7 @@ export interface SearchRequest {
   sources?: Array<
     'web' | 'news' | 'images' | { type: 'web' | 'news' | 'images' }
   >;
-  categories?: Array<'github' | 'research' | CategoryOption>;
+  categories?: Array<'github' | 'research' | 'pdf' | CategoryOption>;
   limit?: number;
   tbs?: string;
   location?: string;
