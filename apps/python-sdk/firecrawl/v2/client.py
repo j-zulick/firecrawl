@@ -236,6 +236,7 @@ class FirecrawlClient:
         zero_data_retention: bool = False,
         poll_interval: int = 2,
         timeout: Optional[int] = None,
+        request_timeout: Optional[float] = None,
         integration: Optional[str] = None,
     ) -> CrawlJob:
         """
@@ -260,6 +261,7 @@ class FirecrawlClient:
             zero_data_retention: Whether to delete data after 24 hours
             poll_interval: Seconds between status checks
             timeout: Maximum seconds to wait (None for no timeout)
+            request_timeout: Optional timeout (in seconds) for each status request
             
         Returns:
             CrawlJob when job completes
@@ -290,10 +292,11 @@ class FirecrawlClient:
         )
         
         return crawl_module.crawl(
-            self.http_client, 
-            request, 
-            poll_interval=poll_interval, 
-            timeout=timeout
+            self.http_client,
+            request,
+            poll_interval=poll_interval,
+            timeout=timeout,
+            request_timeout=request_timeout,
         )
     
     def start_crawl(
@@ -368,9 +371,11 @@ class FirecrawlClient:
         return crawl_module.start_crawl(self.http_client, request)
     
     def get_crawl_status(
-        self, 
+        self,
         job_id: str,
-        pagination_config: Optional[PaginationConfig] = None
+        pagination_config: Optional[PaginationConfig] = None,
+        *,
+        request_timeout: Optional[float] = None,
     ) -> CrawlJob:
         """
         Get the status of a crawl job.
@@ -378,6 +383,7 @@ class FirecrawlClient:
         Args:
             job_id: ID of the crawl job
             pagination_config: Optional configuration for pagination behavior
+            request_timeout: Optional timeout (in seconds) for each status request
             
         Returns:
             CrawlJob with current status and data
@@ -386,9 +392,10 @@ class FirecrawlClient:
             Exception: If the status check fails
         """
         return crawl_module.get_crawl_status(
-            self.http_client, 
+            self.http_client,
             job_id,
-            pagination_config=pagination_config
+            pagination_config=pagination_config,
+            request_timeout=request_timeout,
         )
     
     def get_crawl_errors(self, crawl_id: str) -> CrawlErrorsResponse:

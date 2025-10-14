@@ -142,37 +142,40 @@ def start_crawl(client: HttpClient, request: CrawlRequest) -> CrawlResponse:
 
 
 def get_crawl_status(
-    client: HttpClient, 
+    client: HttpClient,
     job_id: str,
-    pagination_config: Optional[PaginationConfig] = None
+    pagination_config: Optional[PaginationConfig] = None,
+    *,
+    request_timeout: Optional[float] = None,
 ) -> CrawlJob:
     """
     Get the status of a crawl job.
-    
+
     Args:
         client: HTTP client instance
         job_id: ID of the crawl job
         pagination_config: Optional configuration for pagination behavior
-        
+        request_timeout: Optional timeout (in seconds) for the underlying HTTP request
+
     Returns:
         CrawlJob with current status and data
-        
+
     Raises:
         Exception: If the status check fails
     """
     # Make the API request
-    response = client.get(f"/v2/crawl/{job_id}")
-    
+    response = client.get(f"/v2/crawl/{job_id}", timeout=request_timeout)
+
     # Handle errors
     if not response.ok:
         handle_response_error(response, "get crawl status")
-    
+
     # Parse response
     response_data = response.json()
-    
+
     if response_data.get("success"):
         # The API returns status fields at the top level, not in a data field
-        
+
         # Convert documents
         documents = []
         data_list = response_data.get("data", [])
@@ -183,17 +186,22 @@ def get_crawl_status(
                 continue
             else:
                 documents.append(Document(**normalize_document_input(doc_data)))
-        
+
         # Handle pagination if requested
         auto_paginate = pagination_config.auto_paginate if pagination_config else True
-        if auto_paginate and response_data.get("next") and not (pagination_config and pagination_config.max_results is not None and len(documents) >= pagination_config.max_results):
+        if auto_paginate and response_data.get("next") and not (
+            pagination_config
+            and pagination_config.max_results is not None
+            and len(documents) >= pagination_config.max_results
+        ):
             documents = _fetch_all_pages(
-                client, 
-                response_data.get("next"), 
-                documents, 
-                pagination_config
+                client,
+                response_data.get("next"),
+                documents,
+                pagination_config,
+                request_timeout=request_timeout,
             )
-        
+
         # Create CrawlJob with current status and data
         return CrawlJob(
             status=response_data.get("status"),
@@ -212,31 +220,34 @@ def _fetch_all_pages(
     client: HttpClient,
     next_url: str,
     initial_documents: List[Document],
-    pagination_config: Optional[PaginationConfig] = None
+    pagination_config: Optional[PaginationConfig] = None,
+    *,
+    request_timeout: Optional[float] = None,
 ) -> List[Document]:
     """
     Fetch all pages of crawl results.
-    
+
     Args:
         client: HTTP client instance
         next_url: URL for the next page
         initial_documents: Documents from the first page
         pagination_config: Optional configuration for pagination limits
-        
+        request_timeout: Optional timeout (in seconds) for the underlying HTTP request
+
     Returns:
         List of all documents from all pages
     """
     documents = initial_documents.copy()
     current_url = next_url
     page_count = 0
-    
+
     # Apply pagination limits
     max_pages = pagination_config.max_pages if pagination_config else None
     max_results = pagination_config.max_results if pagination_config else None
     max_wait_time = pagination_config.max_wait_time if pagination_config else None
-    
+
     start_time = time.monotonic()
-    
+
     while current_url:
         # Check pagination limits (treat 0 as a valid limit)
         if (max_pages is not None) and page_count >= max_pages:
@@ -244,22 +255,22 @@ def _fetch_all_pages(
 
         if (max_wait_time is not None) and (time.monotonic() - start_time) > max_wait_time:
             break
-        
+
         # Fetch next page
-        response = client.get(current_url)
-        
+        response = client.get(current_url, timeout=request_timeout)
+
         if not response.ok:
             # Log error but continue with what we have
             import logging
             logger = logging.getLogger("firecrawl")
             logger.warning("Failed to fetch next page", extra={"status_code": response.status_code})
             break
-        
+
         page_data = response.json()
-        
+
         if not page_data.get("success"):
             break
-        
+
         # Add documents from this page
         data_list = page_data.get("data", [])
         for doc_data in data_list:
@@ -270,15 +281,15 @@ def _fetch_all_pages(
                 if max_results is not None and len(documents) >= max_results:
                     break
                 documents.append(Document(**normalize_document_input(doc_data)))
-        
+
         # Check if we hit max_results limit
         if max_results is not None and len(documents) >= max_results:
             break
-        
+
         # Get next URL
         current_url = page_data.get("next")
         page_count += 1
-    
+
     return documents
 
 
@@ -309,7 +320,9 @@ def wait_for_crawl_completion(
     client: HttpClient,
     job_id: str,
     poll_interval: int = 2,
-    timeout: Optional[int] = None
+    timeout: Optional[int] = None,
+    *,
+    request_timeout: Optional[float] = None,
 ) -> CrawlJob:
     """
     Wait for a crawl job to complete, polling for status updates.
@@ -319,6 +332,7 @@ def wait_for_crawl_completion(
         job_id: ID of the crawl job
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait (None for no timeout)
+        request_timeout: Optional timeout (in seconds) for each status request
         
     Returns:
         CrawlJob when job completes
@@ -330,7 +344,11 @@ def wait_for_crawl_completion(
     start_time = time.monotonic()
     
     while True:
-        crawl_job = get_crawl_status(client, job_id)
+        crawl_job = get_crawl_status(
+            client,
+            job_id,
+            request_timeout=request_timeout,
+        )
         
         # Check if job is complete
         if crawl_job.status in ["completed", "failed", "cancelled"]:
@@ -348,7 +366,9 @@ def crawl(
     client: HttpClient,
     request: CrawlRequest,
     poll_interval: int = 2,
-    timeout: Optional[int] = None
+    timeout: Optional[int] = None,
+    *,
+    request_timeout: Optional[float] = None,
 ) -> CrawlJob:
     """
     Start a crawl job and wait for it to complete.
@@ -358,6 +378,7 @@ def crawl(
         request: CrawlRequest containing URL and options
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait (None for no timeout)
+        request_timeout: Optional timeout (in seconds) for each status request
         
     Returns:
         CrawlJob when job completes
@@ -371,9 +392,16 @@ def crawl(
     crawl_job = start_crawl(client, request)
     job_id = crawl_job.id
     
+    # Determine the per-request timeout. If not provided, reuse the overall timeout value.
+    effective_request_timeout = request_timeout if request_timeout is not None else timeout
+
     # Wait for completion
     return wait_for_crawl_completion(
-        client, job_id, poll_interval, timeout
+        client,
+        job_id,
+        poll_interval,
+        timeout,
+        request_timeout=effective_request_timeout,
     )
 
 

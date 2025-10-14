@@ -77,11 +77,22 @@ class AsyncFirecrawlClient:
         request = CrawlRequest(url=url, **kwargs)
         return await async_crawl.start_crawl(self.async_http_client, request)
 
-    async def wait_crawl(self, job_id: str, poll_interval: int = 2, timeout: Optional[int] = None) -> CrawlJob:
+    async def wait_crawl(
+        self,
+        job_id: str,
+        poll_interval: int = 2,
+        timeout: Optional[int] = None,
+        *,
+        request_timeout: Optional[float] = None,
+    ) -> CrawlJob:
         # simple polling loop using blocking get (ok for test-level async)
         start = asyncio.get_event_loop().time()
         while True:
-            status = await async_crawl.get_crawl_status(self.async_http_client, job_id)
+            status = await async_crawl.get_crawl_status(
+                self.async_http_client,
+                job_id,
+                request_timeout=request_timeout,
+            )
             if status.status in ["completed", "failed"]:
                 return status
             if timeout and (asyncio.get_event_loop().time() - start) > timeout:
@@ -90,20 +101,32 @@ class AsyncFirecrawlClient:
 
     async def crawl(self, **kwargs) -> CrawlJob:
         # wrapper combining start and wait
-        resp = await self.start_crawl(**{k: v for k, v in kwargs.items() if k not in ("poll_interval", "timeout")})
+        resp = await self.start_crawl(
+            **{k: v for k, v in kwargs.items() if k not in ("poll_interval", "timeout", "request_timeout")}
+        )
         poll_interval = kwargs.get("poll_interval", 2)
         timeout = kwargs.get("timeout")
-        return await self.wait_crawl(resp.id, poll_interval=poll_interval, timeout=timeout)
+        request_timeout = kwargs.get("request_timeout")
+        effective_request_timeout = request_timeout if request_timeout is not None else timeout
+        return await self.wait_crawl(
+            resp.id,
+            poll_interval=poll_interval,
+            timeout=timeout,
+            request_timeout=effective_request_timeout,
+        )
 
     async def get_crawl_status(
-        self, 
+        self,
         job_id: str,
-        pagination_config: Optional[PaginationConfig] = None
+        pagination_config: Optional[PaginationConfig] = None,
+        *,
+        request_timeout: Optional[float] = None,
     ) -> CrawlJob:
         return await async_crawl.get_crawl_status(
-            self.async_http_client, 
+            self.async_http_client,
             job_id,
-            pagination_config=pagination_config
+            pagination_config=pagination_config,
+            request_timeout=request_timeout,
         )
 
     async def cancel_crawl(self, job_id: str) -> bool:
