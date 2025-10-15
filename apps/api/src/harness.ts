@@ -76,6 +76,9 @@ function formatDuration(nanoseconds: bigint): string {
 const stream = createWriteStream("firecrawl.log");
 
 const PORT = process.env.PORT ?? "3002";
+const WORKER_PORT = process.env.WORKER_PORT ?? "3005";
+const EXTRACT_WORKER_PORT = process.env.EXTRACT_WORKER_PORT ?? "3004";
+const NUQ_WORKER_START_PORT = Number(process.env.NUQ_WORKER_START_PORT ?? "3006");
 
 const logger = {
   section(message: string) {
@@ -404,6 +407,7 @@ function startServices(command?: string[]): Services {
     {
       NUQ_REDUCE_NOISE: "true",
       NUQ_POD_NAME: "worker",
+      WORKER_PORT: WORKER_PORT,
     },
   );
 
@@ -415,7 +419,7 @@ function startServices(command?: string[]): Services {
     {
       NUQ_REDUCE_NOISE: "true",
       NUQ_POD_NAME: "extract-worker",
-      NUQ_WORKER_PORT: String(3005),
+      EXTRACT_WORKER_PORT: EXTRACT_WORKER_PORT,
     },
   );
 
@@ -426,7 +430,7 @@ function startServices(command?: string[]): Services {
         ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-worker.js"
         : "pnpm nuq-worker:production",
       {
-        NUQ_WORKER_PORT: String(3006 + i),
+        NUQ_WORKER_PORT: String(NUQ_WORKER_START_PORT + i),
         NUQ_REDUCE_NOISE: "true",
         NUQ_POD_NAME: `nuq-worker-${i}`,
       },
