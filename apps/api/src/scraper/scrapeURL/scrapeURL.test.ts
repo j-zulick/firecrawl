@@ -388,6 +388,31 @@ describe("Standalone scrapeURL tests", () => {
     }
   }, 60000);
 
+  it("Scrapes a XLSX file", async () => {
+    const out = await scrapeURL(
+      "test:scrape-xlsx",
+      "https://download.microsoft.com/download/1/4/E/14EDED28-6C58-4055-A65C-23B4DA81C4DE/Financial%20Sample.xlsx",
+      scrapeOptions.parse({}),
+      { teamId: "test" },
+      new CostTracking(),
+    );
+
+    // expect(out.logs.length).toBeGreaterThan(0);
+    expect(out.success).toBe(true);
+    if (out.success) {
+      expect(out.document.warning).toBeUndefined();
+      expect(out.document).toHaveProperty("metadata");
+      // sheet name
+      expect(out.document.markdown).toContain("Sheet1");
+      // headers
+      expect(out.document.markdown).toContain("Segment");
+      expect(out.document.markdown).toContain("Product");
+      expect(out.document.markdown).toContain("Country");
+      expect(out.document.metadata.statusCode).toBe(200);
+      expect(out.document.metadata.error).toBeUndefined();
+    }
+  }, 60000);
+
   it("LLM extract with prompt and schema", async () => {
     const out = await scrapeURL(
       "test:llm-extract-prompt-schema",

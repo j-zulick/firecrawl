@@ -41,11 +41,17 @@ export class NoEnginesLeftError extends TransportableError {
 export class AddFeatureError extends Error {
   public featureFlags: FeatureFlag[];
   public pdfPrefetch: Meta["pdfPrefetch"];
+  public documentPrefetch: Meta["documentPrefetch"];
 
-  constructor(featureFlags: FeatureFlag[], pdfPrefetch?: Meta["pdfPrefetch"]) {
+  constructor(
+    featureFlags: FeatureFlag[],
+    pdfPrefetch?: Meta["pdfPrefetch"],
+    documentPrefetch?: Meta["documentPrefetch"],
+  ) {
     super("New feature flags have been discovered: " + featureFlags.join(", "));
     this.featureFlags = featureFlags;
     this.pdfPrefetch = pdfPrefetch;
+    this.documentPrefetch = documentPrefetch;
   }
 }
 
@@ -311,6 +317,51 @@ export class PDFPrefetchFailed extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new PDFPrefetchFailed();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class DocumentAntibotError extends TransportableError {
+  constructor() {
+    super(
+      "SCRAPE_DOCUMENT_ANTIBOT_ERROR",
+      "Document scrape was prevented by anti-bot",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new DocumentAntibotError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class DocumentPrefetchFailed extends TransportableError {
+  constructor() {
+    const message = isSelfHosted()
+      ? "Failed to prefetch document that is protected by anti-bot. Please check your logs for more details."
+      : "Failed to prefetch document that is protected by anti-bot. Please contact help@firecrawl.com";
+
+    super("SCRAPE_DOCUMENT_PREFETCH_FAILED", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new DocumentPrefetchFailed();
     x.stack = data.stack;
     return x;
   }
