@@ -213,9 +213,9 @@ const processPrecrawlJob = async (token: string, job: Job) => {
         return MAX_PRE_CRAWL_BUDGET;
       })();
 
-      const totalPriority = domains.reduce(
-        (sum, x) => Number(sum) + Number(x.priority),
-        0,
+      const totalPriority = Math.max(
+        domains.reduce((sum, x) => Number(sum) + Number(x.priority), 0),
+        1,
       );
 
       const domainQueries = domains.map(d => {
@@ -355,20 +355,21 @@ const processPrecrawlJob = async (token: string, job: Job) => {
         }
       > = new Map();
 
+      let noPageDomains = 0;
+
       for (const domain of domains) {
         try {
           const pages = bucketedByDomain.get(domain.domain_hash);
+
+          // if this doesn't have any pages, do we want to locate the domain itself and add root only?
           if (!pages || pages.length === 0) {
-            // if this doesn't have any pages, do we want to locate the domain itself and add root only?
-            logger.debug(
-              `No pages found for domain ${domain.domain_hash} (${domain.priority}), skipping`,
-            );
+            noPageDomains++;
             continue;
           }
 
-          const totalEvents = pages.reduce(
-            (sum: number, s) => sum + s.event_count,
-            0,
+          const totalEvents = Math.max(
+            pages.reduce((sum: number, s) => sum + s.event_count, 0),
+            1,
           );
 
           const filteredPages = pages.map(s => ({
@@ -421,10 +422,17 @@ const processPrecrawlJob = async (token: string, job: Job) => {
             }
           }
         } catch (e) {
-          logger.error("Error processing one cycle of the precrawl job", {
+          logger.error("Error processing domain in precrawl job", {
             error: e,
+            domain: domain.domain_hash,
           });
         }
+      }
+
+      if (noPageDomains > 0) {
+        logger.debug(
+          `Skipping ${noPageDomains} domains with no pages found (${noPageDomains} of ${domains.length})`,
+        );
       }
 
       setSpanAttributes(span, {
