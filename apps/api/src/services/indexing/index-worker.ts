@@ -135,7 +135,6 @@ const processPrecrawlJob = async (token: string, job: Job) => {
   const DOMAIN_ONLY_RUN = false;
 
   const MAX_PRE_CRAWL_BUDGET = 10000; // maximum number of pages to precrawl this job
-  const MIN_PAGE_BUDGET = 25; // minimum budget per page
 
   const MAX_PRE_CRAWL_DOMAINS = 100; // maximum number of domains to precrawl
   const MIN_DOMAIN_PRIORITY = 2.0; // minimum priority score to consider a domain
@@ -156,7 +155,6 @@ const processPrecrawlJob = async (token: string, job: Job) => {
         "precrawl.team_id": teamId,
         "precrawl.dry_run": DRY_RUN,
         "precrawl.config.budget": MAX_PRE_CRAWL_BUDGET,
-        "precrawl.config.min_page_budget": MIN_PAGE_BUDGET,
         "precrawl.config.max_domains": MAX_PRE_CRAWL_DOMAINS,
         "precrawl.config.min_priority": MIN_DOMAIN_PRIORITY,
         "precrawl.config.min_events": MIN_DOMAIN_EVENTS,
@@ -382,9 +380,8 @@ const processPrecrawlJob = async (token: string, job: Job) => {
           const domainBudget = (domain.priority / totalPriority) * totalBudget;
 
           for (const page of filteredPages) {
-            const pageBudget = Math.max(
-              Math.round((page.event_count / totalEvents) * domainBudget),
-              MIN_PAGE_BUDGET,
+            const pageBudget = Math.round(
+              (page.event_count / totalEvents) * domainBudget,
             );
 
             const rootUrl = `https://${page.domain}/`;

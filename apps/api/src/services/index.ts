@@ -920,6 +920,10 @@ export async function queryDomainsForPrecrawl(
   maxDomains = 50,
   logger: Logger = _logger,
 ): Promise<DomainPriority[]> {
+  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+    return [];
+  }
+
   let results: DomainPriority[] = [];
   let iteration = 0;
 
