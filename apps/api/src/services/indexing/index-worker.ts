@@ -114,7 +114,7 @@ const processBillingJobInternal = async (token: string, job: Job) => {
   return err;
 };
 
-// TODO: cron job for triggering this + updating index
+// NOTE: current config is 100 domains with 250 urls per domain with estimated max budget of 10,000
 const processPrecrawlJob = async (token: string, job: Job) => {
   const logger = _logger.child({
     module: "precrawl-worker",
@@ -127,7 +127,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
   }, jobLockExtendInterval);
 
   // set to true to prevent crawl job submissions
-  const DRY_RUN = true;
+  const DRY_RUN = false;
 
   // set to true to only run domain precrawl, no individual URLs or crawl jobs
   const DOMAIN_ONLY_RUN = false;
@@ -135,16 +135,31 @@ const processPrecrawlJob = async (token: string, job: Job) => {
   const MAX_PRE_CRAWL_BUDGET = 10000; // maximum number of pages to precrawl this job
   const MIN_PAGE_BUDGET = 25; // minimum budget per page
 
-  const MAX_PRE_CRAWL_DOMAINS = 2000; // maximum number of domains to precrawl
+  const MAX_PRE_CRAWL_DOMAINS = 100; // maximum number of domains to precrawl
   const MIN_DOMAIN_PRIORITY = 2.0; // minimum priority score to consider a domain
   const MIN_DOMAIN_EVENTS = 1000; // minimum number of events to consider a domain
 
-  const DOMAIN_URL_BATCH_SIZE = 25; // number of domain hashes to query in parallel
+  // number of domain hashes to query in parallel - keep relatively low for now (25 is good)
+  const DOMAIN_URL_BATCH_SIZE = 25;
 
   const MIN_URLS_PER_DOMAIN = 10;
-  const MAX_URLS_PER_DOMAIN = 500;
+  const MAX_URLS_PER_DOMAIN = 250;
 
   const teamId = process.env.PRECRAWL_TEAM_ID;
+
+  logger.info("Received index pre-crawl trigger job", {
+    teamId,
+    config: {
+      MAX_PRE_CRAWL_BUDGET,
+      MIN_PAGE_BUDGET,
+      MAX_PRE_CRAWL_DOMAINS,
+      MIN_DOMAIN_PRIORITY,
+      MIN_DOMAIN_EVENTS,
+      DOMAIN_URL_BATCH_SIZE,
+      MIN_URLS_PER_DOMAIN,
+      MAX_URLS_PER_DOMAIN,
+    },
+  });
 
   try {
     await withSpan("precrawl.job", async span => {
@@ -153,8 +168,6 @@ const processPrecrawlJob = async (token: string, job: Job) => {
         "precrawl.team_id": teamId,
         "precrawl.dry_run": DRY_RUN,
       });
-
-      await new Promise(resolve => setTimeout(resolve, 20000));
 
       const dateFuture = new Date();
       dateFuture.setHours(dateFuture.getHours() + 1);
@@ -233,7 +246,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
           `Total budget: ${totalBudget} for ${domains.length} domains`,
         );
         logger.debug(`------------------------------`);
-        console.log(
+        logger.debug(
           `Precrawl domains: (${domainQueries.length}) ${JSON.stringify(domainQueries.slice(0, 5), null, 2)} ...`,
         );
         await job.moveToCompleted({ success: true }, token, false);
@@ -270,19 +283,22 @@ const processPrecrawlJob = async (token: string, job: Job) => {
             .overrideTypes<DomainUrlResult[]>();
         });
 
+        const startTimeNs = process.hrtime.bigint();
         const batchResults = (await Promise.allSettled(
           batchFutures,
         )) as PromiseSettledResult<{
           data: DomainUrlResult[] | null;
           error: any;
         }>[];
+        const endTimeNs = process.hrtime.bigint();
 
         urlResults.push(...batchResults);
 
         if (i < batches.length - 1) {
+          const durationMs = Number(endTimeNs - startTimeNs) / 1e6;
           const backoff = Math.min(1000 + i * 100, 3000);
           logger.debug(
-            `Completed batch ${i + 1}/${batches.length} of URL fetches (failed: ${batchResults.filter(r => r.status === "rejected" || (r.status === "fulfilled" && r.value.error)).length})... Waiting for ${backoff}ms before next batch...`,
+            `Completed batch ${i + 1}/${batches.length} of URL fetches (failed: ${batchResults.filter(r => r.status === "rejected" || (r.status === "fulfilled" && r.value.error)).length}) in ${durationMs}ms. Waiting for ${backoff}ms before next batch...`,
           );
           await new Promise(resolve => setTimeout(resolve, backoff));
         }
