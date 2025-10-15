@@ -169,7 +169,7 @@ let isShuttingDown = false;
 let isWorkerStalled = false;
 
 process.on("SIGINT", () => {
-  _logger.debug("Received SIGTERM. Shutting down gracefully...");
+  _logger.debug("Received SIGINT. Shutting down gracefully...");
   isShuttingDown = true;
 });
 
