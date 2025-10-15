@@ -121,6 +121,8 @@ const processPrecrawlJob = async (token: string, job: Job) => {
     method: "processPrecrawlJob",
   });
 
+  logger.info("Received index pre-crawl trigger job");
+
   const extendLockInterval = setInterval(async () => {
     logger.info(`🔄 Worker extending lock on precrawl job ${job.id}`);
     await job.extendLock(token, jobLockExtensionTime);
@@ -147,26 +149,19 @@ const processPrecrawlJob = async (token: string, job: Job) => {
 
   const teamId = process.env.PRECRAWL_TEAM_ID;
 
-  logger.info("Received index pre-crawl trigger job", {
-    teamId,
-    config: {
-      MAX_PRE_CRAWL_BUDGET,
-      MIN_PAGE_BUDGET,
-      MAX_PRE_CRAWL_DOMAINS,
-      MIN_DOMAIN_PRIORITY,
-      MIN_DOMAIN_EVENTS,
-      DOMAIN_URL_BATCH_SIZE,
-      MIN_URLS_PER_DOMAIN,
-      MAX_URLS_PER_DOMAIN,
-    },
-  });
-
   try {
     await withSpan("precrawl.job", async span => {
       setSpanAttributes(span, {
         "precrawl.id": job.id,
         "precrawl.team_id": teamId,
         "precrawl.dry_run": DRY_RUN,
+        "precrawl.config.budget": MAX_PRE_CRAWL_BUDGET,
+        "precrawl.config.min_page_budget": MIN_PAGE_BUDGET,
+        "precrawl.config.max_domains": MAX_PRE_CRAWL_DOMAINS,
+        "precrawl.config.min_priority": MIN_DOMAIN_PRIORITY,
+        "precrawl.config.min_events": MIN_DOMAIN_EVENTS,
+        "precrawl.config.url_batch_size": DOMAIN_URL_BATCH_SIZE,
+        "precrawl.config.urls_per_domain": MIN_URLS_PER_DOMAIN,
       });
 
       const dateFuture = new Date();
