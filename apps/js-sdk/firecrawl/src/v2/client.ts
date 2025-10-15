@@ -72,8 +72,13 @@ export interface FirecrawlClientOptions {
 /**
  * Firecrawl v2 client. Provides typed access to all v2 endpoints and utilities.
  */
+
 export class FirecrawlClient {
   private readonly http: HttpClient;
+
+  private isCloudService(url: string): boolean {
+    return url.includes('api.firecrawl.dev');
+  }
 
   /**
    * Create a v2 client.
@@ -82,9 +87,11 @@ export class FirecrawlClient {
   constructor(options: FirecrawlClientOptions = {}) {
     const apiKey = options.apiKey ?? process.env.FIRECRAWL_API_KEY ?? "";
     const apiUrl = (options.apiUrl ?? process.env.FIRECRAWL_API_URL ?? "https://api.firecrawl.dev").replace(/\/$/, "");
-    if (!apiKey) {
-      throw new Error("API key is required. Set FIRECRAWL_API_KEY env or pass apiKey.");
+
+    if (this.isCloudService(apiUrl) && !apiKey) {
+      throw new Error("API key is required for the cloud API. Set FIRECRAWL_API_KEY env or pass apiKey.");
     }
+
     this.http = new HttpClient({
       apiKey,
       apiUrl,
