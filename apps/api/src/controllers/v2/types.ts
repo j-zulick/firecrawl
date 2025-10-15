@@ -1453,11 +1453,17 @@ export const searchRequestSchema = z
         // Array of strings (simple format)
         z.array(z.enum(["github", "research", "pdf"])),
         // Array of objects (advanced format)
-        z.array(z.union([githubCategoryOptions, researchCategoryOptions, pdfCategoryOptions])),
+        z.array(
+          z.union([
+            githubCategoryOptions,
+            researchCategoryOptions,
+            pdfCategoryOptions,
+          ]),
+        ),
       ])
       .optional(),
     lang: z.string().optional().default("en"),
-    country: z.string().optional().default("us"),
+    country: z.string().optional(),
     location: z.string().optional(),
     origin: z.string().optional().default("api"),
     integration: integrationSchema.optional().transform(val => val || null),
@@ -1504,6 +1510,9 @@ export const searchRequestSchema = z
   )
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
+    const country =
+      x.country !== undefined ? x.country : x.location ? undefined : "us";
+
     // Transform string array sources to object format
     let sources = x.sources;
     if (sources && Array.isArray(sources) && sources.length > 0) {
@@ -1518,7 +1527,7 @@ export const searchRequestSchema = z
                 tbs: x.tbs,
                 filter: x.filter,
                 lang: x.lang,
-                country: x.country,
+                country,
                 location: x.location,
               };
             case "images":
@@ -1531,7 +1540,7 @@ export const searchRequestSchema = z
                 type: "news" as const,
                 tbs: x.tbs,
                 lang: x.lang,
-                country: x.country,
+                country,
                 location: x.location,
               };
             default:
@@ -1572,6 +1581,7 @@ export const searchRequestSchema = z
 
     return {
       ...x,
+      country,
       sources,
       categories,
       scrapeOptions: extractTransform(x.scrapeOptions),
