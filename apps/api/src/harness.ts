@@ -93,7 +93,11 @@ const logger = {
     console.log(`${colors.yellow}!${colors.reset} ${message}`);
   },
   error(message: string, error?: any) {
-    console.error(`${colors.red}✗${colors.reset} ${message}`, error);
+    if (error) {
+      console.error(`${colors.red}✗${colors.reset} ${message}`, error);
+    } else {
+      console.error(`${colors.red}✗${colors.reset} ${message}`);
+    }
   },
   processStart(name: string, command: string) {
     const color = getProcessColor(name);

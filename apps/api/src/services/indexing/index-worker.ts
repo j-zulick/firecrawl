@@ -220,7 +220,9 @@ const processPrecrawlJob = async (token: string, job: Job) => {
 
       const domainQueries = domains.map(d => {
         const normalizedPriority =
-          (d.priority - minPriority) / (maxPriority - minPriority);
+          maxPriority === minPriority
+            ? 0
+            : (d.priority - minPriority) / (maxPriority - minPriority);
 
         const urlsToFetch = Math.round(
           MIN_URLS_PER_DOMAIN +
@@ -542,7 +544,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
 let isShuttingDown = false;
 
 process.on("SIGINT", () => {
-  logger.info("Received SIGTERM. Shutting down gracefully...");
+  logger.info("Received SIGINT. Shutting down gracefully...");
   isShuttingDown = true;
 });
 

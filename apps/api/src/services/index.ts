@@ -943,13 +943,14 @@ export async function queryDomainsForPrecrawl(
       return results.slice(0, maxDomains);
     }
 
-    results = results.concat(data || []);
+    const batchData = data ?? [];
+    results = results.concat(batchData);
 
     if (results.length >= maxDomains) {
       return results.slice(0, maxDomains);
     }
 
-    if (data.length < 1000) {
+    if (batchData.length < 1000) {
       return results.slice(0, maxDomains);
     }
 
