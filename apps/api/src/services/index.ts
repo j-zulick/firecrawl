@@ -812,7 +812,9 @@ export async function queryIndexAtSplitLevelWithMeta(
       .rpc("query_index_at_split_level_with_meta", {
         i_level: level,
         i_url_hash: urlSplitsHash[level],
-        i_newer_than: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        i_newer_than: new Date(
+          Date.now() - 2 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
       })
       .range(iteration * 1000, (iteration + 1) * 1000);
 
@@ -870,7 +872,9 @@ export async function queryIndexAtDomainSplitLevelWithMeta(
       .rpc("query_index_at_domain_split_level_with_meta", {
         i_level: level,
         i_domain_hash: domainSplitsHash[level],
-        i_newer_than: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        i_newer_than: new Date(
+          Date.now() - 2 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
       })
       .range(iteration * 1000, (iteration + 1) * 1000);
 
@@ -898,6 +902,60 @@ export async function queryIndexAtDomainSplitLevelWithMeta(
     // If we get less than 1000 links from the query, we're done
     if (data.length < 1000) {
       return links.slice(0, limit);
+    }
+
+    iteration++;
+  }
+}
+
+type DomainPriority = {
+  domain_hash: string;
+  priority: number;
+};
+
+export async function queryDomainsForPrecrawl(
+  date: Date,
+  minEvents = 20,
+  minPriority = 0.5,
+  maxDomains = 50,
+  logger: Logger = _logger,
+): Promise<DomainPriority[]> {
+  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+    return [];
+  }
+
+  let results: DomainPriority[] = [];
+  let iteration = 0;
+
+  while (true) {
+    const { data, error } = await index_supabase_service
+      .rpc("query_domain_priority", {
+        p_min_total: minEvents,
+        p_min_priority: minPriority,
+        p_lim: maxDomains,
+        p_time: date.toISOString(),
+      })
+      .range(
+        iteration * 1000,
+        Math.min((iteration + 1) * 1000, maxDomains) - 1,
+      );
+
+    if (error) {
+      logger.error("Error getting domain priorities", {
+        error,
+      });
+      return results.slice(0, maxDomains);
+    }
+
+    const batchData = data ?? [];
+    results = results.concat(batchData);
+
+    if (results.length >= maxDomains) {
+      return results.slice(0, maxDomains);
+    }
+
+    if (batchData.length < 1000) {
+      return results.slice(0, maxDomains);
     }
 
     iteration++;

@@ -141,6 +141,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
           location_country: meta.options.location?.country ?? null,
           location_languages: meta.options.location?.languages ?? null,
           status: document.metadata.statusCode,
+          is_precrawl: meta.internalOptions.isPreCrawl === true,
           ...urlSplitsHash.slice(0, 10).reduce(
             (a, x, i) => ({
               ...a,
