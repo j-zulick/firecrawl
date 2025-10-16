@@ -4,6 +4,7 @@ Async v2 client mirroring the regular client surface using true async HTTP trans
 
 import os
 import asyncio
+import time
 from typing import Optional, List, Dict, Any, Union, Callable, Literal
 from .types import (
     ScrapeOptions,
@@ -85,17 +86,36 @@ class AsyncFirecrawlClient:
         *,
         request_timeout: Optional[float] = None,
     ) -> CrawlJob:
-        # simple polling loop using blocking get (ok for test-level async)
-        start = asyncio.get_event_loop().time()
+        """
+        Polls the status of a crawl job until it reaches a terminal state.
+
+        Args:
+            job_id (str): The ID of the crawl job to poll.
+            poll_interval (int, optional): Number of seconds to wait between polling attempts. Defaults to 2.
+            timeout (Optional[int], optional): Maximum number of seconds to wait before timing out. If None, waits indefinitely. Defaults to None.
+            request_timeout (Optional[float], optional): Timeout in seconds for each individual status request. If None, no per-request timeout is set. Defaults to None.
+
+        Returns:
+            CrawlJob: The final status of the crawl job when it reaches a terminal state.
+
+        Raises:
+            TimeoutError: If the crawl does not reach a terminal state within the specified timeout.
+
+        Terminal states:
+            - "completed": The crawl finished successfully.
+            - "failed": The crawl finished with an error.
+            - "cancelled": The crawl was cancelled.
+        """
+        start = time.monotonic()
         while True:
             status = await async_crawl.get_crawl_status(
                 self.async_http_client,
                 job_id,
                 request_timeout=request_timeout,
             )
-            if status.status in ["completed", "failed"]:
+            if status.status in ["completed", "failed", "cancelled"]:
                 return status
-            if timeout and (asyncio.get_event_loop().time() - start) > timeout:
+            if timeout and (time.monotonic() - start) > timeout:
                 raise TimeoutError("Crawl wait timed out")
             await asyncio.sleep(poll_interval)
 
