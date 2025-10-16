@@ -99,3 +99,27 @@ $$);
 SELECT cron.schedule('nuq_queue_scrape_reindex', '0 9 * * *', $$
   REINDEX TABLE CONCURRENTLY nuq.queue_scrape;
 $$);
+
+SELECT cron.schedule('nuq_queue_scrape_concurrency_sync', '*/5 * * * *', $$
+  WITH actual_concurrency AS (
+    SELECT owner_id, COUNT(*) as active_count
+    FROM nuq.queue_scrape
+    WHERE status = 'active'::nuq.job_status
+      AND owner_id IS NOT NULL
+    GROUP BY owner_id
+  )
+  UPDATE nuq.queue_scrape_owner_concurrency
+  SET current_concurrency = COALESCE(actual_concurrency.active_count, 0)
+  FROM actual_concurrency
+  WHERE nuq.queue_scrape_owner_concurrency.id = actual_concurrency.owner_id
+    AND nuq.queue_scrape_owner_concurrency.current_concurrency != COALESCE(actual_concurrency.active_count, 0);
+
+  UPDATE nuq.queue_scrape_owner_concurrency
+  SET current_concurrency = 0
+  WHERE current_concurrency > 0
+    AND NOT EXISTS (
+      SELECT 1 FROM nuq.queue_scrape
+      WHERE nuq.queue_scrape.owner_id = nuq.queue_scrape_owner_concurrency.id
+        AND nuq.queue_scrape.status = 'active'::nuq.job_status
+    );
+$$);
