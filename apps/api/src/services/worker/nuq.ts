@@ -37,16 +37,19 @@ const listenChannelId = process.env.NUQ_POD_NAME ?? "main";
 
 type NuQOptions = {
   concurrencyLimit?: false | "per-owner";
-}
+};
 
 type NuQJobOptions = {
   listenable?: boolean;
   priority?: number;
   ownerId?: string;
-}
+};
 
 class NuQ<JobData = any, JobReturnValue = any> {
-  constructor(public readonly queueName: string, public readonly options: NuQOptions = {}) {}
+  constructor(
+    public readonly queueName: string,
+    public readonly options: NuQOptions = {},
+  ) {}
 
   // === Listener
 
@@ -96,7 +99,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
       let reconnectTimeout: NodeJS.Timeout | null = null;
 
-      const onClose = (function onClose() {
+      const onClose = function onClose() {
         logger.info("NuQ listener channel closed", {
           module: "nuq/rabbitmq",
         });
@@ -115,7 +118,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           250,
         );
         return;
-      }).bind(this);
+      }.bind(this);
 
       connection.on("close", onClose);
       channel.on("close", onClose);
@@ -125,7 +128,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
         (msg => {
           if (msg === null) {
             onClose();
-            return;            
+            return;
           }
 
           logger.info("NuQ job received", {
@@ -325,7 +328,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
     "returnvalue",
     "failedreason",
     "lock",
-    "owner_id"
+    "owner_id",
   ];
 
   private rowToJob(row: any): NuQJob<JobData, JobReturnValue> | null {
@@ -533,7 +536,13 @@ class NuQ<JobData = any, JobReturnValue = any> {
           (
             await nuqPool.query(
               `INSERT INTO ${this.queueName} (id, data, priority, listen_channel_id, owner_id) VALUES ($1, $2, $3, $4, $5) RETURNING ${this.jobReturning.join(", ")};`,
-              [id, data, options.priority ?? 0, options.listenable ? listenChannelId : null, options.ownerId ?? null],
+              [
+                id,
+                data,
+                options.priority ?? 0,
+                options.listenable ? listenChannelId : null,
+                options.ownerId ?? null,
+              ],
             )
           ).rows[0],
         )!;
@@ -690,7 +699,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
         FROM next
         WHERE q.id = next.id
         RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
-      `
+      `;
 
       let updateQuery: string;
       if (this.options.concurrencyLimit === "per-owner") {
@@ -708,10 +717,21 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_id IS NOT NULL
             GROUP BY owner_id
           ),
+          owner_counts_with_max AS (
+            SELECT
+              oc.owner_id,
+              oc.job_count,
+              CASE
+                WHEN EXISTS (SELECT 1 FROM ${this.queueName}_owner_concurrency WHERE id = oc.owner_id)
+                THEN 0
+                ELSE ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(oc.owner_id)
+              END as max_concurrency
+            FROM owner_counts oc
+          ),
           owner_increment AS (
             INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
-            SELECT owner_id, job_count, ${/* TODO max concurrency */ 100}
-            FROM owner_counts
+            SELECT owner_id, job_count, max_concurrency
+            FROM owner_counts_with_max
             ON CONFLICT (id)
             DO UPDATE SET current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + EXCLUDED.current_concurrency
           )
@@ -805,11 +825,21 @@ class NuQ<JobData = any, JobReturnValue = any> {
           updated AS (
             ${queryUpdateStatus}
           ),
+          updated_with_max AS (
+            SELECT
+              u.*,
+              CASE
+                WHEN EXISTS (SELECT 1 FROM ${this.queueName}_owner_concurrency WHERE id = u.owner_id)
+                THEN 0
+                ELSE ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(u.owner_id)
+              END as max_concurrency
+            FROM updated u
+            WHERE u.owner_id IS NOT NULL
+          ),
           owner_increment AS (
             INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
-            SELECT owner_id, 1, ${/* TODO max concurrency */ 100}
-            FROM updated
-            WHERE owner_id IS NOT NULL
+            SELECT owner_id, 1, max_concurrency
+            FROM updated_with_max
             ON CONFLICT (id)
             DO UPDATE SET current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + 1
           )
@@ -895,7 +925,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
           updateQuery = `UPDATE ${this.queueName} SET status = 'completed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), returnvalue = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`;
         }
 
-        const result = await nuqPool.query(updateQuery, [id, lock, returnvalue]);
+        const result = await nuqPool.query(updateQuery, [
+          id,
+          lock,
+          returnvalue,
+        ]);
 
         const success = result.rowCount !== 0;
 
@@ -903,10 +937,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
           const job = result.rows[0];
 
           if (job) {
-            if (this.nuqWaitMode === "listen" && !process.env.NUQ_RABBITMQ_URL) {
-              await nuqPool.query(`SELECT pg_notify('${this.queueName}', $1);`, [
-                job.id + "|completed",
-              ]);
+            if (
+              this.nuqWaitMode === "listen" &&
+              !process.env.NUQ_RABBITMQ_URL
+            ) {
+              await nuqPool.query(
+                `SELECT pg_notify('${this.queueName}', $1);`,
+                [job.id + "|completed"],
+              );
             } else if (process.env.NUQ_RABBITMQ_URL && job.listen_channel_id) {
               await this.sendJobEnd(
                 job.id,
@@ -975,7 +1013,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
           updateQuery = `UPDATE ${this.queueName} SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`;
         }
 
-        const result = await nuqPool.query(updateQuery, [id, lock, failedReason]);
+        const result = await nuqPool.query(updateQuery, [
+          id,
+          lock,
+          failedReason,
+        ]);
 
         const success = result.rowCount !== 0;
 
@@ -983,10 +1025,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
           const job = result.rows[0];
 
           if (job) {
-            if (this.nuqWaitMode === "listen" && !process.env.NUQ_RABBITMQ_URL) {
-              await nuqPool.query(`SELECT pg_notify('${this.queueName}', $1);`, [
-                job.id + "|failed",
-              ]);
+            if (
+              this.nuqWaitMode === "listen" &&
+              !process.env.NUQ_RABBITMQ_URL
+            ) {
+              await nuqPool.query(
+                `SELECT pg_notify('${this.queueName}', $1);`,
+                [job.id + "|failed"],
+              );
             } else if (process.env.NUQ_RABBITMQ_URL && job.listen_channel_id) {
               await this.sendJobEnd(
                 job.id,

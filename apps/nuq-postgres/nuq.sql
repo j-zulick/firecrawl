@@ -44,6 +44,21 @@ CREATE TABLE IF NOT EXISTS nuq.queue_scrape_owner_concurrency (
     CONSTRAINT queue_scrape_owner_concurrency_pkey PRIMARY KEY (id)
 );
 
+-- fake concurrency limit source for tests
+CREATE TABLE IF NOT EXISTS nuq.queue_scrape_owner_concurrency_source (
+    id uuid NOT NULL,
+    max_concurrency int8 NOT NULL,
+    CONSTRAINT queue_scrape_owner_concurrency_source_pkey PRIMARY KEY (id)
+);
+
+CREATE OR REPLACE FUNCTION nuq_queue_scrape_owner_resolve_max_concurrency(owner_id uuid)
+RETURNS int8
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT COALESCE((SELECT max_concurrency FROM nuq.queue_scrape_owner_concurrency_source WHERE id = owner_id LIMIT 1), 100)::int8;
+$$;
+
 SELECT cron.schedule('nuq_queue_scrape_clean_completed', '*/5 * * * *', $$
   DELETE FROM nuq.queue_scrape WHERE nuq.queue_scrape.status = 'completed'::nuq.job_status AND nuq.queue_scrape.created_at < now() - interval '1 hour';
 $$);
@@ -122,4 +137,7 @@ SELECT cron.schedule('nuq_queue_scrape_concurrency_sync', '*/5 * * * *', $$
       WHERE nuq.queue_scrape.owner_id = nuq.queue_scrape_owner_concurrency.id
         AND nuq.queue_scrape.status = 'active'::nuq.job_status
     );
+
+  UPDATE nuq.queue_scrape_owner_concurrency
+    SET max_concurrency = (SELECT nuq_queue_scrape_owner_resolve_max_concurrency(nuq.queue_scrape_owner_concurrency.id));
 $$);
