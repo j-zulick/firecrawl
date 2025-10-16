@@ -702,50 +702,50 @@ class NuQ<JobData = any, JobReturnValue = any> {
       `;
 
       let updateQuery: string;
-      if (this.options.concurrencyLimit === "per-owner") {
-        // Single query: select, update jobs, and update owner concurrency
-        updateQuery = `
-          WITH next AS (
-            ${queryGetNext}
-          ),
-          updated AS (
-            ${queryUpdateStatus}
-          ),
-          owner_counts AS (
-            SELECT owner_id, COUNT(*)::int8 as job_count
-            FROM next
-            WHERE owner_id IS NOT NULL
-            GROUP BY owner_id
-          ),
-          owner_counts_with_max AS (
-            SELECT
-              oc.owner_id,
-              oc.job_count,
-              CASE
-                WHEN EXISTS (SELECT 1 FROM ${this.queueName}_owner_concurrency WHERE id = oc.owner_id)
-                THEN 0
-                ELSE ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(oc.owner_id)
-              END as max_concurrency
-            FROM owner_counts oc
-          ),
-          owner_increment AS (
-            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
-            SELECT owner_id, job_count, max_concurrency
-            FROM owner_counts_with_max
-            ON CONFLICT (id)
-            DO UPDATE SET current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + EXCLUDED.current_concurrency
-          )
-          SELECT * FROM updated;
-        `;
-      } else {
-        // Single query: select and update jobs
-        updateQuery = `
+      // if (this.options.concurrencyLimit === "per-owner") {
+      //   // Single query: select, update jobs, and update owner concurrency
+      //   updateQuery = `
+      //     WITH next AS (
+      //       ${queryGetNext}
+      //     ),
+      //     updated AS (
+      //       ${queryUpdateStatus}
+      //     ),
+      //     owner_counts AS (
+      //       SELECT owner_id, COUNT(*)::int8 as job_count
+      //       FROM next
+      //       WHERE owner_id IS NOT NULL
+      //       GROUP BY owner_id
+      //     ),
+      //     owner_counts_with_max AS (
+      //       SELECT
+      //         oc.owner_id,
+      //         oc.job_count,
+      //         CASE
+      //           WHEN EXISTS (SELECT 1 FROM ${this.queueName}_owner_concurrency WHERE id = oc.owner_id)
+      //           THEN 0
+      //           ELSE ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(oc.owner_id)
+      //         END as max_concurrency
+      //       FROM owner_counts oc
+      //     ),
+      //     owner_increment AS (
+      //       INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
+      //       SELECT owner_id, job_count, max_concurrency
+      //       FROM owner_counts_with_max
+      //       ON CONFLICT (id)
+      //       DO UPDATE SET current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + EXCLUDED.current_concurrency
+      //     )
+      //     SELECT * FROM updated;
+      //   `;
+      // } else {
+      // Single query: select and update jobs
+      updateQuery = `
           WITH next AS (
             ${queryGetNext}
           )
           ${queryUpdateStatus}
         `;
-      }
+      // }
 
       const result = await nuqPool.query(updateQuery);
 
