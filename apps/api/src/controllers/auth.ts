@@ -112,7 +112,7 @@ const mockPreviewACUC: (
 const mockACUC: () => AuthCreditUsageChunk = () => ({
   api_key: "bypass",
   api_key_id: 0,
-  team_id: "bypass",
+  team_id: "00000000-0000-0000-0000-000000000000",
   sub_id: "bypass",
   sub_current_period_start: new Date().toISOString(),
   sub_current_period_end: new Date(
@@ -396,7 +396,7 @@ export async function authenticateUser(
   return withAuth(supaAuthenticateUser, {
     success: true,
     chunk: null,
-    team_id: "bypass",
+    team_id: "00000000-0000-0000-0000-000000000000",
   })(req, res, mode);
 }
 
