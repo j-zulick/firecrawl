@@ -49,6 +49,20 @@ export async function saveCrawl(id: string, crawl: StoredCrawl) {
   });
 }
 
+export async function recordRobotsBlocked(
+  crawlId: string,
+  url: string,
+) {
+  await redisEvictConnection.sadd(
+    "crawl:" + crawlId + ":robots_blocked",
+    url,
+  );
+  await redisEvictConnection.expire(
+    "crawl:" + crawlId + ":robots_blocked",
+    24 * 60 * 60,
+  );
+}
+
 export async function markCrawlActive(id: string) {
   await redisEvictConnection.sadd("active_crawls", id);
 }

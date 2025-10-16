@@ -16,6 +16,7 @@ import {
   addCrawlJobs,
   addCrawlJobDone,
   crawlToCrawler,
+  recordRobotsBlocked,
   finishCrawlKickoff,
   generateURLPermutations,
   getCrawl,
@@ -337,13 +338,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           // Store robots blocked URLs in Redis set
           for (const [url, reason] of links.denialReasons) {
             if (reason === "URL blocked by robots.txt") {
-              await redisEvictConnection.sadd(
-                "crawl:" + job.data.crawl_id + ":robots_blocked",
-                url,
-              );
-              await redisEvictConnection.expire(
-                "crawl:" + job.data.crawl_id + ":robots_blocked",
-                24 * 60 * 60,
+              await recordRobotsBlocked(
+                job.data.crawl_id,
+                url
               );
             }
           }
@@ -547,6 +544,23 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     logger.info(`🐂 Job done ${job.id}`);
     return data;
   } catch (error) {
+    // Record top-level robots.txt rejections so crawl status can warn
+    try {
+      if (
+        job.data.crawl_id &&
+        job.data.crawlerOptions !== null &&
+        error instanceof Error &&
+        error.message === "URL blocked by robots.txt"
+      ) {
+        await recordRobotsBlocked(
+          job.data.crawl_id,
+          job.data.url,
+        );
+      }
+    } catch (e) {
+      logger.debug("Failed to record top-level robots block", { e });
+    }
+    
     if (job.data.crawl_id) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
 

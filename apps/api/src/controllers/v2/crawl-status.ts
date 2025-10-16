@@ -475,7 +475,10 @@ export async function crawlStatusController(
     const robotsBlocked = await redisEvictConnection.smembers(
       "crawl:" + req.params.jobId + ":robots_blocked",
     );
-    if (robotsBlocked && robotsBlocked.length > 0) {
+    const rbCount = robotsBlocked?.length ?? 0;
+    // Emit as separate simple logs so no meta is lost in sinks
+    const statusNow = outputBulkA.status ?? "scraping";
+    if (rbCount > 0 && statusNow !== "scraping") {
       warning =
         "One or more pages were unable to be crawled because the robots.txt file prevented this. Please use the /scrape endpoint instead.";
     }
@@ -486,7 +489,8 @@ export async function crawlStatusController(
 
   // Check if we should warn about base domain for crawl results
   const resultCount = outputBulkA.completed ?? outputBulkA.total ?? outputBulkB.data.length;
-  if (!warning && resultCount <= 1) {
+  const currentStatus = outputBulkA.status ?? "scraping";
+  if (!warning && currentStatus !== "scraping" && resultCount <= 1) {
     // Get the original crawl URL and options from stored crawl data
     const crawl = await getCrawl(req.params.jobId);
     if (crawl && crawl.originUrl && !isBaseDomain(crawl.originUrl)) {
