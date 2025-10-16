@@ -28,14 +28,25 @@ export type NuQJob<Data = any, ReturnValue = any> = {
   returnvalue?: ReturnValue;
   failedReason?: string;
   lock?: string;
+  ownerId?: string;
 };
 
 const listenChannelId = process.env.NUQ_POD_NAME ?? "main";
 
 // === Queue
 
+type NuQOptions = {
+  concurrencyLimit?: false | "per-owner";
+}
+
+type NuQJobOptions = {
+  listenable?: boolean;
+  priority?: number;
+  ownerId?: string;
+}
+
 class NuQ<JobData = any, JobReturnValue = any> {
-  constructor(public readonly queueName: string) {}
+  constructor(public readonly queueName: string, public readonly options: NuQOptions = {}) {}
 
   // === Listener
 
@@ -314,6 +325,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
     "returnvalue",
     "failedreason",
     "lock",
+    "owner_id"
   ];
 
   private rowToJob(row: any): NuQJob<JobData, JobReturnValue> | null {
@@ -329,6 +341,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
       returnvalue: row.returnvalue ?? undefined,
       failedReason: row.failedreason ?? undefined,
       lock: row.lock ?? undefined,
+      ownerId: row.owner_id ?? undefined,
     };
   }
 
@@ -503,16 +516,15 @@ class NuQ<JobData = any, JobReturnValue = any> {
   public async addJob(
     id: string,
     data: JobData,
-    priority: number = 0,
-    listenable: boolean = false,
+    options: NuQJobOptions = {},
   ): Promise<NuQJob<JobData, JobReturnValue>> {
     return withSpan("nuq.addJob", async span => {
       setSpanAttributes(span, {
         "nuq.queue_name": this.queueName,
         "nuq.job_id": id,
-        "nuq.priority": priority,
+        "nuq.priority": options.priority ?? 0,
         "nuq.zero_data_retention": (data as any)?.zeroDataRetention ?? false,
-        "nuq.listenable": listenable,
+        "nuq.listenable": options.listenable ?? false,
       });
 
       const start = Date.now();
@@ -520,8 +532,8 @@ class NuQ<JobData = any, JobReturnValue = any> {
         const result = this.rowToJob(
           (
             await nuqPool.query(
-              `INSERT INTO ${this.queueName} (id, data, priority, listen_channel_id) VALUES ($1, $2, $3, $4) RETURNING ${this.jobReturning.join(", ")};`,
-              [id, data, priority, listenable ? listenChannelId : null],
+              `INSERT INTO ${this.queueName} (id, data, priority, listen_channel_id, owner_id) VALUES ($1, $2, $3, $4, $5) RETURNING ${this.jobReturning.join(", ")};`,
+              [id, data, options.priority ?? 0, options.listenable ? listenChannelId : null, options.ownerId ?? null],
             )
           ).rows[0],
         )!;

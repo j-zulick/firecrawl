@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS nuq.queue_scrape (
   listen_channel_id text, -- for listenable jobs over rabbitmq
   returnvalue jsonb, -- only for selfhost
   failedreason text, -- only for selfhost
+  owner_id uuid,
   CONSTRAINT queue_scrape_pkey PRIMARY KEY (id)
 );
 

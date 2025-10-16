@@ -346,8 +346,11 @@ export async function concurrentJobDone(job: NuQJob<any>) {
             ...nextJob.job.data,
             concurrencyLimitHit: true,
           },
-          nextJob.job.priority,
-          nextJob.job.listenable,
+          {
+            priority: nextJob.job.priority,
+            listenable: nextJob.job.listenable,
+            ownerId: nextJob.job.data.team_id,
+          },
         );
       }
     }

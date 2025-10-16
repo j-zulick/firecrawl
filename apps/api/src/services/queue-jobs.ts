@@ -86,7 +86,11 @@ export async function _addScrapeJobToBullMQ(
     }
   }
 
-  return await scrapeQueue.addJob(jobId, webScraperOptions, priority, listenable);
+  return await scrapeQueue.addJob(jobId, webScraperOptions, {
+    priority,
+    listenable,
+    ownerId: webScraperOptions.team_id,
+  });
 }
 
 async function addScrapeJobRaw(
