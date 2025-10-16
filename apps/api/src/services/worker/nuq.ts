@@ -677,14 +677,59 @@ class NuQ<JobData = any, JobReturnValue = any> {
   public async prefetchJobs(_logger: Logger = logger): Promise<number> {
     const start = Date.now();
     try {
-      const jobs = (
-        await nuqPool.query(
-          `
-            WITH next AS (SELECT id FROM ${this.queueName} WHERE ${this.queueName}.status = 'queued'::nuq.job_status ORDER BY ${this.queueName}.priority ASC, ${this.queueName}.created_at ASC FOR UPDATE SKIP LOCKED LIMIT 500)
-            UPDATE ${this.queueName} q SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now() FROM next WHERE q.id = next.id RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")};
-          `,
-        )
-      ).rows.map(row => this.rowToJob(row)!);
+      const queryGetNext = `
+        SELECT ${this.jobReturning.map(x => `${this.queueName}.${x}`).join(", ")} FROM ${this.queueName}
+        WHERE ${this.queueName}.status = 'queued'::nuq.job_status
+        ORDER BY ${this.queueName}.priority ASC, ${this.queueName}.created_at ASC
+        FOR UPDATE SKIP LOCKED LIMIT 500
+      `;
+
+      const queryUpdateStatus = `
+        UPDATE ${this.queueName} q
+        SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
+        FROM next
+        WHERE q.id = next.id
+        RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
+      `
+
+      let updateQuery: string;
+      if (this.options.concurrencyLimit === "per-owner") {
+        // Single query: select, update jobs, and update owner concurrency
+        updateQuery = `
+          WITH next AS (
+            ${queryGetNext}
+          ),
+          updated AS (
+            ${queryUpdateStatus}
+          ),
+          owner_counts AS (
+            SELECT owner_id, COUNT(*)::int8 as job_count
+            FROM next
+            WHERE owner_id IS NOT NULL
+            GROUP BY owner_id
+          ),
+          owner_increment AS (
+            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
+            SELECT owner_id, job_count, ${/* TODO max concurrency */ 100}
+            FROM owner_counts
+            ON CONFLICT (id)
+            DO UPDATE SET current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + EXCLUDED.current_concurrency
+          )
+          SELECT * FROM updated;
+        `;
+      } else {
+        // Single query: select and update jobs
+        updateQuery = `
+          WITH next AS (
+            ${queryGetNext}
+          )
+          ${queryUpdateStatus}
+        `;
+      }
+
+      const result = await nuqPool.query(updateQuery);
+
+      const jobs = result.rows.map(row => this.rowToJob(row)!);
 
       for (const job of jobs) {
         await this.sendJobPrefetch(
@@ -736,16 +781,50 @@ class NuQ<JobData = any, JobReturnValue = any> {
         }
       }
 
-      return this.rowToJob(
-        (
-          await nuqPool.query(
-            `
-              WITH next AS (SELECT ${this.jobReturning.join(", ")} FROM ${this.queueName} WHERE ${this.queueName}.status = 'queued'::nuq.job_status ORDER BY ${this.queueName}.priority ASC, ${this.queueName}.created_at ASC FOR UPDATE SKIP LOCKED LIMIT 1)
-              UPDATE ${this.queueName} q SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now() FROM next WHERE q.id = next.id RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")};
-            `,
+      const queryGetNext = `
+        SELECT ${this.jobReturning.join(", ")} FROM ${this.queueName}
+        WHERE ${this.queueName}.status = 'queued'::nuq.job_status
+        ORDER BY ${this.queueName}.priority ASC, ${this.queueName}.created_at ASC
+        FOR UPDATE SKIP LOCKED LIMIT 1
+      `;
+
+      const queryUpdateStatus = `
+        UPDATE ${this.queueName} q
+        SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
+        FROM next
+        WHERE q.id = next.id
+        RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
+      `;
+
+      let updateQuery: string;
+      if (this.options.concurrencyLimit === "per-owner") {
+        updateQuery = `
+          WITH next AS (
+            ${queryGetNext}
+          ),
+          updated AS (
+            ${queryUpdateStatus}
+          ),
+          owner_increment AS (
+            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
+            SELECT owner_id, 1, ${/* TODO max concurrency */ 100}
+            FROM updated
+            WHERE owner_id IS NOT NULL
+            ON CONFLICT (id)
+            DO UPDATE SET current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + 1
           )
-        ).rows[0],
-      )!;
+          SELECT * FROM updated;
+        `;
+      } else {
+        updateQuery = `
+          WITH next AS (
+            ${queryGetNext}
+          )
+          ${queryUpdateStatus}
+        `;
+      }
+
+      return this.rowToJob((await nuqPool.query(updateQuery)).rows[0])!;
     } finally {
       logger.info("nuqGetJobToProcess metrics", {
         module: "nuq/metrics",
@@ -794,26 +873,48 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
       const start = Date.now();
       try {
-        const result = await nuqPool.query(
-          `UPDATE ${this.queueName} SET status = 'completed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), returnvalue = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`,
-          [id, lock, returnvalue],
-        );
+        let updateQuery: string;
+        if (this.options.concurrencyLimit === "per-owner") {
+          // Update job and decrement owner concurrency in one query
+          updateQuery = `
+            WITH updated AS (
+              UPDATE ${this.queueName}
+              SET status = 'completed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), returnvalue = $3
+              WHERE id = $1 AND lock = $2
+              RETURNING id, listen_channel_id, owner_id
+            ),
+            owner_decrement AS (
+              UPDATE ${this.queueName}_owner_concurrency
+              SET current_concurrency = GREATEST(0, current_concurrency - 1)
+              FROM updated
+              WHERE updated.owner_id IS NOT NULL AND ${this.queueName}_owner_concurrency.id = updated.owner_id
+            )
+            SELECT * FROM updated;
+          `;
+        } else {
+          updateQuery = `UPDATE ${this.queueName} SET status = 'completed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), returnvalue = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`;
+        }
+
+        const result = await nuqPool.query(updateQuery, [id, lock, returnvalue]);
 
         const success = result.rowCount !== 0;
 
         if (success) {
           const job = result.rows[0];
-          if (this.nuqWaitMode === "listen" && !process.env.NUQ_RABBITMQ_URL) {
-            await nuqPool.query(`SELECT pg_notify('${this.queueName}', $1);`, [
-              job.id + "|completed",
-            ]);
-          } else if (process.env.NUQ_RABBITMQ_URL && job.listen_channel_id) {
-            await this.sendJobEnd(
-              job.id,
-              "completed",
-              job.listen_channel_id,
-              _logger,
-            );
+
+          if (job) {
+            if (this.nuqWaitMode === "listen" && !process.env.NUQ_RABBITMQ_URL) {
+              await nuqPool.query(`SELECT pg_notify('${this.queueName}', $1);`, [
+                job.id + "|completed",
+              ]);
+            } else if (process.env.NUQ_RABBITMQ_URL && job.listen_channel_id) {
+              await this.sendJobEnd(
+                job.id,
+                "completed",
+                job.listen_channel_id,
+                _logger,
+              );
+            }
           }
         }
 
@@ -852,26 +953,48 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
       const start = Date.now();
       try {
-        const result = await nuqPool.query(
-          `UPDATE ${this.queueName} SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`,
-          [id, lock, failedReason],
-        );
+        let updateQuery: string;
+        if (this.options.concurrencyLimit === "per-owner") {
+          // Update job and decrement owner concurrency in one query
+          updateQuery = `
+            WITH updated AS (
+              UPDATE ${this.queueName}
+              SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = $3
+              WHERE id = $1 AND lock = $2
+              RETURNING id, listen_channel_id, owner_id
+            ),
+            owner_decrement AS (
+              UPDATE ${this.queueName}_owner_concurrency
+              SET current_concurrency = GREATEST(0, current_concurrency - 1)
+              FROM updated
+              WHERE updated.owner_id IS NOT NULL AND ${this.queueName}_owner_concurrency.id = updated.owner_id
+            )
+            SELECT * FROM updated;
+          `;
+        } else {
+          updateQuery = `UPDATE ${this.queueName} SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`;
+        }
+
+        const result = await nuqPool.query(updateQuery, [id, lock, failedReason]);
 
         const success = result.rowCount !== 0;
 
         if (success) {
           const job = result.rows[0];
-          if (this.nuqWaitMode === "listen" && !process.env.NUQ_RABBITMQ_URL) {
-            await nuqPool.query(`SELECT pg_notify('${this.queueName}', $1);`, [
-              job.id + "|failed",
-            ]);
-          } else if (process.env.NUQ_RABBITMQ_URL && job.listen_channel_id) {
-            await this.sendJobEnd(
-              job.id,
-              "failed",
-              job.listen_channel_id,
-              _logger,
-            );
+
+          if (job) {
+            if (this.nuqWaitMode === "listen" && !process.env.NUQ_RABBITMQ_URL) {
+              await nuqPool.query(`SELECT pg_notify('${this.queueName}', $1);`, [
+                job.id + "|failed",
+              ]);
+            } else if (process.env.NUQ_RABBITMQ_URL && job.listen_channel_id) {
+              await this.sendJobEnd(
+                job.id,
+                "failed",
+                job.listen_channel_id,
+                _logger,
+              );
+            }
           }
         }
 
@@ -956,7 +1079,9 @@ export async function nuqHealthCheck(): Promise<boolean> {
 
 // === Instances
 
-export const scrapeQueue = new NuQ<ScrapeJobData>("nuq.queue_scrape");
+export const scrapeQueue = new NuQ<ScrapeJobData>("nuq.queue_scrape", {
+  concurrencyLimit: "per-owner",
+});
 
 // === Cleanup
 
