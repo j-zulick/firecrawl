@@ -4,6 +4,7 @@ import { Client, Pool } from "pg";
 import { type ScrapeJobData } from "../../types";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import amqp from "amqplib";
+import { v5 as uuidv5, validate as uuidValidate } from "uuid";
 
 // === Basics
 
@@ -522,6 +523,13 @@ class NuQ<JobData = any, JobReturnValue = any> {
     options: NuQJobOptions = {},
   ): Promise<NuQJob<JobData, JobReturnValue>> {
     return withSpan("nuq.addJob", async span => {
+      const bareOwnerId = options.ownerId ?? undefined;
+      const normalizedOwnerId = bareOwnerId
+        ? uuidValidate(bareOwnerId)
+          ? bareOwnerId
+          : uuidv5(bareOwnerId, "b208cbac-8bdf-4599-bf17-da78426e3f7c") // preview namespace
+        : null;
+
       setSpanAttributes(span, {
         "nuq.queue_name": this.queueName,
         "nuq.job_id": id,
@@ -541,7 +549,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
                 data,
                 options.priority ?? 0,
                 options.listenable ? listenChannelId : null,
-                options.ownerId ?? null,
+                normalizedOwnerId ?? null,
               ],
             )
           ).rows[0],
