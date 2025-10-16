@@ -686,11 +686,13 @@ class NuQ<JobData = any, JobReturnValue = any> {
   public async prefetchJobs(_logger: Logger = logger): Promise<number> {
     const start = Date.now();
     try {
+      // With per-owner concurrency limiting: smaller batch size reduces lock contention.
+      // Use blocking advisory locks to ensure jobs aren't skipped.
       const queryGetNext = `
         SELECT ${this.jobReturning.map(x => `${this.queueName}.${x}`).join(", ")} FROM ${this.queueName}
         WHERE ${this.queueName}.status = 'queued'::nuq.job_status
         ORDER BY ${this.queueName}.priority ASC, ${this.queueName}.created_at ASC
-        FOR UPDATE SKIP LOCKED LIMIT 500
+        FOR UPDATE SKIP LOCKED LIMIT 100
       `;
 
       const queryUpdateStatus = `
@@ -702,50 +704,67 @@ class NuQ<JobData = any, JobReturnValue = any> {
       `;
 
       let updateQuery: string;
-      // if (this.options.concurrencyLimit === "per-owner") {
-      //   // Single query: select, update jobs, and update owner concurrency
-      //   updateQuery = `
-      //     WITH next AS (
-      //       ${queryGetNext}
-      //     ),
-      //     updated AS (
-      //       ${queryUpdateStatus}
-      //     ),
-      //     owner_counts AS (
-      //       SELECT owner_id, COUNT(*)::int8 as job_count
-      //       FROM next
-      //       WHERE owner_id IS NOT NULL
-      //       GROUP BY owner_id
-      //     ),
-      //     owner_counts_with_max AS (
-      //       SELECT
-      //         oc.owner_id,
-      //         oc.job_count,
-      //         CASE
-      //           WHEN EXISTS (SELECT 1 FROM ${this.queueName}_owner_concurrency WHERE id = oc.owner_id)
-      //           THEN 0
-      //           ELSE ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(oc.owner_id)
-      //         END as max_concurrency
-      //       FROM owner_counts oc
-      //     ),
-      //     owner_increment AS (
-      //       INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
-      //       SELECT owner_id, job_count, max_concurrency
-      //       FROM owner_counts_with_max
-      //       ON CONFLICT (id)
-      //       DO UPDATE SET current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + EXCLUDED.current_concurrency
-      //     )
-      //     SELECT * FROM updated;
-      //   `;
-      // } else {
-      // Single query: select and update jobs
-      updateQuery = `
+      if (this.options.concurrencyLimit === "per-owner") {
+        updateQuery = `
+          WITH next_initial AS (
+            ${queryGetNext}
+          ),
+          distinct_owners AS (
+            SELECT DISTINCT owner_id
+            FROM next_initial
+            WHERE owner_id IS NOT NULL
+            ORDER BY owner_id  -- Deterministic lock order prevents deadlocks
+          ),
+          acquired_locks AS (
+            SELECT
+              owner_id,
+              pg_advisory_xact_lock(hashtext(owner_id::text)) as dummy
+            FROM distinct_owners
+          ),
+          next AS (
+            SELECT n.*
+            FROM next_initial n
+            WHERE n.owner_id IS NULL
+               OR EXISTS (SELECT 1 FROM acquired_locks WHERE owner_id = n.owner_id)
+          ),
+          updated AS (
+            ${queryUpdateStatus}
+          ),
+          owner_counts AS (
+            SELECT owner_id, COUNT(*)::int8 as job_count
+            FROM updated
+            WHERE owner_id IS NOT NULL
+            GROUP BY owner_id
+          ),
+          owner_counts_with_max AS (
+            SELECT
+              oc.owner_id,
+              oc.job_count,
+              COALESCE(
+                (SELECT max_concurrency FROM ${this.queueName}_owner_concurrency WHERE id = oc.owner_id),
+                ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(oc.owner_id)
+              ) as max_concurrency
+            FROM owner_counts oc
+          ),
+          owner_upsert AS (
+            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
+            SELECT owner_id, job_count, max_concurrency
+            FROM owner_counts_with_max
+            ON CONFLICT (id)
+            DO UPDATE SET
+              current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + EXCLUDED.current_concurrency,
+              max_concurrency = EXCLUDED.max_concurrency
+          )
+          SELECT * FROM updated;
+        `;
+      } else {
+        updateQuery = `
           WITH next AS (
             ${queryGetNext}
           )
           ${queryUpdateStatus}
         `;
-      // }
+      }
 
       const result = await nuqPool.query(updateQuery);
 
@@ -819,8 +838,26 @@ class NuQ<JobData = any, JobReturnValue = any> {
       let updateQuery: string;
       if (this.options.concurrencyLimit === "per-owner") {
         updateQuery = `
-          WITH next AS (
+          WITH next_initial AS (
             ${queryGetNext}
+          ),
+          distinct_owners AS (
+            SELECT DISTINCT owner_id
+            FROM next_initial
+            WHERE owner_id IS NOT NULL
+            ORDER BY owner_id  -- Deterministic lock order prevents deadlocks
+          ),
+          acquired_locks AS (
+            SELECT
+              owner_id,
+              pg_advisory_xact_lock(hashtext(owner_id::text)) as dummy
+            FROM distinct_owners
+          ),
+          next AS (
+            SELECT n.*
+            FROM next_initial n
+            WHERE n.owner_id IS NULL
+               OR EXISTS (SELECT 1 FROM acquired_locks WHERE owner_id = n.owner_id)
           ),
           updated AS (
             ${queryUpdateStatus}
@@ -828,11 +865,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
           updated_with_max AS (
             SELECT
               u.*,
-              CASE
-                WHEN EXISTS (SELECT 1 FROM ${this.queueName}_owner_concurrency WHERE id = u.owner_id)
-                THEN 0
-                ELSE ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(u.owner_id)
-              END as max_concurrency
+              COALESCE(
+                (SELECT max_concurrency FROM ${this.queueName}_owner_concurrency WHERE id = u.owner_id),
+                ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(u.owner_id)
+              ) as max_concurrency
             FROM updated u
             WHERE u.owner_id IS NOT NULL
           ),
@@ -841,7 +877,9 @@ class NuQ<JobData = any, JobReturnValue = any> {
             SELECT owner_id, 1, max_concurrency
             FROM updated_with_max
             ON CONFLICT (id)
-            DO UPDATE SET current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + 1
+            DO UPDATE SET
+              current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + 1,
+              max_concurrency = EXCLUDED.max_concurrency
           )
           SELECT * FROM updated;
         `;
