@@ -314,7 +314,7 @@ export async function searchController(
         title: r.title,
         description: r.description,
       })) as Document[];
-      credits_billed = Math.ceil((responseData.data.length * 2) / 10);
+      credits_billed = Math.ceil(responseData.data.length / 10) * 2;
     } else {
       logger.info("Scraping search results");
       const scrapePromises = searchResults.map(result =>
