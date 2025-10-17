@@ -100,7 +100,9 @@ async def get_crawl_status(
         client: Async HTTP client instance
         job_id: ID of the crawl job
         pagination_config: Optional configuration for pagination limits
-        request_timeout: Optional timeout (in seconds) for the underlying HTTP request
+        request_timeout: Timeout (in seconds) for each individual HTTP request. When auto-pagination 
+            is enabled (default) and there are multiple pages of results, this timeout applies to 
+            each page request separately, not to the entire operation
         
     Returns:
         CrawlJob with job information

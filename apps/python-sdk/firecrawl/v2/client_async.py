@@ -92,8 +92,8 @@ class AsyncFirecrawlClient:
         Args:
             job_id (str): The ID of the crawl job to poll.
             poll_interval (int, optional): Number of seconds to wait between polling attempts. Defaults to 2.
-            timeout (Optional[int], optional): Maximum number of seconds to wait before timing out. If None, waits indefinitely. Defaults to None.
-            request_timeout (Optional[float], optional): Timeout in seconds for each individual status request. If None, no per-request timeout is set. Defaults to None.
+            timeout (Optional[int], optional): Maximum number of seconds to wait for the entire crawl job to complete before timing out. If None, waits indefinitely. Defaults to None.
+            request_timeout (Optional[float], optional): Timeout (in seconds) for each individual HTTP request, including pagination requests when fetching results. If there are multiple pages, each page request gets this timeout. If None, no per-request timeout is set. Defaults to None.
 
         Returns:
             CrawlJob: The final status of the crawl job when it reaches a terminal state.
@@ -142,6 +142,22 @@ class AsyncFirecrawlClient:
         *,
         request_timeout: Optional[float] = None,
     ) -> CrawlJob:
+        """
+        Get the status of a crawl job.
+        
+        Args:
+            job_id: ID of the crawl job
+            pagination_config: Optional configuration for pagination behavior
+            request_timeout: Timeout (in seconds) for each individual HTTP request. When auto-pagination 
+                is enabled (default) and there are multiple pages of results, this timeout applies to 
+                each page request separately, not to the entire operation
+            
+        Returns:
+            CrawlJob with current status and data
+            
+        Raises:
+            Exception: If the status check fails
+        """
         return await async_crawl.get_crawl_status(
             self.async_http_client,
             job_id,

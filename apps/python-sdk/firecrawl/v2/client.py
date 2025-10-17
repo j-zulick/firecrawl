@@ -260,8 +260,8 @@ class FirecrawlClient:
             scrape_options: Page scraping configuration
             zero_data_retention: Whether to delete data after 24 hours
             poll_interval: Seconds between status checks
-            timeout: Maximum seconds to wait (None for no timeout)
-            request_timeout: Optional timeout (in seconds) for each status request
+            timeout: Maximum seconds to wait for the entire crawl job to complete (None for no timeout)
+            request_timeout: Timeout (in seconds) for each individual HTTP request, including pagination requests when fetching results. If there are multiple pages, each page request gets this timeout
             
         Returns:
             CrawlJob when job completes
@@ -383,7 +383,9 @@ class FirecrawlClient:
         Args:
             job_id: ID of the crawl job
             pagination_config: Optional configuration for pagination behavior
-            request_timeout: Optional timeout (in seconds) for each status request
+            request_timeout: Timeout (in seconds) for each individual HTTP request. When auto-pagination 
+                is enabled (default) and there are multiple pages of results, this timeout applies to 
+                each page request separately, not to the entire operation
             
         Returns:
             CrawlJob with current status and data
