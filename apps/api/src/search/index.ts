@@ -1,10 +1,10 @@
 import { SearchResult } from "../../src/lib/entities";
-import { googleSearch } from "./googlesearch";
 import { searchapi_search } from "./searchapi";
 import { serper_search } from "./serper";
 import { searxng_search } from "./searxng";
 import { fire_engine_search } from "./fireEngine";
 import { Logger } from "winston";
+import { ddgSearch } from "./v2/ddgsearch";
 
 export async function search({
   query,
@@ -82,18 +82,19 @@ export async function search({
       });
       if (results.length > 0) return results;
     }
-    logger.info("Using google search");
-    return await googleSearch(
-      query,
-      advanced,
-      num_results,
+    logger.info("Using DuckDuckGo search");
+    const ddg = await ddgSearch(query, num_results, {
       tbs,
-      filter,
       lang,
       country,
       proxy,
-      sleep_interval,
       timeout,
+    });
+    return (
+      ddg.web?.map(
+        result =>
+          new SearchResult(result.url, result.title, result.description),
+      ) || []
     );
   } catch (error) {
     logger.error(`Error in search function`, { error });
