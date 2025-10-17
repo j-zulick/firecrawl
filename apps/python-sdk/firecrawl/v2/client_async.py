@@ -4,6 +4,7 @@ Async v2 client mirroring the regular client surface using true async HTTP trans
 
 import os
 import asyncio
+import time
 from typing import Optional, List, Dict, Any, Union, Callable, Literal
 from .types import (
     ScrapeOptions,
@@ -77,33 +78,91 @@ class AsyncFirecrawlClient:
         request = CrawlRequest(url=url, **kwargs)
         return await async_crawl.start_crawl(self.async_http_client, request)
 
-    async def wait_crawl(self, job_id: str, poll_interval: int = 2, timeout: Optional[int] = None) -> CrawlJob:
-        # simple polling loop using blocking get (ok for test-level async)
-        start = asyncio.get_event_loop().time()
+    async def wait_crawl(
+        self,
+        job_id: str,
+        poll_interval: int = 2,
+        timeout: Optional[int] = None,
+        *,
+        request_timeout: Optional[float] = None,
+    ) -> CrawlJob:
+        """
+        Polls the status of a crawl job until it reaches a terminal state.
+
+        Args:
+            job_id (str): The ID of the crawl job to poll.
+            poll_interval (int, optional): Number of seconds to wait between polling attempts. Defaults to 2.
+            timeout (Optional[int], optional): Maximum number of seconds to wait for the entire crawl job to complete before timing out. If None, waits indefinitely. Defaults to None.
+            request_timeout (Optional[float], optional): Timeout (in seconds) for each individual HTTP request, including pagination requests when fetching results. If there are multiple pages, each page request gets this timeout. If None, no per-request timeout is set. Defaults to None.
+
+        Returns:
+            CrawlJob: The final status of the crawl job when it reaches a terminal state.
+
+        Raises:
+            TimeoutError: If the crawl does not reach a terminal state within the specified timeout.
+
+        Terminal states:
+            - "completed": The crawl finished successfully.
+            - "failed": The crawl finished with an error.
+            - "cancelled": The crawl was cancelled.
+        """
+        start = time.monotonic()
         while True:
-            status = await async_crawl.get_crawl_status(self.async_http_client, job_id)
-            if status.status in ["completed", "failed"]:
+            status = await async_crawl.get_crawl_status(
+                self.async_http_client,
+                job_id,
+                request_timeout=request_timeout,
+            )
+            if status.status in ["completed", "failed", "cancelled"]:
                 return status
-            if timeout and (asyncio.get_event_loop().time() - start) > timeout:
+            if timeout and (time.monotonic() - start) > timeout:
                 raise TimeoutError("Crawl wait timed out")
             await asyncio.sleep(poll_interval)
 
     async def crawl(self, **kwargs) -> CrawlJob:
         # wrapper combining start and wait
-        resp = await self.start_crawl(**{k: v for k, v in kwargs.items() if k not in ("poll_interval", "timeout")})
+        resp = await self.start_crawl(
+            **{k: v for k, v in kwargs.items() if k not in ("poll_interval", "timeout", "request_timeout")}
+        )
         poll_interval = kwargs.get("poll_interval", 2)
         timeout = kwargs.get("timeout")
-        return await self.wait_crawl(resp.id, poll_interval=poll_interval, timeout=timeout)
+        request_timeout = kwargs.get("request_timeout")
+        effective_request_timeout = request_timeout if request_timeout is not None else timeout
+        return await self.wait_crawl(
+            resp.id,
+            poll_interval=poll_interval,
+            timeout=timeout,
+            request_timeout=effective_request_timeout,
+        )
 
     async def get_crawl_status(
-        self, 
+        self,
         job_id: str,
-        pagination_config: Optional[PaginationConfig] = None
+        pagination_config: Optional[PaginationConfig] = None,
+        *,
+        request_timeout: Optional[float] = None,
     ) -> CrawlJob:
+        """
+        Get the status of a crawl job.
+        
+        Args:
+            job_id: ID of the crawl job
+            pagination_config: Optional configuration for pagination behavior
+            request_timeout: Timeout (in seconds) for each individual HTTP request. When auto-pagination 
+                is enabled (default) and there are multiple pages of results, this timeout applies to 
+                each page request separately, not to the entire operation
+            
+        Returns:
+            CrawlJob with current status and data
+            
+        Raises:
+            Exception: If the status check fails
+        """
         return await async_crawl.get_crawl_status(
-            self.async_http_client, 
+            self.async_http_client,
             job_id,
-            pagination_config=pagination_config
+            pagination_config=pagination_config,
+            request_timeout=request_timeout,
         )
 
     async def cancel_crawl(self, job_id: str) -> bool:
