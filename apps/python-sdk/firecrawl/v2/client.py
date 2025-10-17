@@ -54,10 +54,14 @@ from .watcher import Watcher
 class FirecrawlClient:
     """
     Main Firecrawl v2 API client.
-    
+
     This client provides a clean, modular interface to all Firecrawl functionality.
     """
-    
+
+    @staticmethod
+    def _is_cloud_service(url: str) -> bool:
+        return "api.firecrawl.dev" in url.lower()
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -68,7 +72,7 @@ class FirecrawlClient:
     ):
         """
         Initialize the Firecrawl client.
-        
+
         Args:
             api_key: Firecrawl API key (or set FIRECRAWL_API_KEY env var)
             api_url: Base URL for the Firecrawl API
@@ -78,13 +82,13 @@ class FirecrawlClient:
         """
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
-        
-        if not api_key:
+
+        if self._is_cloud_service(api_url) and not api_key:
             raise ValueError(
-                "API key is required. Set FIRECRAWL_API_KEY environment variable "
+                "API key is required for the cloud API. Set FIRECRAWL_API_KEY environment variable "
                 "or pass api_key parameter."
             )
-        
+
         self.config = ClientConfig(
             api_key=api_key,
             api_url=api_url,
@@ -92,7 +96,7 @@ class FirecrawlClient:
             max_retries=max_retries,
             backoff_factor=backoff_factor
         )
-        
+
         self.http_client = HttpClient(api_key, api_url)
     
     def scrape(

@@ -48,11 +48,15 @@ from .methods.aio import extract as async_extract  # type: ignore[attr-defined]
 from .watcher_async import AsyncWatcher
 
 class AsyncFirecrawlClient:
+    @staticmethod
+    def _is_cloud_service(url: str) -> bool:
+        return "api.firecrawl.dev" in url.lower()
+
     def __init__(self, api_key: Optional[str] = None, api_url: str = "https://api.firecrawl.dev"):
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
-        if not api_key:
-            raise ValueError("API key is required. Set FIRECRAWL_API_KEY or pass api_key.")
+        if self._is_cloud_service(api_url) and not api_key:
+            raise ValueError("API key is required for the cloud API. Set FIRECRAWL_API_KEY or pass api_key.")
         self.http_client = HttpClient(api_key, api_url)
         self.async_http_client = AsyncHttpClient(api_key, api_url)
 
