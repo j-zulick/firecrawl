@@ -1216,6 +1216,7 @@ export type TeamFlags = {
   allowTeammateInvites?: boolean;
   crawlTtlHours?: number;
   ipWhitelist?: boolean;
+  skipCountryCheck?: boolean;
 } | null;
 
 export type AuthCreditUsageChunkFromTeam = Omit<
