@@ -857,13 +857,19 @@ class NuQ<JobData = any, JobReturnValue = any> {
       if (this.options.concurrencyLimit === "per-owner") {
         updateQuery = `
           WITH queued_owners AS (
-            SELECT DISTINCT owner_id
+            SELECT DISTINCT ON (owner_id)
+              owner_id,
+              priority,
+              created_at
             FROM ${this.queueName}
             WHERE status = 'queued'::nuq.job_status
+            ORDER BY owner_id, priority ASC, created_at ASC
           ),
           available_capacity AS (
             SELECT
               qo.owner_id,
+              qo.priority,
+              qo.created_at,
               CASE
                 WHEN qo.owner_id IS NULL THEN 999999
                 WHEN oc.max_concurrency IS NOT NULL THEN GREATEST(0, oc.max_concurrency - oc.current_concurrency)
@@ -872,35 +878,37 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM queued_owners qo
             LEFT JOIN ${this.queueName}_owner_concurrency oc ON qo.owner_id = oc.id
           ),
+          limited_capacity AS (
+            SELECT owner_id, slots
+            FROM available_capacity
+            WHERE slots > 0
+            ORDER BY priority ASC, created_at ASC, owner_id ASC
+            LIMIT 75
+          ),
           distinct_owners AS (
             SELECT owner_id
-            FROM available_capacity
-            WHERE owner_id IS NOT NULL AND slots > 0
+            FROM limited_capacity
+            WHERE owner_id IS NOT NULL
             ORDER BY owner_id
           ),
           acquired_owner_locks AS (
             SELECT
-              owner_id,
-              pg_advisory_xact_lock(hashtext(owner_id::text)) as dummy
+              owner_id
             FROM distinct_owners
-          ),
-          available_capacity_locked AS (
-            SELECT *
-            FROM available_capacity ac
-            WHERE ac.slots > 0
-              AND (ac.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE acquired_owner_locks.owner_id = ac.owner_id))
+            WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
           ),
           selected_jobs AS (
             SELECT j.id
-            FROM available_capacity_locked ac
+            FROM limited_capacity lc
+            WHERE (lc.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = lc.owner_id))
             CROSS JOIN LATERAL (
               SELECT j.id
               FROM ${this.queueName} j
               WHERE j.status = 'queued'::nuq.job_status
-                AND j.owner_id IS NOT DISTINCT FROM ac.owner_id
+                AND j.owner_id IS NOT DISTINCT FROM lc.owner_id
               ORDER BY j.priority ASC, j.created_at ASC
               FOR UPDATE SKIP LOCKED
-              LIMIT ac.slots
+              LIMIT lc.slots
             ) j
           ),
           updated AS (
@@ -937,14 +945,21 @@ class NuQ<JobData = any, JobReturnValue = any> {
       } else if (this.options.concurrencyLimit === "per-owner-per-group") {
         updateQuery = `
           WITH queued_combinations AS (
-            SELECT DISTINCT owner_id, group_id
+            SELECT DISTINCT ON (owner_id, group_id)
+              owner_id,
+              group_id,
+              priority,
+              created_at
             FROM ${this.queueName}
             WHERE status = 'queued'::nuq.job_status
+            ORDER BY owner_id, group_id, priority ASC, created_at ASC
           ),
           available_capacity AS (
             SELECT
               qc.owner_id,
               qc.group_id,
+              qc.priority,
+              qc.created_at,
               CASE
                 WHEN qc.owner_id IS NULL AND qc.group_id IS NULL THEN 999999
                 WHEN qc.owner_id IS NULL AND gc.max_concurrency IS NOT NULL THEN GREATEST(0, gc.max_concurrency - gc.current_concurrency)
@@ -960,49 +975,52 @@ class NuQ<JobData = any, JobReturnValue = any> {
             LEFT JOIN ${this.queueName}_owner_concurrency oc ON qc.owner_id = oc.id
             LEFT JOIN ${this.queueName}_group_concurrency gc ON qc.group_id = gc.id
           ),
+          limited_capacity AS (
+            SELECT owner_id, group_id, slots
+            FROM available_capacity
+            WHERE slots > 0
+            ORDER BY priority ASC, created_at ASC, group_id ASC
+            LIMIT 75
+          ),
           distinct_owners AS (
             SELECT DISTINCT owner_id
-            FROM available_capacity
-            WHERE owner_id IS NOT NULL AND slots > 0
+            FROM limited_capacity
+            WHERE owner_id IS NOT NULL
             ORDER BY owner_id
           ),
           acquired_owner_locks AS (
             SELECT
-              owner_id,
-              pg_advisory_xact_lock(hashtext(owner_id::text)) as dummy
+              owner_id
             FROM distinct_owners
+            WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
           ),
           distinct_groups AS (
-            SELECT DISTINCT group_id
-            FROM available_capacity
-            WHERE group_id IS NOT NULL AND slots > 0
-            ORDER BY group_id
+            SELECT DISTINCT lc.group_id
+            FROM limited_capacity lc
+            INNER JOIN acquired_owner_locks aol ON lc.owner_id = aol.owner_id
+            WHERE lc.group_id IS NOT NULL
+            ORDER BY lc.group_id
           ),
           acquired_group_locks AS (
             SELECT
-              group_id,
-              pg_advisory_xact_lock(hashtext(group_id::text)) as dummy
+              group_id
             FROM distinct_groups
-          ),
-          available_capacity_locked AS (
-            SELECT *
-            FROM available_capacity ac
-            WHERE ac.slots > 0
-              AND (ac.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE acquired_owner_locks.owner_id = ac.owner_id))
-              AND (ac.group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE acquired_group_locks.group_id = ac.group_id))
+            WHERE pg_try_advisory_xact_lock(hashtext(group_id::text)) = true
           ),
           selected_jobs_raw AS (
             SELECT j.id, j.owner_id, j.group_id, j.priority, j.created_at
-            FROM available_capacity_locked ac
+            FROM limited_capacity lc
+            WHERE (lc.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = lc.owner_id))
+              AND (lc.group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = lc.group_id))
             CROSS JOIN LATERAL (
               SELECT j.id, j.owner_id, j.group_id, j.priority, j.created_at
               FROM ${this.queueName} j
               WHERE j.status = 'queued'::nuq.job_status
-                AND j.owner_id IS NOT DISTINCT FROM ac.owner_id
-                AND j.group_id IS NOT DISTINCT FROM ac.group_id
+                AND j.owner_id IS NOT DISTINCT FROM lc.owner_id
+                AND j.group_id IS NOT DISTINCT FROM lc.group_id
               ORDER BY j.priority ASC, j.created_at ASC
               FOR UPDATE SKIP LOCKED
-              LIMIT LEAST(ac.slots, 20)
+              LIMIT LEAST(lc.slots, 20)
             ) j
           ),
           selected_jobs_with_owner_rank AS (
@@ -1167,19 +1185,15 @@ class NuQ<JobData = any, JobReturnValue = any> {
           ),
           acquired_owner_locks AS (
             SELECT
-              owner_id,
-              pg_advisory_xact_lock(hashtext(owner_id::text)) as dummy
+              owner_id
             FROM distinct_owners
-          ),
-          available_capacity_locked AS (
-            SELECT *
-            FROM available_capacity ac
-            WHERE ac.slots > 0
-              AND (ac.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE acquired_owner_locks.owner_id = ac.owner_id))
+            WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
           ),
           selected_jobs AS (
             SELECT j.id
-            FROM available_capacity_locked ac
+            FROM available_capacity ac
+            WHERE ac.slots > 0
+              AND (ac.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = ac.owner_id))
             CROSS JOIN LATERAL (
               SELECT j.id
               FROM ${this.queueName} j
@@ -1250,32 +1264,29 @@ class NuQ<JobData = any, JobReturnValue = any> {
           ),
           acquired_owner_locks AS (
             SELECT
-              owner_id,
-              pg_advisory_xact_lock(hashtext(owner_id::text)) as dummy
+              owner_id
             FROM distinct_owners
+            WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
           ),
           distinct_groups AS (
-            SELECT DISTINCT group_id
-            FROM available_capacity
-            WHERE group_id IS NOT NULL AND slots > 0
-            ORDER BY group_id
+            SELECT DISTINCT ac.group_id
+            FROM available_capacity ac
+            INNER JOIN acquired_owner_locks aol ON ac.owner_id = aol.owner_id
+            WHERE ac.group_id IS NOT NULL AND ac.slots > 0
+            ORDER BY ac.group_id
           ),
           acquired_group_locks AS (
             SELECT
-              group_id,
-              pg_advisory_xact_lock(hashtext(group_id::text)) as dummy
+              group_id
             FROM distinct_groups
+            WHERE pg_try_advisory_xact_lock(hashtext(group_id::text)) = true
           ),
-          available_capacity_locked AS (
-            SELECT *
+          selected_jobs AS (
+            SELECT j.id
             FROM available_capacity ac
             WHERE ac.slots > 0
               AND (ac.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = ac.owner_id))
               AND (ac.group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = ac.group_id))
-          ),
-          selected_jobs AS (
-            SELECT j.id
-            FROM available_capacity_locked ac
             CROSS JOIN LATERAL (
               SELECT j.id
               FROM ${this.queueName} j
