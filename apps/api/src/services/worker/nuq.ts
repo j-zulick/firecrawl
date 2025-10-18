@@ -856,69 +856,59 @@ class NuQ<JobData = any, JobReturnValue = any> {
       let updateQuery: string;
       if (this.options.concurrencyLimit === "per-owner") {
         updateQuery = `
-          WITH queued_owners AS (
-            SELECT DISTINCT ON (owner_id)
-              owner_id,
-              priority,
-              created_at
-            FROM ${this.queueName}
-            WHERE status = 'queued'::nuq.job_status
-            ORDER BY owner_id, priority ASC, created_at ASC
-          ),
-          available_capacity AS (
+          WITH aggregate_jobs AS (
             SELECT
-              qo.owner_id,
-              qo.priority,
-              qo.created_at,
+              q.owner_id,
+              array_agg(
+                json_build_object(
+                  'id', q.id,
+                  'priority', q.priority,
+                  'created_at', q.created_at,
+                  'owner_id', q.owner_id
+                )
+                ORDER BY q.priority ASC, q.created_at ASC, q.id ASC
+              ) as jobs
+            FROM ${this.queueName} q
+            WHERE q.status = 'queued'::nuq.job_status
+            GROUP BY q.owner_id
+          ),
+          aggregate_jobs_with_limit AS (
+            SELECT
+              aj.owner_id,
               CASE
-                WHEN qo.owner_id IS NULL THEN 999999
-                WHEN oc.max_concurrency IS NOT NULL THEN GREATEST(0, oc.max_concurrency - oc.current_concurrency)
-                ELSE ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(qo.owner_id)
-              END as slots
-            FROM queued_owners qo
-            LEFT JOIN ${this.queueName}_owner_concurrency oc ON qo.owner_id = oc.id
+                WHEN oc.max_concurrency IS NULL THEN aj.jobs
+                ELSE aj.jobs[:GREATEST(oc.max_concurrency - oc.current_concurrency, 0)]
+              END as jobs
+            FROM aggregate_jobs aj
+            LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = aj.owner_id
           ),
-          limited_capacity AS (
-            SELECT owner_id, slots
-            FROM available_capacity
-            WHERE slots > 0
-            ORDER BY priority ASC, created_at ASC, owner_id ASC
-            LIMIT 1000
+          selected_jobs_with_metadata AS (
+            SELECT
+              (job->>'id')::uuid as id,
+              (job->>'owner_id')::uuid as owner_id
+            FROM aggregate_jobs_with_limit
+            CROSS JOIN LATERAL unnest(aggregate_jobs_with_limit.jobs) as job
           ),
-          distinct_owners AS (
-            SELECT owner_id
-            FROM limited_capacity
+          distinct_owners_to_lock AS (
+            SELECT DISTINCT owner_id
+            FROM selected_jobs_with_metadata
             WHERE owner_id IS NOT NULL
             ORDER BY owner_id
           ),
           acquired_owner_locks AS (
-            SELECT
-              owner_id
-            FROM distinct_owners
+            SELECT owner_id
+            FROM distinct_owners_to_lock
             WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
           ),
-          limited_capacity_locked AS (
-            SELECT lc.owner_id, lc.slots
-            FROM limited_capacity lc
-            WHERE (lc.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = lc.owner_id))
-          ),
-          selected_jobs AS (
-            SELECT j.id
-            FROM limited_capacity_locked lc
-            CROSS JOIN LATERAL (
-              SELECT j.id
-              FROM ${this.queueName} j
-              WHERE j.status = 'queued'::nuq.job_status
-                AND j.owner_id IS NOT DISTINCT FROM lc.owner_id
-              ORDER BY j.priority ASC, j.created_at ASC
-              FOR UPDATE SKIP LOCKED
-              LIMIT lc.slots
-            ) j
+          lockable_jobs AS (
+            SELECT id
+            FROM selected_jobs_with_metadata
+            WHERE owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = selected_jobs_with_metadata.owner_id)
           ),
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.id IN (SELECT id FROM selected_jobs)
+            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM lockable_jobs)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
           ),
           owner_counts AS (
@@ -948,137 +938,96 @@ class NuQ<JobData = any, JobReturnValue = any> {
         `;
       } else if (this.options.concurrencyLimit === "per-owner-per-group") {
         updateQuery = `
-          WITH queued_combinations AS (
-            SELECT DISTINCT ON (owner_id, group_id)
-              owner_id,
-              group_id,
-              priority,
-              created_at
-            FROM ${this.queueName}
-            WHERE status = 'queued'::nuq.job_status
-            ORDER BY owner_id, group_id, priority ASC, created_at ASC
-          ),
-          available_capacity AS (
+          WITH aggregate_jobs AS (
             SELECT
-              qc.owner_id,
-              qc.group_id,
-              qc.priority,
-              qc.created_at,
-              CASE
-                WHEN qc.owner_id IS NULL AND qc.group_id IS NULL THEN 999999
-                WHEN qc.owner_id IS NULL AND gc.max_concurrency IS NOT NULL THEN GREATEST(0, gc.max_concurrency - gc.current_concurrency)
-                WHEN qc.owner_id IS NULL THEN 999999
-                WHEN qc.group_id IS NULL AND oc.max_concurrency IS NOT NULL THEN GREATEST(0, oc.max_concurrency - oc.current_concurrency)
-                WHEN qc.group_id IS NULL THEN ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(qc.owner_id)
-                ELSE LEAST(
-                  CASE WHEN oc.max_concurrency IS NOT NULL THEN GREATEST(0, oc.max_concurrency - oc.current_concurrency) ELSE ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(qc.owner_id) END,
-                  CASE WHEN gc.max_concurrency IS NOT NULL THEN GREATEST(0, gc.max_concurrency - gc.current_concurrency) ELSE 999999 END
+              q.owner_id,
+              q.group_id,
+              array_agg(
+                json_build_object(
+                  'id', q.id,
+                  'priority', q.priority,
+                  'created_at', q.created_at,
+                  'owner_id', q.owner_id,
+                  'group_id', q.group_id
                 )
-              END as slots
-            FROM queued_combinations qc
-            LEFT JOIN ${this.queueName}_owner_concurrency oc ON qc.owner_id = oc.id
-            LEFT JOIN ${this.queueName}_group_concurrency gc ON qc.group_id = gc.id
+                ORDER BY q.priority ASC, q.created_at ASC, q.id ASC
+              ) as jobs
+            FROM ${this.queueName} q
+            WHERE q.status = 'queued'::nuq.job_status
+            GROUP BY q.owner_id, q.group_id
           ),
-          owner_capacity AS (
+          aggregate_jobs_with_group_limit AS (
             SELECT
-              oc.id as owner_id,
-              GREATEST(0, oc.max_concurrency - oc.current_concurrency) as available_slots
-            FROM ${this.queueName}_owner_concurrency oc
-            WHERE oc.max_concurrency > oc.current_concurrency
+              aj.owner_id,
+              aj.group_id,
+              CASE
+                WHEN gc.max_concurrency IS NULL THEN aj.jobs
+                ELSE aj.jobs[:GREATEST(gc.max_concurrency - gc.current_concurrency, 0)]
+              END as jobs
+            FROM aggregate_jobs aj
+            LEFT JOIN ${this.queueName}_group_concurrency gc ON gc.id = aj.group_id
           ),
-          capacity_with_rank AS (
+          owner_aggregate_jobs AS (
             SELECT
-              ac.owner_id,
-              ac.group_id,
-              ac.slots,
-              ac.priority,
-              ac.created_at,
-              ROW_NUMBER() OVER (
-                PARTITION BY ac.owner_id
-                ORDER BY ac.priority ASC, ac.created_at ASC
-              ) as owner_rank,
-              LEAST(GREATEST(10, COALESCE(owc.available_slots, 50)), 200) as group_limit
-            FROM available_capacity ac
-            LEFT JOIN owner_capacity owc ON ac.owner_id = owc.owner_id
-            WHERE ac.slots > 0
+              ajwgl.owner_id,
+              array_agg(
+                job
+                ORDER BY (job->>'priority')::int ASC, (job->>'created_at')::timestamptz ASC, (job->>'id')::uuid ASC
+              ) as jobs
+            FROM aggregate_jobs_with_group_limit ajwgl
+            CROSS JOIN LATERAL unnest(ajwgl.jobs) as job
+            GROUP BY ajwgl.owner_id
           ),
-          limited_capacity AS (
-            SELECT owner_id, group_id, slots
-            FROM capacity_with_rank
-            WHERE owner_rank <= group_limit
-            ORDER BY owner_rank ASC, priority ASC, created_at ASC, owner_id ASC
-            LIMIT 1000
+          owner_aggregate_jobs_with_limit AS (
+            SELECT
+              oaj.owner_id,
+              CASE
+                WHEN oc.max_concurrency IS NULL THEN oaj.jobs
+                ELSE oaj.jobs[:GREATEST(oc.max_concurrency - oc.current_concurrency, 0)]
+              END as jobs
+            FROM owner_aggregate_jobs oaj
+            LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = oaj.owner_id
           ),
-          distinct_owners AS (
+          selected_jobs_with_metadata AS (
+            SELECT
+              (job->>'id')::uuid as id,
+              (job->>'owner_id')::uuid as owner_id,
+              (job->>'group_id')::uuid as group_id
+            FROM owner_aggregate_jobs_with_limit
+            CROSS JOIN LATERAL unnest(owner_aggregate_jobs_with_limit.jobs) as job
+          ),
+          distinct_owners_to_lock AS (
             SELECT DISTINCT owner_id
-            FROM limited_capacity
+            FROM selected_jobs_with_metadata
             WHERE owner_id IS NOT NULL
             ORDER BY owner_id
           ),
           acquired_owner_locks AS (
-            SELECT
-              owner_id
-            FROM distinct_owners
+            SELECT owner_id
+            FROM distinct_owners_to_lock
             WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
           ),
-          distinct_groups AS (
-            SELECT DISTINCT lc.group_id
-            FROM limited_capacity lc
-            INNER JOIN acquired_owner_locks aol ON lc.owner_id = aol.owner_id
-            WHERE lc.group_id IS NOT NULL
-            ORDER BY lc.group_id
+          distinct_groups_to_lock AS (
+            SELECT DISTINCT group_id
+            FROM selected_jobs_with_metadata
+            WHERE group_id IS NOT NULL
+            ORDER BY group_id
           ),
           acquired_group_locks AS (
-            SELECT
-              group_id
-            FROM distinct_groups
+            SELECT group_id
+            FROM distinct_groups_to_lock
             WHERE pg_try_advisory_xact_lock(hashtext(group_id::text)) = true
           ),
-          limited_capacity_locked AS (
-            SELECT lc.owner_id, lc.group_id, lc.slots
-            FROM limited_capacity lc
-            WHERE (lc.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = lc.owner_id))
-              AND (lc.group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = lc.group_id))
-          ),
-          selected_jobs_raw AS (
-            SELECT j.id, j.owner_id, j.group_id, j.priority, j.created_at
-            FROM limited_capacity_locked lc
-            CROSS JOIN LATERAL (
-              SELECT j.id, j.owner_id, j.group_id, j.priority, j.created_at
-              FROM ${this.queueName} j
-              WHERE j.status = 'queued'::nuq.job_status
-                AND j.owner_id IS NOT DISTINCT FROM lc.owner_id
-                AND j.group_id IS NOT DISTINCT FROM lc.group_id
-              ORDER BY j.priority ASC, j.created_at ASC
-              FOR UPDATE SKIP LOCKED
-              LIMIT LEAST(lc.slots, 20)
-            ) j
-          ),
-          selected_jobs_with_owner_rank AS (
-            SELECT
-              sjr.id,
-              sjr.owner_id,
-              sjr.group_id,
-              ROW_NUMBER() OVER (PARTITION BY sjr.owner_id ORDER BY sjr.priority ASC, sjr.created_at ASC) as owner_rank
-            FROM selected_jobs_raw sjr
-          ),
-          owner_capacity_limits AS (
-            SELECT
-              owner_id,
-              COALESCE(oc.max_concurrency - oc.current_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)) as owner_available_slots
-            FROM (SELECT DISTINCT owner_id FROM selected_jobs_with_owner_rank WHERE owner_id IS NOT NULL) owners
-            LEFT JOIN ${this.queueName}_owner_concurrency oc ON owners.owner_id = oc.id
-          ),
-          selected_jobs AS (
-            SELECT sjwor.id
-            FROM selected_jobs_with_owner_rank sjwor
-            LEFT JOIN owner_capacity_limits ocl ON sjwor.owner_id = ocl.owner_id
-            WHERE sjwor.owner_id IS NULL OR sjwor.owner_rank <= ocl.owner_available_slots
+          lockable_jobs AS (
+            SELECT id
+            FROM selected_jobs_with_metadata
+            WHERE (owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = selected_jobs_with_metadata.owner_id))
+              AND (group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = selected_jobs_with_metadata.group_id))
           ),
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.id IN (SELECT id FROM selected_jobs)
+            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM lockable_jobs)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
           ),
           owner_counts AS (
@@ -1192,58 +1141,60 @@ class NuQ<JobData = any, JobReturnValue = any> {
       let updateQuery: string;
       if (this.options.concurrencyLimit === "per-owner") {
         updateQuery = `
-          WITH queued_owners AS (
-            SELECT DISTINCT owner_id
-            FROM ${this.queueName}
-            WHERE status = 'queued'::nuq.job_status
-          ),
-          available_capacity AS (
+          WITH aggregate_jobs AS (
             SELECT
-              qo.owner_id,
-              CASE
-                WHEN qo.owner_id IS NULL THEN 999999
-                WHEN oc.max_concurrency IS NOT NULL THEN GREATEST(0, oc.max_concurrency - oc.current_concurrency)
-                ELSE ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(qo.owner_id)
-              END as slots
-            FROM queued_owners qo
-            LEFT JOIN ${this.queueName}_owner_concurrency oc ON qo.owner_id = oc.id
+              q.owner_id,
+              array_agg(
+                json_build_object(
+                  'id', q.id,
+                  'priority', q.priority,
+                  'created_at', q.created_at,
+                  'owner_id', q.owner_id
+                )
+                ORDER BY q.priority ASC, q.created_at ASC, q.id ASC
+              ) as jobs
+            FROM ${this.queueName} q
+            WHERE q.status = 'queued'::nuq.job_status
+            GROUP BY q.owner_id
           ),
-          distinct_owners AS (
-            SELECT owner_id
-            FROM available_capacity
-            WHERE owner_id IS NOT NULL AND slots > 0
+          aggregate_jobs_with_limit AS (
+            SELECT
+              aj.owner_id,
+              CASE
+                WHEN oc.max_concurrency IS NULL THEN aj.jobs
+                ELSE aj.jobs[:GREATEST(oc.max_concurrency - oc.current_concurrency, 0)]
+              END as jobs
+            FROM aggregate_jobs aj
+            LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = aj.owner_id
+          ),
+          selected_jobs_with_metadata AS (
+            SELECT
+              (job->>'id')::uuid as id,
+              (job->>'owner_id')::uuid as owner_id
+            FROM aggregate_jobs_with_limit
+            CROSS JOIN LATERAL unnest(aggregate_jobs_with_limit.jobs) as job
+            LIMIT 1
+          ),
+          distinct_owners_to_lock AS (
+            SELECT DISTINCT owner_id
+            FROM selected_jobs_with_metadata
+            WHERE owner_id IS NOT NULL
             ORDER BY owner_id
           ),
           acquired_owner_locks AS (
-            SELECT
-              owner_id
-            FROM distinct_owners
+            SELECT owner_id
+            FROM distinct_owners_to_lock
             WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
           ),
-          available_capacity_locked AS (
-            SELECT ac.owner_id, ac.slots
-            FROM available_capacity ac
-            WHERE ac.slots > 0
-              AND (ac.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = ac.owner_id))
-          ),
-          selected_jobs AS (
-            SELECT j.id
-            FROM available_capacity_locked ac
-            CROSS JOIN LATERAL (
-              SELECT j.id
-              FROM ${this.queueName} j
-              WHERE j.status = 'queued'::nuq.job_status
-                AND j.owner_id IS NOT DISTINCT FROM ac.owner_id
-              ORDER BY j.priority ASC, j.created_at ASC
-              FOR UPDATE SKIP LOCKED
-              LIMIT ac.slots
-            ) j
-            LIMIT 1
+          lockable_jobs AS (
+            SELECT id
+            FROM selected_jobs_with_metadata
+            WHERE owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = selected_jobs_with_metadata.owner_id)
           ),
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.id IN (SELECT id FROM selected_jobs)
+            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM lockable_jobs)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
           ),
           updated_with_max AS (
@@ -1267,81 +1218,97 @@ class NuQ<JobData = any, JobReturnValue = any> {
         `;
       } else if (this.options.concurrencyLimit === "per-owner-per-group") {
         updateQuery = `
-          WITH queued_combinations AS (
-            SELECT DISTINCT owner_id, group_id
-            FROM ${this.queueName}
-            WHERE status = 'queued'::nuq.job_status
-          ),
-          available_capacity AS (
+          WITH aggregate_jobs AS (
             SELECT
-              qc.owner_id,
-              qc.group_id,
-              CASE
-                WHEN qc.owner_id IS NULL AND qc.group_id IS NULL THEN 999999
-                WHEN qc.owner_id IS NULL AND gc.max_concurrency IS NOT NULL THEN GREATEST(0, gc.max_concurrency - gc.current_concurrency)
-                WHEN qc.owner_id IS NULL THEN 999999
-                WHEN qc.group_id IS NULL AND oc.max_concurrency IS NOT NULL THEN GREATEST(0, oc.max_concurrency - oc.current_concurrency)
-                WHEN qc.group_id IS NULL THEN ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(qc.owner_id)
-                ELSE LEAST(
-                  CASE WHEN oc.max_concurrency IS NOT NULL THEN GREATEST(0, oc.max_concurrency - oc.current_concurrency) ELSE ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(qc.owner_id) END,
-                  CASE WHEN gc.max_concurrency IS NOT NULL THEN GREATEST(0, gc.max_concurrency - gc.current_concurrency) ELSE 999999 END
+              q.owner_id,
+              q.group_id,
+              array_agg(
+                json_build_object(
+                  'id', q.id,
+                  'priority', q.priority,
+                  'created_at', q.created_at,
+                  'owner_id', q.owner_id,
+                  'group_id', q.group_id
                 )
-              END as slots
-            FROM queued_combinations qc
-            LEFT JOIN ${this.queueName}_owner_concurrency oc ON qc.owner_id = oc.id
-            LEFT JOIN ${this.queueName}_group_concurrency gc ON qc.group_id = gc.id
+                ORDER BY q.priority ASC, q.created_at ASC, q.id ASC
+              ) as jobs
+            FROM ${this.queueName} q
+            WHERE q.status = 'queued'::nuq.job_status
+            GROUP BY q.owner_id, q.group_id
           ),
-          distinct_owners AS (
+          aggregate_jobs_with_group_limit AS (
+            SELECT
+              aj.owner_id,
+              aj.group_id,
+              CASE
+                WHEN gc.max_concurrency IS NULL THEN aj.jobs
+                ELSE aj.jobs[:GREATEST(gc.max_concurrency - gc.current_concurrency, 0)]
+              END as jobs
+            FROM aggregate_jobs aj
+            LEFT JOIN ${this.queueName}_group_concurrency gc ON gc.id = aj.group_id
+          ),
+          owner_aggregate_jobs AS (
+            SELECT
+              ajwgl.owner_id,
+              array_agg(
+                job
+                ORDER BY (job->>'priority')::int ASC, (job->>'created_at')::timestamptz ASC, (job->>'id')::uuid ASC
+              ) as jobs
+            FROM aggregate_jobs_with_group_limit ajwgl
+            CROSS JOIN LATERAL unnest(ajwgl.jobs) as job
+            GROUP BY ajwgl.owner_id
+          ),
+          owner_aggregate_jobs_with_limit AS (
+            SELECT
+              oaj.owner_id,
+              CASE
+                WHEN oc.max_concurrency IS NULL THEN oaj.jobs
+                ELSE oaj.jobs[:GREATEST(oc.max_concurrency - oc.current_concurrency, 0)]
+              END as jobs
+            FROM owner_aggregate_jobs oaj
+            LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = oaj.owner_id
+          ),
+          selected_jobs_with_metadata AS (
+            SELECT
+              (job->>'id')::uuid as id,
+              (job->>'owner_id')::uuid as owner_id,
+              (job->>'group_id')::uuid as group_id
+            FROM owner_aggregate_jobs_with_limit
+            CROSS JOIN LATERAL unnest(owner_aggregate_jobs_with_limit.jobs) as job
+            LIMIT 1
+          ),
+          distinct_owners_to_lock AS (
             SELECT DISTINCT owner_id
-            FROM available_capacity
-            WHERE owner_id IS NOT NULL AND slots > 0
+            FROM selected_jobs_with_metadata
+            WHERE owner_id IS NOT NULL
             ORDER BY owner_id
           ),
           acquired_owner_locks AS (
-            SELECT
-              owner_id
-            FROM distinct_owners
+            SELECT owner_id
+            FROM distinct_owners_to_lock
             WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
           ),
-          distinct_groups AS (
-            SELECT DISTINCT ac.group_id
-            FROM available_capacity ac
-            INNER JOIN acquired_owner_locks aol ON ac.owner_id = aol.owner_id
-            WHERE ac.group_id IS NOT NULL AND ac.slots > 0
-            ORDER BY ac.group_id
+          distinct_groups_to_lock AS (
+            SELECT DISTINCT group_id
+            FROM selected_jobs_with_metadata
+            WHERE group_id IS NOT NULL
+            ORDER BY group_id
           ),
           acquired_group_locks AS (
-            SELECT
-              group_id
-            FROM distinct_groups
+            SELECT group_id
+            FROM distinct_groups_to_lock
             WHERE pg_try_advisory_xact_lock(hashtext(group_id::text)) = true
           ),
-          available_capacity_locked AS (
-            SELECT ac.owner_id, ac.group_id, ac.slots
-            FROM available_capacity ac
-            WHERE ac.slots > 0
-              AND (ac.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = ac.owner_id))
-              AND (ac.group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = ac.group_id))
-          ),
-          selected_jobs AS (
-            SELECT j.id
-            FROM available_capacity_locked ac
-            CROSS JOIN LATERAL (
-              SELECT j.id
-              FROM ${this.queueName} j
-              WHERE j.status = 'queued'::nuq.job_status
-                AND j.owner_id IS NOT DISTINCT FROM ac.owner_id
-                AND j.group_id IS NOT DISTINCT FROM ac.group_id
-              ORDER BY j.priority ASC, j.created_at ASC
-              FOR UPDATE SKIP LOCKED
-              LIMIT ac.slots
-            ) j
-            LIMIT 1
+          lockable_jobs AS (
+            SELECT id
+            FROM selected_jobs_with_metadata
+            WHERE (owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = selected_jobs_with_metadata.owner_id))
+              AND (group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = selected_jobs_with_metadata.group_id))
           ),
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.id IN (SELECT id FROM selected_jobs)
+            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM lockable_jobs)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
           ),
           owner_counts AS (
