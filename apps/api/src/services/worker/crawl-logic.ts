@@ -18,7 +18,7 @@ import { v4 as uuidv4 } from "uuid";
 import { addScrapeJobs } from "../queue-jobs";
 import { getJobs } from "../../controllers/v1/crawl-status";
 import { logJob } from "../logging/log_job";
-import { createWebhookSender, WebhookEvent } from "../webhook";
+import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { hasFormatOfType } from "../../lib/format-utils";
 import type { NuQJob } from "./nuq";
 import { ScrapeJobData } from "../../types";

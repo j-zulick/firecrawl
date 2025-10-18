@@ -12,7 +12,7 @@
 /apps/api/src/controllers/v2/crawl*             @mogery
 
 ### /batch/scrape
-/apps/api/src/controllers/v2/batch-scrape*      @mogery 
+/apps/api/src/controllers/v2/batch-scrape*      @mogery
 
 ### /extract
 /apps/api/src/controllers/v2/extract*           @nickscamara
@@ -36,7 +36,7 @@
 /apps/api/src/controllers/v1/crawl*             @mogery
 
 ### /batch/scrape
-/apps/api/src/controllers/v1/batch-scrape*      @mogery 
+/apps/api/src/controllers/v1/batch-scrape*      @mogery
 
 ### /extract
 /apps/api/src/controllers/v1/extract*           @nickscamara
@@ -76,9 +76,6 @@
 
 ### remnants of WebScraper/WebCrawler
 /apps/api/src/scraper/WebScraper/*              @mogery @nickscamara
-
-## concurrency limits
-/apps/api/src/lib/concurrency-limit.ts          @mogery @nickscamara
 
 ## BullMQ-related code
 /apps/api/src/services/queue-worker.ts          @mogery @nickscamara

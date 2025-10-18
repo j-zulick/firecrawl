@@ -25,6 +25,7 @@ import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
+import { crawlGroup, scrapeQueue } from "../../services/worker/nuq";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -136,6 +137,12 @@ export async function batchScrapeController(
       };
 
   if (!req.body.appendToId) {
+    await crawlGroup.addGroup(id, [
+      {
+        queue: scrapeQueue,
+        maxConcurrency: sc.maxConcurrency,
+      },
+    ]);
     await saveCrawl(id, sc);
     await markCrawlActive(id);
   }

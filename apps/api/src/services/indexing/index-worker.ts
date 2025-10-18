@@ -34,7 +34,7 @@ import {
   toV0CrawlerOptions,
 } from "../../controllers/v2/types";
 import { StoredCrawl, crawlToCrawler, saveCrawl } from "../../lib/crawl-redis";
-import { _addScrapeJobToBullMQ } from "../queue-jobs";
+import { addScrapeJob } from "../queue-jobs";
 import { BullMQOtel } from "bullmq-otel";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 
@@ -492,7 +492,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
 
             await saveCrawl(crawlId, sc);
 
-            await _addScrapeJobToBullMQ(
+            await addScrapeJob(
               {
                 url: url,
                 mode: "kickoff" as const,

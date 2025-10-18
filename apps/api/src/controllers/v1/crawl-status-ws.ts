@@ -18,7 +18,6 @@ import {
 } from "../../lib/crawl-redis";
 import { getJobs, PseudoJob } from "./crawl-status";
 import * as Sentry from "@sentry/node";
-import { getConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
 import { scrapeQueue, NuQJobStatus } from "../../services/worker/nuq";
 import { getErrorContactMessage } from "../../lib/deployment";
 
@@ -111,10 +110,9 @@ async function crawlStatusWS(
 
   setTimeout(loop, 1000);
 
-  let [_doneJobIDs, jobIDs, throttledJobsSet] = await Promise.all([
+  let [_doneJobIDs, jobIDs] = await Promise.all([
     getDoneJobsOrdered(req.params.jobId),
     getCrawlJobs(req.params.jobId),
-    getConcurrencyLimitedJobs(req.auth.team_id),
   ]);
 
   doneJobIDs = _doneJobIDs;
@@ -124,15 +122,10 @@ async function crawlStatusWS(
   const validJobIDs: string[] = [];
 
   for (const id of jobIDs) {
-    if (throttledJobsSet.has(id)) {
-      validJobStatuses.push([id, "queued"]);
+    const job = jobs.get(id);
+    if (job && job.status !== "failed") {
+      validJobStatuses.push([id, job.status]);
       validJobIDs.push(id);
-    } else {
-      const job = jobs.get(id);
-      if (job && job.status !== "failed") {
-        validJobStatuses.push([id, job.status]);
-        validJobIDs.push(id);
-      }
     }
   }
 

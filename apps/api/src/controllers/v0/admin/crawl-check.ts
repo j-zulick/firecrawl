@@ -6,7 +6,6 @@ import {
   StoredCrawl,
 } from "../../../lib/crawl-redis";
 import { supabase_service } from "../../../services/supabase";
-import { getConcurrencyLimitedJobs } from "../../../lib/concurrency-limit";
 import { scrapeQueue } from "../../../services/worker/nuq";
 
 type AnalyzedCrawlPass1 = {
@@ -217,23 +216,8 @@ export async function crawlCheckController(req: Request, res: Response) {
     await Promise.all(activeCrawls.map(analyzeCrawlPass1))
   ).filter(result => result.success);
 
-  const teamIds = [...new Set(firstPass.map(result => result.teamId))];
-  const teamConcurrencyQueuedJobs = Object.fromEntries(
-    await Promise.all(
-      teamIds.map(async teamId => [
-        teamId,
-        await getConcurrencyLimitedJobs(teamId),
-      ]),
-    ),
-  );
-
   const results = await Promise.all(
-    firstPass.map(result =>
-      analyzeCrawlPass2(
-        { ...result },
-        teamConcurrencyQueuedJobs[result.teamId],
-      ),
-    ),
+    firstPass.map(result => analyzeCrawlPass2({ ...result }, new Set())),
   );
 
   // Clean results which should be "solved"

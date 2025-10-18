@@ -4,10 +4,6 @@ import http from "http";
 import https from "https";
 
 import { logger as _logger } from "../../lib/logger";
-import {
-  concurrentJobDone,
-  pushConcurrencyLimitActiveJob,
-} from "../../lib/concurrency-limit";
 import { addJobPriority, deleteJobPriority } from "../../lib/job-priority";
 import { cacheableLookup } from "../../scraper/scrapeURL/lib/cacheableLookup";
 import { v4 as uuidv4 } from "uuid";
@@ -27,17 +23,13 @@ import {
   StoredCrawl,
 } from "../../lib/crawl-redis";
 import { redisEvictConnection } from "../redis";
-import {
-  _addScrapeJobToBullMQ,
-  addScrapeJob,
-  addScrapeJobs,
-} from "../queue-jobs";
+import { addScrapeJob, addScrapeJobs } from "../queue-jobs";
 import psl from "psl";
 import { getJobPriority } from "../../lib/job-priority";
 import { Document, scrapeOptions, TeamFlags } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { getACUCTeam } from "../../controllers/auth";
-import { createWebhookSender, WebhookEvent } from "../webhook";
+import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { CustomError } from "../../lib/custom-error";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { CostTracking } from "../../lib/cost-tracking";
@@ -338,10 +330,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           // Store robots blocked URLs in Redis set
           for (const [url, reason] of links.denialReasons) {
             if (reason === "URL blocked by robots.txt") {
-              await recordRobotsBlocked(
-                job.data.crawl_id,
-                url
-              );
+              await recordRobotsBlocked(job.data.crawl_id, url);
             }
           }
 
@@ -552,15 +541,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         error instanceof Error &&
         error.message === "URL blocked by robots.txt"
       ) {
-        await recordRobotsBlocked(
-          job.data.crawl_id,
-          job.data.url,
-        );
+        await recordRobotsBlocked(job.data.crawl_id, job.data.url);
       }
     } catch (e) {
       logger.debug("Failed to record top-level robots block", { e });
     }
-    
+
     if (job.data.crawl_id) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
 
@@ -764,7 +750,7 @@ async function addKickoffSitemapJob(
   }
 
   const jobId = uuidv4();
-  await _addScrapeJobToBullMQ(
+  await addScrapeJob(
     {
       mode: "kickoff_sitemap" as const,
       team_id: sourceJob.data.team_id,
@@ -1111,75 +1097,55 @@ export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
 
 async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
   try {
+    await addJobPriority(job.data.team_id, job.id);
     try {
-      let extendLockInterval: NodeJS.Timeout | null = null;
-      if (job.data?.mode !== "kickoff" && job.data?.team_id) {
-        extendLockInterval = setInterval(async () => {
-          await pushConcurrencyLimitActiveJob(
-            job.data.team_id,
-            job.id,
-            60 * 1000,
-          ); // 60s lock renew, just like in the queue
-        }, jobLockExtendInterval);
-      }
-
-      await addJobPriority(job.data.team_id, job.id);
-      try {
-        if (job.data.mode === "kickoff") {
-          const result = await processKickoffJob(
-            job as NuQJob<ScrapeJobKickoff>,
-          );
-          if (result.success) {
-            return null;
-          } else {
-            throw (result as any).error;
-          }
-        } else if (job.data.mode === "kickoff_sitemap") {
-          const result = await processKickoffSitemapJob(
-            job as NuQJob<ScrapeJobKickoffSitemap>,
-          );
-          if (result.success) {
-            return null;
-          } else {
-            throw (result as any).error;
-          }
+      if (job.data.mode === "kickoff") {
+        const result = await processKickoffJob(job as NuQJob<ScrapeJobKickoff>);
+        if (result.success) {
+          return null;
         } else {
-          const result = await processJob(job as NuQJob<ScrapeJobSingleUrls>);
-          if (result.success) {
-            try {
-              if (job.data.team_id) {
-                await redisEvictConnection.set(
-                  "most-recent-success:" + job.data.team_id,
-                  new Date().toISOString(),
-                  "EX",
-                  60 * 60 * 24,
-                );
-              }
-            } catch (e) {
-              logger.warn("Failed to set most recent success", { error: e });
-            }
-
-            try {
-              if (process.env.GCS_BUCKET_NAME) {
-                logger.debug("Job succeeded -- putting null in Redis");
-                return null;
-              } else {
-                logger.debug("Job succeeded -- putting result in Redis");
-                return result.document;
-              }
-            } catch (e) {}
-          } else {
-            throw (result as any).error;
-          }
+          throw (result as any).error;
         }
-      } finally {
-        await deleteJobPriority(job.data.team_id, job.id);
-        if (extendLockInterval) {
-          clearInterval(extendLockInterval);
+      } else if (job.data.mode === "kickoff_sitemap") {
+        const result = await processKickoffSitemapJob(
+          job as NuQJob<ScrapeJobKickoffSitemap>,
+        );
+        if (result.success) {
+          return null;
+        } else {
+          throw (result as any).error;
+        }
+      } else {
+        const result = await processJob(job as NuQJob<ScrapeJobSingleUrls>);
+        if (result.success) {
+          try {
+            if (job.data.team_id) {
+              await redisEvictConnection.set(
+                "most-recent-success:" + job.data.team_id,
+                new Date().toISOString(),
+                "EX",
+                60 * 60 * 24,
+              );
+            }
+          } catch (e) {
+            logger.warn("Failed to set most recent success", { error: e });
+          }
+
+          try {
+            if (process.env.GCS_BUCKET_NAME) {
+              logger.debug("Job succeeded -- putting null in Redis");
+              return null;
+            } else {
+              logger.debug("Job succeeded -- putting result in Redis");
+              return result.document;
+            }
+          } catch (e) {}
+        } else {
+          throw (result as any).error;
         }
       }
     } finally {
-      await concurrentJobDone(job);
+      await deleteJobPriority(job.data.team_id, job.id);
     }
   } catch (error) {
     logger.debug("Job failed", { error });

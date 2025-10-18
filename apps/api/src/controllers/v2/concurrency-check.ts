@@ -5,9 +5,9 @@ import {
 } from "./types";
 import { AuthCreditUsageChunkFromTeam } from "../v1/types";
 import { Response } from "express";
-import { redisEvictConnection } from "../../../src/services/redis";
 import { getACUCTeam } from "../auth";
 import { RateLimiterMode } from "../../types";
+import { scrapeQueue } from "../../services/worker/nuq";
 
 // Basically just middleware and error wrapping
 export async function concurrencyCheckController(
@@ -21,34 +21,39 @@ export async function concurrencyCheckController(
     });
   }
 
-  let otherACUC: AuthCreditUsageChunkFromTeam | null = null;
-  if (!req.acuc.is_extract) {
-    otherACUC = await getACUCTeam(
-      req.auth.team_id,
-      false,
-      true,
-      RateLimiterMode.Extract,
-    );
-  } else {
-    otherACUC = await getACUCTeam(
-      req.auth.team_id,
-      false,
-      true,
-      RateLimiterMode.Crawl,
+  const ownerConcurrency = await scrapeQueue.getOwnerConcurrency(
+    req.auth.team_id,
+  );
+
+  let maxConcurrency: number | null = ownerConcurrency?.maxConcurrency ?? null;
+
+  if (maxConcurrency === null) {
+    let otherACUC: AuthCreditUsageChunkFromTeam | null = null;
+    if (!req.acuc.is_extract) {
+      otherACUC = await getACUCTeam(
+        req.auth.team_id,
+        false,
+        true,
+        RateLimiterMode.Extract,
+      );
+    } else {
+      otherACUC = await getACUCTeam(
+        req.auth.team_id,
+        false,
+        true,
+        RateLimiterMode.Crawl,
+      );
+    }
+
+    maxConcurrency = Math.max(
+      req.acuc.concurrency,
+      otherACUC?.concurrency ?? 0,
     );
   }
 
-  const concurrencyLimiterKey = "concurrency-limiter:" + req.auth.team_id;
-  const now = Date.now();
-  const activeJobsOfTeam = await redisEvictConnection.zrangebyscore(
-    concurrencyLimiterKey,
-    now,
-    Infinity,
-  );
-
   return res.status(200).json({
     success: true,
-    concurrency: activeJobsOfTeam.length,
-    maxConcurrency: Math.max(req.acuc.concurrency, otherACUC?.concurrency ?? 0),
+    concurrency: ownerConcurrency?.currentConcurrency ?? 0,
+    maxConcurrency,
   });
 }

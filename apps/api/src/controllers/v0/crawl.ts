@@ -33,6 +33,7 @@ import { ZodError } from "zod";
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { fromV0ScrapeOptions } from "../v2/types";
 import { isSelfHosted } from "../../lib/deployment";
+import { crawlGroup, scrapeQueue } from "../../services/worker/nuq";
 
 export async function crawlController(req: Request, res: Response) {
   try {
@@ -146,35 +147,6 @@ export async function crawlController(req: Request, res: Response) {
       });
     }
 
-    // if (mode === "single_urls" && !url.includes(",")) { // NOTE: do we need this?
-    //   try {
-    //     const a = new WebScraperDataProvider();
-    //     await a.setOptions({
-    //       jobId: uuidv4(),
-    //       mode: "single_urls",
-    //       urls: [url],
-    //       crawlerOptions: { ...crawlerOptions, returnOnlyUrls: true },
-    //       pageOptions: pageOptions,
-    //     });
-
-    //     const docs = await a.getDocuments(false, (progress) => {
-    //       job.updateProgress({
-    //         current: progress.current,
-    //         total: progress.total,
-    //         current_step: "SCRAPING",
-    //         current_url: progress.currentDocumentUrl,
-    //       });
-    //     });
-    //     return res.json({
-    //       success: true,
-    //       documents: docs,
-    //     });
-    //   } catch (error) {
-    //     logger.error(error);
-    //     return res.status(500).json({ error: error.message });
-    //   }
-    // }
-
     const { scrapeOptions, internalOptions } = fromV0ScrapeOptions(
       pageOptions,
       undefined,
@@ -202,6 +174,13 @@ export async function crawlController(req: Request, res: Response) {
     try {
       sc.robots = await crawler.getRobotsTxt();
     } catch (_) {}
+
+    await crawlGroup.addGroup(id, [
+      {
+        queue: scrapeQueue,
+        maxConcurrency: undefined,
+      },
+    ]);
 
     await saveCrawl(id, sc);
 
