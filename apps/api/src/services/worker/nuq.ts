@@ -1715,7 +1715,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
         owner_breakdown AS (
           SELECT
             LEAST(qpo.queued_count, COALESCE(os.available_slots, 999999)) as can_run,
-            GREATEST(0, qpo.queued_count - COALESCE(os.available_slots, 0)) as blocked
+            GREATEST(0, qpo.queued_count - COALESCE(os.available_slots, 999999)) as blocked
           FROM queued_per_owner qpo
           LEFT JOIN owner_status os ON qpo.owner_id = os.id
         ),
@@ -1765,25 +1765,27 @@ class NuQ<JobData = any, JobReturnValue = any> {
           WHERE status = 'queued'::nuq.job_status
           GROUP BY owner_id, group_id
         ),
-        owner_group_breakdown AS (
+        group_capacity AS (
           SELECT
-            LEAST(
-              qpog.queued_count,
-              LEAST(
-                COALESCE(os.available_slots, 999999),
-                COALESCE(gs.available_slots, 999999)
-              )
-            ) as can_run,
-            GREATEST(
-              0,
-              qpog.queued_count - LEAST(
-                COALESCE(os.available_slots, 999999),
-                COALESCE(gs.available_slots, 999999)
-              )
-            ) as blocked
+            qpog.owner_id,
+            qpog.group_id,
+            qpog.queued_count,
+            LEAST(qpog.queued_count, COALESCE(gs.available_slots, 999999)) as group_can_run,
+            GREATEST(0, qpog.queued_count - COALESCE(gs.available_slots, 999999)) as group_blocked
           FROM queued_per_owner_group qpog
-          LEFT JOIN owner_status os ON qpog.owner_id = os.id
           LEFT JOIN group_status gs ON qpog.group_id = gs.id
+        ),
+        owner_breakdown AS (
+          SELECT
+            gc.owner_id,
+            SUM(gc.group_can_run) as total_demand,
+            COALESCE(os.available_slots, 999999) as owner_capacity,
+            LEAST(SUM(gc.group_can_run), COALESCE(os.available_slots, 999999)) as owner_can_run,
+            GREATEST(0, SUM(gc.group_can_run) - COALESCE(os.available_slots, 999999)) as owner_blocked,
+            SUM(gc.group_blocked) as group_blocked
+          FROM group_capacity gc
+          LEFT JOIN owner_status os ON gc.owner_id = os.id
+          GROUP BY gc.owner_id, os.available_slots
         ),
         non_queued AS (
           SELECT status::text, COUNT(*) as count
@@ -1793,9 +1795,9 @@ class NuQ<JobData = any, JobReturnValue = any> {
         ),
         totals AS (
           SELECT
-            COALESCE(SUM(can_run), 0) as total_queued,
-            COALESCE(SUM(blocked), 0) as total_limited
-          FROM owner_group_breakdown
+            COALESCE(SUM(owner_can_run), 0) as total_queued,
+            COALESCE(SUM(owner_blocked + group_blocked), 0) as total_limited
+          FROM owner_breakdown
         )
         SELECT status, count FROM non_queued
         UNION ALL
