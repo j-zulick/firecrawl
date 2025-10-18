@@ -991,19 +991,40 @@ class NuQ<JobData = any, JobReturnValue = any> {
               AND (ac.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE acquired_owner_locks.owner_id = ac.owner_id))
               AND (ac.group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE acquired_group_locks.group_id = ac.group_id))
           ),
-          selected_jobs AS (
-            SELECT j.id
+          selected_jobs_raw AS (
+            SELECT j.id, j.owner_id, j.group_id, j.priority, j.created_at
             FROM available_capacity_locked ac
             CROSS JOIN LATERAL (
-              SELECT j.id
+              SELECT j.id, j.owner_id, j.group_id, j.priority, j.created_at
               FROM ${this.queueName} j
               WHERE j.status = 'queued'::nuq.job_status
                 AND j.owner_id IS NOT DISTINCT FROM ac.owner_id
                 AND j.group_id IS NOT DISTINCT FROM ac.group_id
               ORDER BY j.priority ASC, j.created_at ASC
               FOR UPDATE SKIP LOCKED
-              LIMIT ac.slots
+              LIMIT LEAST(ac.slots, 20)
             ) j
+          ),
+          selected_jobs_with_owner_rank AS (
+            SELECT
+              sjr.id,
+              sjr.owner_id,
+              sjr.group_id,
+              ROW_NUMBER() OVER (PARTITION BY sjr.owner_id ORDER BY sjr.priority ASC, sjr.created_at ASC) as owner_rank
+            FROM selected_jobs_raw sjr
+          ),
+          owner_capacity_limits AS (
+            SELECT
+              owner_id,
+              COALESCE(oc.max_concurrency - oc.current_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)) as owner_available_slots
+            FROM (SELECT DISTINCT owner_id FROM selected_jobs_with_owner_rank WHERE owner_id IS NOT NULL) owners
+            LEFT JOIN ${this.queueName}_owner_concurrency oc ON owners.owner_id = oc.id
+          ),
+          selected_jobs AS (
+            SELECT sjwor.id
+            FROM selected_jobs_with_owner_rank sjwor
+            LEFT JOIN owner_capacity_limits ocl ON sjwor.owner_id = ocl.owner_id
+            WHERE sjwor.owner_id IS NULL OR sjwor.owner_rank <= ocl.owner_available_slots
           ),
           updated AS (
             UPDATE ${this.queueName} q
