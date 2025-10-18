@@ -37,6 +37,7 @@ import { StoredCrawl, crawlToCrawler, saveCrawl } from "../../lib/crawl-redis";
 import { addScrapeJob } from "../queue-jobs";
 import { BullMQOtel } from "bullmq-otel";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
+import { crawlGroup, scrapeQueue } from "../worker/nuq";
 
 const workerLockDuration = Number(process.env.WORKER_LOCK_DURATION) || 60000;
 const workerStalledCheckInterval =
@@ -489,6 +490,13 @@ const processPrecrawlJob = async (token: string, job: Job) => {
             //     error: e,
             //   });
             // }
+
+            await crawlGroup.addGroup(crawlId, [
+              {
+                queue: scrapeQueue,
+                maxConcurrency: sc.maxConcurrency ?? undefined,
+              },
+            ]);
 
             await saveCrawl(crawlId, sc);
 
