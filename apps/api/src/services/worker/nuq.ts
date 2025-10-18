@@ -902,7 +902,6 @@ class NuQ<JobData = any, JobReturnValue = any> {
               FOR UPDATE SKIP LOCKED
               LIMIT ac.slots
             ) j
-            LIMIT 100
           ),
           updated AS (
             UPDATE ${this.queueName} q
@@ -1005,7 +1004,6 @@ class NuQ<JobData = any, JobReturnValue = any> {
               FOR UPDATE SKIP LOCKED
               LIMIT ac.slots
             ) j
-            LIMIT 100
           ),
           updated AS (
             UPDATE ${this.queueName} q
