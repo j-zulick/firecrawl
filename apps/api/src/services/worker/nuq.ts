@@ -979,14 +979,12 @@ class NuQ<JobData = any, JobReturnValue = any> {
             LEFT JOIN ${this.queueName}_owner_concurrency oc ON qc.owner_id = oc.id
             LEFT JOIN ${this.queueName}_group_concurrency gc ON qc.group_id = gc.id
           ),
-          owner_group_needs AS (
+          owner_capacity AS (
             SELECT
-              owner_id,
-              SUM(slots) as total_slots,
-              CEIL(SUM(slots) / 15.0)::int as groups_needed
-            FROM available_capacity
-            WHERE slots > 0 AND owner_id IS NOT NULL
-            GROUP BY owner_id
+              oc.id as owner_id,
+              GREATEST(0, oc.max_concurrency - oc.current_concurrency) as available_slots
+            FROM ${this.queueName}_owner_concurrency oc
+            WHERE oc.max_concurrency > oc.current_concurrency
           ),
           capacity_with_rank AS (
             SELECT
@@ -999,9 +997,9 @@ class NuQ<JobData = any, JobReturnValue = any> {
                 PARTITION BY ac.owner_id
                 ORDER BY ac.priority ASC, ac.created_at ASC
               ) as owner_rank,
-              COALESCE(LEAST(GREATEST(3, ogn.groups_needed), 10), 3) as group_limit
+              LEAST(GREATEST(10, COALESCE(owc.available_slots, 50)), 200) as group_limit
             FROM available_capacity ac
-            LEFT JOIN owner_group_needs ogn ON ac.owner_id = ogn.owner_id
+            LEFT JOIN owner_capacity owc ON ac.owner_id = owc.owner_id
             WHERE ac.slots > 0
           ),
           limited_capacity AS (
