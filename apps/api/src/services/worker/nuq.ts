@@ -883,7 +883,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM available_capacity
             WHERE slots > 0
             ORDER BY priority ASC, created_at ASC, owner_id ASC
-            LIMIT 75
+            LIMIT 1000
           ),
           distinct_owners AS (
             SELECT owner_id
@@ -979,12 +979,26 @@ class NuQ<JobData = any, JobReturnValue = any> {
             LEFT JOIN ${this.queueName}_owner_concurrency oc ON qc.owner_id = oc.id
             LEFT JOIN ${this.queueName}_group_concurrency gc ON qc.group_id = gc.id
           ),
+          capacity_with_rank AS (
+            SELECT
+              ac.owner_id,
+              ac.group_id,
+              ac.slots,
+              ac.priority,
+              ac.created_at,
+              ROW_NUMBER() OVER (
+                PARTITION BY ac.owner_id
+                ORDER BY ac.priority ASC, ac.created_at ASC
+              ) as owner_rank
+            FROM available_capacity ac
+            WHERE ac.slots > 0
+          ),
           limited_capacity AS (
             SELECT owner_id, group_id, slots
-            FROM available_capacity
-            WHERE slots > 0
-            ORDER BY priority ASC, created_at ASC, group_id ASC
-            LIMIT 75
+            FROM capacity_with_rank
+            WHERE owner_rank <= 3
+            ORDER BY owner_rank ASC, priority ASC, created_at ASC, owner_id ASC
+            LIMIT 1000
           ),
           distinct_owners AS (
             SELECT DISTINCT owner_id
