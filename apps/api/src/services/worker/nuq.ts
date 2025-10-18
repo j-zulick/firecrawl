@@ -897,10 +897,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM distinct_owners
             WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
           ),
-          selected_jobs AS (
-            SELECT j.id
+          limited_capacity_locked AS (
+            SELECT lc.owner_id, lc.slots
             FROM limited_capacity lc
             WHERE (lc.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = lc.owner_id))
+          ),
+          selected_jobs AS (
+            SELECT j.id
+            FROM limited_capacity_locked lc
             CROSS JOIN LATERAL (
               SELECT j.id
               FROM ${this.queueName} j
@@ -1007,11 +1011,15 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM distinct_groups
             WHERE pg_try_advisory_xact_lock(hashtext(group_id::text)) = true
           ),
-          selected_jobs_raw AS (
-            SELECT j.id, j.owner_id, j.group_id, j.priority, j.created_at
+          limited_capacity_locked AS (
+            SELECT lc.owner_id, lc.group_id, lc.slots
             FROM limited_capacity lc
             WHERE (lc.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = lc.owner_id))
               AND (lc.group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = lc.group_id))
+          ),
+          selected_jobs_raw AS (
+            SELECT j.id, j.owner_id, j.group_id, j.priority, j.created_at
+            FROM limited_capacity_locked lc
             CROSS JOIN LATERAL (
               SELECT j.id, j.owner_id, j.group_id, j.priority, j.created_at
               FROM ${this.queueName} j
@@ -1189,11 +1197,15 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM distinct_owners
             WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
           ),
-          selected_jobs AS (
-            SELECT j.id
+          available_capacity_locked AS (
+            SELECT ac.owner_id, ac.slots
             FROM available_capacity ac
             WHERE ac.slots > 0
               AND (ac.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = ac.owner_id))
+          ),
+          selected_jobs AS (
+            SELECT j.id
+            FROM available_capacity_locked ac
             CROSS JOIN LATERAL (
               SELECT j.id
               FROM ${this.queueName} j
@@ -1281,12 +1293,16 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM distinct_groups
             WHERE pg_try_advisory_xact_lock(hashtext(group_id::text)) = true
           ),
-          selected_jobs AS (
-            SELECT j.id
+          available_capacity_locked AS (
+            SELECT ac.owner_id, ac.group_id, ac.slots
             FROM available_capacity ac
             WHERE ac.slots > 0
               AND (ac.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = ac.owner_id))
               AND (ac.group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = ac.group_id))
+          ),
+          selected_jobs AS (
+            SELECT j.id
+            FROM available_capacity_locked ac
             CROSS JOIN LATERAL (
               SELECT j.id
               FROM ${this.queueName} j
