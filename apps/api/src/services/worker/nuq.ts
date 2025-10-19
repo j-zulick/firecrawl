@@ -916,9 +916,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
             ORDER BY owner_id
           ),
           acquired_owner_locks AS (
-            SELECT owner_id
-            FROM distinct_owners_to_lock
-            WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
+            SELECT id as owner_id
+            FROM ${this.queueName}_owner_concurrency
+            WHERE id IN (SELECT owner_id FROM distinct_owners_to_lock)
+            FOR UPDATE SKIP LOCKED
           ),
           lockable_jobs AS (
             SELECT id
@@ -1000,9 +1001,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
             ORDER BY owner_id
           ),
           acquired_owner_locks AS (
-            SELECT owner_id
-            FROM distinct_owners_to_lock
-            WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
+            SELECT id as owner_id
+            FROM ${this.queueName}_owner_concurrency
+            WHERE id IN (SELECT owner_id FROM distinct_owners_to_lock)
+            FOR UPDATE SKIP LOCKED
           ),
           distinct_groups_to_lock AS (
             SELECT DISTINCT group_id
@@ -1011,9 +1013,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
             ORDER BY group_id
           ),
           acquired_group_locks AS (
-            SELECT group_id
-            FROM distinct_groups_to_lock
-            WHERE pg_try_advisory_xact_lock(hashtext(group_id::text)) = true
+            SELECT id as group_id
+            FROM ${this.queueName}_group_concurrency
+            WHERE id IN (SELECT group_id FROM distinct_groups_to_lock)
+            FOR UPDATE SKIP LOCKED
           ),
           lockable_jobs AS (
             SELECT id
@@ -1164,9 +1167,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
             ORDER BY owner_id
           ),
           acquired_owner_locks AS (
-            SELECT owner_id
-            FROM distinct_owners_to_lock
-            WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
+            SELECT id as owner_id
+            FROM ${this.queueName}_owner_concurrency
+            WHERE id IN (SELECT owner_id FROM distinct_owners_to_lock)
+            FOR UPDATE SKIP LOCKED
           ),
           lockable_jobs AS (
             SELECT id
@@ -1243,9 +1247,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
             ORDER BY owner_id
           ),
           acquired_owner_locks AS (
-            SELECT owner_id
-            FROM distinct_owners_to_lock
-            WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
+            SELECT id as owner_id
+            FROM ${this.queueName}_owner_concurrency
+            WHERE id IN (SELECT owner_id FROM distinct_owners_to_lock)
+            FOR UPDATE SKIP LOCKED
           ),
           distinct_groups_to_lock AS (
             SELECT DISTINCT group_id
@@ -1254,9 +1259,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
             ORDER BY group_id
           ),
           acquired_group_locks AS (
-            SELECT group_id
-            FROM distinct_groups_to_lock
-            WHERE pg_try_advisory_xact_lock(hashtext(group_id::text)) = true
+            SELECT id as group_id
+            FROM ${this.queueName}_group_concurrency
+            WHERE id IN (SELECT group_id FROM distinct_groups_to_lock)
+            FOR UPDATE SKIP LOCKED
           ),
           lockable_jobs AS (
             SELECT id

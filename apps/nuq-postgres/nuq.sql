@@ -111,10 +111,10 @@ SELECT cron.schedule('nuq_queue_scrape_lock_reaper', '15 seconds', $$
     ORDER BY owner_id
   ),
   acquired_owner_locks AS (
-    SELECT
-      owner_id
-    FROM distinct_owners
-    WHERE pg_try_advisory_xact_lock(hashtext(owner_id::text)) = true
+    SELECT id as owner_id
+    FROM nuq.queue_scrape_owner_concurrency
+    WHERE id IN (SELECT owner_id FROM distinct_owners)
+    FOR UPDATE SKIP LOCKED
   ),
   distinct_groups AS (
     SELECT DISTINCT sj.group_id
@@ -124,10 +124,10 @@ SELECT cron.schedule('nuq_queue_scrape_lock_reaper', '15 seconds', $$
     ORDER BY sj.group_id
   ),
   acquired_group_locks AS (
-    SELECT
-      group_id
-    FROM distinct_groups
-    WHERE pg_try_advisory_xact_lock(hashtext(group_id::text)) = true
+    SELECT id as group_id
+    FROM nuq.queue_scrape_group_concurrency
+    WHERE id IN (SELECT group_id FROM distinct_groups)
+    FOR UPDATE SKIP LOCKED
   ),
   requeued AS (
     UPDATE nuq.queue_scrape
