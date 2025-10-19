@@ -891,38 +891,23 @@ class NuQ<JobData = any, JobReturnValue = any> {
       let updateQuery: string;
       if (this.options.concurrencyLimit === "per-owner") {
         updateQuery = `
-          WITH aggregate_jobs AS (
+          WITH owner_limited_jobs AS (
             SELECT
+              q.id,
               q.owner_id,
-              array_agg(
-                json_build_object(
-                  'id', q.id,
-                  'priority', q.priority,
-                  'created_at', q.created_at,
-                  'owner_id', q.owner_id
-                )
+              ROW_NUMBER() OVER (
+                PARTITION BY q.owner_id
                 ORDER BY q.priority ASC, q.created_at ASC, q.id ASC
-              ) as jobs
+              ) as owner_rank,
+              GREATEST(COALESCE(oc.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(q.owner_id)) - COALESCE(oc.current_concurrency, 0), 0) as owner_limit
             FROM ${this.queueName} q
+            LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = q.owner_id
             WHERE q.status = 'queued'::nuq.job_status
-            GROUP BY q.owner_id
-          ),
-          aggregate_jobs_with_limit AS (
-            SELECT
-              aj.owner_id,
-              CASE
-                WHEN oc.max_concurrency IS NULL THEN aj.jobs
-                ELSE aj.jobs[:GREATEST(oc.max_concurrency - oc.current_concurrency, 0)]
-              END as jobs
-            FROM aggregate_jobs aj
-            LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = aj.owner_id
           ),
           selected_jobs_with_metadata AS (
-            SELECT
-              (job->>'id')::uuid as id,
-              (job->>'owner_id')::uuid as owner_id
-            FROM aggregate_jobs_with_limit
-            CROSS JOIN LATERAL unnest(aggregate_jobs_with_limit.jobs) as job
+            SELECT id, owner_id
+            FROM owner_limited_jobs
+            WHERE owner_rank <= owner_limit
           ),
           distinct_owners_to_lock AS (
             SELECT DISTINCT owner_id
@@ -973,63 +958,40 @@ class NuQ<JobData = any, JobReturnValue = any> {
         `;
       } else if (this.options.concurrencyLimit === "per-owner-per-group") {
         updateQuery = `
-          WITH aggregate_jobs AS (
+          WITH group_limited_jobs AS (
             SELECT
+              q.id,
               q.owner_id,
               q.group_id,
-              array_agg(
-                json_build_object(
-                  'id', q.id,
-                  'priority', q.priority,
-                  'created_at', q.created_at,
-                  'owner_id', q.owner_id,
-                  'group_id', q.group_id
-                )
+              q.priority,
+              q.created_at,
+              ROW_NUMBER() OVER (
+                PARTITION BY q.owner_id, q.group_id
                 ORDER BY q.priority ASC, q.created_at ASC, q.id ASC
-              ) as jobs
+              ) as group_rank,
+              GREATEST(COALESCE(gc.max_concurrency, 999999) - COALESCE(gc.current_concurrency, 0), 0) as group_limit
             FROM ${this.queueName} q
+            LEFT JOIN ${this.queueName}_group_concurrency gc ON gc.id = q.group_id
             WHERE q.status = 'queued'::nuq.job_status
-            GROUP BY q.owner_id, q.group_id
           ),
-          aggregate_jobs_with_group_limit AS (
+          owner_limited_jobs AS (
             SELECT
-              aj.owner_id,
-              aj.group_id,
-              CASE
-                WHEN gc.max_concurrency IS NULL THEN aj.jobs
-                ELSE aj.jobs[:GREATEST(gc.max_concurrency - gc.current_concurrency, 0)]
-              END as jobs
-            FROM aggregate_jobs aj
-            LEFT JOIN ${this.queueName}_group_concurrency gc ON gc.id = aj.group_id
-          ),
-          owner_aggregate_jobs AS (
-            SELECT
-              ajwgl.owner_id,
-              array_agg(
-                job
-                ORDER BY (job->>'priority')::int ASC, (job->>'created_at')::timestamptz ASC, (job->>'id')::uuid ASC
-              ) as jobs
-            FROM aggregate_jobs_with_group_limit ajwgl
-            CROSS JOIN LATERAL unnest(ajwgl.jobs) as job
-            GROUP BY ajwgl.owner_id
-          ),
-          owner_aggregate_jobs_with_limit AS (
-            SELECT
-              oaj.owner_id,
-              CASE
-                WHEN oc.max_concurrency IS NULL THEN oaj.jobs
-                ELSE oaj.jobs[:GREATEST(oc.max_concurrency - oc.current_concurrency, 0)]
-              END as jobs
-            FROM owner_aggregate_jobs oaj
-            LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = oaj.owner_id
+              glj.id,
+              glj.owner_id,
+              glj.group_id,
+              ROW_NUMBER() OVER (
+                PARTITION BY glj.owner_id
+                ORDER BY glj.priority ASC, glj.created_at ASC, glj.id ASC
+              ) as owner_rank,
+              GREATEST(COALESCE(oc.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(glj.owner_id)) - COALESCE(oc.current_concurrency, 0), 0) as owner_limit
+            FROM group_limited_jobs glj
+            LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = glj.owner_id
+            WHERE glj.group_rank <= glj.group_limit
           ),
           selected_jobs_with_metadata AS (
-            SELECT
-              (job->>'id')::uuid as id,
-              (job->>'owner_id')::uuid as owner_id,
-              (job->>'group_id')::uuid as group_id
-            FROM owner_aggregate_jobs_with_limit
-            CROSS JOIN LATERAL unnest(owner_aggregate_jobs_with_limit.jobs) as job
+            SELECT id, owner_id, group_id
+            FROM owner_limited_jobs
+            WHERE owner_rank <= owner_limit
           ),
           distinct_owners_to_lock AS (
             SELECT DISTINCT owner_id
@@ -1176,38 +1138,23 @@ class NuQ<JobData = any, JobReturnValue = any> {
       let updateQuery: string;
       if (this.options.concurrencyLimit === "per-owner") {
         updateQuery = `
-          WITH aggregate_jobs AS (
+          WITH owner_limited_jobs AS (
             SELECT
+              q.id,
               q.owner_id,
-              array_agg(
-                json_build_object(
-                  'id', q.id,
-                  'priority', q.priority,
-                  'created_at', q.created_at,
-                  'owner_id', q.owner_id
-                )
+              ROW_NUMBER() OVER (
+                PARTITION BY q.owner_id
                 ORDER BY q.priority ASC, q.created_at ASC, q.id ASC
-              ) as jobs
+              ) as owner_rank,
+              GREATEST(COALESCE(oc.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(q.owner_id)) - COALESCE(oc.current_concurrency, 0), 0) as owner_limit
             FROM ${this.queueName} q
+            LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = q.owner_id
             WHERE q.status = 'queued'::nuq.job_status
-            GROUP BY q.owner_id
-          ),
-          aggregate_jobs_with_limit AS (
-            SELECT
-              aj.owner_id,
-              CASE
-                WHEN oc.max_concurrency IS NULL THEN aj.jobs
-                ELSE aj.jobs[:GREATEST(oc.max_concurrency - oc.current_concurrency, 0)]
-              END as jobs
-            FROM aggregate_jobs aj
-            LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = aj.owner_id
           ),
           selected_jobs_with_metadata AS (
-            SELECT
-              (job->>'id')::uuid as id,
-              (job->>'owner_id')::uuid as owner_id
-            FROM aggregate_jobs_with_limit
-            CROSS JOIN LATERAL unnest(aggregate_jobs_with_limit.jobs) as job
+            SELECT id, owner_id
+            FROM owner_limited_jobs
+            WHERE owner_rank <= owner_limit
             LIMIT 1
           ),
           distinct_owners_to_lock AS (
@@ -1253,63 +1200,40 @@ class NuQ<JobData = any, JobReturnValue = any> {
         `;
       } else if (this.options.concurrencyLimit === "per-owner-per-group") {
         updateQuery = `
-          WITH aggregate_jobs AS (
+          WITH group_limited_jobs AS (
             SELECT
+              q.id,
               q.owner_id,
               q.group_id,
-              array_agg(
-                json_build_object(
-                  'id', q.id,
-                  'priority', q.priority,
-                  'created_at', q.created_at,
-                  'owner_id', q.owner_id,
-                  'group_id', q.group_id
-                )
+              q.priority,
+              q.created_at,
+              ROW_NUMBER() OVER (
+                PARTITION BY q.owner_id, q.group_id
                 ORDER BY q.priority ASC, q.created_at ASC, q.id ASC
-              ) as jobs
+              ) as group_rank,
+              GREATEST(COALESCE(gc.max_concurrency, 999999) - COALESCE(gc.current_concurrency, 0), 0) as group_limit
             FROM ${this.queueName} q
+            LEFT JOIN ${this.queueName}_group_concurrency gc ON gc.id = q.group_id
             WHERE q.status = 'queued'::nuq.job_status
-            GROUP BY q.owner_id, q.group_id
           ),
-          aggregate_jobs_with_group_limit AS (
+          owner_limited_jobs AS (
             SELECT
-              aj.owner_id,
-              aj.group_id,
-              CASE
-                WHEN gc.max_concurrency IS NULL THEN aj.jobs
-                ELSE aj.jobs[:GREATEST(gc.max_concurrency - gc.current_concurrency, 0)]
-              END as jobs
-            FROM aggregate_jobs aj
-            LEFT JOIN ${this.queueName}_group_concurrency gc ON gc.id = aj.group_id
-          ),
-          owner_aggregate_jobs AS (
-            SELECT
-              ajwgl.owner_id,
-              array_agg(
-                job
-                ORDER BY (job->>'priority')::int ASC, (job->>'created_at')::timestamptz ASC, (job->>'id')::uuid ASC
-              ) as jobs
-            FROM aggregate_jobs_with_group_limit ajwgl
-            CROSS JOIN LATERAL unnest(ajwgl.jobs) as job
-            GROUP BY ajwgl.owner_id
-          ),
-          owner_aggregate_jobs_with_limit AS (
-            SELECT
-              oaj.owner_id,
-              CASE
-                WHEN oc.max_concurrency IS NULL THEN oaj.jobs
-                ELSE oaj.jobs[:GREATEST(oc.max_concurrency - oc.current_concurrency, 0)]
-              END as jobs
-            FROM owner_aggregate_jobs oaj
-            LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = oaj.owner_id
+              glj.id,
+              glj.owner_id,
+              glj.group_id,
+              ROW_NUMBER() OVER (
+                PARTITION BY glj.owner_id
+                ORDER BY glj.priority ASC, glj.created_at ASC, glj.id ASC
+              ) as owner_rank,
+              GREATEST(COALESCE(oc.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(glj.owner_id)) - COALESCE(oc.current_concurrency, 0), 0) as owner_limit
+            FROM group_limited_jobs glj
+            LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = glj.owner_id
+            WHERE glj.group_rank <= glj.group_limit
           ),
           selected_jobs_with_metadata AS (
-            SELECT
-              (job->>'id')::uuid as id,
-              (job->>'owner_id')::uuid as owner_id,
-              (job->>'group_id')::uuid as group_id
-            FROM owner_aggregate_jobs_with_limit
-            CROSS JOIN LATERAL unnest(owner_aggregate_jobs_with_limit.jobs) as job
+            SELECT id, owner_id, group_id
+            FROM owner_limited_jobs
+            WHERE owner_rank <= owner_limit
             LIMIT 1
           ),
           distinct_owners_to_lock AS (

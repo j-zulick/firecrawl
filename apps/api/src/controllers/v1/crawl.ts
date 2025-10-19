@@ -136,12 +136,15 @@ export async function crawlController(
     });
   }
 
-  await crawlGroup.addGroup(id, [
-    {
-      queue: scrapeQueue,
-      maxConcurrency: sc.maxConcurrency,
-    },
-  ]);
+  await crawlGroup.addGroup(id, {
+    concurrency: [
+      {
+        queue: scrapeQueue,
+        maxConcurrency: sc.maxConcurrency,
+      },
+    ],
+    ownerId: sc.team_id,
+  });
 
   await saveCrawl(id, sc);
 
