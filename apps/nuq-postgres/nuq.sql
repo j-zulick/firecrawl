@@ -58,6 +58,8 @@ CREATE INDEX IF NOT EXISTS nuq_queue_scrape_queued_group_priority_idx ON nuq.que
 -- This index helps with owner-specific queries when group_id is NULL
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_queued_owner_no_group_idx ON nuq.queue_scrape (owner_id, priority ASC, created_at ASC) WHERE (status = 'queued'::nuq.job_status AND group_id IS NULL);
 
+CREATE INDEX IF NOT EXISTS nuq_queue_scrape_queued_complete_idx ON nuq.queue_scrape (owner_id, group_id, priority ASC, created_at ASC, id ASC) WHERE (status = 'queued'::nuq.job_status);
+
 CREATE TABLE IF NOT EXISTS nuq.queue_scrape_owner_concurrency (
     id uuid NOT NULL,
     current_concurrency int8 NOT NULL,
