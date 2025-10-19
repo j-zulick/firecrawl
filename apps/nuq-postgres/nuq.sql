@@ -245,6 +245,7 @@ CREATE TABLE IF NOT EXISTS nuq.group_crawl (
     created_at timestamp with time zone NOT NULL DEFAULT now(),
     finished_at timestamp with time zone,
     expires_at timestamp with time zone,
+    owner_id uuid,
     CONSTRAINT group_crawl_pkey PRIMARY KEY (id)
 );
 

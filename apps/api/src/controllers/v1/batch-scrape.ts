@@ -137,12 +137,15 @@ export async function batchScrapeController(
       };
 
   if (!req.body.appendToId) {
-    await crawlGroup.addGroup(id, [
-      {
-        queue: scrapeQueue,
-        maxConcurrency: sc.maxConcurrency,
-      },
-    ]);
+    await crawlGroup.addGroup(id, {
+      concurrency: [
+        {
+          queue: scrapeQueue,
+          maxConcurrency: sc.maxConcurrency,
+        },
+      ],
+      ownerId: sc.team_id,
+    });
     await saveCrawl(id, sc);
     await markCrawlActive(id);
   }

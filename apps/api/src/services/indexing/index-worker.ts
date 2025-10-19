@@ -491,12 +491,15 @@ const processPrecrawlJob = async (token: string, job: Job) => {
             //   });
             // }
 
-            await crawlGroup.addGroup(crawlId, [
-              {
-                queue: scrapeQueue,
-                maxConcurrency: sc.maxConcurrency ?? undefined,
-              },
-            ]);
+            await crawlGroup.addGroup(crawlId, {
+              concurrency: [
+                {
+                  queue: scrapeQueue,
+                  maxConcurrency: sc.maxConcurrency ?? undefined,
+                },
+              ],
+              ownerId: sc.team_id,
+            });
 
             await saveCrawl(crawlId, sc);
 

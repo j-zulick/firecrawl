@@ -175,12 +175,15 @@ export async function crawlController(req: Request, res: Response) {
       sc.robots = await crawler.getRobotsTxt();
     } catch (_) {}
 
-    await crawlGroup.addGroup(id, [
-      {
-        queue: scrapeQueue,
-        maxConcurrency: undefined,
-      },
-    ]);
+    await crawlGroup.addGroup(id, {
+      concurrency: [
+        {
+          queue: scrapeQueue,
+          maxConcurrency: undefined,
+        },
+      ],
+      ownerId: sc.team_id,
+    });
 
     await saveCrawl(id, sc);
 
