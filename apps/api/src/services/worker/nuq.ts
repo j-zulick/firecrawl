@@ -64,21 +64,21 @@ class NuQ<JobData = any, JobReturnValue = any> {
   constructor(
     public readonly queueName: string,
     public readonly options: NuQOptions = { concurrencyLimit: false },
-  ) { }
+  ) {}
 
   // === Listener
 
   private listener:
     | {
-      type: "postgres";
-      client: Client;
-    }
+        type: "postgres";
+        client: Client;
+      }
     | {
-      type: "rabbitmq";
-      connection: amqp.ChannelModel;
-      channel: amqp.Channel;
-      queue: string;
-    }
+        type: "rabbitmq";
+        connection: amqp.ChannelModel;
+        channel: amqp.Channel;
+        queue: string;
+      }
     | null = null;
   private listens: {
     [key: string]: ((status: "completed" | "failed") => void)[];
@@ -275,7 +275,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
       channel.on("close", () => {
         logger.info("NuQ sender channel closed", { module: "nuq/rabbitmq" });
-        connection.close().catch(() => { });
+        connection.close().catch(() => {});
         this.sender = null;
       });
 
@@ -491,9 +491,12 @@ class NuQ<JobData = any, JobReturnValue = any> {
   ): Promise<Record<NuQJobStatus, number>> {
     const start = Date.now();
     try {
-      const stats = await nuqPool.query(`
+      const stats = await nuqPool.query(
+        `
         SELECT status, COUNT(*) as count FROM nuq.queue_scrape WHERE group_id = $1 GROUP BY status;
-      `, [groupId]);
+      `,
+        [groupId],
+      );
 
       return Object.fromEntries(stats.rows.map(x => [x.status, x.count]));
     } finally {
@@ -515,12 +518,17 @@ class NuQ<JobData = any, JobReturnValue = any> {
   ): Promise<NuQJob<JobData, JobReturnValue>[]> {
     const start = Date.now();
     try {
-      return (await nuqPool.query(`
+      return (
+        await nuqPool.query(
+          `
         SELECT ${this.jobReturning.join(", ")} FROM ${this.queueName}
         WHERE group_id = $1 AND status = $2
         ORDER BY finished_at ASC
         LIMIT $3 OFFSET $4
-      `, [groupId, status, limit, offset])).rows.map(x => this.rowToJob(x)!);
+      `,
+          [groupId, status, limit, offset],
+        )
+      ).rows.map(x => this.rowToJob(x)!);
     } finally {
       _logger.info("nuqGetJobsOfGroupWithStatus metrics", {
         module: "nuq/metrics",
@@ -891,7 +899,15 @@ class NuQ<JobData = any, JobReturnValue = any> {
       let updateQuery: string;
       if (this.options.concurrencyLimit === "per-owner") {
         updateQuery = `
-          WITH owner_limited_jobs AS (
+          WITH owner_active_counts AS (
+            SELECT
+              owner_id,
+              COUNT(*)::int8 as active_count
+            FROM ${this.queueName}
+            WHERE status = 'active'::nuq.job_status AND owner_id IS NOT NULL
+            GROUP BY owner_id
+          ),
+          owner_limited_jobs AS (
             SELECT
               q.id,
               q.owner_id,
@@ -899,9 +915,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
                 PARTITION BY q.owner_id
                 ORDER BY q.priority ASC, q.created_at ASC, q.id ASC
               ) as owner_rank,
-              GREATEST(COALESCE(oc.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(q.owner_id)) - COALESCE(oc.current_concurrency, 0), 0) as owner_limit
+              GREATEST(
+                COALESCE(oc.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(q.owner_id))
+                - COALESCE(oac.active_count, 0),
+                0
+              ) as owner_limit
             FROM ${this.queueName} q
             LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = q.owner_id
+            LEFT JOIN owner_active_counts oac ON oac.owner_id = q.owner_id
             WHERE q.status = 'queued'::nuq.job_status
           ),
           selected_jobs_with_metadata AS (
@@ -909,60 +930,48 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM owner_limited_jobs
             WHERE owner_rank <= owner_limit
           ),
-          distinct_owners_to_lock AS (
+          missing_owners AS (
             SELECT DISTINCT owner_id
             FROM selected_jobs_with_metadata
             WHERE owner_id IS NOT NULL
-            ORDER BY owner_id
-          ),
-          missing_owners AS (
-            SELECT dtl.owner_id
-            FROM distinct_owners_to_lock dtl
-            WHERE NOT EXISTS (
-              SELECT 1 FROM ${this.queueName}_owner_concurrency oc
-              WHERE oc.id = dtl.owner_id
-            )
+              AND NOT EXISTS (
+                SELECT 1 FROM ${this.queueName}_owner_concurrency oc
+                WHERE oc.id = owner_id
+              )
           ),
           ensure_owner_rows AS (
-            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
-            SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
+            INSERT INTO ${this.queueName}_owner_concurrency (id, max_concurrency)
+            SELECT owner_id, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
             FROM missing_owners
             ON CONFLICT (id) DO NOTHING
-          ),
-          acquired_owner_locks AS (
-            SELECT id as owner_id
-            FROM ${this.queueName}_owner_concurrency
-            WHERE id IN (SELECT owner_id FROM distinct_owners_to_lock)
-            FOR UPDATE SKIP LOCKED
-          ),
-          lockable_jobs AS (
-            SELECT id
-            FROM selected_jobs_with_metadata
-            WHERE owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = selected_jobs_with_metadata.owner_id)
           ),
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM lockable_jobs)
+            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM selected_jobs_with_metadata)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
-          ),
-          owner_counts AS (
-            SELECT owner_id, COUNT(*)::int8 as job_count
-            FROM updated
-            WHERE owner_id IS NOT NULL
-            GROUP BY owner_id
-          ),
-          owner_update AS (
-            UPDATE ${this.queueName}_owner_concurrency oc
-            SET current_concurrency = oc.current_concurrency + owner_counts.job_count
-            FROM owner_counts
-            WHERE oc.id = owner_counts.owner_id
           )
           SELECT ${this.jobReturning.map(x => `updated.${x}`).join(", ")} FROM updated;
         `;
       } else if (this.options.concurrencyLimit === "per-owner-per-group") {
         updateQuery = `
-          WITH group_limited_jobs AS (
+          WITH owner_active_counts AS (
+            SELECT
+              owner_id,
+              COUNT(*)::int8 as active_count
+            FROM ${this.queueName}
+            WHERE status = 'active'::nuq.job_status AND owner_id IS NOT NULL
+            GROUP BY owner_id
+          ),
+          group_active_counts AS (
+            SELECT
+              group_id,
+              COUNT(*)::int8 as active_count
+            FROM ${this.queueName}
+            WHERE status = 'active'::nuq.job_status AND group_id IS NOT NULL
+            GROUP BY group_id
+          ),
+          group_limited_jobs AS (
             SELECT
               q.id,
               q.owner_id,
@@ -973,9 +982,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
                 PARTITION BY q.owner_id, q.group_id
                 ORDER BY q.priority ASC, q.created_at ASC, q.id ASC
               ) as group_rank,
-              GREATEST(COALESCE(gc.max_concurrency, 999999) - COALESCE(gc.current_concurrency, 0), 0) as group_limit
+              GREATEST(
+                COALESCE(gc.max_concurrency, 999999)
+                - COALESCE(gac.active_count, 0),
+                0
+              ) as group_limit
             FROM ${this.queueName} q
             LEFT JOIN ${this.queueName}_group_concurrency gc ON gc.id = q.group_id
+            LEFT JOIN group_active_counts gac ON gac.group_id = q.group_id
             WHERE q.status = 'queued'::nuq.job_status
           ),
           owner_limited_jobs AS (
@@ -987,9 +1001,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
                 PARTITION BY glj.owner_id
                 ORDER BY glj.priority ASC, glj.created_at ASC, glj.id ASC
               ) as owner_rank,
-              GREATEST(COALESCE(oc.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(glj.owner_id)) - COALESCE(oc.current_concurrency, 0), 0) as owner_limit
+              GREATEST(
+                COALESCE(oc.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(glj.owner_id))
+                - COALESCE(oac.active_count, 0),
+                0
+              ) as owner_limit
             FROM group_limited_jobs glj
             LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = glj.owner_id
+            LEFT JOIN owner_active_counts oac ON oac.owner_id = glj.owner_id
             WHERE glj.group_rank <= glj.group_limit
           ),
           selected_jobs_with_metadata AS (
@@ -997,93 +1016,41 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM owner_limited_jobs
             WHERE owner_rank <= owner_limit
           ),
-          distinct_owners_to_lock AS (
+          missing_owners AS (
             SELECT DISTINCT owner_id
             FROM selected_jobs_with_metadata
             WHERE owner_id IS NOT NULL
-            ORDER BY owner_id
-          ),
-          missing_owners AS (
-            SELECT dtl.owner_id
-            FROM distinct_owners_to_lock dtl
-            WHERE NOT EXISTS (
-              SELECT 1 FROM ${this.queueName}_owner_concurrency oc
-              WHERE oc.id = dtl.owner_id
-            )
+              AND NOT EXISTS (
+                SELECT 1 FROM ${this.queueName}_owner_concurrency oc
+                WHERE oc.id = owner_id
+              )
           ),
           ensure_owner_rows AS (
-            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
-            SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
+            INSERT INTO ${this.queueName}_owner_concurrency (id, max_concurrency)
+            SELECT owner_id, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
             FROM missing_owners
             ON CONFLICT (id) DO NOTHING
           ),
-          acquired_owner_locks AS (
-            SELECT id as owner_id
-            FROM ${this.queueName}_owner_concurrency
-            WHERE id IN (SELECT owner_id FROM distinct_owners_to_lock)
-            FOR UPDATE SKIP LOCKED
-          ),
-          distinct_groups_to_lock AS (
+          missing_groups AS (
             SELECT DISTINCT group_id
             FROM selected_jobs_with_metadata
             WHERE group_id IS NOT NULL
-            ORDER BY group_id
-          ),
-          missing_groups AS (
-            SELECT dtl.group_id
-            FROM distinct_groups_to_lock dtl
-            WHERE NOT EXISTS (
-              SELECT 1 FROM ${this.queueName}_group_concurrency gc
-              WHERE gc.id = dtl.group_id
-            )
+              AND NOT EXISTS (
+                SELECT 1 FROM ${this.queueName}_group_concurrency gc
+                WHERE gc.id = group_id
+              )
           ),
           ensure_group_rows AS (
-            INSERT INTO ${this.queueName}_group_concurrency (id, current_concurrency, max_concurrency)
-            SELECT group_id, 0, NULL
+            INSERT INTO ${this.queueName}_group_concurrency (id, max_concurrency)
+            SELECT group_id, NULL
             FROM missing_groups
             ON CONFLICT (id) DO NOTHING
-          ),
-          acquired_group_locks AS (
-            SELECT id as group_id
-            FROM ${this.queueName}_group_concurrency
-            WHERE id IN (SELECT group_id FROM distinct_groups_to_lock)
-            FOR UPDATE SKIP LOCKED
-          ),
-          lockable_jobs AS (
-            SELECT id
-            FROM selected_jobs_with_metadata
-            WHERE (owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = selected_jobs_with_metadata.owner_id))
-              AND (group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = selected_jobs_with_metadata.group_id))
           ),
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM lockable_jobs)
+            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM selected_jobs_with_metadata)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
-          ),
-          owner_counts AS (
-            SELECT owner_id, COUNT(*)::int8 as job_count
-            FROM updated
-            WHERE owner_id IS NOT NULL
-            GROUP BY owner_id
-          ),
-          owner_update AS (
-            UPDATE ${this.queueName}_owner_concurrency oc
-            SET current_concurrency = oc.current_concurrency + owner_counts.job_count
-            FROM owner_counts
-            WHERE oc.id = owner_counts.owner_id
-          ),
-          group_counts AS (
-            SELECT group_id, COUNT(*)::int8 as job_count
-            FROM updated
-            WHERE group_id IS NOT NULL
-            GROUP BY group_id
-          ),
-          group_update AS (
-            UPDATE ${this.queueName}_group_concurrency
-            SET current_concurrency = ${this.queueName}_group_concurrency.current_concurrency + group_counts.job_count
-            FROM group_counts
-            WHERE ${this.queueName}_group_concurrency.id = group_counts.group_id
           )
           SELECT ${this.jobReturning.map(x => `updated.${x}`).join(", ")} FROM updated;
         `;
@@ -1161,7 +1128,15 @@ class NuQ<JobData = any, JobReturnValue = any> {
       let updateQuery: string;
       if (this.options.concurrencyLimit === "per-owner") {
         updateQuery = `
-          WITH owner_limited_jobs AS (
+          WITH owner_active_counts AS (
+            SELECT
+              owner_id,
+              COUNT(*)::int8 as active_count
+            FROM ${this.queueName}
+            WHERE status = 'active'::nuq.job_status AND owner_id IS NOT NULL
+            GROUP BY owner_id
+          ),
+          owner_limited_jobs AS (
             SELECT
               q.id,
               q.owner_id,
@@ -1169,9 +1144,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
                 PARTITION BY q.owner_id
                 ORDER BY q.priority ASC, q.created_at ASC, q.id ASC
               ) as owner_rank,
-              GREATEST(COALESCE(oc.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(q.owner_id)) - COALESCE(oc.current_concurrency, 0), 0) as owner_limit
+              GREATEST(
+                COALESCE(oc.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(q.owner_id))
+                - COALESCE(oac.active_count, 0),
+                0
+              ) as owner_limit
             FROM ${this.queueName} q
             LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = q.owner_id
+            LEFT JOIN owner_active_counts oac ON oac.owner_id = q.owner_id
             WHERE q.status = 'queued'::nuq.job_status
           ),
           selected_jobs_with_metadata AS (
@@ -1180,55 +1160,48 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_rank <= owner_limit
             LIMIT 1
           ),
-          distinct_owners_to_lock AS (
+          missing_owners AS (
             SELECT DISTINCT owner_id
             FROM selected_jobs_with_metadata
             WHERE owner_id IS NOT NULL
-            ORDER BY owner_id
-          ),
-          missing_owners AS (
-            SELECT dtl.owner_id
-            FROM distinct_owners_to_lock dtl
-            WHERE NOT EXISTS (
-              SELECT 1 FROM ${this.queueName}_owner_concurrency oc
-              WHERE oc.id = dtl.owner_id
-            )
+              AND NOT EXISTS (
+                SELECT 1 FROM ${this.queueName}_owner_concurrency oc
+                WHERE oc.id = owner_id
+              )
           ),
           ensure_owner_rows AS (
-            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
-            SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
+            INSERT INTO ${this.queueName}_owner_concurrency (id, max_concurrency)
+            SELECT owner_id, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
             FROM missing_owners
             ON CONFLICT (id) DO NOTHING
-          ),
-          acquired_owner_locks AS (
-            SELECT id as owner_id
-            FROM ${this.queueName}_owner_concurrency
-            WHERE id IN (SELECT owner_id FROM distinct_owners_to_lock)
-            FOR UPDATE SKIP LOCKED
-          ),
-          lockable_jobs AS (
-            SELECT id
-            FROM selected_jobs_with_metadata
-            WHERE owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = selected_jobs_with_metadata.owner_id)
           ),
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM lockable_jobs)
+            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM selected_jobs_with_metadata)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
-          ),
-          owner_increment AS (
-            UPDATE ${this.queueName}_owner_concurrency oc
-            SET current_concurrency = oc.current_concurrency + 1
-            FROM updated u
-            WHERE oc.id = u.owner_id
-              AND u.owner_id IS NOT NULL
           )
           SELECT ${this.jobReturning.map(x => `updated.${x}`).join(", ")} FROM updated;
         `;
       } else if (this.options.concurrencyLimit === "per-owner-per-group") {
         updateQuery = `
-          WITH group_limited_jobs AS (
+          WITH owner_active_counts AS (
+            SELECT
+              owner_id,
+              COUNT(*)::int8 as active_count
+            FROM ${this.queueName}
+            WHERE status = 'active'::nuq.job_status AND owner_id IS NOT NULL
+            GROUP BY owner_id
+          ),
+          group_active_counts AS (
+            SELECT
+              group_id,
+              COUNT(*)::int8 as active_count
+            FROM ${this.queueName}
+            WHERE status = 'active'::nuq.job_status AND group_id IS NOT NULL
+            GROUP BY group_id
+          ),
+          group_limited_jobs AS (
             SELECT
               q.id,
               q.owner_id,
@@ -1239,9 +1212,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
                 PARTITION BY q.owner_id, q.group_id
                 ORDER BY q.priority ASC, q.created_at ASC, q.id ASC
               ) as group_rank,
-              GREATEST(COALESCE(gc.max_concurrency, 999999) - COALESCE(gc.current_concurrency, 0), 0) as group_limit
+              GREATEST(
+                COALESCE(gc.max_concurrency, 999999)
+                - COALESCE(gac.active_count, 0),
+                0
+              ) as group_limit
             FROM ${this.queueName} q
             LEFT JOIN ${this.queueName}_group_concurrency gc ON gc.id = q.group_id
+            LEFT JOIN group_active_counts gac ON gac.group_id = q.group_id
             WHERE q.status = 'queued'::nuq.job_status
           ),
           owner_limited_jobs AS (
@@ -1253,9 +1231,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
                 PARTITION BY glj.owner_id
                 ORDER BY glj.priority ASC, glj.created_at ASC, glj.id ASC
               ) as owner_rank,
-              GREATEST(COALESCE(oc.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(glj.owner_id)) - COALESCE(oc.current_concurrency, 0), 0) as owner_limit
+              GREATEST(
+                COALESCE(oc.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(glj.owner_id))
+                - COALESCE(oac.active_count, 0),
+                0
+              ) as owner_limit
             FROM group_limited_jobs glj
             LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = glj.owner_id
+            LEFT JOIN owner_active_counts oac ON oac.owner_id = glj.owner_id
             WHERE glj.group_rank <= glj.group_limit
           ),
           selected_jobs_with_metadata AS (
@@ -1264,93 +1247,41 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_rank <= owner_limit
             LIMIT 1
           ),
-          distinct_owners_to_lock AS (
+          missing_owners AS (
             SELECT DISTINCT owner_id
             FROM selected_jobs_with_metadata
             WHERE owner_id IS NOT NULL
-            ORDER BY owner_id
-          ),
-          missing_owners AS (
-            SELECT dtl.owner_id
-            FROM distinct_owners_to_lock dtl
-            WHERE NOT EXISTS (
-              SELECT 1 FROM ${this.queueName}_owner_concurrency oc
-              WHERE oc.id = dtl.owner_id
-            )
+              AND NOT EXISTS (
+                SELECT 1 FROM ${this.queueName}_owner_concurrency oc
+                WHERE oc.id = owner_id
+              )
           ),
           ensure_owner_rows AS (
-            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
-            SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
+            INSERT INTO ${this.queueName}_owner_concurrency (id, max_concurrency)
+            SELECT owner_id, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
             FROM missing_owners
             ON CONFLICT (id) DO NOTHING
           ),
-          acquired_owner_locks AS (
-            SELECT id as owner_id
-            FROM ${this.queueName}_owner_concurrency
-            WHERE id IN (SELECT owner_id FROM distinct_owners_to_lock)
-            FOR UPDATE SKIP LOCKED
-          ),
-          distinct_groups_to_lock AS (
+          missing_groups AS (
             SELECT DISTINCT group_id
             FROM selected_jobs_with_metadata
             WHERE group_id IS NOT NULL
-            ORDER BY group_id
-          ),
-          missing_groups AS (
-            SELECT dtl.group_id
-            FROM distinct_groups_to_lock dtl
-            WHERE NOT EXISTS (
-              SELECT 1 FROM ${this.queueName}_group_concurrency gc
-              WHERE gc.id = dtl.group_id
-            )
+              AND NOT EXISTS (
+                SELECT 1 FROM ${this.queueName}_group_concurrency gc
+                WHERE gc.id = group_id
+              )
           ),
           ensure_group_rows AS (
-            INSERT INTO ${this.queueName}_group_concurrency (id, current_concurrency, max_concurrency)
-            SELECT group_id, 0, NULL
+            INSERT INTO ${this.queueName}_group_concurrency (id, max_concurrency)
+            SELECT group_id, NULL
             FROM missing_groups
             ON CONFLICT (id) DO NOTHING
-          ),
-          acquired_group_locks AS (
-            SELECT id as group_id
-            FROM ${this.queueName}_group_concurrency
-            WHERE id IN (SELECT group_id FROM distinct_groups_to_lock)
-            FOR UPDATE SKIP LOCKED
-          ),
-          lockable_jobs AS (
-            SELECT id
-            FROM selected_jobs_with_metadata
-            WHERE (owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = selected_jobs_with_metadata.owner_id))
-              AND (group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = selected_jobs_with_metadata.group_id))
           ),
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM lockable_jobs)
+            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM selected_jobs_with_metadata)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
-          ),
-          owner_counts AS (
-            SELECT owner_id, COUNT(*)::int8 as job_count
-            FROM updated
-            WHERE owner_id IS NOT NULL
-            GROUP BY owner_id
-          ),
-          owner_update AS (
-            UPDATE ${this.queueName}_owner_concurrency oc
-            SET current_concurrency = oc.current_concurrency + owner_counts.job_count
-            FROM owner_counts
-            WHERE oc.id = owner_counts.owner_id
-          ),
-          group_counts AS (
-            SELECT group_id, COUNT(*)::int8 as job_count
-            FROM updated
-            WHERE group_id IS NOT NULL
-            GROUP BY group_id
-          ),
-          group_update AS (
-            UPDATE ${this.queueName}_group_concurrency
-            SET current_concurrency = ${this.queueName}_group_concurrency.current_concurrency + group_counts.job_count
-            FROM group_counts
-            WHERE ${this.queueName}_group_concurrency.id = group_counts.group_id
           )
           SELECT ${this.jobReturning.map(x => `updated.${x}`).join(", ")} FROM updated;
         `;
@@ -1420,49 +1351,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
       const start = Date.now();
       try {
-        let updateQuery: string;
-        if (this.options.concurrencyLimit === "per-owner") {
-          // Update job and decrement owner concurrency in one query
-          updateQuery = `
-            WITH updated AS (
-              UPDATE ${this.queueName}
-              SET status = 'completed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), returnvalue = $3
-              WHERE id = $1 AND lock = $2
-              RETURNING id, listen_channel_id, owner_id
-            ),
-            owner_decrement AS (
-              UPDATE ${this.queueName}_owner_concurrency
-              SET current_concurrency = GREATEST(0, current_concurrency - 1)
-              FROM updated
-              WHERE updated.owner_id IS NOT NULL AND ${this.queueName}_owner_concurrency.id = updated.owner_id
-            )
-            SELECT * FROM updated;
-          `;
-        } else if (this.options.concurrencyLimit === "per-owner-per-group") {
-          updateQuery = `
-            WITH updated AS (
-              UPDATE ${this.queueName}
-              SET status = 'completed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), returnvalue = $3
-              WHERE id = $1 AND lock = $2
-              RETURNING id, listen_channel_id, owner_id, group_id
-            ),
-            owner_decrement AS (
-              UPDATE ${this.queueName}_owner_concurrency
-              SET current_concurrency = GREATEST(0, current_concurrency - 1)
-              FROM updated
-              WHERE updated.owner_id IS NOT NULL AND ${this.queueName}_owner_concurrency.id = updated.owner_id
-            ),
-            group_decrement AS (
-              UPDATE ${this.queueName}_group_concurrency
-              SET current_concurrency = GREATEST(0, current_concurrency - 1)
-              FROM updated
-              WHERE updated.group_id IS NOT NULL AND ${this.queueName}_group_concurrency.id = updated.group_id
-            )
-            SELECT * FROM updated;
-          `;
-        } else {
-          updateQuery = `UPDATE ${this.queueName} SET status = 'completed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), returnvalue = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`;
-        }
+        const updateQuery = `UPDATE ${this.queueName} SET status = 'completed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), returnvalue = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`;
 
         const result = await nuqPool.query(updateQuery, [
           id,
@@ -1530,48 +1419,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
       const start = Date.now();
       try {
-        let updateQuery: string;
-        if (this.options.concurrencyLimit === "per-owner") {
-          updateQuery = `
-            WITH updated AS (
-              UPDATE ${this.queueName}
-              SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = $3
-              WHERE id = $1 AND lock = $2
-              RETURNING id, listen_channel_id, owner_id
-            ),
-            owner_decrement AS (
-              UPDATE ${this.queueName}_owner_concurrency
-              SET current_concurrency = GREATEST(0, current_concurrency - 1)
-              FROM updated
-              WHERE updated.owner_id IS NOT NULL AND ${this.queueName}_owner_concurrency.id = updated.owner_id
-            )
-            SELECT * FROM updated;
-          `;
-        } else if (this.options.concurrencyLimit === "per-owner-per-group") {
-          updateQuery = `
-            WITH updated AS (
-              UPDATE ${this.queueName}
-              SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = $3
-              WHERE id = $1 AND lock = $2
-              RETURNING id, listen_channel_id, owner_id, group_id
-            ),
-            owner_decrement AS (
-              UPDATE ${this.queueName}_owner_concurrency
-              SET current_concurrency = GREATEST(0, current_concurrency - 1)
-              FROM updated
-              WHERE updated.owner_id IS NOT NULL AND ${this.queueName}_owner_concurrency.id = updated.owner_id
-            ),
-            group_decrement AS (
-              UPDATE ${this.queueName}_group_concurrency
-              SET current_concurrency = GREATEST(0, current_concurrency - 1)
-              FROM updated
-              WHERE updated.group_id IS NOT NULL AND ${this.queueName}_group_concurrency.id = updated.group_id
-            )
-            SELECT * FROM updated;
-          `;
-        } else {
-          updateQuery = `UPDATE ${this.queueName} SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`;
-        }
+        const updateQuery = `UPDATE ${this.queueName} SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = $3 WHERE id = $1 AND lock = $2 RETURNING id, listen_channel_id;`;
 
         const result = await nuqPool.query(updateQuery, [
           id,
@@ -1663,7 +1511,9 @@ class NuQ<JobData = any, JobReturnValue = any> {
     const start = Date.now();
     try {
       const result = await nuqPool.query(
-        `SELECT current_concurrency, max_concurrency
+        `SELECT
+          (SELECT COUNT(*)::int8 FROM ${this.queueName} WHERE owner_id = $1 AND status = 'active'::nuq.job_status) as current_concurrency,
+          max_concurrency
         FROM ${this.queueName}_owner_concurrency
         WHERE id = $1;`,
         [ownerId],
@@ -1694,11 +1544,20 @@ class NuQ<JobData = any, JobReturnValue = any> {
     let query: string;
     if (this.options.concurrencyLimit === "per-owner") {
       query = `
-        WITH owner_status AS (
+        WITH owner_active_counts AS (
           SELECT
-            id,
-            GREATEST(0, max_concurrency - current_concurrency) as available_slots
-          FROM ${this.queueName}_owner_concurrency
+            owner_id,
+            COUNT(*) as active_count
+          FROM ${this.queueName}
+          WHERE status = 'active'::nuq.job_status AND owner_id IS NOT NULL
+          GROUP BY owner_id
+        ),
+        owner_status AS (
+          SELECT
+            oc.id,
+            GREATEST(0, oc.max_concurrency - COALESCE(oac.active_count, 0)) as available_slots
+          FROM ${this.queueName}_owner_concurrency oc
+          LEFT JOIN owner_active_counts oac ON oac.owner_id = oc.id
         ),
         queued_per_owner AS (
           SELECT
@@ -1740,17 +1599,35 @@ class NuQ<JobData = any, JobReturnValue = any> {
       `;
     } else if (this.options.concurrencyLimit === "per-owner-per-group") {
       query = `
-        WITH owner_status AS (
+        WITH owner_active_counts AS (
           SELECT
-            id,
-            GREATEST(0, max_concurrency - current_concurrency) as available_slots
-          FROM ${this.queueName}_owner_concurrency
+            owner_id,
+            COUNT(*) as active_count
+          FROM ${this.queueName}
+          WHERE status = 'active'::nuq.job_status AND owner_id IS NOT NULL
+          GROUP BY owner_id
+        ),
+        group_active_counts AS (
+          SELECT
+            group_id,
+            COUNT(*) as active_count
+          FROM ${this.queueName}
+          WHERE status = 'active'::nuq.job_status AND group_id IS NOT NULL
+          GROUP BY group_id
+        ),
+        owner_status AS (
+          SELECT
+            oc.id,
+            GREATEST(0, oc.max_concurrency - COALESCE(oac.active_count, 0)) as available_slots
+          FROM ${this.queueName}_owner_concurrency oc
+          LEFT JOIN owner_active_counts oac ON oac.owner_id = oc.id
         ),
         group_status AS (
           SELECT
-            id,
-            GREATEST(0, max_concurrency - current_concurrency) as available_slots
-          FROM ${this.queueName}_group_concurrency
+            gc.id,
+            GREATEST(0, gc.max_concurrency - COALESCE(gac.active_count, 0)) as available_slots
+          FROM ${this.queueName}_group_concurrency gc
+          LEFT JOIN group_active_counts gac ON gac.group_id = gc.id
         ),
         queued_per_owner_group AS (
           SELECT
@@ -1862,7 +1739,7 @@ type NuQGroupConcurrencySettings = {
 type NuQGroupInstanceOptions = {
   concurrency: NuQGroupConcurrencySettings[];
   ownerId: string;
-}
+};
 
 type NuQGroupInstance = {
   id: string;
@@ -1917,7 +1794,7 @@ class NuQGroup {
       for (const entry of options.concurrency) {
         if (entry.queue.options.concurrencyLimit === "per-owner-per-group") {
           await client.query(
-            `INSERT INTO ${entry.queue.queueName}_group_concurrency (id, current_concurrency, max_concurrency) VALUES ($1, 0, $2);`,
+            `INSERT INTO ${entry.queue.queueName}_group_concurrency (id, max_concurrency) VALUES ($1, $2);`,
             [id, entry.maxConcurrency ?? null],
           );
         }
@@ -1951,7 +1828,10 @@ class NuQGroup {
     await client.query("BEGIN");
 
     try {
-      const updateOp = await client.query(`UPDATE ${this.groupName} SET status = 'cancelled'::nuq.group_status WHERE id = $1 AND status = 'active'::nuq.group_status`, [id]);
+      const updateOp = await client.query(
+        `UPDATE ${this.groupName} SET status = 'cancelled'::nuq.group_status WHERE id = $1 AND status = 'active'::nuq.group_status`,
+        [id],
+      );
 
       if (updateOp.rowCount === 0) {
         client.release();
@@ -1959,7 +1839,10 @@ class NuQGroup {
       }
 
       for (const queue of this.options.memberQueues) {
-        await client.query(`UPDATE ${queue.queueName} SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = 'CANCELLED' WHERE group_id = $1 AND status = 'queued'::nuq.job_status`, [id]);
+        await client.query(
+          `UPDATE ${queue.queueName} SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = 'CANCELLED' WHERE group_id = $1 AND status = 'queued'::nuq.job_status`,
+          [id],
+        );
       }
 
       client.release();

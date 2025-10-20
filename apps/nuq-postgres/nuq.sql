@@ -60,9 +60,13 @@ CREATE INDEX IF NOT EXISTS nuq_queue_scrape_queued_owner_no_group_idx ON nuq.que
 
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_queued_complete_idx ON nuq.queue_scrape (owner_id, group_id, priority ASC, created_at ASC, id ASC) WHERE (status = 'queued'::nuq.job_status);
 
+-- Indexes for dynamic concurrency counting (replacing current_concurrency counters)
+-- This allows fast COUNT(*) queries for active jobs per owner/group without maintaining counters
+CREATE INDEX IF NOT EXISTS nuq_queue_scrape_active_owner_idx ON nuq.queue_scrape (owner_id) WHERE (status = 'active'::nuq.job_status AND owner_id IS NOT NULL);
+CREATE INDEX IF NOT EXISTS nuq_queue_scrape_active_group_idx ON nuq.queue_scrape (group_id) WHERE (status = 'active'::nuq.job_status AND group_id IS NOT NULL);
+
 CREATE TABLE IF NOT EXISTS nuq.queue_scrape_owner_concurrency (
     id uuid NOT NULL,
-    current_concurrency int8 NOT NULL,
     max_concurrency int8 NOT NULL,
     CONSTRAINT queue_scrape_owner_concurrency_pkey PRIMARY KEY (id)
 );
@@ -84,7 +88,6 @@ $$;
 
 CREATE TABLE IF NOT EXISTS nuq.queue_scrape_group_concurrency (
     id uuid NOT NULL,
-    current_concurrency int8 NOT NULL,
     max_concurrency int8,
     CONSTRAINT queue_scrape_group_concurrency_pkey PRIMARY KEY (id)
 );
@@ -104,31 +107,6 @@ SELECT cron.schedule('nuq_queue_scrape_lock_reaper', '15 seconds', $$
     WHERE locked_at <= now() - interval '1 minute'
       AND status = 'active'::nuq.job_status
   ),
-  distinct_owners AS (
-    SELECT DISTINCT owner_id
-    FROM stalled_jobs
-    WHERE owner_id IS NOT NULL
-    ORDER BY owner_id
-  ),
-  acquired_owner_locks AS (
-    SELECT id as owner_id
-    FROM nuq.queue_scrape_owner_concurrency
-    WHERE id IN (SELECT owner_id FROM distinct_owners)
-    FOR UPDATE SKIP LOCKED
-  ),
-  distinct_groups AS (
-    SELECT DISTINCT sj.group_id
-    FROM stalled_jobs sj
-    INNER JOIN acquired_owner_locks aol ON sj.owner_id = aol.owner_id
-    WHERE sj.group_id IS NOT NULL
-    ORDER BY sj.group_id
-  ),
-  acquired_group_locks AS (
-    SELECT id as group_id
-    FROM nuq.queue_scrape_group_concurrency
-    WHERE id IN (SELECT group_id FROM distinct_groups)
-    FOR UPDATE SKIP LOCKED
-  ),
   requeued AS (
     UPDATE nuq.queue_scrape
     SET status = 'queued'::nuq.job_status, lock = null, locked_at = null, stalls = COALESCE(stalls, 0) + 1
@@ -136,34 +114,8 @@ SELECT cron.schedule('nuq_queue_scrape_lock_reaper', '15 seconds', $$
       SELECT sj.id
       FROM stalled_jobs sj
       WHERE COALESCE(sj.stalls, 0) < 9
-        AND (sj.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = sj.owner_id))
-        AND (sj.group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = sj.group_id))
     )
-    RETURNING id, owner_id, group_id
-  ),
-  requeued_owner_counts AS (
-    SELECT owner_id, COUNT(*) as job_count
-    FROM requeued
-    WHERE owner_id IS NOT NULL
-    GROUP BY owner_id
-  ),
-  requeue_owner_concurrency_update AS (
-    UPDATE nuq.queue_scrape_owner_concurrency
-    SET current_concurrency = GREATEST(0, current_concurrency - requeued_owner_counts.job_count)
-    FROM requeued_owner_counts
-    WHERE nuq.queue_scrape_owner_concurrency.id = requeued_owner_counts.owner_id
-  ),
-  requeued_group_counts AS (
-    SELECT group_id, COUNT(*) as job_count
-    FROM requeued
-    WHERE group_id IS NOT NULL
-    GROUP BY group_id
-  ),
-  requeue_group_concurrency_update AS (
-    UPDATE nuq.queue_scrape_group_concurrency
-    SET current_concurrency = GREATEST(0, current_concurrency - requeued_group_counts.job_count)
-    FROM requeued_group_counts
-    WHERE nuq.queue_scrape_group_concurrency.id = requeued_group_counts.group_id
+    RETURNING id
   ),
   stallfail AS (
     UPDATE nuq.queue_scrape
@@ -172,34 +124,8 @@ SELECT cron.schedule('nuq_queue_scrape_lock_reaper', '15 seconds', $$
       SELECT sj.id
       FROM stalled_jobs sj
       WHERE COALESCE(sj.stalls, 0) >= 9
-        AND (sj.owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = sj.owner_id))
-        AND (sj.group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = sj.group_id))
     )
-    RETURNING id, owner_id, group_id
-  ),
-  stallfail_owner_counts AS (
-    SELECT owner_id, COUNT(*) as job_count
-    FROM stallfail
-    WHERE owner_id IS NOT NULL
-    GROUP BY owner_id
-  ),
-  stallfail_owner_concurrency_update AS (
-    UPDATE nuq.queue_scrape_owner_concurrency
-    SET current_concurrency = GREATEST(0, current_concurrency - stallfail_owner_counts.job_count)
-    FROM stallfail_owner_counts
-    WHERE nuq.queue_scrape_owner_concurrency.id = stallfail_owner_counts.owner_id
-  ),
-  stallfail_group_counts AS (
-    SELECT group_id, COUNT(*) as job_count
-    FROM stallfail
-    WHERE group_id IS NOT NULL
-    GROUP BY group_id
-  ),
-  stallfail_group_concurrency_update AS (
-    UPDATE nuq.queue_scrape_group_concurrency
-    SET current_concurrency = GREATEST(0, current_concurrency - stallfail_group_counts.job_count)
-    FROM stallfail_group_counts
-    WHERE nuq.queue_scrape_group_concurrency.id = stallfail_group_counts.group_id
+    RETURNING id
   )
   SELECT pg_notify('nuq.queue_scrape', (id::text || '|' || 'failed'::text)) FROM stallfail;
 $$);
@@ -208,29 +134,7 @@ SELECT cron.schedule('nuq_queue_scrape_reindex', '0 9 * * *', $$
   REINDEX TABLE CONCURRENTLY nuq.queue_scrape;
 $$);
 
-SELECT cron.schedule('nuq_queue_scrape_concurrency_sync', '*/5 * * * *', $$
-  WITH actual_concurrency AS (
-    SELECT owner_id, COUNT(*) as active_count
-    FROM nuq.queue_scrape
-    WHERE status = 'active'::nuq.job_status
-      AND owner_id IS NOT NULL
-    GROUP BY owner_id
-  )
-  UPDATE nuq.queue_scrape_owner_concurrency
-  SET current_concurrency = COALESCE(actual_concurrency.active_count, 0)
-  FROM actual_concurrency
-  WHERE nuq.queue_scrape_owner_concurrency.id = actual_concurrency.owner_id
-    AND nuq.queue_scrape_owner_concurrency.current_concurrency != COALESCE(actual_concurrency.active_count, 0);
-
-  UPDATE nuq.queue_scrape_owner_concurrency
-  SET current_concurrency = 0
-  WHERE current_concurrency > 0
-    AND NOT EXISTS (
-      SELECT 1 FROM nuq.queue_scrape
-      WHERE nuq.queue_scrape.owner_id = nuq.queue_scrape_owner_concurrency.id
-        AND nuq.queue_scrape.status = 'active'::nuq.job_status
-    );
-
+SELECT cron.schedule('nuq_queue_scrape_max_concurrency_sync', '*/5 * * * *', $$
   UPDATE nuq.queue_scrape_owner_concurrency
     SET max_concurrency = (SELECT nuq_queue_scrape_owner_resolve_max_concurrency(nuq.queue_scrape_owner_concurrency.id));
 $$);
