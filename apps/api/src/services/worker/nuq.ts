@@ -915,11 +915,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_id IS NOT NULL
           ),
           missing_owners AS (
-            SELECT d.owner_id
-            FROM distinct_owners d
+            SELECT do.owner_id
+            FROM distinct_owners do
             WHERE NOT EXISTS (
               SELECT 1 FROM ${this.queueName}_owner_concurrency oc
-              WHERE oc.id = d.owner_id
+              WHERE oc.id = do.owner_id
             )
           ),
           ensure_owner_rows AS (
@@ -991,11 +991,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_id IS NOT NULL
           ),
           missing_owners AS (
-            SELECT d.owner_id
-            FROM distinct_owners d
+            SELECT do.owner_id
+            FROM distinct_owners do
             WHERE NOT EXISTS (
               SELECT 1 FROM ${this.queueName}_owner_concurrency oc
-              WHERE oc.id = d.owner_id
+              WHERE oc.id = do.owner_id
             )
           ),
           ensure_owner_rows AS (
@@ -1154,11 +1154,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_id IS NOT NULL
           ),
           missing_owners AS (
-            SELECT d.owner_id
-            FROM distinct_owners d
+            SELECT do.owner_id
+            FROM distinct_owners do
             WHERE NOT EXISTS (
               SELECT 1 FROM ${this.queueName}_owner_concurrency oc
-              WHERE oc.id = d.owner_id
+              WHERE oc.id = do.owner_id
             )
           ),
           ensure_owner_rows AS (
@@ -1226,11 +1226,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_id IS NOT NULL
           ),
           missing_owners AS (
-            SELECT d.owner_id
-            FROM distinct_owners d
+            SELECT do.owner_id
+            FROM distinct_owners do
             WHERE NOT EXISTS (
               SELECT 1 FROM ${this.queueName}_owner_concurrency oc
-              WHERE oc.id = d.owner_id
+              WHERE oc.id = do.owner_id
             )
           ),
           ensure_owner_rows AS (
