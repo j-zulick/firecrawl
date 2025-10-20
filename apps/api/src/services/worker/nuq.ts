@@ -927,6 +927,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
             INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
             SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
             FROM missing_owners
+            ON CONFLICT (id) DO NOTHING
           ),
           acquired_owner_locks AS (
             SELECT id as owner_id
@@ -1014,6 +1015,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
             INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
             SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
             FROM missing_owners
+            ON CONFLICT (id) DO NOTHING
           ),
           acquired_owner_locks AS (
             SELECT id as owner_id
@@ -1039,6 +1041,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
             INSERT INTO ${this.queueName}_group_concurrency (id, current_concurrency, max_concurrency)
             SELECT group_id, 0, NULL
             FROM missing_groups
+            ON CONFLICT (id) DO NOTHING
           ),
           acquired_group_locks AS (
             SELECT id as group_id
@@ -1195,6 +1198,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
             INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
             SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
             FROM missing_owners
+            ON CONFLICT (id) DO NOTHING
           ),
           acquired_owner_locks AS (
             SELECT id as owner_id
@@ -1278,6 +1282,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
             INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
             SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
             FROM missing_owners
+            ON CONFLICT (id) DO NOTHING
           ),
           acquired_owner_locks AS (
             SELECT id as owner_id
@@ -1303,6 +1308,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
             INSERT INTO ${this.queueName}_group_concurrency (id, current_concurrency, max_concurrency)
             SELECT group_id, 0, NULL
             FROM missing_groups
+            ON CONFLICT (id) DO NOTHING
           ),
           acquired_group_locks AS (
             SELECT id as group_id
