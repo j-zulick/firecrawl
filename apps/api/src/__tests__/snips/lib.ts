@@ -2,7 +2,6 @@ import { configDotenv } from "dotenv";
 configDotenv();
 
 import { TeamFlags } from "../../controllers/v1/types";
-import { Client as PgClient } from "pg";
 
 // =========================================
 // Configuration
@@ -44,14 +43,12 @@ export async function idmux(req: IdmuxRequest): Promise<Identity> {
     runNumber = 0;
   }
 
-  const concurrency = req.concurrency ?? 100;
-
   const res = await fetch(process.env.IDMUX_URL + "/", {
     method: "POST",
     body: JSON.stringify({
       refName: process.env.GITHUB_REF_NAME!,
       runNumber,
-      concurrency,
+      concurrency: req.concurrency ?? 100,
       ...req,
     }),
     headers: {
@@ -64,24 +61,7 @@ export async function idmux(req: IdmuxRequest): Promise<Identity> {
   }
 
   expect(res.ok).toBe(true);
-  const result: Identity = await res.json();
-
-  const nuqClient = new PgClient({
-    connectionString: process.env.NUQ_DATABASE_URL,
-  });
-
-  // update the concurrency limit for the team in the nuq spoof table
-  await nuqClient.query(
-    `
-    INSERT INTO nuq.queue_scrape_owner_concurrency_source (id, max_concurrency) VALUES ($1, $2)
-    ON CONFLICT (id) DO UPDATE SET max_concurrency = EXCLUDED.max_concurrency
-  `,
-    [result.teamId, concurrency],
-  );
-
-  await nuqClient.end();
-
-  return result;
+  return await res.json();
 }
 
 export type Identity = {

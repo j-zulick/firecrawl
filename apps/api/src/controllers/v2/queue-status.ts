@@ -4,7 +4,12 @@ import { RequestWithAuth } from "./types";
 import { AuthCreditUsageChunkFromTeam } from "../v1/types";
 import { Response } from "express";
 import { redisEvictConnection } from "../../services/redis";
-import { scrapeQueue } from "../../services/worker/nuq";
+import {
+  cleanOldConcurrencyLimitedJobs,
+  cleanOldConcurrencyLimitEntries,
+  getConcurrencyLimitActiveJobsCount,
+  getConcurrencyQueueJobsCount,
+} from "../../lib/concurrency-limit";
 
 type QueueStatusResponse = {
   success: boolean;
@@ -36,7 +41,12 @@ export async function queueStatusController(
     );
   }
 
-  const jobCounts = await scrapeQueue.getOwnerJobCounts(req.auth.team_id);
+  await cleanOldConcurrencyLimitEntries(req.auth.team_id);
+  const activeJobsOfTeam = await getConcurrencyLimitActiveJobsCount(
+    req.auth.team_id,
+  );
+  await cleanOldConcurrencyLimitedJobs(req.auth.team_id);
+  const queuedJobsOfTeam = await getConcurrencyQueueJobsCount(req.auth.team_id);
 
   const mostRecentSuccess = await redisEvictConnection.get(
     "most-recent-success:" + req.auth.team_id,
@@ -45,9 +55,9 @@ export async function queueStatusController(
   return res.status(200).json({
     success: true,
 
-    jobsInQueue: jobCounts.active + jobCounts.queued,
-    activeJobsInQueue: jobCounts.active,
-    waitingJobsInQueue: jobCounts.queued,
+    jobsInQueue: activeJobsOfTeam + queuedJobsOfTeam,
+    activeJobsInQueue: activeJobsOfTeam,
+    waitingJobsInQueue: queuedJobsOfTeam,
     maxConcurrency: Math.max(
       req.acuc?.concurrency ?? 1,
       otherACUC?.concurrency ?? 1,

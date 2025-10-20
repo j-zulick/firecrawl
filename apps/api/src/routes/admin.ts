@@ -3,6 +3,7 @@ import { redisHealthController } from "../controllers/v0/admin/redis-health";
 import { authMiddleware, blocklistMiddleware, wrap } from "./shared";
 import { acucCacheClearController } from "../controllers/v0/admin/acuc-cache-clear";
 import { checkFireEngine } from "../controllers/v0/admin/check-fire-engine";
+import { cclogController } from "../controllers/v0/admin/cclog";
 import { indexQueuePrometheus } from "../controllers/v0/admin/index-queue-prometheus";
 import { zdrcleanerController } from "../controllers/v0/admin/zdrcleaner";
 import { triggerPrecrawl } from "../controllers/v0/admin/precrawl";
@@ -28,6 +29,11 @@ adminRouter.post(
 adminRouter.get(
   `/admin/${process.env.BULL_AUTH_KEY}/feng-check`,
   wrap(checkFireEngine),
+);
+
+adminRouter.get(
+  `/admin/${process.env.BULL_AUTH_KEY}/cclog`,
+  wrap(cclogController),
 );
 
 adminRouter.get(

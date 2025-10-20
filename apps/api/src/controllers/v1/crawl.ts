@@ -13,11 +13,10 @@ import {
   StoredCrawl,
   markCrawlActive,
 } from "../../lib/crawl-redis";
-import { addScrapeJob } from "../../services/queue-jobs";
+import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
-import { crawlGroup, scrapeQueue } from "../../services/worker/nuq";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -136,21 +135,11 @@ export async function crawlController(
     });
   }
 
-  await crawlGroup.addGroup(id, {
-    concurrency: [
-      {
-        queue: scrapeQueue,
-        maxConcurrency: sc.maxConcurrency,
-      },
-    ],
-    ownerId: sc.team_id,
-  });
-
   await saveCrawl(id, sc);
 
   await markCrawlActive(id);
 
-  await addScrapeJob(
+  await _addScrapeJobToBullMQ(
     {
       mode: "kickoff" as const,
       url: req.body.url,
