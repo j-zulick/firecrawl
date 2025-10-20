@@ -909,18 +909,17 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM owner_limited_jobs
             WHERE owner_rank <= owner_limit
           ),
-          distinct_owners_to_lock AS (
+          distinct_owners AS (
             SELECT DISTINCT owner_id
             FROM selected_jobs_with_metadata
             WHERE owner_id IS NOT NULL
-            ORDER BY owner_id
           ),
           missing_owners AS (
-            SELECT dtl.owner_id
-            FROM distinct_owners_to_lock dtl
+            SELECT do.owner_id
+            FROM distinct_owners do
             WHERE NOT EXISTS (
               SELECT 1 FROM ${this.queueName}_owner_concurrency oc
-              WHERE oc.id = dtl.owner_id
+              WHERE oc.id = do.owner_id
             )
           ),
           ensure_owner_rows AS (
@@ -928,21 +927,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
             SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
             FROM missing_owners
           ),
-          acquired_owner_locks AS (
-            SELECT id as owner_id
-            FROM ${this.queueName}_owner_concurrency
-            WHERE id IN (SELECT owner_id FROM distinct_owners_to_lock)
-            FOR UPDATE SKIP LOCKED
-          ),
-          lockable_jobs AS (
-            SELECT id
-            FROM selected_jobs_with_metadata
-            WHERE owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = selected_jobs_with_metadata.owner_id)
-          ),
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM lockable_jobs)
+            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM selected_jobs_with_metadata)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
           ),
           owner_counts AS (
@@ -996,18 +984,17 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM owner_limited_jobs
             WHERE owner_rank <= owner_limit
           ),
-          distinct_owners_to_lock AS (
+          distinct_owners AS (
             SELECT DISTINCT owner_id
             FROM selected_jobs_with_metadata
             WHERE owner_id IS NOT NULL
-            ORDER BY owner_id
           ),
           missing_owners AS (
-            SELECT dtl.owner_id
-            FROM distinct_owners_to_lock dtl
+            SELECT do.owner_id
+            FROM distinct_owners do
             WHERE NOT EXISTS (
               SELECT 1 FROM ${this.queueName}_owner_concurrency oc
-              WHERE oc.id = dtl.owner_id
+              WHERE oc.id = do.owner_id
             )
           ),
           ensure_owner_rows AS (
@@ -1015,24 +1002,17 @@ class NuQ<JobData = any, JobReturnValue = any> {
             SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
             FROM missing_owners
           ),
-          acquired_owner_locks AS (
-            SELECT id as owner_id
-            FROM ${this.queueName}_owner_concurrency
-            WHERE id IN (SELECT owner_id FROM distinct_owners_to_lock)
-            FOR UPDATE SKIP LOCKED
-          ),
-          distinct_groups_to_lock AS (
+          distinct_groups AS (
             SELECT DISTINCT group_id
             FROM selected_jobs_with_metadata
             WHERE group_id IS NOT NULL
-            ORDER BY group_id
           ),
           missing_groups AS (
-            SELECT dtl.group_id
-            FROM distinct_groups_to_lock dtl
+            SELECT dg.group_id
+            FROM distinct_groups dg
             WHERE NOT EXISTS (
               SELECT 1 FROM ${this.queueName}_group_concurrency gc
-              WHERE gc.id = dtl.group_id
+              WHERE gc.id = dg.group_id
             )
           ),
           ensure_group_rows AS (
@@ -1040,22 +1020,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
             SELECT group_id, 0, NULL
             FROM missing_groups
           ),
-          acquired_group_locks AS (
-            SELECT id as group_id
-            FROM ${this.queueName}_group_concurrency
-            WHERE id IN (SELECT group_id FROM distinct_groups_to_lock)
-            FOR UPDATE SKIP LOCKED
-          ),
-          lockable_jobs AS (
-            SELECT id
-            FROM selected_jobs_with_metadata
-            WHERE (owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = selected_jobs_with_metadata.owner_id))
-              AND (group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = selected_jobs_with_metadata.group_id))
-          ),
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM lockable_jobs)
+            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM selected_jobs_with_metadata)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
           ),
           owner_counts AS (
@@ -1177,18 +1145,17 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_rank <= owner_limit
             LIMIT 1
           ),
-          distinct_owners_to_lock AS (
+          distinct_owners AS (
             SELECT DISTINCT owner_id
             FROM selected_jobs_with_metadata
             WHERE owner_id IS NOT NULL
-            ORDER BY owner_id
           ),
           missing_owners AS (
-            SELECT dtl.owner_id
-            FROM distinct_owners_to_lock dtl
+            SELECT do.owner_id
+            FROM distinct_owners do
             WHERE NOT EXISTS (
               SELECT 1 FROM ${this.queueName}_owner_concurrency oc
-              WHERE oc.id = dtl.owner_id
+              WHERE oc.id = do.owner_id
             )
           ),
           ensure_owner_rows AS (
@@ -1196,21 +1163,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
             SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
             FROM missing_owners
           ),
-          acquired_owner_locks AS (
-            SELECT id as owner_id
-            FROM ${this.queueName}_owner_concurrency
-            WHERE id IN (SELECT owner_id FROM distinct_owners_to_lock)
-            FOR UPDATE SKIP LOCKED
-          ),
-          lockable_jobs AS (
-            SELECT id
-            FROM selected_jobs_with_metadata
-            WHERE owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = selected_jobs_with_metadata.owner_id)
-          ),
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM lockable_jobs)
+            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM selected_jobs_with_metadata)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
           ),
           owner_increment AS (
@@ -1260,18 +1216,17 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_rank <= owner_limit
             LIMIT 1
           ),
-          distinct_owners_to_lock AS (
+          distinct_owners AS (
             SELECT DISTINCT owner_id
             FROM selected_jobs_with_metadata
             WHERE owner_id IS NOT NULL
-            ORDER BY owner_id
           ),
           missing_owners AS (
-            SELECT dtl.owner_id
-            FROM distinct_owners_to_lock dtl
+            SELECT do.owner_id
+            FROM distinct_owners do
             WHERE NOT EXISTS (
               SELECT 1 FROM ${this.queueName}_owner_concurrency oc
-              WHERE oc.id = dtl.owner_id
+              WHERE oc.id = do.owner_id
             )
           ),
           ensure_owner_rows AS (
@@ -1279,24 +1234,17 @@ class NuQ<JobData = any, JobReturnValue = any> {
             SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
             FROM missing_owners
           ),
-          acquired_owner_locks AS (
-            SELECT id as owner_id
-            FROM ${this.queueName}_owner_concurrency
-            WHERE id IN (SELECT owner_id FROM distinct_owners_to_lock)
-            FOR UPDATE SKIP LOCKED
-          ),
-          distinct_groups_to_lock AS (
+          distinct_groups AS (
             SELECT DISTINCT group_id
             FROM selected_jobs_with_metadata
             WHERE group_id IS NOT NULL
-            ORDER BY group_id
           ),
           missing_groups AS (
-            SELECT dtl.group_id
-            FROM distinct_groups_to_lock dtl
+            SELECT dg.group_id
+            FROM distinct_groups dg
             WHERE NOT EXISTS (
               SELECT 1 FROM ${this.queueName}_group_concurrency gc
-              WHERE gc.id = dtl.group_id
+              WHERE gc.id = dg.group_id
             )
           ),
           ensure_group_rows AS (
@@ -1304,22 +1252,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
             SELECT group_id, 0, NULL
             FROM missing_groups
           ),
-          acquired_group_locks AS (
-            SELECT id as group_id
-            FROM ${this.queueName}_group_concurrency
-            WHERE id IN (SELECT group_id FROM distinct_groups_to_lock)
-            FOR UPDATE SKIP LOCKED
-          ),
-          lockable_jobs AS (
-            SELECT id
-            FROM selected_jobs_with_metadata
-            WHERE (owner_id IS NULL OR EXISTS (SELECT 1 FROM acquired_owner_locks WHERE owner_id = selected_jobs_with_metadata.owner_id))
-              AND (group_id IS NULL OR EXISTS (SELECT 1 FROM acquired_group_locks WHERE group_id = selected_jobs_with_metadata.group_id))
-          ),
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM lockable_jobs)
+            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM selected_jobs_with_metadata)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
           ),
           owner_counts AS (
