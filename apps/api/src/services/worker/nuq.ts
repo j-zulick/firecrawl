@@ -930,9 +930,16 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM owner_limited_jobs
             WHERE owner_rank <= owner_limit
           ),
+          locked_jobs AS (
+            SELECT q.id, q.owner_id
+            FROM ${this.queueName} q
+            WHERE q.id IN (SELECT id FROM selected_jobs_with_metadata)
+              AND q.status = 'queued'::nuq.job_status
+            FOR UPDATE SKIP LOCKED
+          ),
           missing_owners AS (
             SELECT DISTINCT owner_id
-            FROM selected_jobs_with_metadata
+            FROM locked_jobs
             WHERE owner_id IS NOT NULL
               AND NOT EXISTS (
                 SELECT 1 FROM ${this.queueName}_owner_concurrency oc
@@ -948,7 +955,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM selected_jobs_with_metadata)
+            WHERE q.id IN (SELECT id FROM locked_jobs)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
           )
           SELECT ${this.jobReturning.map(x => `updated.${x}`).join(", ")} FROM updated;
@@ -1016,9 +1023,16 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM owner_limited_jobs
             WHERE owner_rank <= owner_limit
           ),
+          locked_jobs AS (
+            SELECT q.id, q.owner_id, q.group_id
+            FROM ${this.queueName} q
+            WHERE q.id IN (SELECT id FROM selected_jobs_with_metadata)
+              AND q.status = 'queued'::nuq.job_status
+            FOR UPDATE SKIP LOCKED
+          ),
           missing_owners AS (
             SELECT DISTINCT owner_id
-            FROM selected_jobs_with_metadata
+            FROM locked_jobs
             WHERE owner_id IS NOT NULL
               AND NOT EXISTS (
                 SELECT 1 FROM ${this.queueName}_owner_concurrency oc
@@ -1033,7 +1047,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           ),
           missing_groups AS (
             SELECT DISTINCT group_id
-            FROM selected_jobs_with_metadata
+            FROM locked_jobs
             WHERE group_id IS NOT NULL
               AND NOT EXISTS (
                 SELECT 1 FROM ${this.queueName}_group_concurrency gc
@@ -1049,7 +1063,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM selected_jobs_with_metadata)
+            WHERE q.id IN (SELECT id FROM locked_jobs)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
           )
           SELECT ${this.jobReturning.map(x => `updated.${x}`).join(", ")} FROM updated;
@@ -1160,9 +1174,16 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_rank <= owner_limit
             LIMIT 1
           ),
+          locked_jobs AS (
+            SELECT q.id, q.owner_id
+            FROM ${this.queueName} q
+            WHERE q.id IN (SELECT id FROM selected_jobs_with_metadata)
+              AND q.status = 'queued'::nuq.job_status
+            FOR UPDATE SKIP LOCKED
+          ),
           missing_owners AS (
             SELECT DISTINCT owner_id
-            FROM selected_jobs_with_metadata
+            FROM locked_jobs
             WHERE owner_id IS NOT NULL
               AND NOT EXISTS (
                 SELECT 1 FROM ${this.queueName}_owner_concurrency oc
@@ -1178,7 +1199,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM selected_jobs_with_metadata)
+            WHERE q.id IN (SELECT id FROM locked_jobs)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
           )
           SELECT ${this.jobReturning.map(x => `updated.${x}`).join(", ")} FROM updated;
@@ -1247,9 +1268,16 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_rank <= owner_limit
             LIMIT 1
           ),
+          locked_jobs AS (
+            SELECT q.id, q.owner_id, q.group_id
+            FROM ${this.queueName} q
+            WHERE q.id IN (SELECT id FROM selected_jobs_with_metadata)
+              AND q.status = 'queued'::nuq.job_status
+            FOR UPDATE SKIP LOCKED
+          ),
           missing_owners AS (
             SELECT DISTINCT owner_id
-            FROM selected_jobs_with_metadata
+            FROM locked_jobs
             WHERE owner_id IS NOT NULL
               AND NOT EXISTS (
                 SELECT 1 FROM ${this.queueName}_owner_concurrency oc
@@ -1264,7 +1292,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           ),
           missing_groups AS (
             SELECT DISTINCT group_id
-            FROM selected_jobs_with_metadata
+            FROM locked_jobs
             WHERE group_id IS NOT NULL
               AND NOT EXISTS (
                 SELECT 1 FROM ${this.queueName}_group_concurrency gc
@@ -1280,7 +1308,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           updated AS (
             UPDATE ${this.queueName} q
             SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now()
-            WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM selected_jobs_with_metadata)
+            WHERE q.id IN (SELECT id FROM locked_jobs)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
           )
           SELECT ${this.jobReturning.map(x => `updated.${x}`).join(", ")} FROM updated;

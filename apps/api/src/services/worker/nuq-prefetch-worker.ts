@@ -40,6 +40,6 @@ import { logger } from "../../lib/logger";
 
   while (true) {
     await scrapeQueue.prefetchJobs();
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 750));
   }
 })();

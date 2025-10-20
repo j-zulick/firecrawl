@@ -64,6 +64,7 @@ CREATE INDEX IF NOT EXISTS nuq_queue_scrape_queued_complete_idx ON nuq.queue_scr
 -- This allows fast COUNT(*) queries for active jobs per owner/group without maintaining counters
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_active_owner_idx ON nuq.queue_scrape (owner_id) WHERE (status = 'active'::nuq.job_status AND owner_id IS NOT NULL);
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_active_group_idx ON nuq.queue_scrape (group_id) WHERE (status = 'active'::nuq.job_status AND group_id IS NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_queue_scrape_prefetch_composite ON queue_scrape (status, owner_id, group_id, priority, created_at, id) WHERE status = 'queued';
 
 CREATE TABLE IF NOT EXISTS nuq.queue_scrape_owner_concurrency (
     id uuid NOT NULL,
