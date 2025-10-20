@@ -915,6 +915,19 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_id IS NOT NULL
             ORDER BY owner_id
           ),
+          missing_owners AS (
+            SELECT dtl.owner_id
+            FROM distinct_owners_to_lock dtl
+            WHERE NOT EXISTS (
+              SELECT 1 FROM ${this.queueName}_owner_concurrency oc
+              WHERE oc.id = dtl.owner_id
+            )
+          ),
+          ensure_owner_rows AS (
+            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
+            SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
+            FROM missing_owners
+          ),
           acquired_owner_locks AS (
             SELECT id as owner_id
             FROM ${this.queueName}_owner_concurrency
@@ -938,22 +951,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_id IS NOT NULL
             GROUP BY owner_id
           ),
-          owner_counts_with_max AS (
-            SELECT
-              oc.owner_id,
-              oc.job_count,
-              COALESCE(ocon.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(oc.owner_id)) as max_concurrency
-            FROM owner_counts oc
-            LEFT JOIN ${this.queueName}_owner_concurrency ocon ON oc.owner_id = ocon.id
-          ),
-          owner_upsert AS (
-            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
-            SELECT owner_id, job_count, max_concurrency
-            FROM owner_counts_with_max
-            ON CONFLICT (id)
-            DO UPDATE SET
-              current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + EXCLUDED.current_concurrency,
-              max_concurrency = EXCLUDED.max_concurrency
+          owner_update AS (
+            UPDATE ${this.queueName}_owner_concurrency oc
+            SET current_concurrency = oc.current_concurrency + owner_counts.job_count
+            FROM owner_counts
+            WHERE oc.id = owner_counts.owner_id
           )
           SELECT ${this.jobReturning.map(x => `updated.${x}`).join(", ")} FROM updated;
         `;
@@ -1000,6 +1002,19 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_id IS NOT NULL
             ORDER BY owner_id
           ),
+          missing_owners AS (
+            SELECT dtl.owner_id
+            FROM distinct_owners_to_lock dtl
+            WHERE NOT EXISTS (
+              SELECT 1 FROM ${this.queueName}_owner_concurrency oc
+              WHERE oc.id = dtl.owner_id
+            )
+          ),
+          ensure_owner_rows AS (
+            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
+            SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
+            FROM missing_owners
+          ),
           acquired_owner_locks AS (
             SELECT id as owner_id
             FROM ${this.queueName}_owner_concurrency
@@ -1011,6 +1026,19 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM selected_jobs_with_metadata
             WHERE group_id IS NOT NULL
             ORDER BY group_id
+          ),
+          missing_groups AS (
+            SELECT dtl.group_id
+            FROM distinct_groups_to_lock dtl
+            WHERE NOT EXISTS (
+              SELECT 1 FROM ${this.queueName}_group_concurrency gc
+              WHERE gc.id = dtl.group_id
+            )
+          ),
+          ensure_group_rows AS (
+            INSERT INTO ${this.queueName}_group_concurrency (id, current_concurrency, max_concurrency)
+            SELECT group_id, 0, NULL
+            FROM missing_groups
           ),
           acquired_group_locks AS (
             SELECT id as group_id
@@ -1036,22 +1064,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_id IS NOT NULL
             GROUP BY owner_id
           ),
-          owner_counts_with_max AS (
-            SELECT
-              oc.owner_id,
-              oc.job_count,
-              COALESCE(ocon.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(oc.owner_id)) as max_concurrency
-            FROM owner_counts oc
-            LEFT JOIN ${this.queueName}_owner_concurrency ocon ON oc.owner_id = ocon.id
-          ),
-          owner_upsert AS (
-            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
-            SELECT owner_id, job_count, max_concurrency
-            FROM owner_counts_with_max
-            ON CONFLICT (id)
-            DO UPDATE SET
-              current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + EXCLUDED.current_concurrency,
-              max_concurrency = EXCLUDED.max_concurrency
+          owner_update AS (
+            UPDATE ${this.queueName}_owner_concurrency oc
+            SET current_concurrency = oc.current_concurrency + owner_counts.job_count
+            FROM owner_counts
+            WHERE oc.id = owner_counts.owner_id
           ),
           group_counts AS (
             SELECT group_id, COUNT(*)::int8 as job_count
@@ -1166,6 +1183,19 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_id IS NOT NULL
             ORDER BY owner_id
           ),
+          missing_owners AS (
+            SELECT dtl.owner_id
+            FROM distinct_owners_to_lock dtl
+            WHERE NOT EXISTS (
+              SELECT 1 FROM ${this.queueName}_owner_concurrency oc
+              WHERE oc.id = dtl.owner_id
+            )
+          ),
+          ensure_owner_rows AS (
+            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
+            SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
+            FROM missing_owners
+          ),
           acquired_owner_locks AS (
             SELECT id as owner_id
             FROM ${this.queueName}_owner_concurrency
@@ -1183,22 +1213,12 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE q.status = 'queued'::nuq.job_status AND q.id IN (SELECT id FROM lockable_jobs)
             RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")}
           ),
-          updated_with_max AS (
-            SELECT
-              u.*,
-              COALESCE(ocon.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(u.owner_id)) as max_concurrency
-            FROM updated u
-            LEFT JOIN ${this.queueName}_owner_concurrency ocon ON u.owner_id = ocon.id
-            WHERE u.owner_id IS NOT NULL
-          ),
           owner_increment AS (
-            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
-            SELECT owner_id, 1, max_concurrency
-            FROM updated_with_max
-            ON CONFLICT (id)
-            DO UPDATE SET
-              current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + 1,
-              max_concurrency = EXCLUDED.max_concurrency
+            UPDATE ${this.queueName}_owner_concurrency oc
+            SET current_concurrency = oc.current_concurrency + 1
+            FROM updated u
+            WHERE oc.id = u.owner_id
+              AND u.owner_id IS NOT NULL
           )
           SELECT ${this.jobReturning.map(x => `updated.${x}`).join(", ")} FROM updated;
         `;
@@ -1246,6 +1266,19 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_id IS NOT NULL
             ORDER BY owner_id
           ),
+          missing_owners AS (
+            SELECT dtl.owner_id
+            FROM distinct_owners_to_lock dtl
+            WHERE NOT EXISTS (
+              SELECT 1 FROM ${this.queueName}_owner_concurrency oc
+              WHERE oc.id = dtl.owner_id
+            )
+          ),
+          ensure_owner_rows AS (
+            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
+            SELECT owner_id, 0, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(owner_id)
+            FROM missing_owners
+          ),
           acquired_owner_locks AS (
             SELECT id as owner_id
             FROM ${this.queueName}_owner_concurrency
@@ -1257,6 +1290,19 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM selected_jobs_with_metadata
             WHERE group_id IS NOT NULL
             ORDER BY group_id
+          ),
+          missing_groups AS (
+            SELECT dtl.group_id
+            FROM distinct_groups_to_lock dtl
+            WHERE NOT EXISTS (
+              SELECT 1 FROM ${this.queueName}_group_concurrency gc
+              WHERE gc.id = dtl.group_id
+            )
+          ),
+          ensure_group_rows AS (
+            INSERT INTO ${this.queueName}_group_concurrency (id, current_concurrency, max_concurrency)
+            SELECT group_id, 0, NULL
+            FROM missing_groups
           ),
           acquired_group_locks AS (
             SELECT id as group_id
@@ -1282,22 +1328,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
             WHERE owner_id IS NOT NULL
             GROUP BY owner_id
           ),
-          owner_counts_with_max AS (
-            SELECT
-              oc.owner_id,
-              oc.job_count,
-              COALESCE(ocon.max_concurrency, ${this.queueName.replaceAll(".", "_")}_owner_resolve_max_concurrency(oc.owner_id)) as max_concurrency
-            FROM owner_counts oc
-            LEFT JOIN ${this.queueName}_owner_concurrency ocon ON oc.owner_id = ocon.id
-          ),
-          owner_upsert AS (
-            INSERT INTO ${this.queueName}_owner_concurrency (id, current_concurrency, max_concurrency)
-            SELECT owner_id, job_count, max_concurrency
-            FROM owner_counts_with_max
-            ON CONFLICT (id)
-            DO UPDATE SET
-              current_concurrency = ${this.queueName}_owner_concurrency.current_concurrency + EXCLUDED.current_concurrency,
-              max_concurrency = EXCLUDED.max_concurrency
+          owner_update AS (
+            UPDATE ${this.queueName}_owner_concurrency oc
+            SET current_concurrency = oc.current_concurrency + owner_counts.job_count
+            FROM owner_counts
+            WHERE oc.id = owner_counts.owner_id
           ),
           group_counts AS (
             SELECT group_id, COUNT(*)::int8 as job_count
