@@ -896,6 +896,35 @@ class NuQ<JobData = any, JobReturnValue = any> {
   public async prefetchJobs(_logger: Logger = logger): Promise<number> {
     const start = Date.now();
     try {
+      let shardingIndex = parseInt(
+        (process.env.NUQ_POD_NAME ?? "0").split("-").slice(-1)[0],
+        10,
+      );
+      let shardingCount = parseInt(
+        process.env.NUQ_PREFETCH_REPLICAS ?? "1",
+        10,
+      );
+
+      if (
+        isNaN(shardingIndex) ||
+        isNaN(shardingCount) ||
+        shardingIndex >= shardingCount ||
+        shardingIndex < 0 ||
+        shardingCount < 1
+      ) {
+        _logger.warn(
+          "Sharding config invalid, falling back to guaranteed working defaults.",
+          {
+            shardingCount,
+            shardingIndex,
+            module: "nuq",
+            method: "nuqPrefetchJobs",
+          },
+        );
+        shardingIndex = 0;
+        shardingCount = 1;
+      }
+
       let updateQuery: string;
       if (this.options.concurrencyLimit === "per-owner") {
         updateQuery = `
@@ -924,6 +953,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
             LEFT JOIN ${this.queueName}_owner_concurrency oc ON oc.id = q.owner_id
             LEFT JOIN owner_active_counts oac ON oac.owner_id = q.owner_id
             WHERE q.status = 'queued'::nuq.job_status
+              AND (abs(hashtext(q.id::text)) % ${shardingCount}) = ${shardingIndex}
           ),
           selected_jobs_with_metadata AS (
             SELECT id, owner_id
@@ -998,6 +1028,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
             LEFT JOIN ${this.queueName}_group_concurrency gc ON gc.id = q.group_id
             LEFT JOIN group_active_counts gac ON gac.group_id = q.group_id
             WHERE q.status = 'queued'::nuq.job_status
+              AND (abs(hashtext(q.id::text)) % ${shardingCount}) = ${shardingIndex}
           ),
           owner_limited_jobs AS (
             SELECT

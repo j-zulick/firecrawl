@@ -78,7 +78,9 @@ const stream = createWriteStream("firecrawl.log");
 const PORT = process.env.PORT ?? "3002";
 const WORKER_PORT = process.env.WORKER_PORT ?? "3005";
 const EXTRACT_WORKER_PORT = process.env.EXTRACT_WORKER_PORT ?? "3004";
-const NUQ_WORKER_START_PORT = Number(process.env.NUQ_WORKER_START_PORT ?? "3006");
+const NUQ_WORKER_START_PORT = Number(
+  process.env.NUQ_WORKER_START_PORT ?? "3006",
+);
 
 const logger = {
   section(message: string) {
@@ -446,7 +448,8 @@ function startServices(command?: string[]): Services {
         {
           NUQ_PREFETCH_WORKER_PORT: String(3011),
           NUQ_REDUCE_NOISE: "true",
-          NUQ_POD_NAME: "nuq-prefetch-worker",
+          NUQ_POD_NAME: "nuq-prefetch-worker-0",
+          NUQ_PREFETCH_REPLICAS: String(1),
         },
       )
     : undefined;
