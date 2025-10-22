@@ -37,7 +37,7 @@ import { getJobPriority } from "../../lib/job-priority";
 import { Document, scrapeOptions, TeamFlags } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { getACUCTeam } from "../../controllers/auth";
-import { createWebhookSender, WebhookEvent } from "../webhook";
+import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { CustomError } from "../../lib/custom-error";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { CostTracking } from "../../lib/cost-tracking";
@@ -338,10 +338,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           // Store robots blocked URLs in Redis set
           for (const [url, reason] of links.denialReasons) {
             if (reason === "URL blocked by robots.txt") {
-              await recordRobotsBlocked(
-                job.data.crawl_id,
-                url
-              );
+              await recordRobotsBlocked(job.data.crawl_id, url);
             }
           }
 
@@ -552,15 +549,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         error instanceof Error &&
         error.message === "URL blocked by robots.txt"
       ) {
-        await recordRobotsBlocked(
-          job.data.crawl_id,
-          job.data.url,
-        );
+        await recordRobotsBlocked(job.data.crawl_id, job.data.url);
       }
     } catch (e) {
       logger.debug("Failed to record top-level robots block", { e });
     }
-    
+
     if (job.data.crawl_id) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
 
@@ -1182,7 +1176,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
       await concurrentJobDone(job);
     }
   } catch (error) {
-    logger.debug("Job failed", { error });
+    logger.warn("Job failed", { error });
     Sentry.captureException(error);
     if (error instanceof TransportableError) {
       throw new Error(serializeTransportableError(error));

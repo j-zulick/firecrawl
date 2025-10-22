@@ -43,6 +43,21 @@ async function _addScrapeJobToConcurrencyQueue(
   priority: number = 0,
   listenable: boolean = false,
 ) {
+  await scrapeQueue.addJob(
+    jobId,
+    {
+      ...webScraperOptions,
+      concurrencyLimited: true,
+    },
+    {
+      priority,
+      listenable,
+      ownerId: webScraperOptions.team_id ?? undefined,
+      groupId: webScraperOptions.crawl_id ?? undefined,
+      backlogged: true,
+    },
+  );
+
   await pushConcurrencyLimitedJob(
     webScraperOptions.team_id,
     {
@@ -55,6 +70,44 @@ async function _addScrapeJobToConcurrencyQueue(
       ? Infinity
       : (webScraperOptions.scrapeOptions?.timeout ?? 60 * 1000),
   );
+}
+
+async function _addScrapeJobsToConcurrencyQueue(
+  jobs: {
+    data: any;
+    jobId: string;
+    priority: number;
+    listenable?: boolean;
+  }[],
+) {
+  await scrapeQueue.addJobs(
+    jobs.map(job => ({
+      id: job.jobId,
+      data: job.data,
+      options: {
+        priority: job.priority,
+        listenable: job.listenable ?? false,
+        ownerId: job.data.team_id ?? undefined,
+        groupId: job.data.crawl_id ?? undefined,
+        backlogged: true,
+      },
+    })),
+  );
+
+  for (const job of jobs) {
+    await pushConcurrencyLimitedJob(
+      job.data.team_id,
+      {
+        id: job.jobId,
+        data: job.data,
+        priority: job.priority,
+        listenable: job.listenable ?? false,
+      },
+      job.data.crawl_id
+        ? Infinity
+        : (job.data.scrapeOptions?.timeout ?? 60 * 1000),
+    );
+  }
 }
 
 export async function _addScrapeJobToBullMQ(
@@ -86,7 +139,59 @@ export async function _addScrapeJobToBullMQ(
     }
   }
 
-  return await scrapeQueue.addJob(jobId, webScraperOptions, priority, listenable);
+  return await scrapeQueue.addJob(jobId, webScraperOptions, {
+    priority,
+    listenable,
+    ownerId: webScraperOptions.team_id ?? undefined,
+    groupId: webScraperOptions.crawl_id ?? undefined,
+  });
+}
+
+async function _addScrapeJobsToBullMQ(
+  jobs: {
+    data: any;
+    jobId: string;
+    priority: number;
+    listenable?: boolean;
+  }[],
+): Promise<NuQJob<ScrapeJobData>[]> {
+  for (const job of jobs) {
+    if (job.data.mode === "single_urls") {
+      abTestJob(job.data);
+    }
+
+    if (job.data && job.data.team_id) {
+      await pushConcurrencyLimitActiveJob(
+        job.data.team_id,
+        job.jobId,
+        60 * 1000,
+      ); // 60s default timeout
+
+      if (job.data.crawl_id) {
+        const sc = await getCrawl(job.data.crawl_id);
+        if (sc?.crawlerOptions?.delay || sc?.maxConcurrency) {
+          await pushCrawlConcurrencyLimitActiveJob(
+            job.data.crawl_id,
+            job.jobId,
+            60 * 1000,
+          );
+        }
+      }
+    }
+  }
+
+  return await scrapeQueue.addJobs(
+    jobs.map(job => ({
+      id: job.jobId,
+      data: job.data,
+      options: {
+        priority: job.priority,
+        listenable: job.listenable ?? false,
+        ownerId: job.data.team_id ?? undefined,
+        groupId: job.data.crawl_id ?? undefined,
+      },
+    })),
+  );
 }
 
 async function addScrapeJobRaw(
@@ -181,10 +286,20 @@ async function addScrapeJobRaw(
 
     webScraperOptions.concurrencyLimited = true;
 
-    await _addScrapeJobToConcurrencyQueue(webScraperOptions, jobId, priority, listenable);
+    await _addScrapeJobToConcurrencyQueue(
+      webScraperOptions,
+      jobId,
+      priority,
+      listenable,
+    );
     return null;
   } else {
-    return await _addScrapeJobToBullMQ(webScraperOptions, jobId, priority, listenable);
+    return await _addScrapeJobToBullMQ(
+      webScraperOptions,
+      jobId,
+      priority,
+      listenable,
+    );
   }
 }
 
@@ -368,27 +483,22 @@ export async function addScrapeJobs(
       }
     }
 
-    await Promise.all(
-      addToCQ.map(async job => {
-        const size = JSON.stringify(job.data).length;
-        await _addScrapeJobToConcurrencyQueue(
-          { ...job.data, traceContext },
-          job.jobId,
-          job.priority,
-          job.listenable,
-        );
-      }),
+    await _addScrapeJobsToConcurrencyQueue(
+      addToCQ.map(job => ({
+        jobId: job.jobId,
+        data: { ...job.data, traceContext },
+        priority: job.priority,
+        listenable: job.listenable,
+      })),
     );
 
-    await Promise.all(
-      addToBull.map(async job => {
-        await _addScrapeJobToBullMQ(
-          { ...job.data, traceContext },
-          job.jobId,
-          job.priority,
-          job.listenable,
-        );
-      }),
+    await _addScrapeJobsToBullMQ(
+      addToBull.map(job => ({
+        jobId: job.jobId,
+        data: { ...job.data, traceContext },
+        priority: job.priority,
+        listenable: job.listenable,
+      })),
     );
   }
 }

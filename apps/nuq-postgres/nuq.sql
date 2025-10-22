@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS nuq.queue_scrape (
   listen_channel_id text, -- for listenable jobs over rabbitmq
   returnvalue jsonb, -- only for selfhost
   failedreason text, -- only for selfhost
+  owner_id uuid,
+  group_id uuid,
   CONSTRAINT queue_scrape_pkey PRIMARY KEY (id)
 );
 
@@ -35,6 +37,17 @@ CREATE INDEX IF NOT EXISTS queue_scrape_active_locked_at_idx ON nuq.queue_scrape
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_queued_optimal_2_idx ON nuq.queue_scrape (priority ASC, created_at ASC, id) WHERE (status = 'queued'::nuq.job_status);
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_failed_created_at_idx ON nuq.queue_scrape USING btree (created_at) WHERE (status = 'failed'::nuq.job_status);
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_completed_created_at_idx ON nuq.queue_scrape USING btree (created_at) WHERE (status = 'completed'::nuq.job_status);
+
+CREATE TABLE IF NOT EXISTS nuq.queue_scrape_backlog (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  data jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  priority int NOT NULL DEFAULT 0,
+  listen_channel_id text, -- for listenable jobs over rabbitmq
+  owner_id uuid,
+  group_id uuid,
+  CONSTRAINT queue_scrape_backlog_pkey PRIMARY KEY (id)
+);
 
 SELECT cron.schedule('nuq_queue_scrape_clean_completed', '*/5 * * * *', $$
   DELETE FROM nuq.queue_scrape WHERE nuq.queue_scrape.status = 'completed'::nuq.job_status AND nuq.queue_scrape.created_at < now() - interval '1 hour';
