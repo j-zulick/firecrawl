@@ -87,7 +87,6 @@
     "@opentelemetry/core": "^2.1.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.205.0",
     "@opentelemetry/sdk-node": "^0.205.0",
-    "@pinecone-database/pinecone": "^6.1.2",
     "@sentry/cli": "^2.33.1",
     "@sentry/node": "^9.40.0",
     "@sentry/profiling-node": "^9.40.0",
