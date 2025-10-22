@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS nuq.queue_scrape_backlog (
   listen_channel_id text, -- for listenable jobs over rabbitmq
   owner_id uuid,
   group_id uuid,
+  times_out_at timestamptz,
   CONSTRAINT queue_scrape_backlog_pkey PRIMARY KEY (id)
 );
 

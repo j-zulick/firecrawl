@@ -55,6 +55,12 @@ async function _addScrapeJobToConcurrencyQueue(
       ownerId: webScraperOptions.team_id ?? undefined,
       groupId: webScraperOptions.crawl_id ?? undefined,
       backlogged: true,
+      backloggedTimesOutAt: webScraperOptions.crawl_id
+        ? undefined
+        : new Date(
+            Date.now() +
+              (webScraperOptions.scrapeOptions?.timeout ?? 60 * 1000),
+          ),
     },
   );
 
@@ -90,6 +96,11 @@ async function _addScrapeJobsToConcurrencyQueue(
         ownerId: job.data.team_id ?? undefined,
         groupId: job.data.crawl_id ?? undefined,
         backlogged: true,
+        backloggedTimesOutAt: job.data.crawl_id
+          ? undefined
+          : new Date(
+              Date.now() + (job.data.scrapeOptions?.timeout ?? 60 * 1000),
+            ),
       },
     })),
   );

@@ -44,6 +44,7 @@ type NuQJobOptions = {
   ownerId?: string;
   groupId?: string;
   backlogged?: boolean;
+  backloggedTimesOutAt?: Date;
 };
 
 type NuQOptions = {
@@ -567,7 +568,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
         const result = this.rowToJob(
           (
             await nuqPool.query(
-              `INSERT INTO ${this.queueName}${options.backlogged ? "_backlog" : ""} (id, data, priority, listen_channel_id, owner_id, group_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING ${(options.backlogged ? this.jobBacklogReturning : this.jobReturning).join(", ")};`,
+              `INSERT INTO ${this.queueName}${options.backlogged ? "_backlog" : ""} (id, data, priority, listen_channel_id, owner_id, group_id${options.backlogged ? ", times_out_at" : ""}) VALUES ($1, $2, $3, $4, $5, $6${options.backlogged ? ", $7" : ""}) RETURNING ${(options.backlogged ? this.jobBacklogReturning : this.jobReturning).join(", ")};`,
               [
                 id,
                 data,
@@ -575,6 +576,13 @@ class NuQ<JobData = any, JobReturnValue = any> {
                 options.listenable ? listenChannelId : null,
                 normalizeOwnerId(options.ownerId),
                 options.groupId ?? null,
+                ...(options.backlogged
+                  ? [
+                      options.backloggedTimesOutAt
+                        ? options.backloggedTimesOutAt.toISOString()
+                        : null,
+                    ]
+                  : []),
               ],
             )
           ).rows[0],
@@ -657,25 +665,47 @@ class NuQ<JobData = any, JobReturnValue = any> {
             const valuesPlaceholders: string[] = [];
             const params: any[] = [];
 
+            const columns = [
+              "id",
+              "data",
+              "priority",
+              "listen_channel_id",
+              "owner_id",
+              "group_id",
+              ...(tableSuffix === "_backlog" ? ["times_out_at"] : []),
+            ];
+
             for (let i = 0; i < batch.length; i++) {
               const job = batch[i];
-              const baseIdx = i * 6 + 1;
+              const baseIdx = i * columns.length + 1;
 
               valuesPlaceholders.push(
-                `($${baseIdx}, $${baseIdx + 1}, $${baseIdx + 2}, $${baseIdx + 3}, $${baseIdx + 4}, $${baseIdx + 5})`,
+                `(${new Array(columns.length)
+                  .fill(0)
+                  .map((_, i) => "$" + (baseIdx + i))
+                  .join(", ")})`,
               );
 
               params.push(
-                job.id,
-                job.data,
-                job.options.priority ?? 0,
-                job.options.listenable ? listenChannelId : null,
-                normalizeOwnerId(job.options.ownerId),
-                job.options.groupId ?? null,
+                ...[
+                  job.id,
+                  job.data,
+                  job.options.priority ?? 0,
+                  job.options.listenable ? listenChannelId : null,
+                  normalizeOwnerId(job.options.ownerId),
+                  job.options.groupId ?? null,
+                  ...(tableSuffix === "_backlog"
+                    ? [
+                        job.options.backloggedTimesOutAt
+                          ? job.options.backloggedTimesOutAt.toISOString()
+                          : null,
+                      ]
+                    : []),
+                ],
               );
             }
 
-            const query = `INSERT INTO ${this.queueName}${tableSuffix} (id, data, priority, listen_channel_id, owner_id, group_id) VALUES ${valuesPlaceholders.join(", ")} RETURNING ${(tableSuffix === "_backlog" ? this.jobBacklogReturning : this.jobReturning).join(", ")};`;
+            const query = `INSERT INTO ${this.queueName}${tableSuffix} (${columns.join(", ")}) VALUES ${valuesPlaceholders.join(", ")} RETURNING ${(tableSuffix === "_backlog" ? this.jobBacklogReturning : this.jobReturning).join(", ")};`;
 
             const result = await nuqPool.query(query, params);
 
