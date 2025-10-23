@@ -22,3 +22,4 @@ jobs:
           pnpm dlx audit-ci@^7 --directory apps/js-sdk/firecrawl --config apps/js-sdk/firecrawl/audit-ci.jsonc
           pnpm dlx audit-ci@^7 --directory apps/test-suite --config apps/test-suite/audit-ci.jsonc
           pnpm dlx audit-ci@^7 --directory apps/ui/ingestion-ui --config apps/ui/ingestion-ui/audit-ci.jsonc
+          pnpm dlx audit-ci@^7 --directory apps/test-site --config apps/test-site/audit-ci.jsonc

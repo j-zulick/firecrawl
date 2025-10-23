@@ -1,4 +1,17 @@
 import {
+  createTestIdUrl,
+  describeIf,
+  concurrentIf,
+  itIf,
+  TEST_PRODUCTION,
+  TEST_SELF_HOST,
+  TEST_SUITE_WEBSITE,
+  HAS_PLAYWRIGHT,
+  HAS_PROXY,
+  HAS_AI,
+  ALLOW_TEST_SUITE_WEBSITE,
+} from "../lib";
+import {
   scrape,
   scrapeWithFailure,
   scrapeStatus,
@@ -11,10 +24,9 @@ import {
 } from "./lib";
 import crypto from "crypto";
 
-let identity: Identity;
+const CHANGE_TRACKING_TEST_URL = `${TEST_SUITE_WEBSITE}?testId=${crypto.randomUUID()}`;
 
-let changeTrackingTestUrl =
-  "https://firecrawl.dev?testId=" + crypto.randomUUID();
+let identity: Identity;
 
 beforeAll(async () => {
   identity = await idmux({
@@ -23,11 +35,10 @@ beforeAll(async () => {
     credits: 1000000,
   });
 
-  if (!process.env.TEST_SUITE_SELF_HOSTED) {
-    // Needed for change tracking tests to work
+  if (TEST_PRODUCTION) {
     await scrape(
       {
-        url: changeTrackingTestUrl,
+        url: CHANGE_TRACKING_TEST_URL,
         formats: ["markdown", "changeTracking"],
       },
       identity,
@@ -36,12 +47,14 @@ beforeAll(async () => {
 }, 10000 + scrapeTimeout);
 
 describe("Scrape tests", () => {
-  it.concurrent(
+  const base = TEST_SUITE_WEBSITE;
+
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "works",
     async () => {
       const response = await scrape(
         {
-          url: "http://firecrawl.dev",
+          url: base,
         },
         identity,
       );
@@ -51,13 +64,13 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
-  describe("waitFor validation", () => {
+  describeIf(ALLOW_TEST_SUITE_WEBSITE)("waitFor validation", () => {
     it.concurrent(
       "rejects waitFor when it exceeds half of timeout",
       async () => {
         const raw = await scrapeRaw(
           {
-            url: "http://firecrawl.dev",
+            url: base,
             waitFor: 8000,
             timeout: 15000,
           },
@@ -66,7 +79,7 @@ describe("Scrape tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).toBe("waitFor must not exceed half of timeout");
         expect(raw.body.details).toBeDefined();
         expect(JSON.stringify(raw.body.details)).toContain(
           "waitFor must not exceed half of timeout",
@@ -80,7 +93,7 @@ describe("Scrape tests", () => {
       async () => {
         const raw = await scrapeRaw(
           {
-            url: "http://firecrawl.dev",
+            url: base,
             waitFor: 15000,
             timeout: 15000,
           },
@@ -89,7 +102,7 @@ describe("Scrape tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).toBe("waitFor must not exceed half of timeout");
         expect(raw.body.details).toBeDefined();
         expect(JSON.stringify(raw.body.details)).toContain(
           "waitFor must not exceed half of timeout",
@@ -103,7 +116,7 @@ describe("Scrape tests", () => {
       async () => {
         const raw = await scrapeRaw(
           {
-            url: "http://firecrawl.dev",
+            url: base,
             waitFor: 20000,
             timeout: 15000,
           },
@@ -112,7 +125,7 @@ describe("Scrape tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).toBe("waitFor must not exceed half of timeout");
         expect(raw.body.details).toBeDefined();
         expect(JSON.stringify(raw.body.details)).toContain(
           "waitFor must not exceed half of timeout",
@@ -129,12 +142,12 @@ describe("Scrape tests", () => {
   //   }, identity);
   // }, scrapeTimeout);
 
-  it.concurrent(
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "handles non-UTF-8 encodings",
     async () => {
       const response = await scrape(
         {
-          url: "https://www.rtpro.yamaha.co.jp/RT/docs/misc/kanji-sjis.html",
+          url: `${base}/blog/unicode-post`,
         },
         identity,
       );
@@ -146,10 +159,10 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
-  it.concurrent("links format works", async () => {
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)("links format works", async () => {
     const response = await scrape(
       {
-        url: "https://firecrawl.dev",
+        url: base,
         formats: ["links"],
       },
       identity,
@@ -159,10 +172,10 @@ describe("Scrape tests", () => {
     expect(response.links?.length).toBeGreaterThan(0);
   });
 
-  it.concurrent("images format works", async () => {
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)("images format works", async () => {
     const response = await scrape(
       {
-        url: "https://firecrawl.dev",
+        url: `${base}/blog`,
         formats: ["images"],
       },
       identity,
@@ -174,104 +187,101 @@ describe("Scrape tests", () => {
     expect(response.images?.some(img => img.includes("firecrawl"))).toBe(true);
   });
 
-  it.concurrent("images format works with multiple formats", async () => {
-    const response = await scrape(
-      {
-        url: "https://firecrawl.dev",
-        formats: ["markdown", "links", "images"],
-      },
-      identity,
-    );
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "images format works with multiple formats",
+    async () => {
+      const response = await scrape(
+        {
+          url: `${base}/blog`,
+          formats: ["markdown", "links", "images"],
+        },
+        identity,
+      );
 
-    expect(response.markdown).toBeDefined();
-    expect(response.links).toBeDefined();
-    expect(response.images).toBeDefined();
-    expect(response.images?.length).toBeGreaterThan(0);
+      expect(response.markdown).toBeDefined();
+      expect(response.links).toBeDefined();
+      expect(response.images).toBeDefined();
+      expect(response.images?.length).toBeGreaterThan(0);
 
-    // Images should include things that aren't in links
-    const imageExtensions = [
-      ".jpg",
-      ".jpeg",
-      ".png",
-      ".gif",
-      ".webp",
-      ".svg",
-      ".ico",
-    ];
-    const linkImages =
-      response.links?.filter(link =>
-        imageExtensions.some(ext => link.toLowerCase().includes(ext)),
-      ) || [];
+      // Images should include things that aren't in links
+      const imageExtensions = [
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".webp",
+        ".svg",
+        ".ico",
+      ];
+      const linkImages =
+        response.links?.filter(link =>
+          imageExtensions.some(ext => link.toLowerCase().includes(ext)),
+        ) || [];
 
-    // Should have found more images than just those with obvious extensions in links
-    expect(response.images?.length).toBeGreaterThanOrEqual(linkImages.length);
-  });
+      // Should have found more images than just those with obvious extensions in links
+      expect(response.images?.length).toBeGreaterThanOrEqual(linkImages.length);
+    },
+  );
 
-  if (process.env.TEST_SUITE_SELF_HOSTED && process.env.PROXY_SERVER) {
-    it.concurrent(
-      "self-hosted proxy works",
-      async () => {
-        const response = await scrape(
-          {
-            url: "https://icanhazip.com",
-          },
-          identity,
-        );
+  concurrentIf(TEST_SELF_HOST && HAS_PROXY)(
+    "self-hosted proxy works",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://icanhazip.com",
+        },
+        identity,
+      );
 
-        expect(response.markdown?.trim()).toContain(
-          process.env.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
-        );
-      },
-      scrapeTimeout,
-    );
+      expect(response.markdown?.trim()).toContain(
+        process.env.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+      );
+    },
+    scrapeTimeout,
+  );
 
-    it.concurrent(
-      "self-hosted proxy works on playwright",
-      async () => {
-        const response = await scrape(
-          {
-            url: "https://icanhazip.com",
-            waitFor: 100,
-          },
-          identity,
-        );
+  // TODO: check if this is playwright only?
+  concurrentIf(TEST_SELF_HOST && HAS_PROXY && HAS_PLAYWRIGHT)(
+    "self-hosted proxy works on playwright",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://icanhazip.com",
+          waitFor: 100,
+        },
+        identity,
+      );
 
-        expect(response.markdown?.trim()).toContain(
-          process.env.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
-        );
-      },
-      scrapeTimeout,
-    );
-  }
+      expect(response.markdown?.trim()).toContain(
+        process.env.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+      );
+    },
+    scrapeTimeout,
+  );
 
-  if (
-    !process.env.TEST_SUITE_SELF_HOSTED ||
-    process.env.PLAYWRIGHT_MICROSERVICE_URL
-  ) {
-    it.concurrent(
-      "waitFor works",
-      async () => {
-        const response = await scrape(
-          {
-            url: "http://firecrawl.dev",
-            waitFor: 2000,
-          },
-          identity,
-        );
+  concurrentIf(TEST_PRODUCTION || (HAS_PLAYWRIGHT && ALLOW_TEST_SUITE_WEBSITE))(
+    "waitFor works",
+    async () => {
+      const response = await scrape(
+        {
+          url: base,
+          waitFor: 2000,
+        },
+        identity,
+      );
 
-        expect(response.markdown).toContain("Firecrawl");
-      },
-      scrapeTimeout,
-    );
-  }
+      expect(response.markdown).toContain("Firecrawl");
+    },
+    scrapeTimeout,
+  );
 
-  describe("JSON scrape support", () => {
+  describeIf(ALLOW_TEST_SUITE_WEBSITE)("JSON scrape support", () => {
     it.concurrent(
       "returns parseable JSON",
       async () => {
         const response = await scrape(
           {
-            url: "https://jsonplaceholder.typicode.com/todos/1",
+            url: `${base}/example.json`,
             formats: ["rawHtml"],
           },
           identity,
@@ -284,13 +294,13 @@ describe("Scrape tests", () => {
     );
   });
 
-  if (!process.env.TEST_SUITE_SELF_HOSTED) {
+  describeIf(TEST_PRODUCTION)("Fire-Engine scraping", () => {
     it.concurrent(
       "scrape status works",
       async () => {
         const response = await scrape(
           {
-            url: "http://firecrawl.dev",
+            url: base,
           },
           identity,
         );
@@ -309,13 +319,13 @@ describe("Scrape tests", () => {
       scrapeTimeout,
     );
 
-    describe("Ad blocking (f-e dependant)", () => {
+    describe("Ad blocking (f-e dependent)", () => {
       it.concurrent(
         "blocking ads works",
         async () => {
           await scrape(
             {
-              url: "https://firecrawl.dev",
+              url: base,
               blockAds: true,
             },
             identity,
@@ -329,7 +339,7 @@ describe("Scrape tests", () => {
         async () => {
           await scrape(
             {
-              url: "https://firecrawl.dev",
+              url: base,
               blockAds: false,
             },
             identity,
@@ -343,8 +353,7 @@ describe("Scrape tests", () => {
       it.concurrent(
         "caches properly",
         async () => {
-          const id = crypto.randomUUID();
-          const url = "https://firecrawl.dev/?testId=" + id;
+          const url = createTestIdUrl();
 
           const response1 = await scrape(
             {
@@ -398,8 +407,7 @@ describe("Scrape tests", () => {
       it.concurrent(
         "caches PDFs properly",
         async () => {
-          const id = crypto.randomUUID();
-          const url = "https://www.orimi.com/pdf-test.pdf?testId=" + id;
+          const url = `${base}/example.pdf`;
 
           const response1 = await scrape(
             {
@@ -429,8 +437,7 @@ describe("Scrape tests", () => {
       it.concurrent(
         "respects screenshot",
         async () => {
-          const id = crypto.randomUUID();
-          const url = "https://firecrawl.dev/?testId=" + id;
+          const url = createTestIdUrl();
 
           const response1 = await scrape(
             {
@@ -474,8 +481,7 @@ describe("Scrape tests", () => {
       it.concurrent(
         "respects screenshot@fullPage",
         async () => {
-          const id = crypto.randomUUID();
-          const url = "https://firecrawl.dev/?testId=" + id;
+          const url = createTestIdUrl();
 
           const response1 = await scrape(
             {
@@ -519,8 +525,7 @@ describe("Scrape tests", () => {
       it.concurrent(
         "respects changeTracking",
         async () => {
-          const id = crypto.randomUUID();
-          const url = "https://firecrawl.dev/?testId=" + id;
+          const url = createTestIdUrl();
 
           await scrape(
             {
@@ -561,8 +566,7 @@ describe("Scrape tests", () => {
       it.concurrent(
         "respects headers",
         async () => {
-          const id = crypto.randomUUID();
-          const url = "https://firecrawl.dev/?testId=" + id;
+          const url = createTestIdUrl();
 
           await scrape(
             {
@@ -593,8 +597,7 @@ describe("Scrape tests", () => {
       it.concurrent(
         "respects mobile",
         async () => {
-          const id = crypto.randomUUID();
-          const url = "https://firecrawl.dev/?testId=" + id;
+          const url = createTestIdUrl();
 
           await scrape(
             {
@@ -636,8 +639,7 @@ describe("Scrape tests", () => {
       it.concurrent(
         "respects actions",
         async () => {
-          const id = crypto.randomUUID();
-          const url = "https://firecrawl.dev/?testId=" + id;
+          const url = createTestIdUrl();
 
           const response1 = await scrape(
             {
@@ -673,8 +675,7 @@ describe("Scrape tests", () => {
       it.concurrent(
         "respects location",
         async () => {
-          const id = crypto.randomUUID();
-          const url = "https://firecrawl.dev/?testId=" + id;
+          const url = createTestIdUrl();
 
           await scrape(
             {
@@ -716,8 +717,7 @@ describe("Scrape tests", () => {
       it.concurrent(
         "respects blockAds",
         async () => {
-          const id = crypto.randomUUID();
-          const url = "https://firecrawl.dev/?testId=" + id;
+          const url = createTestIdUrl();
 
           await scrape(
             {
@@ -771,8 +771,7 @@ describe("Scrape tests", () => {
       it.concurrent(
         "respects proxy: stealth",
         async () => {
-          const id = crypto.randomUUID();
-          const url = "https://firecrawl.dev/?testId=" + id;
+          const url = createTestIdUrl();
 
           const response1 = await scrape(
             {
@@ -815,8 +814,7 @@ describe("Scrape tests", () => {
       it.concurrent(
         "works properly on pages returning 200",
         async () => {
-          const id = crypto.randomUUID();
-          const url = "https://firecrawl.dev/?testId=" + id;
+          const url = createTestIdUrl();
 
           await scrape(
             {
@@ -842,13 +840,13 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("Change Tracking format", () => {
+    describe("Change Tracking format (f-e dependent)", () => {
       it.concurrent(
         "works",
         async () => {
           const response = await scrape(
             {
-              url: changeTrackingTestUrl,
+              url: CHANGE_TRACKING_TEST_URL,
               formats: ["markdown", "changeTracking"],
             },
             identity,
@@ -865,7 +863,7 @@ describe("Scrape tests", () => {
         async () => {
           const response = await scrape(
             {
-              url: changeTrackingTestUrl,
+              url: CHANGE_TRACKING_TEST_URL,
               formats: [
                 "markdown",
                 { type: "changeTracking", modes: ["git-diff"] },
@@ -894,7 +892,7 @@ describe("Scrape tests", () => {
         async () => {
           const response = await scrape(
             {
-              url: changeTrackingTestUrl,
+              url: CHANGE_TRACKING_TEST_URL,
               formats: [
                 "markdown",
                 {
@@ -923,7 +921,7 @@ describe("Scrape tests", () => {
         async () => {
           const response = await scrape(
             {
-              url: changeTrackingTestUrl,
+              url: CHANGE_TRACKING_TEST_URL,
               formats: [
                 "markdown",
                 {
@@ -982,7 +980,7 @@ describe("Scrape tests", () => {
         async () => {
           const response = await scrape(
             {
-              url: changeTrackingTestUrl,
+              url: CHANGE_TRACKING_TEST_URL,
               formats: [
                 "markdown",
                 {
@@ -1025,7 +1023,7 @@ describe("Scrape tests", () => {
 
           const response1 = await scrape(
             {
-              url: changeTrackingTestUrl,
+              url: CHANGE_TRACKING_TEST_URL,
               formats: ["markdown", { type: "changeTracking", tag: uuid1 }],
             },
             identity,
@@ -1033,7 +1031,7 @@ describe("Scrape tests", () => {
 
           const response2 = await scrape(
             {
-              url: changeTrackingTestUrl,
+              url: CHANGE_TRACKING_TEST_URL,
               formats: ["markdown", { type: "changeTracking", tag: uuid2 }],
             },
             identity,
@@ -1046,7 +1044,7 @@ describe("Scrape tests", () => {
 
           const response3 = await scrape(
             {
-              url: changeTrackingTestUrl,
+              url: CHANGE_TRACKING_TEST_URL,
               formats: ["markdown", { type: "changeTracking", tag: uuid1 }],
             },
             identity,
@@ -1059,7 +1057,7 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("Location API (f-e dependant)", () => {
+    describe("Location API (f-e dependent)", () => {
       it.concurrent(
         "works without specifying an explicit location",
         async () => {
@@ -1090,13 +1088,13 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("Screenshot (f-e dependant)", () => {
+    describe("Screenshot (f-e dependent)", () => {
       it.concurrent(
         "screenshot format works",
         async () => {
           const response = await scrape(
             {
-              url: "http://firecrawl.dev",
+              url: base,
               formats: ["screenshot"],
             },
             identity,
@@ -1112,7 +1110,7 @@ describe("Scrape tests", () => {
         async () => {
           const response = await scrape(
             {
-              url: "http://firecrawl.dev",
+              url: base,
               formats: [{ type: "screenshot", fullPage: true }],
             },
             identity,
@@ -1124,13 +1122,13 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("PDF generation (f-e dependant)", () => {
+    describe("PDF generation (f-e dependent)", () => {
       it.concurrent(
         "works",
         async () => {
           const response = await scrape(
             {
-              url: "https://firecrawl.dev",
+              url: base,
               actions: [{ type: "pdf" }],
             },
             identity,
@@ -1145,13 +1143,13 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("Proxy API (f-e dependant)", () => {
+    describe("Proxy API (f-e dependent)", () => {
       it.concurrent(
         "undefined works",
         async () => {
           await scrape(
             {
-              url: "http://firecrawl.dev",
+              url: base,
             },
             identity,
           );
@@ -1164,7 +1162,7 @@ describe("Scrape tests", () => {
         async () => {
           await scrape(
             {
-              url: "http://firecrawl.dev",
+              url: base,
               proxy: "basic",
             },
             identity,
@@ -1178,7 +1176,7 @@ describe("Scrape tests", () => {
         async () => {
           await scrape(
             {
-              url: "http://firecrawl.dev",
+              url: base,
               proxy: "stealth",
             },
             identity,
@@ -1192,7 +1190,7 @@ describe("Scrape tests", () => {
         async () => {
           const res = await scrape(
             {
-              url: "http://firecrawl.dev",
+              url: base,
               proxy: "auto",
             },
             identity,
@@ -1214,7 +1212,7 @@ describe("Scrape tests", () => {
       // }, scrapeTimeout * 2);
     });
 
-    describe("PDF (f-e dependant)", () => {
+    describe("PDF (f-e dependent)", () => {
       it.concurrent(
         "works",
         async () => {
@@ -1247,7 +1245,7 @@ describe("Scrape tests", () => {
         async () => {
           const response = await scrapeWithFailure(
             {
-              url: "https://ecma-international.org/wp-content/uploads/ECMA-262_15th_edition_june_2024.pdf",
+              url: `${base}/example-long.pdf`,
               maxAge: 0,
               timeout: 10000,
             },
@@ -1264,7 +1262,7 @@ describe("Scrape tests", () => {
         async () => {
           const response = await scrape(
             {
-              url: "https://ecma-international.org/wp-content/uploads/ECMA-262_15th_edition_june_2024.pdf",
+              url: `${base}/example-long.pdf`,
               maxAge: 0,
               timeout: scrapeTimeout * 5,
             },
@@ -1284,7 +1282,7 @@ describe("Scrape tests", () => {
         async () => {
           const response = await scrape(
             {
-              url: "https://ecma-international.org/wp-content/uploads/ECMA-262_15th_edition_june_2024.pdf",
+              url: `${base}/example-long.pdf`,
               maxAge: 0,
             },
             identity,
@@ -1299,7 +1297,7 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("YouTube (f-e dependant)", () => {
+    describe("YouTube (f-e dependent)", () => {
       it.concurrent(
         "scrapes YouTube videos and transcripts",
         async () => {
@@ -1317,64 +1315,10 @@ describe("Scrape tests", () => {
         scrapeTimeout,
       );
     });
-  }
+  });
 
   describe("URL rewriting", () => {
-    if (!process.env.TEST_SUITE_SELF_HOSTED) {
-      it.concurrent(
-        "scrapes Google Docs links as PDFs",
-        async () => {
-          const response = await scrape(
-            {
-              url: "https://docs.google.com/document/d/1H-hOLYssS8xXl2o5hxj4ipE7yyhZAX1s7ADYM1Hdlzo/view",
-              maxAge: 0,
-            },
-            identity,
-          );
-
-          expect(response.markdown).toContain(
-            "This is a test to confirm Google Docs scraping abilities.",
-          );
-        },
-        scrapeTimeout * 5,
-      );
-
-      it.concurrent(
-        "scrapes Google Slides links as PDFs",
-        async () => {
-          const response = await scrape(
-            {
-              url: "https://docs.google.com/presentation/d/1pDKL1UULpr6siq_eVWE1hjqt5MKCgSSuKS_MWahnHAQ/view",
-              maxAge: 0,
-            },
-            identity,
-          );
-
-          expect(response.markdown).toContain(
-            "This is a test to confirm Google Slides scraping abilities.",
-          );
-        },
-        scrapeTimeout * 5,
-      );
-
-      it.concurrent(
-        "scrapes Google Drive PDF files as PDFs",
-        async () => {
-          const response = await scrape(
-            {
-              url: "https://drive.google.com/file/d/1QrgvXM2F7sgSdrhoBfdp9IMBVhUk-Ueu/view?usp=drive_link",
-              maxAge: 0,
-            },
-            identity,
-          );
-
-          expect(response.markdown).toContain("This is a simple PDF file.");
-        },
-        scrapeTimeout * 5,
-      );
-    }
-
-    it.concurrent(
+    concurrentIf(TEST_PRODUCTION || HAS_PROXY)(
       "scrapes Google Drive text files correctly",
       async () => {
         const response = await scrape(
@@ -1390,7 +1334,7 @@ describe("Scrape tests", () => {
       scrapeTimeout * 5,
     );
 
-    it.concurrent(
+    concurrentIf(TEST_PRODUCTION || HAS_PROXY)(
       "scrapes Google Sheets links correctly",
       async () => {
         const response = await scrape(
@@ -1405,20 +1349,69 @@ describe("Scrape tests", () => {
       },
       scrapeTimeout * 5,
     );
+
+    concurrentIf(TEST_PRODUCTION)(
+      "scrapes Google Docs links as PDFs",
+      async () => {
+        const response = await scrape(
+          {
+            url: "https://docs.google.com/document/d/1H-hOLYssS8xXl2o5hxj4ipE7yyhZAX1s7ADYM1Hdlzo/view",
+            maxAge: 0,
+          },
+          identity,
+        );
+
+        expect(response.markdown).toContain(
+          "This is a test to confirm Google Docs scraping abilities.",
+        );
+      },
+      scrapeTimeout * 5,
+    );
+
+    concurrentIf(TEST_PRODUCTION)(
+      "scrapes Google Slides links as PDFs",
+      async () => {
+        const response = await scrape(
+          {
+            url: "https://docs.google.com/presentation/d/1pDKL1UULpr6siq_eVWE1hjqt5MKCgSSuKS_MWahnHAQ/view",
+            maxAge: 0,
+          },
+          identity,
+        );
+
+        expect(response.markdown).toContain(
+          "This is a test to confirm Google Slides scraping abilities.",
+        );
+      },
+      scrapeTimeout * 5,
+    );
+
+    concurrentIf(TEST_PRODUCTION)(
+      "scrapes Google Drive PDF files as PDFs",
+      async () => {
+        const response = await scrape(
+          {
+            url: "https://drive.google.com/file/d/1QrgvXM2F7sgSdrhoBfdp9IMBVhUk-Ueu/view?usp=drive_link",
+            maxAge: 0,
+          },
+          identity,
+        );
+
+        expect(response.markdown).toContain("This is a simple PDF file.");
+      },
+      scrapeTimeout * 5,
+    );
   });
 
-  if (
-    !process.env.TEST_SUITE_SELF_HOSTED ||
-    process.env.OPENAI_API_KEY ||
-    process.env.OLLAMA_BASE_URL
-  ) {
-    describe("JSON format", () => {
+  describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+    "JSON format",
+    () => {
       it.concurrent(
         "works",
         async () => {
           const response = await scrape(
             {
-              url: "http://firecrawl.dev",
+              url: base,
               formats: [
                 {
                   type: "json",
@@ -1461,15 +1454,18 @@ describe("Scrape tests", () => {
         },
         scrapeTimeout,
       );
-    });
+    },
+  );
 
-    describe("Summary format", () => {
+  describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+    "Summary format",
+    () => {
       it.concurrent(
         "generates basic summary with no options required",
         async () => {
           const response = await scrape(
             {
-              url: "https://firecrawl.dev",
+              url: base,
               formats: ["summary"],
             },
             identity,
@@ -1487,7 +1483,7 @@ describe("Scrape tests", () => {
         async () => {
           const response = await scrape(
             {
-              url: "https://firecrawl.dev",
+              url: base,
               formats: ["markdown", "summary"],
             },
             identity,
@@ -1505,7 +1501,7 @@ describe("Scrape tests", () => {
         async () => {
           const response = await scrape(
             {
-              url: "https://firecrawl.dev",
+              url: base,
               formats: [
                 "summary",
                 {
@@ -1538,7 +1534,7 @@ describe("Scrape tests", () => {
         async () => {
           const response = await scrape(
             {
-              url: "https://firecrawl.dev",
+              url: base,
               formats: ["markdown", "html", "summary"],
             },
             identity,
@@ -1551,32 +1547,31 @@ describe("Scrape tests", () => {
         },
         scrapeTimeout,
       );
-    });
-  }
+    },
+  );
 
-  it.concurrent(
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "sourceURL stays unnormalized",
     async () => {
+      const url = `${base}?pagewanted=all&et_blog`;
       const response = await scrape(
         {
-          url: "https://firecrawl.dev/?pagewanted=all&et_blog",
+          url,
         },
         identity,
       );
 
-      expect(response.metadata.sourceURL).toBe(
-        "https://firecrawl.dev/?pagewanted=all&et_blog",
-      );
+      expect(response.metadata.sourceURL).toBe(url);
     },
     scrapeTimeout,
   );
 
-  it.concurrent(
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "application/json content type is markdownified properly",
     async () => {
       const response = await scrape(
         {
-          url: "https://jsonplaceholder.typicode.com/todos/1",
+          url: `${base}/example.json`,
           formats: ["markdown"],
         },
         identity,
@@ -1587,46 +1582,53 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
-  describe("__experimental_omceDomain functionality", () => {
-    it.concurrent(
-      "should accept __experimental_omceDomain flag in scrape request",
-      async () => {
-        const response = await scrape(
-          {
-            url: "https://httpbin.org/html",
-            __experimental_omceDomain: "fake-domain.com",
-          },
-          identity,
-        );
+  // TODO: check if these are required
+  describeIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "__experimental_omceDomain functionality",
+    () => {
+      it.concurrent(
+        "should accept __experimental_omceDomain flag in scrape request",
+        async () => {
+          const response = await scrape(
+            {
+              url: base, // Previously: https://httpbin.org/html
+              __experimental_omceDomain: "fake-domain.com",
+            },
+            identity,
+          );
 
-        expect(response.markdown).toBeDefined();
-        expect(response.metadata).toBeDefined();
-      },
-      scrapeTimeout,
-    );
+          expect(response.markdown).toBeDefined();
+          expect(response.metadata).toBeDefined();
+        },
+        scrapeTimeout,
+      );
 
-    it.concurrent(
-      "should work with __experimental_omceDomain and other experimental flags",
-      async () => {
-        const response = await scrape(
-          {
-            url: "https://httpbin.org/html",
-            __experimental_omceDomain: "test-domain.org",
-            __experimental_omce: true,
-          },
-          identity,
-        );
+      it.concurrent(
+        "should work with __experimental_omceDomain and other experimental flags",
+        async () => {
+          const response = await scrape(
+            {
+              url: base, // Previously: https://httpbin.org/html
+              __experimental_omceDomain: "test-domain.org",
+              __experimental_omce: true,
+            },
+            identity,
+          );
 
-        expect(response.markdown).toBeDefined();
-        expect(response.metadata).toBeDefined();
-      },
-      scrapeTimeout,
-    );
-  });
+          expect(response.markdown).toBeDefined();
+          expect(response.metadata).toBeDefined();
+        },
+        scrapeTimeout,
+      );
+    },
+  );
 });
 
-describe("attributes format", () => {
-  it.concurrent(
+// TODO: this is remote, how should we handle this? Production only or also self?
+describe("Attribute formats", () => {
+  const base = TEST_SUITE_WEBSITE;
+
+  concurrentIf(TEST_PRODUCTION || HAS_PROXY)(
     "should extract attributes from HTML elements",
     async () => {
       const response = await scrape(
@@ -1657,7 +1659,7 @@ describe("attributes format", () => {
     scrapeTimeout,
   );
 
-  it.concurrent(
+  concurrentIf(TEST_PRODUCTION || HAS_PROXY)(
     "should handle multiple attribute selectors",
     async () => {
       const response = await scrape(
@@ -1692,7 +1694,7 @@ describe("attributes format", () => {
     scrapeTimeout,
   );
 
-  it.concurrent(
+  concurrentIf(TEST_PRODUCTION || HAS_PROXY)(
     "should return empty arrays when no attributes found",
     async () => {
       const response = await scrape(
@@ -1717,183 +1719,178 @@ describe("attributes format", () => {
   );
 
   describe("Schema validation for additionalProperties", () => {
-    if (
-      !process.env.TEST_SUITE_SELF_HOSTED ||
-      process.env.OPENAI_API_KEY ||
-      process.env.OLLAMA_BASE_URL
-    ) {
-      it(
-        "should normalize scrape request with additionalProperties in json format schema",
-        async () => {
-          const identity = await idmux({ name: "schema-validation-test" });
+    itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+      "should normalize scrape request with additionalProperties in json format schema",
+      async () => {
+        // TODO: how do we want to handle this idmux? Re-fetch or once..?
+        const identity = await idmux({ name: "schema-validation-test" });
 
-          const response = await scrapeRaw(
-            {
-              url: "https://example.com",
-              formats: [
-                {
-                  type: "json",
-                  schema: {
-                    type: "object",
-                    properties: {
-                      title: { type: "string" },
-                    },
-                    additionalProperties: false,
+        const response = await scrapeRaw(
+          {
+            url: base,
+            formats: [
+              {
+                type: "json",
+                schema: {
+                  type: "object",
+                  properties: {
+                    title: { type: "string" },
                   },
+                  additionalProperties: false,
                 },
-              ],
-            },
-            identity,
-          );
-
-          expect(response.statusCode).toBe(200);
-        },
-        scrapeTimeout,
-      );
-
-      it(
-        "should normalize extract request with additionalProperties in schema",
-        async () => {
-          const identity = await idmux({ name: "schema-validation-test" });
-
-          const response = await extractRaw(
-            {
-              urls: ["https://example.com"],
-              schema: {
-                type: "object",
-                properties: {
-                  title: { type: "string" },
-                },
-                additionalProperties: true,
               },
+            ],
+          },
+          identity,
+        );
+
+        expect(response.statusCode).toBe(200);
+      },
+      scrapeTimeout,
+    );
+
+    itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+      "should normalize extract request with additionalProperties in schema",
+      async () => {
+        const identity = await idmux({ name: "schema-validation-test" });
+
+        const response = await extractRaw(
+          {
+            urls: [base],
+            schema: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+              },
+              additionalProperties: true,
             },
-            identity,
-          );
+          },
+          identity,
+        );
 
-          expect(response.statusCode).toBe(200);
-        },
-        scrapeTimeout,
-      );
+        expect(response.statusCode).toBe(200);
+      },
+      scrapeTimeout,
+    );
 
-      it(
-        "should normalize changeTracking format with additionalProperties",
-        async () => {
-          const identity = await idmux({ name: "schema-validation-test" });
+    itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+      "should accept valid schema without additionalProperties",
+      async () => {
+        const identity = await idmux({ name: "schema-validation-test" });
 
-          const response = await scrapeRaw(
-            {
-              url: "https://example.com",
-              formats: [
-                { type: "markdown" },
-                {
-                  type: "changeTracking",
-                  schema: {
-                    type: "object",
-                    properties: {
-                      changes: { type: "string" },
-                    },
-                    additionalProperties: false,
+        const response = await scrapeRaw(
+          {
+            url: base,
+            formats: [
+              {
+                type: "json",
+                schema: {
+                  type: "object",
+                  properties: {
+                    title: { type: "string" },
                   },
+                  required: ["title"],
                 },
-              ],
-            },
-            identity,
-          );
+              },
+            ],
+          },
+          identity,
+        );
 
-          expect(response.statusCode).toBe(200);
-        },
-        scrapeTimeout,
-      );
+        expect(response.statusCode).toBe(200);
+      },
+      scrapeTimeout,
+    );
 
-      it(
-        "should accept valid schema without additionalProperties",
-        async () => {
-          const identity = await idmux({ name: "schema-validation-test" });
+    itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+      "should reject schema-less dictionary (no properties but additionalProperties: true)",
+      async () => {
+        const identity = await idmux({ name: "schema-validation-test" });
 
-          const response = await scrapeRaw(
-            {
-              url: "https://example.com",
-              formats: [
-                {
-                  type: "json",
-                  schema: {
-                    type: "object",
-                    properties: {
-                      title: { type: "string" },
-                    },
-                    required: ["title"],
-                  },
+        const response = await scrapeRaw(
+          {
+            url: base,
+            formats: [
+              {
+                type: "json",
+                schema: {
+                  type: "object",
+                  additionalProperties: true,
                 },
-              ],
-            },
-            identity,
-          );
+              },
+            ],
+          },
+          identity,
+        );
 
-          expect(response.statusCode).toBe(200);
-        },
-        scrapeTimeout,
-      );
+        expect(response.statusCode).toBe(400);
+        expect(response.body.error).toContain("OpenAI");
+        expect(response.body.error).toContain("schema-less dictionary");
+      },
+      scrapeTimeout,
+    );
 
-      it(
-        "should reject schema-less dictionary (no properties but additionalProperties: true)",
-        async () => {
-          const identity = await idmux({ name: "schema-validation-test" });
+    itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+      "should normalize schema with object type without properties (but no additionalProperties)",
+      async () => {
+        const identity = await idmux({ name: "schema-validation-test" });
 
-          const response = await scrapeRaw(
-            {
-              url: "https://example.com",
-              formats: [
-                {
-                  type: "json",
-                  schema: {
-                    type: "object",
-                    additionalProperties: true,
-                  },
-                },
-              ],
-            },
-            identity,
-          );
-
-          expect(response.statusCode).toBe(400);
-          expect(response.body.error).toContain("OpenAI");
-          expect(response.body.error).toContain("schema-less dictionary");
-        },
-        scrapeTimeout,
-      );
-
-      it(
-        "should normalize schema with object type without properties (but no additionalProperties)",
-        async () => {
-          const identity = await idmux({ name: "schema-validation-test" });
-
-          const response = await scrapeRaw(
-            {
-              url: "https://example.com",
-              formats: [
-                {
-                  type: "json",
-                  schema: {
-                    type: "object",
-                    properties: {
-                      address: { type: "string" },
-                      detail: {
-                        type: "object",
-                        description:
-                          "Any other specifications of the particular make and model in the page",
-                      },
+        const response = await scrapeRaw(
+          {
+            url: base,
+            formats: [
+              {
+                type: "json",
+                schema: {
+                  type: "object",
+                  properties: {
+                    address: { type: "string" },
+                    detail: {
+                      type: "object",
+                      description:
+                        "Any other specifications of the particular make and model in the page",
                     },
                   },
                 },
-              ],
-            },
-            identity,
-          );
+              },
+            ],
+          },
+          identity,
+        );
 
-          expect(response.statusCode).toBe(200);
-        },
-        scrapeTimeout,
-      );
-    }
+        expect(response.statusCode).toBe(200);
+      },
+      scrapeTimeout,
+    );
+
+    itIf(TEST_PRODUCTION)(
+      "should normalize changeTracking format with additionalProperties",
+      async () => {
+        const identity = await idmux({ name: "schema-validation-test" });
+
+        const response = await scrapeRaw(
+          {
+            url: base,
+            formats: [
+              { type: "markdown" },
+              {
+                type: "changeTracking",
+                schema: {
+                  type: "object",
+                  properties: {
+                    changes: { type: "string" },
+                  },
+                  additionalProperties: false,
+                },
+              },
+            ],
+          },
+          identity,
+        );
+
+        expect(response.statusCode).toBe(200);
+      },
+      scrapeTimeout,
+    );
   });
 });

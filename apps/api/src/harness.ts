@@ -387,7 +387,7 @@ async function installDependencies() {
   logger.success("Dependencies installed");
 }
 
-function startServices(command?: string[]): Services {
+async function startServices(command?: string[]): Promise<Services> {
   logger.section("Starting services");
 
   const api = execForward(
@@ -468,6 +468,17 @@ function startServices(command?: string[]): Services {
         )
       : undefined;
 
+  // tests hammer the API instantly, so we need to ensure it's running before launching tests
+  if (
+    command &&
+    Array.isArray(command) &&
+    command[0] === "pnpm" &&
+    command[1].startsWith("test:snips")
+  ) {
+    logger.info(`Waiting for API on localhost:${PORT}`);
+    await waitForPort(Number(PORT), "localhost");
+  }
+
   const commandProcess =
     command && !command?.[0].startsWith("--")
       ? execForward("command", command)
@@ -536,7 +547,7 @@ async function runDevMode(): Promise<void> {
 
         if (shuttingDown) return;
 
-        currentServices = startServices();
+        currentServices = await startServices();
 
         restartSignal?.abort();
         restartSignal = new AbortController();
@@ -606,13 +617,15 @@ async function runDevMode(): Promise<void> {
 }
 
 async function runProductionMode(command: string[]): Promise<void> {
-  const services = startServices(command);
+  const services = await startServices(command);
 
   logger.info(`Waiting for API on localhost:${PORT}`);
   await waitForPort(Number(PORT), "localhost");
 
   await waitForTermination(services);
 }
+
+let serviceError = false;
 
 async function waitForTermination(services: Services): Promise<void> {
   logger.info("All services running. Press Ctrl+C to stop");
@@ -634,7 +647,10 @@ async function waitForTermination(services: Services): Promise<void> {
 
   promises.push(...services.nuqWorkers.map(w => w.promise));
 
-  await Promise.race(promises);
+  await Promise.race(promises).catch(error => {
+    logger.error("A service has terminated unexpectedly", error);
+    serviceError = true;
+  });
 }
 
 async function gracefulShutdown() {
@@ -647,7 +663,7 @@ async function gracefulShutdown() {
   const terminationPromises = Array.from(childProcesses).map(proc =>
     terminateProcess(proc, forceTerminate),
   );
-  await Promise.all(terminationPromises);
+  await Promise.allSettled(terminationPromises);
   logger.success("All processes terminated");
 }
 
@@ -692,7 +708,7 @@ async function main() {
   } finally {
     await gracefulShutdown();
     logger.info("Goodbye!");
-    process.exit(0);
+    process.exit(serviceError ? 1 : 0);
   }
 }
 

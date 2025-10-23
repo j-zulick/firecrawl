@@ -1,3 +1,8 @@
+import {
+  ALLOW_TEST_SUITE_WEBSITE,
+  concurrentIf,
+  TEST_SUITE_WEBSITE,
+} from "../lib";
 import { expectMapToSucceed, map, idmux, Identity } from "./lib";
 
 let identity: Identity;
@@ -10,13 +15,16 @@ beforeAll(async () => {
   });
 }, 10000);
 
+// TODO: is map meant for self-host?
 describe("Map tests", () => {
-  it.concurrent(
+  const base = TEST_SUITE_WEBSITE;
+
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "basic map succeeds",
     async () => {
       const response = await map(
         {
-          url: "http://firecrawl.dev",
+          url: base,
         },
         identity,
       );
@@ -26,12 +34,12 @@ describe("Map tests", () => {
     60000,
   );
 
-  it.concurrent(
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "times out properly",
     async () => {
       const response = await map(
         {
-          url: "http://firecrawl.dev",
+          url: base,
           timeout: 1,
         },
         identity,
@@ -70,21 +78,25 @@ describe("Map tests", () => {
     60000,
   );
 
-  it.concurrent("sitemap=only respects limit", async () => {
-    const response = await map(
-      {
-        url: "https://firecrawl.dev",
-        sitemap: "only",
-        limit: 10,
-      },
-      identity,
-    );
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "sitemap=only respects limit",
+    async () => {
+      const response = await map(
+        {
+          url: base,
+          sitemap: "only",
+          limit: 10,
+        },
+        identity,
+      );
 
-    expect(response.statusCode).toBe(200);
-    expect(response.body.success).toBe(true);
-    expect(response.body.links.length).toBe(10);
-  });
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.links.length).toBe(10);
+    },
+  );
 
+  // TODO: port to new system
   it.concurrent(
     "shows warning when results ≤ 1 and URL is not base domain",
     async () => {

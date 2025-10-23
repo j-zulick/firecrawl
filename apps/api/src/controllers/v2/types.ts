@@ -44,13 +44,23 @@ const BASE_URL_SCHEMA = z.preprocess(
     .string()
     .url()
     .regex(/^https?:\/\//i, "URL uses unsupported protocol")
-    .refine(
-      x =>
-        /(\.[a-zA-Z0-9-\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]{2,}|\.xn--[a-zA-Z0-9-]{1,})(:\d+)?([\/?#]|$)/i.test(
-          x,
-        ),
-      "URL must have a valid top-level domain or be a valid path",
-    )
+    .refine(x => {
+      if (
+        process.env.TEST_SUITE_SELF_HOSTED === "true" &&
+        process.env.ALLOW_LOCAL_WEBHOOKS === "true"
+      ) {
+        if (
+          /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
+            x as string,
+          )
+        ) {
+          return true;
+        }
+      }
+      return /(\.[a-zA-Z0-9-\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]{2,}|\.xn--[a-zA-Z0-9-]{1,})(:\d+)?([\/?#]|$)/i.test(
+        x,
+      );
+    }, "URL must have a valid top-level domain or be a valid path")
     .refine(x => {
       try {
         checkUrl(x as string);
@@ -113,8 +123,8 @@ function normalizeSchemaForOpenAI(schema: any): any {
       const normalizedDefs = Object.fromEntries(
         Object.entries($defs ?? {}).map(([key, value]) => [
           key,
-          normalizeObject(value)
-        ])
+          normalizeObject(value),
+        ]),
       );
 
       return { ...processedRest, $defs: normalizedDefs };
