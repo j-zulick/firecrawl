@@ -253,7 +253,13 @@ const workerFun = async (
   }
 };
 
-async function processFinishCrawlJobInternal(job: NuQJob, logger: Logger) {
+async function processFinishCrawlJobInternal(_job: NuQJob, logger: Logger) {
+  const job = await crawlFinishedQueue.getJob(_job.id);
+
+  if (!job) {
+    throw new Error("crawlFinish job disappeared");
+  }
+
   if (!job.groupId) {
     throw new Error("crawlFinish job with no groupId");
   }
