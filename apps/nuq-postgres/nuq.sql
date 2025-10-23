@@ -54,9 +54,6 @@ CREATE INDEX IF NOT EXISTS nuq_queue_scrape_group_mode_status_idx ON nuq.queue_s
 -- For getCrawlJobsForListing: query by group_id, status='completed', data->>'mode', ordered by finished_at, created_at
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_group_completed_listing_idx ON nuq.queue_scrape (group_id, finished_at ASC, created_at ASC) WHERE (status = 'completed'::nuq.job_status AND (data->>'mode') = 'single_urls');
 
--- For getGroupNumericStats backlog query: query by group_id and data->>'mode' on backlog table
-CREATE INDEX IF NOT EXISTS nuq_queue_scrape_backlog_group_mode_idx ON nuq.queue_scrape_backlog (group_id) WHERE ((data->>'mode') = 'single_urls');
-
 CREATE TABLE IF NOT EXISTS nuq.queue_scrape_backlog (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   data jsonb,
@@ -68,6 +65,9 @@ CREATE TABLE IF NOT EXISTS nuq.queue_scrape_backlog (
   times_out_at timestamptz,
   CONSTRAINT queue_scrape_backlog_pkey PRIMARY KEY (id)
 );
+
+-- For getGroupNumericStats backlog query: query by group_id and data->>'mode' on backlog table
+CREATE INDEX IF NOT EXISTS nuq_queue_scrape_backlog_group_mode_idx ON nuq.queue_scrape_backlog (group_id) WHERE ((data->>'mode') = 'single_urls');
 
 SELECT cron.schedule('nuq_queue_scrape_clean_completed', '*/5 * * * *', $$
   DELETE FROM nuq.queue_scrape WHERE nuq.queue_scrape.status = 'completed'::nuq.job_status AND nuq.queue_scrape.created_at < now() - interval '1 hour' AND group_id IS NULL;
