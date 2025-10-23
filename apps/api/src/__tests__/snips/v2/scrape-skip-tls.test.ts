@@ -1,3 +1,9 @@
+import {
+  ALLOW_TEST_SUITE_WEBSITE,
+  TEST_PRODUCTION,
+  TEST_SUITE_WEBSITE,
+  testIf,
+} from "../lib";
 import { Identity, idmux, scrapeTimeout, scrape, scrapeRaw } from "./lib";
 
 describe("V2 Scrape skipTlsVerification Default", () => {
@@ -50,12 +56,12 @@ describe("V2 Scrape skipTlsVerification Default", () => {
     scrapeTimeout,
   );
 
-  test(
+  testIf(ALLOW_TEST_SUITE_WEBSITE)(
     "should work with valid HTTPS sites regardless of skipTlsVerification setting",
     async () => {
       const data = await scrape(
         {
-          url: "https://firecrawl.dev",
+          url: TEST_SUITE_WEBSITE, // NOTE: test website in self-host mode may not use TLS, need to check this out
           maxAge: 0,
         },
         identity,
@@ -67,43 +73,41 @@ describe("V2 Scrape skipTlsVerification Default", () => {
     scrapeTimeout,
   );
 
-  if (!process.env.TEST_SUITE_SELF_HOSTED) {
-    test(
-      "should support object screenshot format",
-      async () => {
-        const data = await scrape(
-          {
-            url: "https://firecrawl.dev",
-            formats: [{ type: "screenshot", fullPage: false }],
-            maxAge: 0,
-          },
-          identity,
-        );
+  testIf(TEST_PRODUCTION)(
+    "should support object screenshot format",
+    async () => {
+      const data = await scrape(
+        {
+          url: TEST_SUITE_WEBSITE,
+          formats: [{ type: "screenshot", fullPage: false }],
+          maxAge: 0,
+        },
+        identity,
+      );
 
-        expect(data).toBeDefined();
-        expect(data.screenshot).toBeDefined();
-        expect(typeof data.screenshot).toBe("string");
-      },
-      scrapeTimeout,
-    );
+      expect(data).toBeDefined();
+      expect(data.screenshot).toBeDefined();
+      expect(typeof data.screenshot).toBe("string");
+    },
+    scrapeTimeout,
+  );
 
-    test(
-      "should support object screenshot format with fullPage",
-      async () => {
-        const data = await scrape(
-          {
-            url: "https://firecrawl.dev",
-            formats: [{ type: "screenshot", fullPage: true }],
-            maxAge: 0,
-          },
-          identity,
-        );
+  testIf(TEST_PRODUCTION)(
+    "should support object screenshot format with fullPage",
+    async () => {
+      const data = await scrape(
+        {
+          url: TEST_SUITE_WEBSITE,
+          formats: [{ type: "screenshot", fullPage: true }],
+          maxAge: 0,
+        },
+        identity,
+      );
 
-        expect(data).toBeDefined();
-        expect(data.screenshot).toBeDefined();
-        expect(typeof data.screenshot).toBe("string");
-      },
-      scrapeTimeout,
-    );
-  }
+      expect(data).toBeDefined();
+      expect(data.screenshot).toBeDefined();
+      expect(typeof data.screenshot).toBe("string");
+    },
+    scrapeTimeout,
+  );
 });

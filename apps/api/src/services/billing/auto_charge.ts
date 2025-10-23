@@ -74,7 +74,8 @@ async function _autoChargeScale(
   const resource = `auto-recharge:${chunk.team_id}`;
 
   try {
-    return await redlock.using([resource], 5000, async signal => {
+    return await redlock.using([resource], 15000, async signal => {
+      logger.info("Lock acquired");
       const updatedChunk = await getACUC(chunk.api_key, false, false);
 
       if (
@@ -302,6 +303,7 @@ async function _autoChargeScale(
             true,
           );
 
+          logger.info("Scale auto-recharge successful");
           return {
             success: true,
             message: "Auto-recharge successful",

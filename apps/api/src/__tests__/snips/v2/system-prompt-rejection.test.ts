@@ -1,12 +1,15 @@
 import { Identity, idmux, scrapeTimeout, scrapeRaw } from "./lib";
-import { ScrapeRequestInput } from "../../../controllers/v2/types";
+import {
+  ALLOW_TEST_SUITE_WEBSITE,
+  describeIf,
+  HAS_AI,
+  TEST_PRODUCTION,
+  TEST_SUITE_WEBSITE,
+} from "../lib";
 
-describe("V2 System Prompt Rejection", () => {
-  if (
-    !process.env.TEST_SUITE_SELF_HOSTED ||
-    process.env.OPENAI_API_KEY ||
-    process.env.OLLAMA_BASE_URL
-  ) {
+describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+  "V2 System Prompt Rejection",
+  () => {
     let identity: Identity;
 
     beforeAll(async () => {
@@ -22,7 +25,7 @@ describe("V2 System Prompt Rejection", () => {
       async () => {
         const response = await scrapeRaw(
           {
-            url: "https://firecrawl.dev",
+            url: TEST_SUITE_WEBSITE,
             formats: [
               {
                 type: "json",
@@ -49,7 +52,7 @@ describe("V2 System Prompt Rejection", () => {
       async () => {
         const response = await scrapeRaw(
           {
-            url: "https://firecrawl.dev",
+            url: TEST_SUITE_WEBSITE,
             formats: [
               {
                 type: "json",
@@ -69,9 +72,5 @@ describe("V2 System Prompt Rejection", () => {
       },
       scrapeTimeout + 30000,
     );
-  } else {
-    it("mocked", () => {
-      expect(true).toBe(true);
-    });
-  }
-});
+  },
+);

@@ -54,10 +54,14 @@ from .watcher import Watcher
 class FirecrawlClient:
     """
     Main Firecrawl v2 API client.
-    
+
     This client provides a clean, modular interface to all Firecrawl functionality.
     """
-    
+
+    @staticmethod
+    def _is_cloud_service(url: str) -> bool:
+        return "api.firecrawl.dev" in url.lower()
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -68,7 +72,7 @@ class FirecrawlClient:
     ):
         """
         Initialize the Firecrawl client.
-        
+
         Args:
             api_key: Firecrawl API key (or set FIRECRAWL_API_KEY env var)
             api_url: Base URL for the Firecrawl API
@@ -78,13 +82,13 @@ class FirecrawlClient:
         """
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
-        
-        if not api_key:
+
+        if self._is_cloud_service(api_url) and not api_key:
             raise ValueError(
-                "API key is required. Set FIRECRAWL_API_KEY environment variable "
+                "API key is required for the cloud API. Set FIRECRAWL_API_KEY environment variable "
                 "or pass api_key parameter."
             )
-        
+
         self.config = ClientConfig(
             api_key=api_key,
             api_url=api_url,
@@ -92,7 +96,7 @@ class FirecrawlClient:
             max_retries=max_retries,
             backoff_factor=backoff_factor
         )
-        
+
         self.http_client = HttpClient(api_key, api_url)
     
     def scrape(
@@ -236,6 +240,7 @@ class FirecrawlClient:
         zero_data_retention: bool = False,
         poll_interval: int = 2,
         timeout: Optional[int] = None,
+        request_timeout: Optional[float] = None,
         integration: Optional[str] = None,
     ) -> CrawlJob:
         """
@@ -259,7 +264,8 @@ class FirecrawlClient:
             scrape_options: Page scraping configuration
             zero_data_retention: Whether to delete data after 24 hours
             poll_interval: Seconds between status checks
-            timeout: Maximum seconds to wait (None for no timeout)
+            timeout: Maximum seconds to wait for the entire crawl job to complete (None for no timeout)
+            request_timeout: Timeout (in seconds) for each individual HTTP request, including pagination requests when fetching results. If there are multiple pages, each page request gets this timeout
             
         Returns:
             CrawlJob when job completes
@@ -290,10 +296,11 @@ class FirecrawlClient:
         )
         
         return crawl_module.crawl(
-            self.http_client, 
-            request, 
-            poll_interval=poll_interval, 
-            timeout=timeout
+            self.http_client,
+            request,
+            poll_interval=poll_interval,
+            timeout=timeout,
+            request_timeout=request_timeout,
         )
     
     def start_crawl(
@@ -368,9 +375,11 @@ class FirecrawlClient:
         return crawl_module.start_crawl(self.http_client, request)
     
     def get_crawl_status(
-        self, 
+        self,
         job_id: str,
-        pagination_config: Optional[PaginationConfig] = None
+        pagination_config: Optional[PaginationConfig] = None,
+        *,
+        request_timeout: Optional[float] = None,
     ) -> CrawlJob:
         """
         Get the status of a crawl job.
@@ -378,6 +387,9 @@ class FirecrawlClient:
         Args:
             job_id: ID of the crawl job
             pagination_config: Optional configuration for pagination behavior
+            request_timeout: Timeout (in seconds) for each individual HTTP request. When auto-pagination 
+                is enabled (default) and there are multiple pages of results, this timeout applies to 
+                each page request separately, not to the entire operation
             
         Returns:
             CrawlJob with current status and data
@@ -386,9 +398,10 @@ class FirecrawlClient:
             Exception: If the status check fails
         """
         return crawl_module.get_crawl_status(
-            self.http_client, 
+            self.http_client,
             job_id,
-            pagination_config=pagination_config
+            pagination_config=pagination_config,
+            request_timeout=request_timeout,
         )
     
     def get_crawl_errors(self, crawl_id: str) -> CrawlErrorsResponse:

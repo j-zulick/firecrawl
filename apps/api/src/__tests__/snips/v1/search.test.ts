@@ -1,3 +1,4 @@
+import { describeIf, HAS_PROXY, HAS_SEARCH, TEST_PRODUCTION } from "../lib";
 import { search, idmux, Identity } from "./lib";
 
 let identity: Identity;
@@ -10,7 +11,8 @@ beforeAll(async () => {
   });
 }, 10000);
 
-describe("Search tests", () => {
+// NOTE: if DDG gives us issues with this, we can disable if SEARXNG is not enabled
+describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
   it.concurrent(
     "works",
     async () => {
@@ -75,6 +77,21 @@ describe("Search tests", () => {
       );
       expect(res.length).toBeGreaterThan(0);
       expect(res.length).toBeLessThanOrEqual(20);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "country defaults to undefined when location is set",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl",
+          location: "San Francisco",
+        },
+        identity,
+      );
+      expect(res.length).toBeGreaterThan(0);
     },
     60000,
   );

@@ -24,6 +24,10 @@
     "worker:production": "node --import ./dist/src/otel.js dist/src/services/queue-worker.js",
     "nuq-worker": "tsc-watch --onSuccess \"node --import ./dist/src/otel.js dist/src/services/worker/nuq-worker.js\"",
     "nuq-worker:production": "node --import ./dist/src/otel.js dist/src/services/worker/nuq-worker.js",
+    "nuq-prefetch-worker": "tsc-watch --onSuccess \"node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js\"",
+    "nuq-prefetch-worker:production": "node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js",
+    "extract-worker": "tsc-watch --onSuccess \"node --import ./dist/src/otel.js dist/src/services/extract-worker.js\"",
+    "extract-worker:production": "node --import ./dist/src/otel.js dist/src/services/extract-worker.js",
     "index-worker": "tsc-watch --onSuccess \"node --import ./dist/src/otel.js dist/src/services/indexing/index-worker.js\"",
     "index-worker:production": "node --import ./dist/src/otel.js dist/src/services/indexing/index-worker.js",
     "mongo-docker": "docker run -d -p 2717:27017 -v ./mongo-data:/data/db --name mongodb mongo:latest",
@@ -37,6 +41,7 @@
   "license": "ISC",
   "devDependencies": {
     "@jest/globals": "^29.7.0",
+    "@types/amqplib": "^0.10.7",
     "@types/body-parser": "^1.19.2",
     "@types/cors": "^2.8.13",
     "@types/escape-html": "^1.0.4",
@@ -71,7 +76,7 @@
     "@apidevtools/json-schema-ref-parser": "^11.7.3",
     "@bull-board/api": "^6.11.2",
     "@bull-board/express": "^6.11.2",
-    "@coinbase/x402": "^0.6.4",
+    "@coinbase/x402": "^0.6.6",
     "@dqbd/tiktoken": "^1.0.22",
     "@google-cloud/bigquery": "^8.1.1",
     "@google-cloud/storage": "^7.16.0",
@@ -89,6 +94,7 @@
     "@types/ws": "^8.5.12",
     "ai": "^4.3.4",
     "ajv": "^8.16.0",
+    "amqplib": "^0.10.9",
     "async-mutex": "^0.5.0",
     "axios": "^1.12.2",
     "body-parser": "^1.20.3",
@@ -133,7 +139,7 @@
     "uuid": "^10.0.0",
     "winston": "^3.14.2",
     "ws": "^8.18.0",
-    "x402-express": "^0.6.1",
+    "x402-express": "^0.6.5",
     "xml2js": "^0.6.2",
     "zod": "^3.24.2"
   },
@@ -145,7 +151,12 @@
     ]
   },
   "pnpm": {
+    "allowScripts": {
+      "@coinbase/x402": true,
+      "oxc-resolver": true
+    },
     "onlyBuiltDependencies": [
+      "@coinbase/x402",
       "@mendable/firecrawl-rs",
       "@sentry-internal/node-cpu-profiler",
       "@sentry/cli",
@@ -156,13 +167,16 @@
       "koffi",
       "libpq",
       "msgpackr-extract",
+      "oxc-resolver",
       "protobufjs",
       "supabase",
       "utf-8-validate",
       "wordpos"
     ],
     "overrides": {
-      "brace-expansion@>=2.0.0 <=2.0.1": "2.0.2"
+      "brace-expansion@>=2.0.0 <=2.0.1": "2.0.2",
+      "debug": ">=4.4.3",
+      "uuid": "<=10.0.0"
     }
   },
   "lint-staged": {

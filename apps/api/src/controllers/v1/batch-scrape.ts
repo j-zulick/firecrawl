@@ -13,6 +13,7 @@ import {
   finishCrawlKickoff,
   getCrawl,
   lockURLs,
+  markCrawlActive,
   saveCrawl,
   StoredCrawl,
 } from "../../lib/crawl-redis";
@@ -24,6 +25,7 @@ import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
+import { crawlGroup } from "../../services/worker/nuq";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -95,6 +97,13 @@ export async function batchScrapeController(
     }
   }
 
+  if (urls.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: "No valid URLs provided",
+    });
+  }
+
   logger.debug("Batch scrape " + id + " starting", {
     urlsLength: urls.length,
     appendToId: req.body.appendToId,
@@ -128,7 +137,13 @@ export async function batchScrapeController(
       };
 
   if (!req.body.appendToId) {
+    await crawlGroup.addGroup(
+      id,
+      sc.team_id,
+      (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+    );
     await saveCrawl(id, sc);
+    await markCrawlActive(id);
   }
 
   let jobPriority = 20;

@@ -49,13 +49,23 @@ export const url = z.preprocess(
     .string()
     .url()
     .regex(/^https?:\/\//i, "URL uses unsupported protocol")
-    .refine(
-      x =>
-        /(\.[a-zA-Z0-9-\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]{2,}|\.xn--[a-zA-Z0-9-]{1,})(:\d+)?([\/?#]|$)/i.test(
-          x,
-        ),
-      "URL must have a valid top-level domain or be a valid path",
-    )
+    .refine(x => {
+      if (
+        process.env.TEST_SUITE_SELF_HOSTED === "true" &&
+        process.env.ALLOW_LOCAL_WEBHOOKS === "true"
+      ) {
+        if (
+          /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
+            x as string,
+          )
+        ) {
+          return true;
+        }
+      }
+      return /(\.[a-zA-Z0-9-\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]{2,}|\.xn--[a-zA-Z0-9-]{1,})(:\d+)?([\/?#]|$)/i.test(
+        x,
+      );
+    }, "URL must have a valid top-level domain or be a valid path")
     .refine(x => {
       try {
         checkUrl(x as string);
@@ -773,7 +783,7 @@ export type ScrapeRequestInput = z.input<typeof scrapeRequestSchema>;
 
 export const batchScrapeRequestSchema = baseScrapeOptions
   .extend({
-    urls: url.array(),
+    urls: url.array().min(1),
     origin: z.string().optional().default("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     webhook: webhookSchema.optional(),
@@ -790,7 +800,7 @@ export const batchScrapeRequestSchema = baseScrapeOptions
 
 export const batchScrapeRequestSchemaNoURLValidation = baseScrapeOptions
   .extend({
-    urls: z.string().array(),
+    urls: z.string().array().min(1),
     origin: z.string().optional().default("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     webhook: webhookSchema.optional(),
@@ -1018,6 +1028,7 @@ export type Document = {
     cachedAt?: string;
     creditsUsed?: number;
     postprocessorsUsed?: string[];
+    indexId?: string; // ID used to store the document in the index (GCS)
     // [key: string]: string | string[] | number | { smartScrape: number; other: number; total: number } | undefined;
   };
   serpResults?: {
@@ -1215,6 +1226,7 @@ export type TeamFlags = {
   allowTeammateInvites?: boolean;
   crawlTtlHours?: number;
   ipWhitelist?: boolean;
+  skipCountryCheck?: boolean;
 } | null;
 
 export type AuthCreditUsageChunkFromTeam = Omit<
@@ -1445,7 +1457,7 @@ export const searchRequestSchema = z
     tbs: z.string().optional(),
     filter: z.string().optional(),
     lang: z.string().optional().default("en"),
-    country: z.string().optional().default("us"),
+    country: z.string().optional(),
     location: z.string().optional(),
     origin: z.string().optional().default("api"),
     integration: integrationSchema.optional().transform(val => val || null),
@@ -1479,6 +1491,8 @@ export const searchRequestSchema = z
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => ({
     ...x,
+    country:
+      x.country !== undefined ? x.country : x.location ? undefined : "us",
     scrapeOptions: extractTransform(x.scrapeOptions),
   }));
 

@@ -20,6 +20,7 @@ import {
   finishCrawlKickoff,
   lockURL,
   lockURLs,
+  markCrawlActive,
   saveCrawl,
   StoredCrawl,
 } from "../../../src/lib/crawl-redis";
@@ -32,6 +33,7 @@ import { ZodError } from "zod";
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { fromV0ScrapeOptions } from "../v2/types";
 import { isSelfHosted } from "../../lib/deployment";
+import { crawlGroup } from "../../services/worker/nuq";
 
 export async function crawlController(req: Request, res: Response) {
   try {
@@ -202,7 +204,15 @@ export async function crawlController(req: Request, res: Response) {
       sc.robots = await crawler.getRobotsTxt();
     } catch (_) {}
 
+    await crawlGroup.addGroup(
+      id,
+      sc.team_id,
+      (chunk?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+    );
+
     await saveCrawl(id, sc);
+
+    await markCrawlActive(id);
 
     await finishCrawlKickoff(id);
 

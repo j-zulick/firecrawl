@@ -125,7 +125,7 @@ async function searchHelper(
 
   // TODO: addScrapeJobs
   for (const job of jobDatas) {
-    await addScrapeJob(job.data, job.jobId, jobPriority);
+    await addScrapeJob(job.data, job.jobId, jobPriority, false, true);
   }
 
   const docs = (

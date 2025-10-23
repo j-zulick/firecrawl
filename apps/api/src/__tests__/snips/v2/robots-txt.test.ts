@@ -1,6 +1,7 @@
 import { createRobotsChecker, fetchRobotsTxt } from "../../../lib/robots-txt";
 import { scrapeTimeout } from "./lib";
 
+// TODO: test self-hosted
 describe("Robots.txt tests", () => {
   const robotsUrl = "https://www.google.com/robots.txt";
   const siteUrl = "https://www.google.com/";

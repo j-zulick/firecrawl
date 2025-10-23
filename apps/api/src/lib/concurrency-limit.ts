@@ -62,6 +62,7 @@ type ConcurrencyLimitedJob = {
   id: string;
   data: any;
   priority: number;
+  listenable: boolean;
 };
 
 export async function cleanOldConcurrencyLimitedJobs(
@@ -339,13 +340,15 @@ export async function concurrentJobDone(job: NuQJob<any>) {
 
         abTestJob(nextJob.job.data);
 
-        await scrapeQueue.addJob(
+        await scrapeQueue.promoteJobFromBacklogOrAdd(
           nextJob.job.id,
+          nextJob.job.data,
           {
-            ...nextJob.job.data,
-            concurrencyLimitHit: true,
+            priority: nextJob.job.priority,
+            listenable: nextJob.job.listenable,
+            ownerId: nextJob.job.data.team_id ?? undefined,
+            groupId: nextJob.job.data.crawl_id ?? undefined,
           },
-          nextJob.job.priority,
         );
       }
     }

@@ -99,6 +99,7 @@ async function startScrapeJob(
     jobId,
     jobPriority,
     directToBullMQ,
+    true,
   );
 
   return jobId;
@@ -320,8 +321,8 @@ export async function searchController(
     const isAsyncScraping = req.body.asyncScraping && shouldScrape;
 
     if (!shouldScrape) {
-      // No scraping - just count results for billing
-      credits_billed = totalResultsCount;
+      // No scraping - 2 credits per 10 search results
+      credits_billed = Math.ceil(totalResultsCount / 10) * 2;
     } else {
       // Common setup for both async and sync scraping
       logger.info(

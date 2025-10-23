@@ -148,6 +148,7 @@ export async function scrapeController(
             jobId,
             jobPriority,
             isDirectToBullMQ,
+            true,
           );
 
           setSpanAttributes(enqueueSpan, {
