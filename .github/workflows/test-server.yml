@@ -310,6 +310,7 @@ jobs:
       TEST_SUITE_WEBSITE: ${{ secrets.TEST_SUITE_WEBSITE }}
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       NUQ_RABBITMQ_URL: amqp://localhost:5672
+      NUQ_WORKER_COUNT: 12
       HOST: 0.0.0.0
     steps:
       - uses: actions/checkout@v5
