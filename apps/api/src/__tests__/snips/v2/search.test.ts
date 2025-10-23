@@ -1,3 +1,10 @@
+import {
+  concurrentIf,
+  describeIf,
+  HAS_PROXY,
+  HAS_SEARCH,
+  TEST_PRODUCTION,
+} from "../lib";
 import { search, idmux, Identity } from "./lib";
 
 let identity: Identity;
@@ -10,7 +17,8 @@ beforeAll(async () => {
   });
 }, 10000);
 
-describe("Search tests", () => {
+// NOTE: if DDG gives us issues with this, we can disable if SEARXNG is not enabled
+describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
   it.concurrent(
     "works",
     async () => {
@@ -48,7 +56,7 @@ describe("Search tests", () => {
     125000,
   );
 
-  it.concurrent(
+  concurrentIf(TEST_PRODUCTION)(
     "works for news",
     async () => {
       const res = await search(
@@ -64,7 +72,7 @@ describe("Search tests", () => {
     60000,
   );
 
-  it.concurrent(
+  concurrentIf(TEST_PRODUCTION)(
     "works for images",
     async () => {
       const res = await search(
@@ -80,7 +88,7 @@ describe("Search tests", () => {
     60000,
   );
 
-  it.concurrent(
+  concurrentIf(TEST_PRODUCTION)(
     "works for multiple sources",
     async () => {
       const res = await search(
@@ -117,7 +125,7 @@ describe("Search tests", () => {
     60000,
   );
 
-  it.concurrent(
+  concurrentIf(TEST_PRODUCTION)(
     "respects limit for news",
     async () => {
       const res = await search(
@@ -152,7 +160,7 @@ describe("Search tests", () => {
     60000,
   );
 
-  it.concurrent(
+  concurrentIf(TEST_PRODUCTION)(
     "respects limit for above 10 images",
     async () => {
       const res = await search(
@@ -170,7 +178,7 @@ describe("Search tests", () => {
     60000,
   );
 
-  it.concurrent(
+  concurrentIf(TEST_PRODUCTION)(
     "respects limit for above 10 multiple sources",
     async () => {
       const res = await search(

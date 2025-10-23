@@ -1,3 +1,10 @@
+import {
+  ALLOW_TEST_SUITE_WEBSITE,
+  describeIf,
+  HAS_AI,
+  TEST_PRODUCTION,
+  TEST_SUITE_WEBSITE,
+} from "../lib";
 import { extract, idmux, Identity } from "./lib";
 
 let identity: Identity;
@@ -10,18 +17,15 @@ beforeAll(async () => {
   });
 }, 10000);
 
-describe("Extract tests", () => {
-  if (
-    !process.env.TEST_SUITE_SELF_HOSTED ||
-    process.env.OPENAI_API_KEY ||
-    process.env.OLLAMA_BASE_URL
-  ) {
+describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+  "Extract tests",
+  () => {
     it.concurrent(
       "works",
       async () => {
         const res = await extract(
           {
-            urls: ["https://firecrawl.dev"],
+            urls: [TEST_SUITE_WEBSITE],
             schema: {
               type: "object",
               properties: {
@@ -56,7 +60,7 @@ describe("Extract tests", () => {
       async () => {
         const res = await extract(
           {
-            urls: ["https://firecrawl.dev"],
+            urls: [TEST_SUITE_WEBSITE],
             schema: {
               type: "object",
               properties: {
@@ -80,9 +84,5 @@ describe("Extract tests", () => {
       },
       90000,
     );
-  } else {
-    it.concurrent("dummy test", () => {
-      expect(true).toBe(true);
-    });
-  }
-});
+  },
+);

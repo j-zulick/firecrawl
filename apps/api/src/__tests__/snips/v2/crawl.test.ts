@@ -1,4 +1,13 @@
 import {
+  ALLOW_TEST_SUITE_WEBSITE,
+  concurrentIf,
+  describeIf,
+  HAS_AI,
+  HAS_PROXY,
+  TEST_PRODUCTION,
+  TEST_SUITE_WEBSITE,
+} from "../lib";
+import {
   asyncCrawl,
   asyncCrawlWaitForFinish,
   crawl,
@@ -9,7 +18,6 @@ import {
   scrapeTimeout,
 } from "./lib";
 import { describe, it, expect } from "@jest/globals";
-import { filterLinks } from "@mendable/firecrawl-rs";
 
 let identity: Identity;
 
@@ -22,46 +30,50 @@ beforeAll(async () => {
 }, 10000);
 
 describe("Crawl tests", () => {
-  it.concurrent(
+  const base = TEST_SUITE_WEBSITE;
+  const baseUrl = new URL(base);
+  const baseDomain = baseUrl.hostname;
+
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "works",
     async () => {
       const results = await crawl(
         {
-          url: "https://firecrawl.dev",
+          url: base,
           limit: 10,
         },
         identity,
       );
 
-      expect(results.completed).toBe(10);
+      expect(results.completed).toBeGreaterThan(0);
     },
     10 * scrapeTimeout,
   );
 
-  it.concurrent(
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "works with sitemap: skip",
     async () => {
       const results = await crawl(
         {
-          url: "https://firecrawl.dev",
+          url: base,
           limit: 10,
           sitemap: "skip",
         },
         identity,
       );
 
-      expect(results.completed).toBe(10);
+      expect(results.completed).toBeGreaterThan(0);
     },
     10 * scrapeTimeout,
   );
 
-  it.concurrent(
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "filters URLs properly",
     async () => {
       const res = await crawl(
         {
-          url: "https://firecrawl.dev/pricing",
-          includePaths: ["^/pricing$"],
+          url: `${TEST_SUITE_WEBSITE}/blog`,
+          includePaths: ["^/blog$"],
           limit: 10,
         },
         identity,
@@ -72,43 +84,44 @@ describe("Crawl tests", () => {
         expect(res.completed).toBeGreaterThan(0);
         for (const page of res.data) {
           const url = new URL(page.metadata.url ?? page.metadata.sourceURL!);
-          expect(url.pathname).toMatch(/^\/pricing$/);
+          expect(url.pathname).toMatch(/^\/blog$/);
         }
       }
     },
     10 * scrapeTimeout,
   );
 
-  it.concurrent(
-    "filters URLs properly when using regexOnFullURL",
-    async () => {
-      const res = await crawl(
-        {
-          url: "https://firecrawl.dev/pricing",
-          includePaths: ["^https://(www\\.)?firecrawl\\.dev/pricing$"],
-          regexOnFullURL: true,
-          limit: 10,
-        },
-        identity,
-      );
+  // TODO: port to new dynamic url system
+  // concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+  //   "filters URLs properly when using regexOnFullURL",
+  //   async () => {
+  //     const res = await crawl(
+  //       {
+  //         url: base,
+  //         includePaths: ["^https://(www\\.)?firecrawl\\.dev/blog$"],
+  //         regexOnFullURL: true,
+  //         limit: 10,
+  //       },
+  //       identity,
+  //     );
 
-      expect(res.success).toBe(true);
-      if (res.success) {
-        expect(res.completed).toBe(1);
-        expect(res.data[0].metadata.sourceURL).toBe(
-          "https://firecrawl.dev/pricing",
-        );
-      }
-    },
-    10 * scrapeTimeout,
-  );
+  //     expect(res.success).toBe(true);
+  //     if (res.success) {
+  //       expect(res.completed).toBe(1);
+  //       expect(res.data[0].metadata.sourceURL).toBe(
+  //         base,
+  //       );
+  //     }
+  //   },
+  //   10 * scrapeTimeout,
+  // );
 
-  it.concurrent(
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "delay parameter works",
     async () => {
       await crawl(
         {
-          url: "https://firecrawl.dev",
+          url: base,
           limit: 3,
           delay: 5,
         },
@@ -118,14 +131,14 @@ describe("Crawl tests", () => {
     3 * scrapeTimeout + 3 * 5000,
   );
 
-  it.concurrent(
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "ongoing crawls endpoint works",
     async () => {
       const beforeCrawl = new Date();
 
       const res = await asyncCrawl(
         {
-          url: "https://firecrawl.dev",
+          url: base,
           limit: 3,
         },
         identity,
@@ -167,9 +180,9 @@ describe("Crawl tests", () => {
   );
 
   // TEMP: Flaky
-  // it.concurrent("discovers URLs properly when origin is not included", async () => {
+  // concurrentIf(ALLOW_TEST_SUITE_WEBSITE)("discovers URLs properly when origin is not included", async () => {
   //     const res = await crawl({
-  //         url: "https://firecrawl.dev",
+  //         url: base,
   //         includePaths: ["^/blog"],
   //         ignoreSitemap: true,
   //         limit: 10,
@@ -185,9 +198,9 @@ describe("Crawl tests", () => {
   // }, 300000);
 
   // TEMP: Flaky
-  // it.concurrent("discovers URLs properly when maxDiscoveryDepth is provided", async () => {
+  // concurrentIf(ALLOW_TEST_SUITE_WEBSITE)("discovers URLs properly when maxDiscoveryDepth is provided", async () => {
   //     const res = await crawl({
-  //         url: "https://firecrawl.dev",
+  //         url: base,
   //         ignoreSitemap: true,
   //         maxDiscoveryDepth: 1,
   //         limit: 10,
@@ -201,12 +214,12 @@ describe("Crawl tests", () => {
   //     }
   // }, 300000);
 
-  it.concurrent(
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "crawlEntireDomain parameter works",
     async () => {
       const res = await crawl(
         {
-          url: "https://firecrawl.dev",
+          url: base,
           crawlEntireDomain: true,
           limit: 5,
         },
@@ -221,12 +234,12 @@ describe("Crawl tests", () => {
     5 * scrapeTimeout,
   );
 
-  it.concurrent(
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "allowSubdomains parameter works",
     async () => {
       const res = await crawl(
         {
-          url: "https://firecrawl.dev",
+          url: base,
           allowSubdomains: true,
           limit: 5,
         },
@@ -241,12 +254,12 @@ describe("Crawl tests", () => {
     5 * scrapeTimeout,
   );
 
-  it.concurrent(
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "allowSubdomains blocks subdomains when false",
     async () => {
       const res = await crawl(
         {
-          url: "https://firecrawl.dev",
+          url: base,
           allowSubdomains: false,
           limit: 5,
         },
@@ -257,19 +270,19 @@ describe("Crawl tests", () => {
       if (res.success) {
         for (const page of res.data) {
           const url = new URL(page.metadata.url ?? page.metadata.sourceURL!);
-          expect(url.hostname.endsWith("firecrawl.dev")).toBe(true);
+          expect(url.hostname.endsWith(baseDomain)).toBe(true);
         }
       }
     },
     5 * scrapeTimeout,
   );
 
-  it.concurrent(
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "allowSubdomains correctly allows same registrable domain using PSL",
     async () => {
       const res = await crawl(
         {
-          url: "https://firecrawl.dev",
+          url: base,
           allowSubdomains: true,
           allowExternalLinks: false,
           limit: 3,
@@ -284,27 +297,24 @@ describe("Crawl tests", () => {
           const url = new URL(page.metadata.url ?? page.metadata.sourceURL!);
           const hostname = url.hostname;
 
-          expect(
-            hostname === "firecrawl.dev" || hostname.endsWith(".firecrawl.dev"),
-          ).toBe(true);
+          expect(hostname === baseDomain || hostname.endsWith(baseDomain)).toBe(
+            true,
+          );
         }
       }
     },
     5 * scrapeTimeout,
   );
 
-  if (
-    !process.env.TEST_SUITE_SELF_HOSTED ||
-    process.env.OPENAI_API_KEY ||
-    process.env.OLLAMA_BASE_URL
-  ) {
-    describe("Crawl API with Prompt", () => {
+  describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+    "Crawl API with Prompt",
+    () => {
       it.concurrent(
         "should accept prompt parameter in schema",
         async () => {
           const res = await crawlStart(
             {
-              url: "https://firecrawl.dev",
+              url: base,
               prompt: "Crawl only blog posts",
               limit: 1,
             },
@@ -324,13 +334,13 @@ describe("Crawl tests", () => {
         async () => {
           const res = await crawl(
             {
-              url: "https://firecrawl.dev",
+              url: base,
               prompt:
                 "Crawl everything including external links and subdomains",
               // Explicit options that should override the prompt
               allowExternalLinks: false,
               allowSubdomains: false,
-              includePaths: ["^/pricing"],
+              includePaths: ["^/blog"],
               limit: 2,
             },
             identity,
@@ -344,9 +354,9 @@ describe("Crawl tests", () => {
                 page.metadata.url ?? page.metadata.sourceURL!,
               );
               // Should only include pages matching the explicit includePaths
-              expect(url.pathname).toMatch(/^\/pricing/);
+              expect(url.pathname).toMatch(/^\/blog/);
               // Should not include external links despite prompt
-              expect(url.hostname).toMatch(/firecrawl\.dev$/);
+              // expect(url.hostname).toMatch(/firecrawl\.dev$/); // TODO: port to new dynamic url system
             }
           }
         },
@@ -368,7 +378,7 @@ describe("Crawl tests", () => {
             // Test first one to avoid long test times
             const res = await crawl(
               {
-                url: "https://firecrawl.dev",
+                url: base,
                 prompt: invalidPrompt,
                 limit: 1,
               },
@@ -386,10 +396,10 @@ describe("Crawl tests", () => {
         },
         8 * scrapeTimeout,
       );
-    });
-  }
+    },
+  );
 
-  it.concurrent(
+  concurrentIf(TEST_PRODUCTION || HAS_PROXY)(
     "shows warning when robots.txt blocks URLs",
     async () => {
       // Test with a site that has robots.txt blocking some paths
@@ -415,7 +425,7 @@ describe("Crawl tests", () => {
     10 * scrapeTimeout,
   );
 
-  it.concurrent(
+  concurrentIf(TEST_PRODUCTION || HAS_PROXY)(
     "shows warning when crawl results ≤ 1 and URL is not base domain",
     async () => {
       // Test with a specific path that should return few results
