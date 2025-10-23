@@ -54,7 +54,7 @@ jobs:
     strategy:
       matrix:
         engine: ["playwright", "fetch"]
-        engine: ["fetch"]
+        # engine: ["fetch"]
         proxy: ["proxy", "no-proxy"]
         search: ["searxng", "google"]
         ai: ["openai", "no-ai"]
