@@ -34,6 +34,8 @@ const logIgnoreList = [
   "Prefetched jobs",
   "nuqPrefetchJobs metrics",
   "request completed",
+  "nuqAddJobs metrics",
+  "nuqGetJobs metrics",
 ];
 
 async function getLogs() {

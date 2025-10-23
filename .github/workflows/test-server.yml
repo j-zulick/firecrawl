@@ -24,6 +24,7 @@ jobs:
           pnpm dlx audit-ci@^7 --directory apps/playwright-service-ts --config apps/playwright-service-ts/audit-ci.jsonc
           pnpm dlx audit-ci@^7 --directory apps/test-site --config apps/test-site/audit-ci.jsonc
 
+  # Job seems unused, remove once confirmed
   # build-images:
   #   name: Build images
   #   runs-on: big-runner
@@ -52,12 +53,18 @@ jobs:
   self-host:
     name: Self-hosted environment tests
     strategy:
-      matrix:
-        engine: ["playwright", "fetch"]
-        proxy: ["proxy", "no-proxy"]
-        search: ["searxng", "google"]
-        ai: ["openai", "no-ai"]
       fail-fast: false
+      matrix:
+        engine: ["playwright", "fetch"] # unsure if we need both of these
+        proxy: ["proxy", "no-proxy"] # proxy / no-proxy run different tests, keep both
+        search: ["searxng"] # disabled google for now, should be fine with just Searxng
+        ai: ["openai"] # AI only should be fine, as it simply adds tests, if non-AI fails, AI will fail.
+
+        # legacy matrix:
+        # engine: ["playwright", "fetch"]
+        # proxy: ["proxy", "no-proxy"]
+        # search: ["searxng", "google"]
+        # ai: ["openai", "no-ai"]
     runs-on: big-runner
     needs: audit
     services:
@@ -78,6 +85,7 @@ jobs:
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       USE_GO_MARKDOWN_PARSER: true
       ALLOW_LOCAL_WEBHOOKS: true
+      NUQ_WORKER_COUNT: 12
     steps:
       - uses: actions/checkout@v5
 
