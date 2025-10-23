@@ -499,6 +499,95 @@ class NuQ<JobData = any, JobReturnValue = any> {
     }
   }
 
+  public async getGroupAnyJob(
+    groupId: string,
+    ownerId: string,
+  ): Promise<NuQJob<JobData, JobReturnValue> | null> {
+    return this.rowToJob(
+      (
+        await nuqPool.query(
+          `
+            SELECT ${this.jobReturning.join(", ")}
+            FROM ${this.queueName}
+            WHERE ${this.queueName}.group_id = $1
+              AND ${this.queueName}.owner_id = $2
+              AND ${this.queueName}.data->>'mode' = 'single_urls'
+            LIMIT 1;
+          `,
+          [groupId, normalizeOwnerId(ownerId)],
+        )
+      ).rows[0],
+    );
+  }
+
+  public async getGroupNumericStats(
+    groupId: string,
+    _logger: Logger = logger,
+  ): Promise<Record<NuQJobStatus, number>> {
+    const start = Date.now();
+    try {
+      return Object.fromEntries(
+        (
+          await nuqPool.query(
+            `
+              SELECT ${this.queueName}.status::text as status, COUNT(*) as count
+              FROM ${this.queueName}
+              WHERE ${this.queueName}.group_id = $1
+              AND ${this.queueName}.data->>'mode' = 'single_urls'
+              GROUP BY ${this.queueName}.status
+              UNION ALL
+              SELECT 'backlog'::text as status, COUNT(*) as count
+              FROM ${this.queueName}_backlog
+              WHERE ${this.queueName}_backlog.group_id = $1
+              AND ${this.queueName}_backlog.data->>'mode' = 'single_urls'
+            `,
+            [groupId],
+          )
+        ).rows.map(row => [row.status, parseInt(row.count, 10)]),
+      );
+    } finally {
+      _logger.info("nuqGetGroupNumericStats metrics", {
+        module: "nuq/metrics",
+        method: "nuqGetGroupNumericStats",
+        duration: Date.now() - start,
+        crawlId: groupId,
+      });
+    }
+  }
+
+  // TODO: make more generalizable
+  public async getCrawlJobsForListing(
+    groupId: string,
+    limit: number,
+    offset: number,
+    _logger: Logger = logger,
+  ): Promise<NuQJob<JobData, JobReturnValue>[]> {
+    const start = Date.now();
+    try {
+      return (
+        await nuqPool.query(
+          `
+            SELECT ${this.jobReturning.join(", ")}
+            FROM ${this.queueName}
+            WHERE ${this.queueName}.group_id = $1
+            AND ${this.queueName}.status = 'completed'
+            AND ${this.queueName}.data->>'mode' = 'single_urls'
+            ORDER BY finished_at ASC, created_at ASC
+            LIMIT $2 OFFSET $3;
+          `,
+          [groupId, limit, offset],
+        )
+      ).rows.map(row => this.rowToJob(row)!);
+    } finally {
+      _logger.info("nuqGetCrawlJobsForListing metrics", {
+        module: "nuq/metrics",
+        method: "nuqGetCrawlJobsForListing",
+        duration: Date.now() - start,
+        crawlId: groupId,
+      });
+    }
+  }
+
   public async removeJob(
     id: string,
     _logger: Logger = logger,
@@ -1190,6 +1279,169 @@ class NuQ<JobData = any, JobReturnValue = any> {
   }
 }
 
+// === Group Management
+
+export type NuQGroupStatus = "active" | "completed" | "cancelled";
+
+export type NuQJobGroupInstance = {
+  id: string;
+  status: NuQGroupStatus;
+  createdAt: Date;
+  ownerId: string;
+  ttl: number;
+  expiresAt?: Date;
+};
+
+class NuQJobGroup {
+  constructor(public readonly groupName: string) {}
+
+  private readonly groupReturning = [
+    "id",
+    "status",
+    "created_at",
+    "owner_id",
+    "ttl",
+    "expires_at",
+  ];
+
+  private rowToGroup(row: any): NuQJobGroupInstance | null {
+    if (!row) return null;
+    return {
+      id: row.id,
+      status: row.status,
+      createdAt: new Date(row.created_at),
+      ownerId: row.owner_id,
+      ttl: row.ttl,
+      expiresAt: row.expires_at ? new Date(row.expires_at) : undefined,
+    };
+  }
+
+  public async addGroup(
+    id: string,
+    ownerId: string,
+    ttl?: number,
+    _logger: Logger = logger,
+  ): Promise<NuQJobGroupInstance> {
+    return withSpan("nuq.addGroup", async span => {
+      setSpanAttributes(span, {
+        "nuq.group_name": this.groupName,
+        "nuq.group_id": id,
+        "nuq.ttl": ttl ?? 86400000,
+      });
+
+      const start = Date.now();
+      try {
+        const result = this.rowToGroup(
+          (
+            await nuqPool.query(
+              `INSERT INTO ${this.groupName} (id, owner_id, ttl) VALUES ($1, $2, $3) RETURNING ${this.groupReturning.join(", ")};`,
+              [id, normalizeOwnerId(ownerId), ttl ?? 86400000],
+            )
+          ).rows[0],
+        )!;
+
+        setSpanAttributes(span, {
+          "nuq.group_created": true,
+        });
+
+        return result;
+      } finally {
+        const duration = Date.now() - start;
+        setSpanAttributes(span, {
+          "nuq.duration_ms": duration,
+        });
+        _logger.info("nuqAddGroup metrics", {
+          module: "nuq/metrics",
+          method: "nuqAddGroup",
+          duration,
+          groupId: id,
+        });
+      }
+    });
+  }
+
+  public async getGroup(
+    id: string,
+    _logger: Logger = logger,
+  ): Promise<NuQJobGroupInstance | null> {
+    return withSpan("nuq.getGroup", async span => {
+      setSpanAttributes(span, {
+        "nuq.group_name": this.groupName,
+        "nuq.group_id": id,
+      });
+
+      const start = Date.now();
+      try {
+        const result = this.rowToGroup(
+          (
+            await nuqPool.query(
+              `SELECT ${this.groupReturning.join(", ")} FROM ${this.groupName} WHERE ${this.groupName}.id = $1;`,
+              [id],
+            )
+          ).rows[0],
+        );
+
+        setSpanAttributes(span, {
+          "nuq.group_found": result !== null,
+          "nuq.group_status": result?.status,
+        });
+
+        return result;
+      } finally {
+        const duration = Date.now() - start;
+        setSpanAttributes(span, {
+          "nuq.duration_ms": duration,
+        });
+        _logger.info("nuqGetGroup metrics", {
+          module: "nuq/metrics",
+          method: "nuqGetGroup",
+          duration,
+          groupId: id,
+        });
+      }
+    });
+  }
+
+  public async getOngoingByOwner(
+    ownerId: string,
+    _logger: Logger = logger,
+  ): Promise<NuQJobGroupInstance[]> {
+    return withSpan("nuq.getGroupByOwner", async span => {
+      setSpanAttributes(span, {
+        "nuq.group_name": this.groupName,
+        "nuq.owner_id": ownerId,
+      });
+
+      const start = Date.now();
+      try {
+        const result = (
+          await nuqPool.query(
+            `SELECT ${this.groupReturning.join(", ")} FROM ${this.groupName} WHERE ${this.groupName}.owner_id = $1 AND ${this.groupName}.status = 'active'`,
+            [normalizeOwnerId(ownerId)],
+          )
+        ).rows.map(x => this.rowToGroup(x)!);
+
+        setSpanAttributes(span, {
+          "nuq.groups_found": result.length,
+        });
+
+        return result;
+      } finally {
+        const duration = Date.now() - start;
+        setSpanAttributes(span, {
+          "nuq.duration_ms": duration,
+        });
+        _logger.info("nuqGetGroup metrics", {
+          module: "nuq/metrics",
+          method: "nuqGetGroupByOwner",
+          duration,
+          ownerId: ownerId,
+        });
+      }
+    });
+  }
+}
+
 export function nuqGetLocalMetrics(): string {
   return `# HELP nuq_pool_waiting_count Number of requests waiting in the pool\n# TYPE nuq_pool_waiting_count gauge\nnuq_pool_waiting_count ${nuqPool.waitingCount}\n
 # HELP nuq_pool_idle_count Number of connections idle in the pool\n# TYPE nuq_pool_idle_count gauge\nnuq_pool_idle_count ${nuqPool.idleCount}\n
@@ -1214,6 +1466,9 @@ export async function nuqHealthCheck(): Promise<boolean> {
 export const scrapeQueue = new NuQ<ScrapeJobData>("nuq.queue_scrape", {
   backlog: true,
 });
+export const crawlFinishedQueue = new NuQ("nuq.queue_crawl_finished", {});
+
+export const crawlGroup = new NuQJobGroup("nuq.group_crawl");
 
 // === Cleanup
 

@@ -166,6 +166,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
 
       await asyncCrawlWaitForFinish(res.id, identity);
 
+      // wait for crawl finish to happen on DB cron
+      await new Promise(resolve => setTimeout(resolve, 15000));
+
       const ongoing2 = await crawlOngoing(identity);
 
       expect(ongoing2.crawls.find(x => x.id === res.id)).toBeUndefined();

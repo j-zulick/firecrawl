@@ -20,6 +20,7 @@ import { CostTracking } from "../../lib/cost-tracking";
 import { checkPermissions } from "../../lib/permissions";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 import { modifyCrawlUrl } from "../../utils/url-utils";
+import { crawlGroup } from "../../services/worker/nuq";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -201,6 +202,12 @@ export async function crawlController(
       error: e,
     });
   }
+
+  await crawlGroup.addGroup(
+    id,
+    sc.team_id,
+    (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+  );
 
   await saveCrawl(id, sc);
 

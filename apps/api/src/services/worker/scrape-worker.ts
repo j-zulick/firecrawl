@@ -50,7 +50,6 @@ import { WebCrawler } from "../../scraper/WebScraper/crawler";
 import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
 import { getBillingQueue } from "../queue-service";
 import type { Logger } from "winston";
-import { finishCrawlIfNeeded } from "./crawl-logic";
 import {
   RacedRedirectError,
   ScrapeJobTimeoutError,
@@ -491,8 +490,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       logger.debug("Declaring job as done...");
       await addCrawlJobDone(job.data.crawl_id, job.id, true, logger);
-
-      await finishCrawlIfNeeded(job, sc);
     } else {
       try {
         signal?.throwIfAborted();
@@ -569,8 +566,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         "crawl:" + job.data.crawl_id + ":jobs_qualified",
         job.id,
       );
-
-      await finishCrawlIfNeeded(job, sc);
     }
 
     const isEarlyTimeout = error instanceof ScrapeJobTimeoutError;
@@ -937,16 +932,12 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
     logger.debug("Done queueing jobs!");
 
     await finishCrawlKickoff(job.data.crawl_id);
-    await finishCrawlIfNeeded(job, sc);
 
     return { success: true };
   } catch (error) {
     logger.error("An error occurred!", { error });
     await finishCrawlKickoff(job.data.crawl_id);
     const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
-    if (sc) {
-      await finishCrawlIfNeeded(job, sc);
-    }
     return { success: false, error };
   }
 }
@@ -1066,10 +1057,6 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       "crawl:" + job.data.crawl_id + ":sitemap_jobs_done",
       24 * 60 * 60,
     );
-
-    if (sc) {
-      await finishCrawlIfNeeded(job, sc);
-    }
   }
 }
 

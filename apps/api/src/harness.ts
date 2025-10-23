@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { type ChildProcess, spawn } from "child_process";
 import * as net from "net";
-import { basename } from "path";
+import { basename, join } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
 import { createWriteStream } from "fs";
 
@@ -11,6 +11,15 @@ const stopping = new WeakSet<ChildProcess>(); // processes we're intentionally s
 let IS_DEV = false;
 let restartSignal: AbortController | null = null;
 let shuttingDown = false;
+let nuqPostgresContainer: {
+  containerName: string;
+  containerRuntime: string;
+} | null = null;
+
+// Get the monorepo root (apps/api/dist/src -> ../../../..)
+// __dirname is available in CommonJS (which this compiles to)
+const MONOREPO_ROOT = join(__dirname, "..", "..", "..", "..");
+const NUQ_POSTGRES_PATH = join(MONOREPO_ROOT, "apps", "nuq-postgres");
 
 interface ProcessResult {
   promise: Promise<void>;
@@ -25,6 +34,10 @@ interface Services {
   extractWorker?: ProcessResult;
   indexWorker?: ProcessResult;
   command?: ProcessResult;
+  nuqPostgres?: {
+    containerName: string;
+    containerRuntime: string;
+  };
 }
 
 const colors = {
@@ -49,6 +62,8 @@ const processGroupColors: Record<string, string> = {
   index: colors.yellow,
   go: colors.yellow,
   command: colors.white,
+  docker: colors.blue,
+  podman: colors.blue,
 };
 
 function getProcessGroup(name: string): string {
@@ -345,6 +360,174 @@ function terminateProcess(proc: ChildProcess, force: boolean): Promise<void> {
   });
 }
 
+async function detectContainerRuntime(): Promise<string | null> {
+  // Try docker first, then podman
+  for (const runtime of ["docker", "podman"]) {
+    try {
+      const check = execForward(`${runtime}@check`, `${runtime} --version`);
+      await check.promise;
+      return runtime;
+    } catch {
+      // Runtime not available, try next
+    }
+  }
+  return null;
+}
+
+async function isContainerRunning(
+  runtime: string,
+  containerName: string,
+): Promise<boolean> {
+  try {
+    const check = execForward(
+      `${runtime}@ps`,
+      `${runtime} ps -a --filter name=^${containerName}$ --format '{{.Names}}'`,
+    );
+    await check.promise;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function stopAndRemoveContainer(
+  runtime: string,
+  containerName: string,
+): Promise<void> {
+  const isRunning = await isContainerRunning(runtime, containerName);
+  if (isRunning) {
+    logger.info(`Stopping existing container: ${containerName}`);
+    try {
+      const stop = execForward(
+        `${runtime}@stop`,
+        `${runtime} stop ${containerName}`,
+      );
+      await stop.promise;
+    } catch (e) {
+      logger.warn(`Failed to stop container ${containerName}, continuing...`);
+    }
+  }
+
+  // Try to remove the container (whether it was running or not)
+  try {
+    const remove = execForward(
+      `${runtime}@rm`,
+      `${runtime} rm -f ${containerName}`,
+    );
+    await remove.promise;
+  } catch (e) {
+    // Container might not exist, that's fine
+  }
+}
+
+async function buildNuqPostgresImage(runtime: string): Promise<void> {
+  logger.info("Building nuq-postgres Docker image");
+  const build = execForward(
+    `${runtime}@build`,
+    `${runtime} build -t firecrawl-nuq-postgres:latest ${NUQ_POSTGRES_PATH}`,
+  );
+  await build.promise;
+  logger.success("nuq-postgres image built");
+}
+
+async function startNuqPostgresContainer(
+  runtime: string,
+  containerName: string,
+): Promise<void> {
+  logger.info(`Starting PostgreSQL container: ${containerName}`);
+  const start = execForward(
+    `${runtime}@start`,
+    `${runtime} run -d --name ${containerName} -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=postgres firecrawl-nuq-postgres:latest`,
+  );
+  await start.promise;
+  logger.success(`PostgreSQL container started: ${containerName}`);
+}
+
+async function waitForPostgres(
+  host: string,
+  port: number,
+  timeoutMs: number = 30000,
+): Promise<void> {
+  logger.info("Waiting for PostgreSQL to be ready...");
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      // Try to connect to PostgreSQL using a simple query
+      const { Client } = await import("pg");
+      const client = new Client({
+        host,
+        port,
+        user: "postgres",
+        password: "postgres",
+        database: "postgres",
+        connectionTimeoutMillis: 2000,
+      });
+
+      await client.connect();
+      await client.query("SELECT 1");
+      await client.end();
+
+      logger.success("PostgreSQL is ready");
+      return;
+    } catch (e) {
+      // Not ready yet, wait and retry
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+
+  throw new Error(`PostgreSQL did not become ready within ${timeoutMs}ms`);
+}
+
+async function setupNuqPostgres(): Promise<Services["nuqPostgres"]> {
+  if (process.env.NUQ_DATABASE_URL) {
+    logger.info("NUQ_DATABASE_URL is set, skipping container management");
+    return undefined;
+  }
+
+  logger.section("Setting up NUQ PostgreSQL container");
+
+  const runtime = await detectContainerRuntime();
+  if (!runtime) {
+    throw new Error(
+      "Neither Docker nor Podman found. Please install Docker/Podman or set NUQ_DATABASE_URL manually.",
+    );
+  }
+
+  logger.success(`Using container runtime: ${runtime}`);
+
+  const containerName = "firecrawl-nuq-postgres";
+
+  // Stop and remove any existing container
+  await stopAndRemoveContainer(runtime, containerName);
+
+  // Build the image
+  await buildNuqPostgresImage(runtime);
+
+  // Start the container
+  await startNuqPostgresContainer(runtime, containerName);
+
+  // Wait for PostgreSQL to be ready
+  await waitForPostgres("localhost", 5432);
+
+  // Set environment variables for the services
+  const dbUrl = "postgresql://postgres:postgres@localhost:5432/postgres";
+  process.env.NUQ_DATABASE_URL = dbUrl;
+  process.env.NUQ_DATABASE_URL_LISTEN = dbUrl;
+
+  logger.success("NUQ PostgreSQL container is ready");
+
+  const containerInfo = {
+    containerName,
+    containerRuntime: runtime,
+  };
+
+  // Store globally for graceful shutdown
+  nuqPostgresContainer = containerInfo;
+
+  return containerInfo;
+}
+
 async function installDependencies() {
   logger.section("Installing dependencies");
 
@@ -388,6 +571,9 @@ async function installDependencies() {
 }
 
 async function startServices(command?: string[]): Promise<Services> {
+  // Setup NUQ PostgreSQL container if needed
+  const nuqPostgres = await setupNuqPostgres();
+
   logger.section("Starting services");
 
   const api = execForward(
@@ -492,6 +678,7 @@ async function startServices(command?: string[]): Promise<Services> {
     indexWorker,
     extractWorker,
     command: commandProcess,
+    nuqPostgres,
   };
 }
 
@@ -515,6 +702,16 @@ async function stopDevelopmentServices(services: Services) {
       logger.error("Error while stopping processes", e);
     }),
   ]);
+
+  // Stop and remove NUQ PostgreSQL container if it was started by harness
+  if (services.nuqPostgres) {
+    logger.info("Stopping NUQ PostgreSQL container");
+    await stopAndRemoveContainer(
+      services.nuqPostgres.containerRuntime,
+      services.nuqPostgres.containerName,
+    );
+    logger.success("NUQ PostgreSQL container stopped");
+  }
 }
 
 async function runDevMode(): Promise<void> {
@@ -664,6 +861,18 @@ async function gracefulShutdown() {
     terminateProcess(proc, forceTerminate),
   );
   await Promise.allSettled(terminationPromises);
+
+  // Stop and remove NUQ PostgreSQL container if it was started by harness
+  if (nuqPostgresContainer) {
+    logger.info("Stopping NUQ PostgreSQL container");
+    await stopAndRemoveContainer(
+      nuqPostgresContainer.containerRuntime,
+      nuqPostgresContainer.containerName,
+    );
+    logger.success("NUQ PostgreSQL container stopped");
+    nuqPostgresContainer = null;
+  }
+
   logger.success("All processes terminated");
 }
 
