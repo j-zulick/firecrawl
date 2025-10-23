@@ -53,14 +53,10 @@ jobs:
     name: Self-hosted environment tests
     strategy:
       matrix:
-        # engine: ["playwright", "fetch"]
-        # proxy: ["proxy", "no-proxy"]
-        proxy: ["no-proxy"] # temp disabled proxy tests
-        # search: ["searxng", "google"]
-        # ai: ["openai", "no-ai"]
-        engine: ["playwright"]
-        search: ["google"]
-        ai: ["no-ai"]
+        engine: ["playwright", "fetch"]
+        proxy: ["proxy", "no-proxy"]
+        search: ["searxng", "google"]
+        ai: ["openai", "no-ai"]
       fail-fast: false
     runs-on: big-runner
     needs: audit

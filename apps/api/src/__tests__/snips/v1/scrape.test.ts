@@ -314,7 +314,7 @@ describe("Scrape tests", () => {
         "caches properly",
         async () => {
           const id = crypto.randomUUID();
-          const url = base + id;
+          const url = `${base}?testId=${id}`;
 
           const response1 = await scrape(
             {
