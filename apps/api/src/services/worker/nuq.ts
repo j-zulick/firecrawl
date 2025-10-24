@@ -1242,16 +1242,35 @@ class NuQ<JobData = any, JobReturnValue = any> {
   // === Metrics
   public async getMetrics(): Promise<string> {
     const start = Date.now();
-    const result = await nuqPool.query(
-      `SELECT status, COUNT(id) as count FROM ${this.queueName} GROUP BY status ORDER BY count DESC;`,
-    );
+    const result = await nuqPool.query(`
+      SELECT status::text, COUNT(id) as count FROM ${this.queueName} GROUP BY status
+      ${this.options.backlog ? `UNION ALL SELECT 'backlog'::text as status, COUNT(id) as count FROM ${this.queueName}_backlog` : ""}
+    `);
     logger.info("nuqGetMetrics metrics", {
       module: "nuq/metrics",
       method: "nuqGetMetrics",
       duration: Date.now() - start,
     });
     const prometheusQueueName = this.queueName.replace(".", "_");
-    return `# HELP ${prometheusQueueName}_job_count Number of jobs in each status\n# TYPE ${prometheusQueueName}_job_count gauge\n${result.rows.map(x => `${prometheusQueueName}_job_count{status="${x.status}"} ${x.count}`).join("\n")}\n`;
+
+    const statusCounts = new Map<NuQJobStatus, number>([
+      ["queued", 0],
+      ["active", 0],
+      ["completed", 0],
+      ["failed", 0],
+      ["backlog", 0],
+    ]);
+
+    result.rows.forEach(x => statusCounts.set(x.status, parseInt(x.count, 10)));
+
+    return `# HELP ${prometheusQueueName}_job_count Number of jobs in each status\n# TYPE ${prometheusQueueName}_job_count gauge\n${Array.from(
+      statusCounts.entries(),
+    )
+      .map(
+        ([status, count]) =>
+          `${prometheusQueueName}_job_count{status="${status}"} ${count}`,
+      )
+      .join("\n")}\n`;
   }
 
   // === Cleanup
