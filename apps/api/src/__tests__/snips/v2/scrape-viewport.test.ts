@@ -42,7 +42,7 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Screenshot Viewport", () => {
   test(
     "should reject fullPage=true with viewport",
     async () => {
-      const data = await scrapeRaw(
+      const response = await scrapeRaw(
         {
           url: "https://example.com",
           formats: [
