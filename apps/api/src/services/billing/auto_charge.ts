@@ -109,6 +109,17 @@ async function _autoChargeScale(
           };
         } else if (rechargesThisMonth.length >= 4) {
           logger.warn("Auto-recharge failed: too many recharges this month");
+          if (process.env.SLACK_ADMIN_WEBHOOK_URL) {
+            sendSlackWebhook(
+              `❌ Auto-recharge failed on team ${chunk.team_id} because too many recharges this month`,
+              false,
+              process.env.SLACK_ADMIN_WEBHOOK_URL,
+            ).catch(error => {
+              logger.debug(
+                `Error sending slack notification: ${error}`,
+              );
+            });
+          }
           return {
             success: false,
             message: "Auto-recharge failed: too many recharges this month",
@@ -131,8 +142,8 @@ async function _autoChargeScale(
                 chunk.price_associated_auto_recharge_price_id === undefined
                   ? "undefined"
                   : JSON.stringify(
-                      chunk.price_associated_auto_recharge_price_id,
-                    ),
+                    chunk.price_associated_auto_recharge_price_id,
+                  ),
             });
             return {
               success: false,
@@ -240,8 +251,8 @@ async function _autoChargeScale(
               canceled_at: null,
               current_period_start: subscription.current_period_start
                 ? new Date(
-                    subscription.current_period_start * 1000,
-                  ).toISOString()
+                  subscription.current_period_start * 1000,
+                ).toISOString()
                 : null,
               current_period_end: subscription.current_period_end
                 ? new Date(subscription.current_period_end * 1000).toISOString()
@@ -304,6 +315,19 @@ async function _autoChargeScale(
           );
 
           logger.info("Scale auto-recharge successful");
+
+          if (process.env.SLACK_ADMIN_WEBHOOK_URL) {
+            sendSlackWebhook(
+              `💰 Auto-recharge successful on team ${chunk.team_id} for ${price.credits} credits.`,
+              false,
+              process.env.SLACK_ADMIN_WEBHOOK_URL,
+            ).catch(error => {
+              logger.debug(
+                `Error sending slack notification: ${error}`,
+              );
+            });
+          }
+
           return {
             success: true,
             message: "Auto-recharge successful",
