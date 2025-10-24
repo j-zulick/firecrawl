@@ -243,7 +243,12 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       const rc2 = (await creditUsage(identity)).remaining_credits;
 
-      expect(rc1 - rc2).toBe(results.length);
+      const creditDiff = rc1 - rc2;
+
+      const resultCount = results.length ?? 0;
+      const resultCost = Math.ceil(resultCount / 10) * 2; // 2 credits per 10 results
+
+      expect(creditDiff).toBe(resultCost);
     },
     60000,
   );
