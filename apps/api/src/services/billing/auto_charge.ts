@@ -109,17 +109,6 @@ async function _autoChargeScale(
           };
         } else if (rechargesThisMonth.length >= 4) {
           logger.warn("Auto-recharge failed: too many recharges this month");
-          if (process.env.SLACK_ADMIN_WEBHOOK_URL) {
-            sendSlackWebhook(
-              `❌ Auto-recharge failed on team ${chunk.team_id} because too many recharges this month`,
-              false,
-              process.env.SLACK_ADMIN_WEBHOOK_URL,
-            ).catch(error => {
-              logger.debug(
-                `Error sending slack notification: ${error}`,
-              );
-            });
-          }
           return {
             success: false,
             message: "Auto-recharge failed: too many recharges this month",
@@ -318,7 +307,7 @@ async function _autoChargeScale(
 
           if (process.env.SLACK_ADMIN_WEBHOOK_URL) {
             sendSlackWebhook(
-              `💰 Auto-recharge successful on team ${chunk.team_id} for ${price.credits} credits.`,
+              `💰 Auto-recharge successful on team ${chunk.team_id} for ${price.credits} credits (total auto-recharges this month: ${rechargesThisMonth.length + 1}).`,
               false,
               process.env.SLACK_ADMIN_WEBHOOK_URL,
             ).catch(error => {
