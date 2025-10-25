@@ -264,22 +264,17 @@ const actionSchema = z.union([
     selector: z.string(),
     all: z.boolean().default(false),
   }),
-  z
-    .object({
-      type: z.literal("screenshot"),
-      fullPage: z.boolean().default(false),
-      quality: z.number().min(1).max(100).optional(),
-      viewport: z
-        .object({
-          width: z.number().int().positive().finite().max(7680), // 8K resolution width
-          height: z.number().int().positive().finite().max(4320), // 8K resolution height
-        })
-        .optional(),
-    })
-    .refine(data => !(data.fullPage === true && data.viewport !== undefined), {
-      message: "Cannot specify viewport dimensions when fullPage is true",
-      path: ["viewport"],
-    }),
+  z.object({
+    type: z.literal("screenshot"),
+    fullPage: z.boolean().default(false),
+    quality: z.number().min(1).max(100).optional(),
+    viewport: z
+      .object({
+        width: z.number().int().positive().finite().max(7680), // 8K resolution width
+        height: z.number().int().positive().finite().max(4320), // 8K resolution height
+      })
+      .optional(),
+  }),
   z.object({
     type: z.literal("write"),
     text: z.string(),
@@ -370,22 +365,17 @@ type ChangeTrackingFormatWithOptions = z.output<
   typeof changeTrackingFormatWithOptions
 >;
 
-const screenshotFormatWithOptions = z
-  .object({
-    type: z.literal("screenshot"),
-    fullPage: z.boolean().default(false),
-    quality: z.number().min(1).max(100).optional(),
-    viewport: z
-      .object({
-        width: z.number().int().positive().finite().max(7680), // 8K resolution width
-        height: z.number().int().positive().finite().max(4320), // 8K resolution height
-      })
-      .optional(),
-  })
-  .refine(data => !(data.fullPage === true && data.viewport !== undefined), {
-    message: "Cannot specify viewport dimensions when fullPage is true",
-    path: ["viewport"],
-  });
+const screenshotFormatWithOptions = z.object({
+  type: z.literal("screenshot"),
+  fullPage: z.boolean().default(false),
+  quality: z.number().min(1).max(100).optional(),
+  viewport: z
+    .object({
+      width: z.number().int().positive().finite().max(7680), // 8K resolution width
+      height: z.number().int().positive().finite().max(4320), // 8K resolution height
+    })
+    .optional(),
+});
 
 type ScreenshotFormatWithOptions = z.output<typeof screenshotFormatWithOptions>;
 

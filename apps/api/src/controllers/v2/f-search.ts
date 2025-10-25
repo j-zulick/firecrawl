@@ -13,10 +13,7 @@ const searchRequestSchema = z.object({
   query: z.string().min(1).max(500),
   limit: z.number().int().min(1).max(100).optional().default(50),
   offset: z.number().int().min(0).optional().default(0),
-  mode: z
-    .enum(["hybrid", "keyword", "semantic", "bm25"])
-    .optional()
-    .default("hybrid"),
+  mode: z.enum(["hybrid", "keyword", "semantic", "bm25"]).optional().default("hybrid"),
   filters: z
     .object({
       domain: z.string().optional(),
@@ -74,7 +71,7 @@ export async function realtimeSearchController(
 
     // Get search index client
     const client = getSearchIndexClient();
-
+    
     if (!client) {
       res.status(503).json({
         success: false,

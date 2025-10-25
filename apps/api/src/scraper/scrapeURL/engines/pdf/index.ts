@@ -67,6 +67,8 @@ async function scrapePDFWithRunPodMU(
     maxPages,
   });
 
+
+
   if (
     process.env.PDF_MU_V2_EXPERIMENT === "true" &&
     process.env.PDF_MU_V2_BASE_URL &&
@@ -112,6 +114,7 @@ async function scrapePDFWithRunPodMU(
       }
     })();
   }
+
 
   const muV1StartedAt = Date.now();
   const podStart = await robustFetch({
@@ -348,9 +351,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     ) {
       (async () => {
         const startedAt = Date.now();
-        const logger = meta.logger.child({
-          method: "scrapePDF/MUv2Experiment",
-        });
+        const logger = meta.logger.child({ method: "scrapePDF/MUv2Experiment" });
         try {
           const resp = await robustFetch({
             url: process.env.PDF_MU_V2_BASE_URL ?? "",

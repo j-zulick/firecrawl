@@ -135,7 +135,7 @@ export function getCategoryFromUrl(
     // Check against category map for other sites
     for (const [site, category] of categoryMap.entries()) {
       if (site === "__pdf__") continue; // Skip the special PDF marker
-
+      
       if (
         hostname === site.toLowerCase() ||
         hostname.endsWith("." + site.toLowerCase())

@@ -141,18 +141,14 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
     };
   } finally {
     // Clean up temporary file if it was created by prefetch
-    if (
-      tempFilePath &&
-      meta.documentPrefetch !== undefined &&
-      meta.documentPrefetch !== null
-    ) {
+    if (tempFilePath && meta.documentPrefetch !== undefined && meta.documentPrefetch !== null) {
       try {
         await unlink(tempFilePath);
       } catch (error) {
         // Ignore errors when cleaning up temp files
-        meta.logger?.warn("Failed to clean up temporary document file", {
-          error,
-          tempFilePath,
+        meta.logger?.warn("Failed to clean up temporary document file", { 
+          error, 
+          tempFilePath 
         });
       }
     }
