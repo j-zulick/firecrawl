@@ -146,8 +146,8 @@ class NuQ<JobData = any, JobReturnValue = any> {
         return;
       }.bind(this);
 
-      connection.on("close", onClose);
-      channel.on("close", onClose);
+      this.listener.connection.on("close", onClose);
+      this.listener.channel.on("close", onClose);
 
       await this.listener.channel.consume(
         this.listener.queue,
