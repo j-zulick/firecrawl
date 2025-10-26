@@ -87,34 +87,41 @@ class NuQ<JobData = any, JobReturnValue = any> {
   private listens: {
     [key: string]: ((status: "completed" | "failed") => void)[];
   } = {};
+  private listenerStarting = false;
   private shuttingDown = false;
 
   private async startListener() {
-    if (this.listener || this.shuttingDown) return;
+    if (this.listener || this.shuttingDown || this.listenerStarting) return;
 
     if (process.env.NUQ_RABBITMQ_URL) {
-      const connection = await amqp.connect(process.env.NUQ_RABBITMQ_URL);
-      const channel = await connection.createChannel();
-      await channel.prefetch(1);
-      const queue = await channel.assertQueue(
-        this.queueName + ".listen." + this.listenChannelId,
-        {
-          exclusive: true,
-          autoDelete: true,
-          durable: false,
-          arguments: {
-            "x-queue-type": "classic",
-            "x-message-ttl": 60000,
-          },
-        },
-      );
+      this.listenerStarting = true;
 
-      this.listener = {
-        type: "rabbitmq",
-        connection,
-        channel,
-        queue: queue.queue,
-      };
+      try {
+        const connection = await amqp.connect(process.env.NUQ_RABBITMQ_URL);
+        const channel = await connection.createChannel();
+        await channel.prefetch(1);
+        const queue = await channel.assertQueue(
+          this.queueName + ".listen." + this.listenChannelId,
+          {
+            exclusive: true,
+            autoDelete: true,
+            durable: false,
+            arguments: {
+              "x-queue-type": "classic",
+              "x-message-ttl": 60000,
+            },
+          },
+        );
+
+        this.listener = {
+          type: "rabbitmq",
+          connection,
+          channel,
+          queue: queue.queue,
+        };
+      } finally {
+        this.listenerStarting = false;
+      }
 
       let reconnectTimeout: NodeJS.Timeout | null = null;
 
