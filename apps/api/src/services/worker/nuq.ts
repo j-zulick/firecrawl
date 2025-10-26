@@ -59,12 +59,12 @@ function normalizeOwnerId(ownerId: string | undefined | null): string | null {
   return uuidv5(ownerId, normalizedUUIDNamespace);
 }
 
-const listenChannelId =
-  (process.env.NUQ_POD_NAME ?? "main") + "-" + crypto.randomUUID();
-
 // === Queue
 
 class NuQ<JobData = any, JobReturnValue = any> {
+  private listenChannelId: string =
+    (process.env.NUQ_POD_NAME ?? "main") + "-" + crypto.randomUUID();
+
   constructor(
     public readonly queueName: string,
     public readonly options: NuQOptions,
@@ -97,7 +97,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
       const channel = await connection.createChannel();
       await channel.prefetch(1);
       const queue = await channel.assertQueue(
-        this.queueName + ".listen." + listenChannelId,
+        this.queueName + ".listen." + this.listenChannelId,
         {
           exclusive: true,
           autoDelete: true,
@@ -663,7 +663,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
                 id,
                 data,
                 options.priority ?? 0,
-                options.listenable ? listenChannelId : null,
+                options.listenable ? this.listenChannelId : null,
                 normalizeOwnerId(options.ownerId),
                 options.groupId ?? null,
                 ...(options.backlogged
@@ -781,7 +781,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
                   job.id,
                   job.data,
                   job.options.priority ?? 0,
-                  job.options.listenable ? listenChannelId : null,
+                  job.options.listenable ? this.listenChannelId : null,
                   normalizeOwnerId(job.options.ownerId),
                   job.options.groupId ?? null,
                   ...(tableSuffix === "_backlog"
