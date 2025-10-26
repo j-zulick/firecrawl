@@ -59,7 +59,8 @@ function normalizeOwnerId(ownerId: string | undefined | null): string | null {
   return uuidv5(ownerId, normalizedUUIDNamespace);
 }
 
-const listenChannelId = process.env.NUQ_POD_NAME ?? "main";
+const listenChannelId =
+  (process.env.NUQ_POD_NAME ?? "main") + "-" + crypto.randomUUID();
 
 // === Queue
 
