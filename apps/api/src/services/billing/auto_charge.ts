@@ -14,7 +14,7 @@ import {
   sendNotificationWithCustomDays,
 } from "../notification/email_notification";
 import { NotificationType } from "../../types";
-import { deleteKey, getValue, setValue } from "../redis";
+import { deleteKey, getValue, redisEvictConnection, setValue } from "../redis";
 import { redisRateLimitClient } from "../rate-limiter";
 import { sendSlackWebhook } from "../alerts/slack";
 import { logger as _logger } from "../../lib/logger";
@@ -76,6 +76,20 @@ async function _autoChargeScale(
   try {
     return await redlock.using([resource], 15000, async signal => {
       logger.info("Lock acquired");
+
+      const cooldownCheck = await redisEvictConnection.set(
+        "auto-recharge-cooldown:" + chunk.team_id,
+        "cooling",
+        "EX",
+        AUTO_RECHARGE_COOLDOWN,
+        "NX",
+      );
+
+      if (cooldownCheck === null) {
+        logger.warn("Auto-recharge is on cooldown, aborting.");
+        return;
+      }
+
       const updatedChunk = await getACUC(chunk.api_key, false, false);
 
       if (
@@ -131,8 +145,8 @@ async function _autoChargeScale(
                 chunk.price_associated_auto_recharge_price_id === undefined
                   ? "undefined"
                   : JSON.stringify(
-                    chunk.price_associated_auto_recharge_price_id,
-                  ),
+                      chunk.price_associated_auto_recharge_price_id,
+                    ),
             });
             return {
               success: false,
@@ -240,8 +254,8 @@ async function _autoChargeScale(
               canceled_at: null,
               current_period_start: subscription.current_period_start
                 ? new Date(
-                  subscription.current_period_start * 1000,
-                ).toISOString()
+                    subscription.current_period_start * 1000,
+                  ).toISOString()
                 : null,
               current_period_end: subscription.current_period_end
                 ? new Date(subscription.current_period_end * 1000).toISOString()
@@ -311,9 +325,7 @@ async function _autoChargeScale(
               false,
               process.env.SLACK_ADMIN_WEBHOOK_URL,
             ).catch(error => {
-              logger.debug(
-                `Error sending slack notification: ${error}`,
-              );
+              logger.debug(`Error sending slack notification: ${error}`);
             });
           }
 
