@@ -158,46 +158,46 @@ export async function logJob(
       });
     }
 
-    if (process.env.POSTHOG_API_KEY && !job.crawl_id) {
-      await withSpan("firecrawl-log-job-posthog-capture", async span => {
-        setSpanAttributes(span, {
-          "log_job.operation": "posthog_capture",
-          "job.id": job.job_id,
-          "job.team_id": job.team_id,
-          "job.mode": job.mode,
-        });
+    // if (process.env.POSTHOG_API_KEY && !job.crawl_id) {
+    //   await withSpan("firecrawl-log-job-posthog-capture", async span => {
+    //     setSpanAttributes(span, {
+    //       "log_job.operation": "posthog_capture",
+    //       "job.id": job.job_id,
+    //       "job.team_id": job.team_id,
+    //       "job.mode": job.mode,
+    //     });
 
-        const jobProperties = transformJobForLogging(job, {
-          includeTimestamp: false,
-          serializeObjects: false,
-          cleanNullValues: false,
-        });
+    //     const jobProperties = transformJobForLogging(job, {
+    //       includeTimestamp: false,
+    //       serializeObjects: false,
+    //       cleanNullValues: false,
+    //     });
 
-        let phLog = {
-          distinctId: "from-api", //* To identify this on the group level, setting distinctid to a static string per posthog docs: https://posthog.com/docs/product-analytics/group-analytics#advanced-server-side-only-capturing-group-events-without-a-user
-          ...(job.team_id !== "preview" &&
-            !job.team_id?.startsWith("preview_") && {
-              groups: { team: job.team_id },
-            }), //* Identifying event on this team
-          event: "job-logged",
-          properties: {
-            ...jobProperties,
-            // Remove docs from PostHog as it's not needed for analytics
-            docs: undefined,
-          },
-        };
+    //     let phLog = {
+    //       distinctId: "from-api", //* To identify this on the group level, setting distinctid to a static string per posthog docs: https://posthog.com/docs/product-analytics/group-analytics#advanced-server-side-only-capturing-group-events-without-a-user
+    //       ...(job.team_id !== "preview" &&
+    //         !job.team_id?.startsWith("preview_") && {
+    //           groups: { team: job.team_id },
+    //         }), //* Identifying event on this team
+    //       event: "job-logged",
+    //       properties: {
+    //         ...jobProperties,
+    //         // Remove docs from PostHog as it's not needed for analytics
+    //         docs: undefined,
+    //       },
+    //     };
 
-        if (job.mode !== "single_urls") {
-          posthog.capture(phLog);
-          setSpanAttributes(span, { "posthog.capture_sent": true });
-        } else {
-          setSpanAttributes(span, {
-            "posthog.capture_sent": false,
-            "posthog.skip_reason": "single_urls_mode",
-          });
-        }
-      });
-    }
+    //     if (job.mode !== "single_urls") {
+    //       posthog.capture(phLog);
+    //       setSpanAttributes(span, { "posthog.capture_sent": true });
+    //     } else {
+    //       setSpanAttributes(span, {
+    //         "posthog.capture_sent": false,
+    //         "posthog.skip_reason": "single_urls_mode",
+    //       });
+    //     }
+    //   });
+    // }
   } catch (error) {
     logger.error(`Error logging job`, {
       error,
