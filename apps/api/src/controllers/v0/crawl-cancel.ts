@@ -6,6 +6,7 @@ import { getCrawl, saveCrawl } from "../../../src/lib/crawl-redis";
 import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { redisEvictConnection } from "../../../src/services/redis";
+import { crawlGroup } from "../../services/worker/nuq";
 configDotenv();
 
 export async function crawlCancelController(req: Request, res: Response) {
@@ -51,6 +52,15 @@ export async function crawlCancelController(req: Request, res: Response) {
     // check if the job belongs to the team
     if (sc.team_id !== team_id) {
       return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    const group = await crawlGroup.getGroup(req.params.jobId);
+    if (!group) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+
+    if (group.status === "completed") {
+      return res.status(409).json({ error: "Crawl is already completed" });
     }
 
     try {

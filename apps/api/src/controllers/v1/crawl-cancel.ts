@@ -4,6 +4,7 @@ import { getCrawl, saveCrawl } from "../../lib/crawl-redis";
 import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { RequestWithAuth } from "./types";
+import { crawlGroup } from "../../services/worker/nuq";
 configDotenv();
 
 export async function crawlCancelController(
@@ -18,6 +19,15 @@ export async function crawlCancelController(
 
     if (sc.team_id !== req.auth.team_id) {
       return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    const group = await crawlGroup.getGroup(req.params.jobId);
+    if (!group) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+
+    if (group.status === "completed") {
+      return res.status(409).json({ error: "Crawl is already completed" });
     }
 
     try {
