@@ -6,6 +6,7 @@ import { getExtractQueue } from "../../services/queue-service";
 import { ExtractResult } from "../../lib/extract/extraction-service";
 import { supabaseGetJobByIdDirect } from "../../lib/supabase-jobs";
 import { JobState } from "bullmq";
+import { logger as _logger } from "../../lib/logger";
 
 type ExtractPseudoJob<T> = {
   id: string;
@@ -57,6 +58,13 @@ export async function extractStatusController(
   req: RequestWithAuth<{ jobId: string }, any, any>,
   res: Response,
 ) {
+  const logger = _logger.child({
+    module: "v1/extract-status",
+    method: "extractStatusController",
+    teamId: req.auth.team_id,
+    extractId: req.params.jobId,
+  });
+
   const extract = await getExtract(req.params.jobId);
 
   let status = extract?.status;
@@ -76,6 +84,7 @@ export async function extractStatusController(
       (!jobData && !extract) ||
       (jobData && jobData.data.teamId !== req.auth.team_id)
     ) {
+      logger.warn("Extract job was not found");
       return res.status(404).json({
         success: false,
         error: "Extract job not found",
