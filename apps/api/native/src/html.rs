@@ -116,7 +116,14 @@ fn _extract_metadata(html: &str) -> Result<HashMap<String, Value>, Box<dyn std::
   let document = parse_html().one(html);
   let mut out = HashMap::<String, Value>::new();
 
-  if let Some(title) = document
+  let head_node = document
+    .select("head")
+    .map_err(|_| "Failed to select head")?
+    .next();
+
+  let search_root = head_node.as_ref().map(|h| h.as_node()).unwrap_or(&document);
+
+  if let Some(title) = search_root
     .select("title")
     .map_err(|_| "Failed to select title")?
     .next()
@@ -124,13 +131,13 @@ fn _extract_metadata(html: &str) -> Result<HashMap<String, Value>, Box<dyn std::
     out.insert("title".to_string(), Value::String(title.text_contents()));
   }
 
-  if let Some(favicon_link) = document
+  if let Some(favicon_link) = search_root
     .select("link[rel=\"icon\"]")
     .map_err(|_| "Failed to select favicon")?
     .next()
     .and_then(|x| x.attributes.borrow().get("href").map(|x| x.to_string()))
     .or_else(|| {
-      document
+      search_root
         .select("link[rel*=\"icon\"]")
         .ok()
         .and_then(|mut x| {
@@ -151,15 +158,15 @@ fn _extract_metadata(html: &str) -> Result<HashMap<String, Value>, Box<dyn std::
     out.insert("language".to_string(), Value::String(lang));
   }
 
-  insert_meta_property!(out, document, "og:title", "ogTitle");
-  insert_meta_property!(out, document, "og:description", "ogDescription");
-  insert_meta_property!(out, document, "og:url", "ogUrl");
-  insert_meta_property!(out, document, "og:image", "ogImage");
-  insert_meta_property!(out, document, "og:audio", "ogAudio");
-  insert_meta_property!(out, document, "og:determiner", "ogDeterminer");
-  insert_meta_property!(out, document, "og:locale", "ogLocale");
+  insert_meta_property!(out, search_root, "og:title", "ogTitle");
+  insert_meta_property!(out, search_root, "og:description", "ogDescription");
+  insert_meta_property!(out, search_root, "og:url", "ogUrl");
+  insert_meta_property!(out, search_root, "og:image", "ogImage");
+  insert_meta_property!(out, search_root, "og:audio", "ogAudio");
+  insert_meta_property!(out, search_root, "og:determiner", "ogDeterminer");
+  insert_meta_property!(out, search_root, "og:locale", "ogLocale");
 
-  for meta in document
+  for meta in search_root
     .select("meta[property=\"og:locale:alternate\"]")
     .map_err(|_| "Failed to select og locale alternate")?
   {
