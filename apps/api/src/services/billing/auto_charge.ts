@@ -25,6 +25,14 @@ const AUTO_RECHARGE_COOLDOWN = 600; // 10 minutes in seconds
 const MAX_CHARGES_PER_HOUR = 5; // Maximum number of auto-charges per hour
 const HOURLY_COUNTER_EXPIRY = 3600; // 1 hour in seconds
 
+// Type definition for auto-charge response
+export type AutoChargeResponse = {
+  success: boolean;
+  message: string;
+  remainingCredits: number;
+  chunk: AuthCreditUsageChunk;
+};
+
 /**
  * Attempt to automatically charge a user's account when their credit balance falls below a threshold
  * @param chunk The user's current usage data
@@ -33,12 +41,7 @@ const HOURLY_COUNTER_EXPIRY = 3600; // 1 hour in seconds
 export async function autoCharge(
   chunk: AuthCreditUsageChunk,
   autoRechargeThreshold: number,
-): Promise<{
-  success: boolean;
-  message: string;
-  remainingCredits: number;
-  chunk: AuthCreditUsageChunk;
-}> {
+): Promise<AutoChargeResponse> {
   if (chunk.price_associated_auto_recharge_price_id !== null) {
     return _autoChargeScale(
       chunk as AuthCreditUsageChunk & {
@@ -56,12 +59,7 @@ async function _autoChargeScale(
     price_associated_auto_recharge_price_id: string;
   },
   autoRechargeThreshold: number,
-): Promise<{
-  success: boolean;
-  message: string;
-  remainingCredits: number;
-  chunk: AuthCreditUsageChunk;
-}> {
+): Promise<AutoChargeResponse> {
   const logger = _logger.child({
     module: "auto_charge",
     method: "_autoChargeScale",
@@ -74,7 +72,7 @@ async function _autoChargeScale(
   const resource = `auto-recharge:${chunk.team_id}`;
 
   try {
-    return await redlock.using([resource], 15000, async signal => {
+    return await redlock.using([resource], 15000, async (signal: unknown): Promise<AutoChargeResponse> => {
       logger.info("Lock acquired");
 
       const cooldownCheck = await redisEvictConnection.set(
@@ -87,7 +85,12 @@ async function _autoChargeScale(
 
       if (cooldownCheck === null) {
         logger.warn("Auto-recharge is on cooldown, aborting.");
-        return;
+        return {
+          success: false,
+          message: "Auto-recharge is on cooldown",
+          remainingCredits: chunk.remaining_credits,
+          chunk,
+        };
       }
 
       const updatedChunk = await getACUC(chunk.api_key, false, false);
@@ -367,12 +370,7 @@ async function _autoChargeScale(
 async function _autoChargeSelfServe(
   chunk: AuthCreditUsageChunk,
   autoRechargeThreshold: number,
-): Promise<{
-  success: boolean;
-  message: string;
-  remainingCredits: number;
-  chunk: AuthCreditUsageChunk;
-}> {
+): Promise<AutoChargeResponse> {
   const logger = _logger.child({
     module: "auto_charge",
     method: "_autoChargeSelfServe",
@@ -429,14 +427,7 @@ async function _autoChargeSelfServe(
     return await redlock.using(
       [resource],
       5000,
-      async (
-        signal,
-      ): Promise<{
-        success: boolean;
-        message: string;
-        remainingCredits: number;
-        chunk: AuthCreditUsageChunk;
-      }> => {
+      async (signal: unknown): Promise<AutoChargeResponse> => {
         // Recheck all conditions inside the lock to prevent race conditions
         const updatedChunk = await getACUC(chunk.api_key, false, false);
 
