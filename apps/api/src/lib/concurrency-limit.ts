@@ -357,7 +357,11 @@ export async function concurrentJobDone(job: NuQJob<any>) {
             )) !== null;
 
           if (promotedSuccessfully) {
-            logger.debug("Successfully promoted concurrent queued job", {});
+            logger.debug("Successfully promoted concurrent queued job", {
+              teamId: job.data.team_id,
+              jobId: nextJob.job.id,
+              zeroDataRetention: nextJob.job.data?.zeroDataRetention,
+            });
             break;
           } else {
             logger.warn(
@@ -365,6 +369,7 @@ export async function concurrentJobDone(job: NuQJob<any>) {
               {
                 teamId: job.data.team_id,
                 jobId: nextJob.job.id,
+                zeroDataRetention: nextJob.job.data?.zeroDataRetention,
               },
             );
           }
