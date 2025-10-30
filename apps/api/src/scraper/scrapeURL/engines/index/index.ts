@@ -142,6 +142,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
           location_languages: meta.options.location?.languages ?? null,
           status: document.metadata.statusCode,
           is_precrawl: meta.internalOptions.isPreCrawl === true,
+          wait_time_ms: meta.options.waitFor > 0 ? meta.options.waitFor : null,
           ...urlSplitsHash.slice(0, 10).reduce(
             (a, x, i) => ({
               ...a,
@@ -248,21 +249,25 @@ export async function scrapeURLWithIndex(
 
   const checkpoint1 = Date.now();
 
-  const { data, error } = await index_supabase_service.rpc("index_get_recent", {
-    p_url_hash: urlHash,
-    p_max_age_ms: maxAge,
-    p_is_mobile: meta.options.mobile,
-    p_block_ads: meta.options.blockAds,
-    p_feature_screenshot: meta.featureFlags.has("screenshot"),
-    p_feature_screenshot_fullscreen: meta.featureFlags.has(
-      "screenshot@fullScreen",
-    ),
-    p_location_country: meta.options.location?.country ?? null,
-    p_location_languages:
-      (meta.options.location?.languages?.length ?? 0) > 0
-        ? meta.options.location?.languages
-        : null,
-  });
+  const { data, error } = await index_supabase_service.rpc(
+    "index_get_recent_2",
+    {
+      p_url_hash: urlHash,
+      p_max_age_ms: maxAge,
+      p_is_mobile: meta.options.mobile,
+      p_block_ads: meta.options.blockAds,
+      p_feature_screenshot: meta.featureFlags.has("screenshot"),
+      p_feature_screenshot_fullscreen: meta.featureFlags.has(
+        "screenshot@fullScreen",
+      ),
+      p_location_country: meta.options.location?.country ?? null,
+      p_location_languages:
+        (meta.options.location?.languages?.length ?? 0) > 0
+          ? meta.options.location?.languages
+          : null,
+      p_wait_time_ms: meta.options.waitFor,
+    },
+  );
 
   if (error || !data) {
     throw new EngineError("Failed to retrieve URL from DB index", {
