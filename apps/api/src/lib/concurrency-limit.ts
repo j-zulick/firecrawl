@@ -301,56 +301,88 @@ export async function concurrentJobDone(job: NuQJob<any>) {
       await cleanOldCrawlConcurrencyLimitEntries(job.data.crawl_id);
     }
 
-    const maxTeamConcurrency =
-      (
-        await getACUCTeam(
-          job.data.team_id,
-          false,
-          true,
-          job.data.is_extract ? RateLimiterMode.Extract : RateLimiterMode.Crawl,
-        )
-      )?.concurrency ?? 2;
-    const currentActiveConcurrency = (
-      await getConcurrencyLimitActiveJobs(job.data.team_id)
-    ).length;
+    let i = 0;
+    for (; i < 10; i++) {
+      const maxTeamConcurrency =
+        (
+          await getACUCTeam(
+            job.data.team_id,
+            false,
+            true,
+            job.data.is_extract
+              ? RateLimiterMode.Extract
+              : RateLimiterMode.Crawl,
+          )
+        )?.concurrency ?? 2;
+      const currentActiveConcurrency = (
+        await getConcurrencyLimitActiveJobs(job.data.team_id)
+      ).length;
 
-    if (currentActiveConcurrency < maxTeamConcurrency) {
-      const nextJob = await getNextConcurrentJob(job.data.team_id);
-      if (nextJob !== null) {
-        await pushConcurrencyLimitActiveJob(
-          job.data.team_id,
-          nextJob.job.id,
-          60 * 1000,
-        );
-
-        if (nextJob.job.data.crawl_id) {
-          await pushCrawlConcurrencyLimitActiveJob(
-            nextJob.job.data.crawl_id,
+      if (currentActiveConcurrency < maxTeamConcurrency) {
+        const nextJob = await getNextConcurrentJob(job.data.team_id);
+        if (nextJob !== null) {
+          await pushConcurrencyLimitActiveJob(
+            job.data.team_id,
             nextJob.job.id,
             60 * 1000,
           );
 
-          const sc = await getCrawl(nextJob.job.data.crawl_id);
-          if (sc !== null && typeof sc.crawlerOptions?.delay === "number") {
-            await new Promise(resolve =>
-              setTimeout(resolve, sc.crawlerOptions.delay * 1000),
+          if (nextJob.job.data.crawl_id) {
+            await pushCrawlConcurrencyLimitActiveJob(
+              nextJob.job.data.crawl_id,
+              nextJob.job.id,
+              60 * 1000,
+            );
+
+            const sc = await getCrawl(nextJob.job.data.crawl_id);
+            if (sc !== null && typeof sc.crawlerOptions?.delay === "number") {
+              await new Promise(resolve =>
+                setTimeout(resolve, sc.crawlerOptions.delay * 1000),
+              );
+            }
+          }
+
+          abTestJob(nextJob.job.data);
+
+          const promotedSuccessfully =
+            (await scrapeQueue.promoteJobFromBacklogOrAdd(
+              nextJob.job.id,
+              nextJob.job.data,
+              {
+                priority: nextJob.job.priority,
+                listenable: nextJob.job.listenable,
+                ownerId: nextJob.job.data.team_id ?? undefined,
+                groupId: nextJob.job.data.crawl_id ?? undefined,
+              },
+            )) !== null;
+
+          if (promotedSuccessfully) {
+            logger.debug("Successfully promoted concurrent queued job", {});
+            break;
+          } else {
+            logger.warn(
+              "Was unable to promote concurrent queued job as it already exists in the database",
+              {
+                teamId: job.data.team_id,
+                jobId: nextJob.job.id,
+              },
             );
           }
+        } else {
+          break;
         }
-
-        abTestJob(nextJob.job.data);
-
-        await scrapeQueue.promoteJobFromBacklogOrAdd(
-          nextJob.job.id,
-          nextJob.job.data,
-          {
-            priority: nextJob.job.priority,
-            listenable: nextJob.job.listenable,
-            ownerId: nextJob.job.data.team_id ?? undefined,
-            groupId: nextJob.job.data.crawl_id ?? undefined,
-          },
-        );
+      } else {
+        break;
       }
+    }
+
+    if (i === 10) {
+      logger.warn(
+        "Failed to promote a concurrent job after 10 iterations, bailing!",
+        {
+          teamId: job.data.team_id,
+        },
+      );
     }
   }
 }
