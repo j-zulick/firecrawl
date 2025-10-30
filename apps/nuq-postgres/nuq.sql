@@ -152,11 +152,18 @@ CREATE TABLE IF NOT EXISTS nuq.group_crawl (
   CONSTRAINT group_crawl_pkey PRIMARY KEY (id)
 );
 
+-- Index for group finish cron to find active groups
+CREATE INDEX IF NOT EXISTS idx_group_crawl_status ON nuq.group_crawl (status) WHERE status = 'active'::nuq.group_status;
+
+-- Index for backlog group_id lookups
+CREATE INDEX IF NOT EXISTS idx_queue_scrape_backlog_group_id ON nuq.queue_scrape_backlog (group_id);
+
 SELECT cron.schedule('nuq_group_crawl_finished', '15 seconds', $$
   WITH finished_groups AS (
     UPDATE nuq.group_crawl
-    SET status = 'completed'::nuq.group_status, expires_at = now() + MAKE_INTERVAL(secs => nuq.group_crawl.ttl / 1000)
-    WHERE nuq.group_crawl.status = 'active'::nuq.group_status
+    SET status = 'completed'::nuq.group_status,
+        expires_at = now() + MAKE_INTERVAL(secs => nuq.group_crawl.ttl / 1000)
+    WHERE status = 'active'::nuq.group_status
       AND NOT EXISTS (
         SELECT 1 FROM nuq.queue_scrape
         WHERE nuq.queue_scrape.status IN ('active', 'queued')
