@@ -262,7 +262,10 @@ export async function fireEngineScrape<
       (status.error.includes("Element") ||
         status.error.includes("Javascript execution failed"))
     ) {
-      throw new ActionError(status.error.split("Error: ")[1]);
+      const errorMessage = status.error.startsWith("Error: ")
+        ? status.error.substring(7)
+        : status.error;
+      throw new ActionError(errorMessage);
     } else if (
       typeof status.error === "string" &&
       status.error.includes("proxies available for")
