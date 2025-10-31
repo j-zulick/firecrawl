@@ -705,7 +705,7 @@ export async function generateCompletions({
       ...(!schema && {
         onError: (error: Error) => {
           lastError = error;
-          console.error(error);
+          logger.error("LLM extraction failed without schema", { error });
         },
       }),
       experimental_telemetry: {
@@ -827,7 +827,7 @@ export async function generateCompletions({
           throw lastError;
         }
       } else if (NoObjectGeneratedError.isInstance(error)) {
-        console.log("No object generated", error);
+        logger.warn("No object generated", { error });
         if (
           error.text &&
           error.text.startsWith("```json") &&
