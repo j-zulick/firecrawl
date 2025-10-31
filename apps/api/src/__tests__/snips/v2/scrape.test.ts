@@ -1582,6 +1582,23 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "nested code blocks are converted to markdown correctly",
+    async () => {
+      const response = await scrape(
+        {
+          url: `${base}/code-block`,
+          formats: ["markdown"],
+        },
+        identity,
+      );
+
+      expect(response.markdown).toBeDefined();
+      expect(response.markdown).toContain("MyCustomClient");
+    },
+    scrapeTimeout,
+  );
+
   // TODO: check if these are required
   describeIf(ALLOW_TEST_SUITE_WEBSITE)(
     "__experimental_omceDomain functionality",

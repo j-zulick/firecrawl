@@ -67,8 +67,6 @@ async function scrapePDFWithRunPodMU(
     maxPages,
   });
 
-
-
   if (
     process.env.PDF_MU_V2_EXPERIMENT === "true" &&
     process.env.PDF_MU_V2_BASE_URL &&
@@ -114,7 +112,6 @@ async function scrapePDFWithRunPodMU(
       }
     })();
   }
-
 
   const muV1StartedAt = Date.now();
   const podStart = await robustFetch({
