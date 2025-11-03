@@ -304,7 +304,7 @@ async function supaBillTeam(
   _logger.info(`Batch billing team ${team_id} for ${credits} credits`);
 
   // Perform the actual database operation
-  const { data, error } = await supabase_service.rpc("bill_team_5", {
+  const { data, error } = await supabase_service.rpc("bill_team_6", {
     _team_id: team_id,
     sub_id: subscription_id ?? null,
     fetch_subscription: subscription_id === undefined,

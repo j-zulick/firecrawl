@@ -382,7 +382,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       const rc2 = (await tokenUsage(identity)).remaining_tokens;
 
-      expect(rc1 - rc2).toBe(305);
+      expect(rc1 - rc2).toBe(315); // rounded to closest 15 due to internal logic
     },
     300000,
   );
