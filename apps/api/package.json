@@ -107,7 +107,7 @@
     "escape-html": "^1.0.3",
     "express": "^4.21.2",
     "express-ws": "^5.0.2",
-    "geoip-country": "^5.0.202508192342",
+    "geoip-country": "^5.0.202510312342",
     "git-diff": "^2.0.6",
     "http-cookie-agent": "^7.0.1",
     "ioredis": "^5.6.1",

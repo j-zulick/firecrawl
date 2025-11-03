@@ -138,8 +138,8 @@ importers:
         specifier: ^5.0.2
         version: 5.0.2(bufferutil@4.0.9)(express@4.21.2)(utf-8-validate@5.0.10)
       geoip-country:
-        specifier: ^5.0.202508192342
-        version: 5.0.202508192342
+        specifier: ^5.0.202510312342
+        version: 5.0.202510312342
       git-diff:
         specifier: ^2.0.6
         version: 2.0.6
@@ -4555,8 +4555,8 @@ packages:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
     engines: {node: '>=6.9.0'}
 
-  geoip-country@5.0.202508192342:
-    resolution: {integrity: sha512-aezJJvZEACWX9tbB4jo5wNzh/HtSNM5YdRjc3RjBFdLdmBd9UO25CqCfbNaKU4uk3L9Wct6Ra8mqsbfGOUM0UQ==}
+  geoip-country@5.0.202510312342:
+    resolution: {integrity: sha512-I9PZFp8AkfVQSe0RjLSUwttm/xfhDnIJJ5jaZkMMSsKvC6lqNkVUKBBISOZnMfcwA3H2GvgyyjXTMWtrIBweMg==}
     engines: {node: '>=10.20.0'}
 
   get-caller-file@2.0.5:
@@ -12824,7 +12824,7 @@ snapshots:
 
   gensync@1.0.0-beta.2: {}
 
-  geoip-country@5.0.202508192342:
+  geoip-country@5.0.202510312342:
     dependencies:
       async: 2.6.4
       countries-list: 3.1.1
