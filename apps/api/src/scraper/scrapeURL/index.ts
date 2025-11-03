@@ -134,6 +134,10 @@ function buildFeatureFlags(
     }
   }
 
+  if (hasFormatOfType(options.formats, "branding")) {
+    flags.add("branding");
+  }
+
   if (options.waitFor !== 0) {
     flags.add("waitFor");
   }
@@ -721,6 +725,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       rawHtml: engineResult.html,
       screenshot: engineResult.screenshot,
       actions: engineResult.actions,
+      branding: engineResult.branding,
       metadata: {
         sourceURL: meta.internalOptions.unnormalizedSourceURL ?? meta.url,
         url: engineResult.url,

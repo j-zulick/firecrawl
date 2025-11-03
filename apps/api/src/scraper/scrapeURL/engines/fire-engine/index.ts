@@ -33,6 +33,7 @@ import { Action } from "../../../../controllers/v1/types";
 import { AbortManagerThrownError } from "../../lib/abortManager";
 import { youtubePostprocessor } from "../../postprocessors/youtube";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
+import { getBrandingScript } from "./brandingScript";
 
 // This function does not take `Meta` on purpose. It may not access any
 // meta values to construct the request -- that must be done by the
@@ -255,12 +256,27 @@ export async function scrapeURLWithFireEngineChromeCDP(
             },
           ]
         : []),
+      ...(hasFormatOfType(meta.options.formats, "branding")
+        ? [
+            {
+              type: "executeJavascript" as const,
+              script: getBrandingScript(),
+            },
+          ]
+        : []),
     ];
 
     const totalWait = actions.reduce(
       (a, x) => (x.type === "wait" ? (x.milliseconds ?? 1000) + a : a),
       0,
     );
+
+    const shouldAllowMedia =
+      hasFormatOfType(meta.options.formats, "branding") ||
+      youtubePostprocessor.shouldRun(
+        meta,
+        new URL(meta.rewrittenUrl ?? meta.url),
+      );
 
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestChromeCDP = {
@@ -284,12 +300,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
-      ...(youtubePostprocessor.shouldRun(
-        meta,
-        new URL(meta.rewrittenUrl ?? meta.url),
-      )
-        ? { blockMedia: false }
-        : {}),
+      ...(shouldAllowMedia ? { blockMedia: false } : {}),
     };
 
     let response = await performFireEngineScrape(
@@ -326,6 +337,40 @@ export async function scrapeURLWithFireEngineChromeCDP(
       });
     }
 
+    const javascriptReturns = (response.actionResults ?? [])
+      .filter(x => x.type === "executeJavascript")
+      .map(x => {
+        const rawReturn = (x.result as { return: string }).return;
+        try {
+          const parsed = JSON.parse(rawReturn);
+          if (
+            parsed &&
+            typeof parsed === "object" &&
+            "type" in parsed &&
+            typeof (parsed as any).type === "string" &&
+            "value" in parsed
+          ) {
+            return {
+              type: String((parsed as any).type),
+              value: (parsed as any).value,
+            };
+          }
+
+          return {
+            type: "unknown",
+            value: parsed,
+          };
+        } catch (error) {
+          meta.logger.warn("Failed to parse executeJavascript return", {
+            error,
+          });
+          return {
+            type: "unknown",
+            value: rawReturn,
+          };
+        }
+      });
+
     return {
       url: response.url ?? meta.url,
 
@@ -344,11 +389,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
             actions: {
               screenshots: response.screenshots ?? [],
               scrapes: response.actionContent ?? [],
-              javascriptReturns: (response.actionResults ?? [])
-                .filter(x => x.type === "executeJavascript")
-                .map(x =>
-                  JSON.parse((x.result as any as { return: string }).return),
-                ),
+              javascriptReturns,
               pdfs: (response.actionResults ?? [])
                 .filter(x => x.type === "pdf")
                 .map(x => x.result.link),

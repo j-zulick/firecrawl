@@ -20,6 +20,7 @@ import Ajv from "ajv";
 import { integrationSchema } from "../../utils/integration";
 import { webhookSchema } from "../../services/webhook/schema";
 import { modifyCrawlUrl } from "../../utils/url-utils";
+import { BrandingProfile } from "../../types/branding";
 
 // Base URL schema with common validation logic
 const BASE_URL_SCHEMA = z.preprocess(
@@ -409,7 +410,8 @@ export type FormatObject =
   | JsonFormatWithOptions
   | ChangeTrackingFormatWithOptions
   | ScreenshotFormatWithOptions
-  | AttributesFormatWithOptions;
+  | AttributesFormatWithOptions
+  | { type: "branding" };
 
 const pdfParserWithOptions = z
   .object({
@@ -503,6 +505,7 @@ const baseScrapeOptions = z
             changeTrackingFormatWithOptions,
             screenshotFormatWithOptions,
             attributesFormatWithOptions,
+            z.object({ type: z.literal("branding") }),
           ])
           .array()
           .optional()
@@ -857,6 +860,7 @@ export type Document = {
   extract?: any;
   json?: any;
   summary?: string;
+  branding?: BrandingProfile;
   warning?: string;
   attributes?: {
     selector: string;
@@ -1348,6 +1352,8 @@ export function fromV1ScrapeOptions(
             return fmt;
           } else if (x === "screenshot@fullPage") {
             return { type: "screenshot" as const, fullPage: true };
+          } else if (x === "branding") {
+            return { type: "branding" as const };
           } else {
             return x;
           }
