@@ -397,4 +397,28 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
       expect(typeof response.body.id).toBe("string");
     },
   );
+
+  it.concurrent(
+    "filters out non-web protocol links (telnet, ftp, ssh, file, mailto)",
+    async () => {
+      const res = await crawl(
+        {
+          url: base,
+          limit: 10,
+        },
+        identity,
+      );
+
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.completed).toBeGreaterThan(0);
+        for (const page of res.data) {
+          const url = page.metadata.url ?? page.metadata.sourceURL!;
+          expect(url).not.toMatch(/^(mailto|tel|telnet|ftp|ftps|ssh|file):/);
+          expect(url).toMatch(/^https?:/);
+        }
+      }
+    },
+    10 * scrapeTimeout,
+  );
 });

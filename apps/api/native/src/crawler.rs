@@ -120,6 +120,7 @@ const FILE_TYPE: &str = "FILE_TYPE";
 const SOCIAL_MEDIA: &str = "SOCIAL_MEDIA";
 const EXTERNAL_LINK: &str = "EXTERNAL_LINK";
 const SECTION_LINK: &str = "SECTION_LINK";
+const NON_WEB_PROTOCOL: &str = "NON_WEB_PROTOCOL";
 
 #[inline]
 fn is_file(path: &str) -> bool {
@@ -170,6 +171,23 @@ fn no_sections(url_str: &str) -> bool {
 }
 
 #[inline]
+fn is_non_web_protocol(url_str: &str) -> bool {
+  const NON_WEB_PROTOCOLS: &[&str] = &[
+    "mailto:",
+    "tel:",
+    "telnet:",
+    "ftp:",
+    "ftps:",
+    "ssh:",
+    "file:",
+  ];
+
+  NON_WEB_PROTOCOLS
+    .iter()
+    .any(|protocol| url_str.starts_with(protocol))
+}
+
+#[inline]
 fn is_social_media_or_email(url_str: &str) -> bool {
   const SOCIAL_MEDIA_OR_EMAIL: &[&str] = &[
     "facebook.com",
@@ -177,7 +195,6 @@ fn is_social_media_or_email(url_str: &str) -> bool {
     "linkedin.com",
     "instagram.com",
     "pinterest.com",
-    "mailto:",
     "github.com",
     "calendly.com",
     "discord.gg",
@@ -266,6 +283,11 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
 
     let path = url.path();
     let url_str = url.as_str();
+
+    if is_non_web_protocol(url_str) {
+      denial_reasons.insert(link, NON_WEB_PROTOCOL.to_string());
+      continue;
+    }
 
     if get_url_depth(path) > data.max_depth {
       denial_reasons.insert(link, DEPTH_LIMIT.to_string());
@@ -416,6 +438,14 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
 
   let path = url.path();
   let url_str = url.as_str();
+
+  if is_non_web_protocol(url_str) {
+    return Ok(FilterUrlResult {
+      allowed: false,
+      url: None,
+      denial_reason: Some(NON_WEB_PROTOCOL.to_string()),
+    });
+  }
 
   let excludes_regex: Vec<Regex> = data
     .excludes

@@ -22,22 +22,3 @@ export function hasFormatOfType<T extends FormatObject["type"]>(
   const found = formats.find(f => f.type === type);
   return found as Extract<FormatObject, { type: T }> | undefined;
 }
-
-/**
- * Checks if any of the specified format types exist in the formats array.
- * Returns true if at least one of the types is found.
- *
- * @param formats - Array of format objects
- * @param types - Array of format types to search for
- * @returns true if any of the types are found, false otherwise
- */
-export function hasAnyFormatOfTypes(
-  formats: FormatObject[] | undefined,
-  types: FormatObject["type"][],
-): boolean {
-  if (!formats) {
-    return false;
-  }
-
-  return formats.some(f => types.includes(f.type));
-}
