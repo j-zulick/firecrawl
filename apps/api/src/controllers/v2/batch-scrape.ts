@@ -208,7 +208,7 @@ export async function batchScrapeController(
     await sender?.send(WebhookEvent.BATCH_SCRAPE_STARTED, { success: true });
   }
 
-  const protocol = process.env.ENV === "local" ? req.protocol : "https";
+  const protocol = req.protocol;
 
   return res.status(200).json({
     success: true,
