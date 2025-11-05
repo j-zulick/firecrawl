@@ -83,6 +83,7 @@ def normalize_document_input(doc: Dict[str, Any]) -> Dict[str, Any]:
     Normalize a raw Document dict from the API into the Python SDK's expected shape:
     - Convert top-level keys rawHtml->raw_html, changeTracking->change_tracking
     - Convert metadata keys from camelCase to snake_case
+    - Convert branding.colorScheme to branding.color_scheme
     """
     normalized = dict(doc)
 
@@ -101,6 +102,12 @@ def normalize_document_input(doc: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             # Fallback to mapped dict if model construction fails for any reason
             normalized["metadata"] = mapped
+
+    # Normalize branding top-level camelCase keys
+    branding = normalized.get("branding")
+    if isinstance(branding, dict):
+        if "colorScheme" in branding and "color_scheme" not in branding:
+            branding["color_scheme"] = branding.pop("colorScheme")
 
     return normalized
 
