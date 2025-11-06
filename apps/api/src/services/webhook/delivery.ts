@@ -62,7 +62,14 @@ export class WebhookSender {
   }
 
   private shouldSendEvent(event: WebhookEvent): boolean {
-    if (!this.config.events?.length) return true;
+    if (process.env.DISABLE_WEBHOOK_DELIVERY === "true") {
+      return false;
+    }
+
+    if (!this.config.events?.length) {
+      return true;
+    }
+
     const subType = event.split(".")[1];
     return this.config.events.includes(subType as any);
   }
