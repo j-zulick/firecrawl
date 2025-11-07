@@ -20,6 +20,7 @@ import Express from "express";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
 import { BullMQOtel } from "bullmq-otel";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
+import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
@@ -442,6 +443,8 @@ app.listen(workerPort, () => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);
   });
+
+  initializeEngineForcing();
 
   await Promise.all([
     workerFun(getDeepResearchQueue(), processDeepResearchJobInternal),

@@ -20,6 +20,7 @@ import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
 import { BullMQOtel } from "bullmq-otel";
 import { getErrorContactMessage } from "../lib/deployment";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
+import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 
 configDotenv();
 
@@ -296,6 +297,8 @@ app.listen(workerPort, () => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);
   });
+
+  initializeEngineForcing();
 
   await Promise.all([workerFun(getExtractQueue(), processExtractJobInternal)]);
 

@@ -34,6 +34,7 @@ import domainFrequencyRouter from "./routes/domain-frequency";
 import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
+import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
 import responseTime from "response-time";
 
 const { createBullBoard } = require("@bull-board/api");
@@ -110,8 +111,11 @@ const HOST = process.env.HOST ?? "localhost";
 async function startServer(port = DEFAULT_PORT) {
   try {
     await initializeBlocklist();
+    initializeEngineForcing();
   } catch (error) {
-    logger.error("Failed to initialize blocklist", { error });
+    logger.error("Failed to initialize blocklist and engine forcing", {
+      error,
+    });
     throw error;
   }
 

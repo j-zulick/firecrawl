@@ -5,12 +5,16 @@ import { scrapeQueue, nuqGetLocalMetrics, nuqHealthCheck } from "./nuq";
 import Express from "express";
 import { _ } from "ajv";
 import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
+import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-forcing";
 
 (async () => {
   try {
     await initializeBlocklist();
+    initializeEngineForcing();
   } catch (error) {
-    _logger.error("Failed to initialize blocklist", { error });
+    _logger.error("Failed to initialize blocklist and engine forcing", {
+      error,
+    });
     process.exit(1);
   }
 

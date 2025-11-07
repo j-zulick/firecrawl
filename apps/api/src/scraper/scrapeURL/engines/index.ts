@@ -596,9 +596,16 @@ export async function scrapeURLWithEngine(
     method: fn.name ?? "scrapeURLWithEngine",
     engine,
   });
+
+  const featureFlags = new Set(meta.featureFlags);
+  if (engineOptions[engine].features.stealthProxy) {
+    featureFlags.add("stealthProxy");
+  }
+
   const _meta = {
     ...meta,
     logger,
+    featureFlags,
   };
 
   return await fn(_meta);
