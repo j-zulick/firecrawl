@@ -800,9 +800,8 @@ class NuQ<JobData = any, JobReturnValue = any> {
         const results: NuQJob<JobData, JobReturnValue>[] = [];
 
         // Batch size: 6 params per job, stay well under PG's 65535 param limit
-        // 200 jobs = 1200 params, leaving plenty of headroom
-        // lowered to reduce held locks - mogery
-        const BATCH_SIZE = 200;
+        // 1000 jobs = 6000 params, leaving plenty of headroom
+        const BATCH_SIZE = 1000;
 
         // Helper function to build and execute bulk insert with batching
         const bulkInsert = async (
@@ -1094,7 +1093,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
       const jobs = (
         await nuqPool.query(
           `
-            WITH next AS (SELECT id FROM ${this.queueName} WHERE ${this.queueName}.status = 'queued'::nuq.job_status ORDER BY ${this.queueName}.priority ASC, ${this.queueName}.created_at ASC FOR UPDATE SKIP LOCKED LIMIT 200)
+            WITH next AS (SELECT id FROM ${this.queueName} WHERE ${this.queueName}.status = 'queued'::nuq.job_status ORDER BY ${this.queueName}.priority ASC, ${this.queueName}.created_at ASC FOR UPDATE SKIP LOCKED LIMIT 500)
             UPDATE ${this.queueName} q SET status = 'active'::nuq.job_status, lock = gen_random_uuid(), locked_at = now() FROM next WHERE q.id = next.id RETURNING ${this.jobReturning.map(x => `q.${x}`).join(", ")};
           `,
         )
