@@ -431,11 +431,6 @@ def _validate_json_format(format_obj: Any) -> Dict[str, Any]:
             if not validate_schema_for_openai(openai_normalized_schema):
                 raise ValueError(OPENAI_SCHEMA_ERROR_MESSAGE)
             
-            # Add model selection info for reference (non-intrusive)
-            model_selection = select_model_for_schema(openai_normalized_schema)
-            if '_model_info' not in normalized:
-                normalized['_model_info'] = model_selection
-            
             normalized['schema'] = openai_normalized_schema
     return normalized
 

@@ -3164,11 +3164,6 @@ class V1FirecrawlApp:
             schema = self._normalize_schema_for_openai(schema)
             if not self._validate_schema_for_openai(schema):
                 raise ValueError(self.OPENAI_SCHEMA_ERROR_MESSAGE)
-            
-            # Add model selection info for reference (non-intrusive)
-            model_selection = self._select_model_for_schema(schema)
-            if '_model_info' not in schema_container:
-                schema_container['_model_info'] = model_selection
                 
             schema_container[schema_key] = schema
         return schema_container

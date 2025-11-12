@@ -611,7 +611,6 @@ class TestValidateJsonFormat(unittest.TestCase):
         }
         result = _validate_json_format(format_obj)
         self.assertIn("schema", result)
-        self.assertIn("_model_info", result)
     
     def test_validate_json_format_with_invalid_schema(self):
         """Test JSON format validation with invalid schema."""
@@ -654,8 +653,6 @@ class TestValidateJsonFormat(unittest.TestCase):
         }
         result = _validate_json_format(format_obj)
         self.assertIn("schema", result)
-        self.assertIn("_model_info", result)
-        self.assertEqual(result["_model_info"]["modelName"], "gpt-4o")
     
     def test_validate_json_format_resolves_non_recursive_refs(self):
         """Test that non-recursive refs are resolved."""

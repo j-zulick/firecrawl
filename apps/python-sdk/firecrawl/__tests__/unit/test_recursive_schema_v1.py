@@ -649,7 +649,6 @@ class TestV1ProcessSchemaWithValidation(unittest.TestCase):
         }
         result = self.app._process_schema_with_validation(schema_container)
         self.assertIn("schema", result)
-        self.assertIn("_model_info", result)
     
     def test_process_invalid_schema(self):
         """Test processing an invalid schema raises ValueError."""
@@ -690,8 +689,6 @@ class TestV1ProcessSchemaWithValidation(unittest.TestCase):
         }
         result = self.app._process_schema_with_validation(schema_container)
         self.assertIn("schema", result)
-        self.assertIn("_model_info", result)
-        self.assertEqual(result["_model_info"]["modelName"], "gpt-4o")
     
     def test_process_resolves_non_recursive_refs(self):
         """Test that non-recursive refs are resolved."""
@@ -743,7 +740,6 @@ class TestV1ProcessSchemaWithValidation(unittest.TestCase):
             schema_key="custom_schema"
         )
         self.assertIn("custom_schema", result)
-        self.assertIn("_model_info", result)
 
 
 class TestV1EdgeCases(unittest.TestCase):
