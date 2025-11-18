@@ -3,6 +3,7 @@ import type { BatchScrapeJob, CrawlJob, Document } from "./types";
 import type { HttpClient } from "./utils/httpClient";
 import { getBatchScrapeStatus } from "./methods/batch";
 import { getCrawlStatus } from "./methods/crawl";
+import { WebSocket as WS } from "ws";
 
 type JobKind = "crawl" | "batch";
 
@@ -43,11 +44,17 @@ export class Watcher extends EventEmitter {
   async start(): Promise<void> {
     try {
       const url = this.buildWsUrl();
-      // Pass API key as subprotocol for browser compatibility
-      this.ws = new WebSocket(url, this.http.getApiKey());
-      this.attachWsHandlers(this.ws);
-    } catch {
-      // Fallback to polling immediately
+      
+      if (typeof WebSocket !== 'undefined') {
+        this.ws = new WebSocket(url, this.http.getApiKey()) as any;
+      } else {
+        this.ws = new WS(url, this.http.getApiKey()) as any;
+      }
+      
+      if (this.ws) {
+        this.attachWsHandlers(this.ws);
+      }
+    } catch (err) {
       this.pollLoop();
     }
   }
@@ -76,7 +83,9 @@ export class Watcher extends EventEmitter {
           return;
         }
         if (type === "done") {
-          this.emit("done", { status: "completed", data: [], id: this.jobId });
+          const payload = body.data || body;
+          const data = (payload.data || []) as Document[];
+          this.emit("done", { status: "completed", data, id: this.jobId });
           this.close();
           return;
         }
