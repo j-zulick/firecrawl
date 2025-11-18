@@ -1453,7 +1453,7 @@ export const searchRequestSchema = z
       .safe()
       .max(100)
       .optional()
-      .default(5),
+      .default(10),
     tbs: z.string().optional(),
     filter: z.string().optional(),
     sources: z
