@@ -466,6 +466,7 @@ export interface CrawlResponse {
 }
 
 export interface CrawlJob {
+  id: string;
   status: 'scraping' | 'completed' | 'failed' | 'cancelled';
   total: number;
   completed: number;
@@ -493,6 +494,7 @@ export interface BatchScrapeResponse {
 }
 
 export interface BatchScrapeJob {
+  id: string;
   status: 'scraping' | 'completed' | 'failed' | 'cancelled';
   completed: number;
   total: number;
