@@ -114,6 +114,7 @@ export class Watcher extends EventEmitter {
     const data = (payload.data || []) as Document[];
     const snap: Snapshot = this.kind === "crawl"
       ? {
+          id: this.jobId,
           status,
           completed: payload.completed ?? 0,
           total: payload.total ?? 0,
@@ -123,6 +124,7 @@ export class Watcher extends EventEmitter {
           data,
         }
       : {
+          id: this.jobId,
           status,
           completed: payload.completed ?? 0,
           total: payload.total ?? 0,
