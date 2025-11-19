@@ -102,7 +102,7 @@ export async function scrapeController(
       req.acuc?.concurrency || 1,
       aborter.signal,
       timeout ?? 60_000,
-      async () => {
+      async limited => {
         const jobPriority = await getJobPriority({
           team_id: req.auth.team_id,
           basePriority: 10,
@@ -142,6 +142,7 @@ export async function scrapeController(
             startTime: controllerStartTime,
             zeroDataRetention: zeroDataRetention ?? false,
             apiKeyId: req.acuc?.api_key_id ?? null,
+            concurrencyLimited: limited,
           },
         };
 

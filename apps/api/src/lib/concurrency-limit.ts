@@ -54,7 +54,10 @@ export async function pushConcurrencyLimitActiveJob(
   await getRedisConnection().zadd(constructKey(team_id), now + timeout, id);
 }
 
-async function removeConcurrencyLimitActiveJob(team_id: string, id: string) {
+export async function removeConcurrencyLimitActiveJob(
+  team_id: string,
+  id: string,
+) {
   await getRedisConnection().zrem(constructKey(team_id), id);
 }
 
