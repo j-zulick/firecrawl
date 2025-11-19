@@ -141,13 +141,27 @@ function startHeartbeat(teamId: string, holderId: string, intervalMs: number) {
   let stopped = false;
 
   const promise = (async () => {
-    while (!stopped) {
-      const ok = await heartbeat(teamId, holderId);
-      if (!ok) {
-        throw new TransportableError("SCRAPE_TIMEOUT", "heartbeat_failed");
+    try {
+      while (!stopped) {
+        await pushConcurrencyLimitActiveJob(teamId, holderId, 60 * 1000).catch(
+          () => {
+            _logger.warn("Failed to update concurrency limit active job", {
+              teamId,
+              jobId: holderId,
+            });
+          },
+        );
+
+        const ok = await heartbeat(teamId, holderId);
+        if (!ok) {
+          throw new TransportableError("SCRAPE_TIMEOUT", "heartbeat_failed");
+        }
+        await new Promise(r => setTimeout(r, intervalMs));
       }
-      await new Promise(r => setTimeout(r, intervalMs));
+    } catch (error) {
+      _logger.error("Error in semaphore heartbeat loop", { error });
     }
+
     return Promise.reject(
       new Error("heartbeat loop stopped unexpectedly"),
     ) as never;
