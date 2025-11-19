@@ -48,15 +48,19 @@ export async function downloadFile(
     throw new EngineError("Response body was null", { cause: { response } });
   }
 
-  response.body.pipeTo(Writable.toWeb(tempFileWrite));
-  await new Promise((resolve, reject) => {
-    tempFileWrite.on("finish", () => resolve(null));
-    tempFileWrite.on("error", error => {
-      reject(
-        new EngineError("Failed to write to temp file", { cause: { error } }),
-      );
-    });
-  });
+  try {
+    await response.body
+      .pipeTo(Writable.toWeb(tempFileWrite), {
+        signal: init?.signal || undefined,
+      })
+      .catch(error => {
+        throw new EngineError("Failed to write to temp file", {
+          cause: { error },
+        });
+      });
+  } finally {
+    tempFileWrite.close();
+  }
 
   return {
     response,

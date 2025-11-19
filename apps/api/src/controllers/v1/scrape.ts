@@ -8,12 +8,15 @@ import {
   ScrapeResponse,
 } from "./types";
 import { v4 as uuidv4 } from "uuid";
-import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { getJobPriority } from "../../lib/job-priority";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { TransportableError } from "../../lib/error";
-import { scrapeQueue } from "../../services/worker/nuq";
+import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
+import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
+import { processJobInternal } from "../../services/worker/scrape-worker";
+import { ScrapeJobData } from "../../types";
+import { AbortManagerThrownError } from "../../scraper/scrapeURL/lib/abortManager";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -42,6 +45,7 @@ export async function scrapeController(
   const logger = _logger.child({
     method: "scrapeController",
     jobId,
+    noq: true,
     scrapeId: jobId,
     teamId: req.auth.team_id,
     team_id: req.auth.team_id,
@@ -61,7 +65,7 @@ export async function scrapeController(
   const origin = req.body.origin;
   const timeout = req.body.timeout;
 
-  const startTime = new Date().getTime();
+  // const startTime = new Date().getTime();
 
   const isDirectToBullMQ =
     process.env.SEARCH_PREVIEW_TOKEN !== undefined &&
@@ -73,43 +77,6 @@ export async function scrapeController(
     req.auth.team_id,
   );
 
-  const jobPriority = await getJobPriority({
-    team_id: req.auth.team_id,
-    basePriority: 10,
-  });
-
-  const bullJob = await addScrapeJob(
-    {
-      url: req.body.url,
-      mode: "single_urls",
-      team_id: req.auth.team_id,
-      scrapeOptions,
-      internalOptions: {
-        ...internalOptions,
-        teamId: req.auth.team_id,
-        saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
-          ? true
-          : false,
-        unnormalizedSourceURL: preNormalizedBody.url,
-        bypassBilling: isDirectToBullMQ,
-        zeroDataRetention,
-        teamFlags: req.acuc?.flags ?? null,
-      },
-      origin,
-      integration: req.body.integration,
-      startTime: controllerStartTime,
-      zeroDataRetention: zeroDataRetention ?? false,
-      apiKeyId: req.acuc?.api_key_id ?? null,
-    },
-    jobId,
-    jobPriority,
-    isDirectToBullMQ,
-    true,
-  );
-  logger.info(
-    "Added scrape job now" + (bullJob ? "" : " (to concurrency queue)"),
-  );
-
   const totalWait =
     (req.body.waitFor ?? 0) +
     (req.body.actions ?? []).reduce(
@@ -117,22 +84,80 @@ export async function scrapeController(
       0,
     );
 
-  let doc: Document;
+  let timeoutHandle: NodeJS.Timeout | null = null;
+  let doc: Document | null = null;
   try {
-    doc = await waitForJob(
-      bullJob ? bullJob : jobId,
-      timeout + totalWait,
-      zeroDataRetention ?? false,
-      logger,
+    const lockStart = Date.now();
+    const aborter = new AbortController();
+    if (timeout) {
+      timeoutHandle = setTimeout(() => {
+        aborter.abort();
+      }, timeout * 0.667);
+    }
+    req.on("close", () => aborter.abort());
+
+    doc = await teamConcurrencySemaphore.withSemaphore(
+      req.auth.team_id,
+      jobId,
+      req.acuc?.concurrency || 1,
+      aborter.signal,
+      timeout ?? 60_000,
+      async () => {
+        const jobPriority = await getJobPriority({
+          team_id: req.auth.team_id,
+          basePriority: 10,
+        });
+
+        const lockTime = Date.now() - lockStart;
+
+        logger.debug(`Lock acquired for team: ${req.auth.team_id}`, {
+          teamId: req.auth.team_id,
+          lockTime,
+        });
+
+        const job: NuQJob<ScrapeJobData> = {
+          id: jobId,
+          status: "active",
+          createdAt: new Date(),
+          priority: jobPriority,
+          data: {
+            url: req.body.url,
+            mode: "single_urls",
+            team_id: req.auth.team_id,
+            scrapeOptions,
+            internalOptions: {
+              ...internalOptions,
+              teamId: req.auth.team_id,
+              saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
+                ? true
+                : false,
+              unnormalizedSourceURL: preNormalizedBody.url,
+              bypassBilling: isDirectToBullMQ,
+              zeroDataRetention,
+              teamFlags: req.acuc?.flags ?? null,
+            },
+            skipNuq: true,
+            origin,
+            integration: req.body.integration,
+            startTime: controllerStartTime,
+            zeroDataRetention: zeroDataRetention ?? false,
+            apiKeyId: req.acuc?.api_key_id ?? null,
+          },
+        };
+
+        const doc = await processJobInternal(job);
+        return doc ?? null;
+      },
     );
   } catch (e) {
-    logger.error(`Error in scrapeController`, {
-      version: "v1",
-      error: e,
-    });
+    const timeoutErr =
+      e instanceof TransportableError && e.code === "SCRAPE_TIMEOUT";
 
-    if (zeroDataRetention) {
-      await scrapeQueue.removeJob(jobId, logger);
+    if (!timeoutErr) {
+      logger.error(`Error in scrapeController`, {
+        version: "v1",
+        error: e,
+      });
     }
 
     if (e instanceof TransportableError) {
@@ -157,11 +182,13 @@ export async function scrapeController(
         error: `(Internal server error) - ${e && e.message ? e.message : e}`,
       });
     }
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
   }
 
   logger.info("Done with waitForJob");
-
-  await scrapeQueue.removeJob(jobId, logger);
 
   logger.info("Removed job from queue");
 
@@ -186,7 +213,7 @@ export async function scrapeController(
 
   return res.status(200).json({
     success: true,
-    data: doc,
+    data: doc!,
     scrape_id: origin?.includes("website") ? jobId : undefined,
   });
 }

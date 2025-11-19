@@ -483,8 +483,12 @@ export class WebCrawler {
       }
     };
 
+    let timeoutHandle: NodeJS.Timeout;
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Sitemap fetch timeout")), timeout);
+      timeoutHandle = setTimeout(
+        () => reject(new Error("Sitemap fetch timeout")),
+        timeout,
+      );
     });
 
     // Allow sitemaps to be cached for 48 hours if they are requested from /map
@@ -515,7 +519,9 @@ export class WebCrawler {
           ),
         ]).then(results => results.reduce((a, x) => a + x, 0)),
         timeoutPromise,
-      ])) as number;
+      ]).finally(() => {
+        clearTimeout(timeoutHandle);
+      })) as number;
 
       if (count > 0) {
         if (

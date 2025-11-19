@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { getRedisConnection } from "../../../services/queue-service";
 import { nuqGetLocalMetrics, scrapeQueue } from "../../../services/worker/nuq";
+import { teamConcurrencySemaphore } from "../../../services/worker/team-semaphore";
 
 export async function metricsController(_: Request, res: Response) {
   let cursor: string = "0";
@@ -26,6 +27,8 @@ export async function metricsController(_: Request, res: Response) {
     }
   } while (cursor !== "0");
 
+  const semaphoreMetrics = await teamConcurrencySemaphore.getMetrics();
+
   res.contentType("text/plain").send(`\
 # HELP concurrency_limit_queue_job_count The number of jobs in the concurrency limit queue per team
 # TYPE concurrency_limit_queue_job_count gauge
@@ -35,9 +38,8 @@ ${Object.entries(metrics)
       `concurrency_limit_queue_job_count{team_id="${key}"} ${value}`,
   )
   .join("\n")}
-
 ${nuqGetLocalMetrics()}
-`);
+${semaphoreMetrics}`);
 }
 
 export async function nuqMetricsController(_: Request, res: Response) {

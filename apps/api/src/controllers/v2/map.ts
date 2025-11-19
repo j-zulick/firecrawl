@@ -54,6 +54,8 @@ export async function mapController(
   });
 
   let result: MapResult;
+  let timeoutHandle: NodeJS.Timeout | null = null;
+
   const abort = new AbortController();
   try {
     result = (await Promise.race([
@@ -78,11 +80,12 @@ export async function mapController(
       }),
       ...(req.body.timeout !== undefined
         ? [
-            new Promise((resolve, reject) =>
-              setTimeout(() => {
-                abort.abort(new MapTimeoutError());
-                reject(new MapTimeoutError());
-              }, req.body.timeout),
+            new Promise(
+              (_resolve, reject) =>
+                (timeoutHandle = setTimeout(() => {
+                  abort.abort(new MapTimeoutError());
+                  reject(new MapTimeoutError());
+                }, req.body.timeout)),
             ),
           ]
         : []),
@@ -96,6 +99,10 @@ export async function mapController(
       });
     } else {
       throw error;
+    }
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
     }
   }
 
@@ -142,6 +149,8 @@ export async function mapController(
     num_tokens: 0,
     credits_billed: 1,
     zeroDataRetention: false, // not supported
+  }).catch(error => {
+    logger.error(`Failed to log job for team ${req.auth.team_id}: ${error}`);
   });
 
   // Log final timing information

@@ -260,6 +260,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     } else {
       const file = await fetchFileToBuffer(meta.rewrittenUrl ?? meta.url, {
         headers: meta.options.headers,
+        signal: meta.abort.asSignal(),
       });
 
       const ct = file.response.headers.get("Content-Type");
@@ -295,6 +296,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       ? { response: meta.pdfPrefetch, tempFilePath: meta.pdfPrefetch.filePath }
       : await downloadFile(meta.id, meta.rewrittenUrl ?? meta.url, {
           headers: meta.options.headers,
+          signal: meta.abort.asSignal(),
         });
 
   if ((response as any).headers) {

@@ -126,6 +126,7 @@
     "pg": "^8.16.3",
     "posthog-node": "^4.0.1",
     "prettier": "^3.6.2",
+    "prom-client": "^15.1.3",
     "psl": "^1.15.0",
     "rate-limiter-flexible": "2.4.2",
     "redlock": "5.0.0-beta.2",
