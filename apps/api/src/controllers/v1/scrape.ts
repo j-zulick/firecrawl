@@ -210,6 +210,7 @@ export async function scrapeController(
     middlewareTime,
     controllerTime,
     totalRequestTime,
+    totalWait,
   });
 
   return res.status(200).json({
