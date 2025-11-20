@@ -38,7 +38,11 @@ export async function concurrencyQueueBackfillController(
       cursor = result[0];
       const results = result[1];
 
-      results.forEach(x => queuedJobIDs.add(JSON.parse(x).id));
+      // zscan returns [member1, score1, member2, score2, ...]
+      // Only parse members (even indices), skip scores (odd indices)
+      for (let i = 0; i < results.length; i += 2) {
+        queuedJobIDs.add(JSON.parse(results[i]).id);
+      }
     } while (cursor !== "0");
 
     const jobIDsToAdd = new Set(
