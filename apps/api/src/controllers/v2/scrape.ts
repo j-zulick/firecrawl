@@ -281,6 +281,7 @@ export async function scrapeController(
         "scrape.status_code": 200,
         "scrape.total_request_time_ms": totalRequestTime,
         "scrape.controller_time_ms": controllerTime,
+        "scrape.total_wait_time_ms": totalWait,
         "scrape.document.status_code": doc?.metadata?.statusCode,
         "scrape.document.content_type": doc?.metadata?.contentType,
         "scrape.document.error": doc?.metadata?.error,
@@ -295,6 +296,7 @@ export async function scrapeController(
         middlewareTime,
         controllerTime,
         totalRequestTime,
+        totalWait,
       });
 
       return res.status(200).json({
