@@ -1,3 +1,7 @@
+import {
+  pushConcurrencyLimitActiveJob,
+  removeConcurrencyLimitActiveJob,
+} from "../../lib/concurrency-limit";
 import { isSelfHosted } from "../../lib/deployment";
 import { ScrapeJobTimeoutError, TransportableError } from "../../lib/error";
 import { logger as _logger } from "../../lib/logger";
@@ -12,8 +16,15 @@ const activeSemaphores = new Gauge({
 const semaphoreAcquireDuration = new Histogram({
   name: "noq_semaphore_acquire_duration_seconds",
   help: "Semaphore acquire time",
-  // Buckets in seconds: 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s
   buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+});
+
+const semaphoreHoldDuration = new Histogram({
+  name: "noq_semaphore_hold_duration_seconds",
+  help: "Semaphore hold time",
+  buckets: [
+    0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 180, 240, 300, 600,
+  ],
 });
 
 const { scripts, runScript, ensure } = nuqRedis;
@@ -61,7 +72,6 @@ async function acquireBlocking(
   let totalRemoved = 0;
   let failedOnce = false;
 
-  // Start the timer for the histogram
   const endTimer = semaphoreAcquireDuration.startTimer();
 
   do {
@@ -84,7 +94,6 @@ async function acquireBlocking(
     totalRemoved++;
 
     if (granted === 1) {
-      // Stop the timer and record the duration
       endTimer();
       return { limited: failedOnce, removed: totalRemoved };
     }
@@ -132,13 +141,27 @@ function startHeartbeat(teamId: string, holderId: string, intervalMs: number) {
   let stopped = false;
 
   const promise = (async () => {
-    while (!stopped) {
-      const ok = await heartbeat(teamId, holderId);
-      if (!ok) {
-        throw new TransportableError("SCRAPE_TIMEOUT", "heartbeat_failed");
+    try {
+      while (!stopped) {
+        await pushConcurrencyLimitActiveJob(teamId, holderId, 60 * 1000).catch(
+          () => {
+            _logger.warn("Failed to update concurrency limit active job", {
+              teamId,
+              jobId: holderId,
+            });
+          },
+        );
+
+        const ok = await heartbeat(teamId, holderId);
+        if (!ok) {
+          throw new TransportableError("SCRAPE_TIMEOUT", "heartbeat_failed");
+        }
+        await new Promise(r => setTimeout(r, intervalMs));
       }
-      await new Promise(r => setTimeout(r, intervalMs));
+    } catch (error) {
+      _logger.error("Error in semaphore heartbeat loop", { error });
     }
+
     return Promise.reject(
       new Error("heartbeat loop stopped unexpectedly"),
     ) as never;
@@ -175,15 +198,26 @@ async function withSemaphore<T>(
     signal,
   });
 
+  const endTimer = semaphoreHoldDuration.startTimer();
   const hb = startHeartbeat(teamId, holderId, SEMAPHORE_TTL / 2);
 
   activeSemaphores.inc();
   try {
+    await pushConcurrencyLimitActiveJob(teamId, holderId, 60 * 1000);
+
     const result = await Promise.race([func(limited), hb.promise]);
     return result;
   } finally {
+    await removeConcurrencyLimitActiveJob(teamId, holderId).catch(() => {
+      _logger.warn("Failed to remove concurrency limit active job", {
+        teamId,
+        jobId: holderId,
+      });
+    });
+
     activeSemaphores.dec();
     hb.stop();
+    endTimer();
 
     await release(teamId, holderId).catch(() => {});
   }

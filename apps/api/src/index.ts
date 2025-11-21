@@ -89,13 +89,12 @@ app.use(
   serverAdapter.getRouter(),
 );
 
-app.get("/", (req, res) => {
-  res.send("SCRAPERS-JS: Hello, world! K8s!");
+app.get("/", (_, res) => {
+  res.redirect("https://docs.firecrawl.dev/api-reference/v2-introduction");
 });
 
-//write a simple test function
-app.get("/test", async (req, res) => {
-  res.send("Hello, world!");
+app.get("/e2e-test", (_, res) => {
+  res.status(200).send("OK");
 });
 
 // register router

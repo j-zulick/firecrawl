@@ -16,20 +16,12 @@ describe("E2E Tests for API Routes", () => {
   afterAll(() => {
     delete process.env.USE_DB_AUTHENTICATION;
   });
-  describe("GET /", () => {
-    it.concurrent("should return Hello, world! message", async () => {
-      const response = await request(TEST_URL).get("/");
 
+  describe("GET /e2e-test", () => {
+    it.concurrent("should return OK message", async () => {
+      const response = await request(TEST_URL).get("/e2e-test");
       expect(response.statusCode).toBe(200);
-      expect(response.text).toContain("SCRAPERS-JS: Hello, world! Fly.io");
-    });
-  });
-
-  describe("GET /test", () => {
-    it.concurrent("should return Hello, world! message", async () => {
-      const response = await request(TEST_URL).get("/test");
-      expect(response.statusCode).toBe(200);
-      expect(response.text).toContain("Hello, world!");
+      expect(response.text).toContain("OK");
     });
   });
 
