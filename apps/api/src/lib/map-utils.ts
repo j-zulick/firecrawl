@@ -11,6 +11,7 @@ import {
   checkAndUpdateURLForMap,
   isSameDomain,
   isSameSubdomain,
+  resolveRedirects,
 } from "./validateUrl";
 import { fireEngineMap } from "../search/fireEngine";
 import { redisEvictConnection } from "../services/redis";
@@ -110,6 +111,8 @@ export async function getMapResults({
   maxFireEngineResults?: number;
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
+
+  url = await resolveRedirects(url, abort);
 
   const id = uuidv4();
   let mapResults: MapDocument[] = [];
