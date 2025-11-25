@@ -112,7 +112,15 @@ export async function getMapResults({
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
 
-  url = await resolveRedirects(url, abort);
+  const resolvedUrl = await resolveRedirects(url, abort);
+
+  // If the resolved URL is on a different domain, replace the hostname
+  if (!isSameDomain(url, resolvedUrl)) {
+    const urlObj = new URL(url);
+    urlObj.hostname = new URL(resolvedUrl).hostname;
+
+    url = urlObj.toString();
+  }
 
   const id = uuidv4();
   let mapResults: MapDocument[] = [];
