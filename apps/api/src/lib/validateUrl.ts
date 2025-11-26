@@ -197,34 +197,30 @@ export async function resolveRedirects(
   url: string,
   abort?: AbortSignal,
 ): Promise<string> {
-  if (!protocolIncluded(url)) {
-    url = `http://${url}`;
-  }
+  const targetUrl = protocolIncluded(url) ? url : `http://${url}`;
 
-  try {
-    const response = await undici.fetch(url, {
-      method: "HEAD",
-      redirect: "follow",
-      dispatcher: getSecureDispatcher(false),
-      signal: abort,
-    });
+  const methods = ["HEAD", "GET"] as const;
 
-    return response.url;
-  } catch (error) {
-    if (abort?.aborted) throw error;
+  for (const method of methods) {
+    const signal = abort
+      ? AbortSignal.any([abort, AbortSignal.timeout(2000)])
+      : AbortSignal.timeout(2000);
 
     try {
-      const response = await undici.fetch(url, {
-        method: "GET",
+      const response = await undici.fetch(targetUrl, {
+        method,
         redirect: "follow",
         dispatcher: getSecureDispatcher(false),
-        signal: abort,
+        signal,
       });
 
       return response.url;
-    } catch (getError) {
-      if (abort?.aborted) throw getError;
-      return url;
+    } catch (error) {
+      if (abort?.aborted) {
+        throw error;
+      }
     }
   }
+
+  return targetUrl;
 }
