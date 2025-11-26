@@ -657,6 +657,12 @@ async function tallyBilling() {
     "billed_teams",
     100,
   );
+
+  if (!billedTeams || billedTeams.length === 0) {
+    logger.debug("No billed teams to process");
+    return;
+  }
+
   await getRedisConnection().srem("billed_teams", billedTeams);
   logger.info("Starting to update tallies", {
     billedTeams: billedTeams.length,
