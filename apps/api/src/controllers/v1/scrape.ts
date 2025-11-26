@@ -201,6 +201,21 @@ export async function scrapeController(
 
   const totalRequestTime = new Date().getTime() - middlewareStartTime;
   const controllerTime = new Date().getTime() - controllerStartTime;
+
+  let usedLlm =
+    req.body.formats?.includes("json") ||
+    req.body.formats?.includes("summary") ||
+    req.body.formats?.includes("branding") ||
+    req.body.formats?.includes("extract");
+
+  if (
+    !usedLlm &&
+    req.body.formats?.includes("changeTracking") &&
+    req.body.changeTrackingOptions?.modes?.includes("json")
+  ) {
+    usedLlm = true;
+  }
+
   logger.info("Request metrics", {
     version: "v1",
     mode: "scrape",
@@ -211,6 +226,8 @@ export async function scrapeController(
     controllerTime,
     totalRequestTime,
     totalWait,
+    usedLlm,
+    formats: req.body.formats,
   });
 
   return res.status(200).json({

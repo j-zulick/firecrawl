@@ -2,6 +2,7 @@ import { Response } from "express";
 import { logger as _logger } from "../../lib/logger";
 import {
   Document,
+  FormatObject,
   RequestWithAuth,
   ScrapeRequest,
   scrapeRequestSchema,
@@ -287,6 +288,22 @@ export async function scrapeController(
         "scrape.document.error": doc?.metadata?.error,
       });
 
+      let usedLlm =
+        !!hasFormatOfType(req.body.formats, "json") ||
+        !!hasFormatOfType(req.body.formats, "summary") ||
+        !!hasFormatOfType(req.body.formats, "branding");
+
+      if (!usedLlm) {
+        const ct = hasFormatOfType(req.body.formats, "changeTracking");
+
+        if (ct && ct.modes?.includes("json")) {
+          usedLlm = true;
+        }
+      }
+
+      const formats: string[] =
+        req.body.formats?.map((f: FormatObject) => f?.type) ?? [];
+
       logger.info("Request metrics", {
         version: "v2",
         scrapeId: jobId,
@@ -297,6 +314,8 @@ export async function scrapeController(
         controllerTime,
         totalRequestTime,
         totalWait,
+        usedLlm,
+        formats,
       });
 
       return res.status(200).json({
