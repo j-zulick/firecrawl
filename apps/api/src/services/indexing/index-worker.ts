@@ -15,7 +15,7 @@ import {
   startBillingBatchProcessing,
 } from "../billing/batch_billing";
 import systemMonitor from "../system-monitor";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import {
   index_supabase_service,
   processIndexInsertJobs,
@@ -475,7 +475,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               zeroDataRetention: false,
             };
 
-            const crawlId = uuidv4();
+            const crawlId = uuidv7();
 
             // robots disabled for now
             // const crawler = crawlToCrawler(crawlId, sc, null);
@@ -597,7 +597,7 @@ const workerFun = async (
       break;
     }
 
-    const token = uuidv4();
+    const token = uuidv7();
     const canAcceptConnection = await monitor.acceptConnection();
 
     if (!canAcceptConnection) {

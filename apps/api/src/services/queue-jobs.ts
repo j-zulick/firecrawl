@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { NotificationType, RateLimiterMode, ScrapeJobData } from "../types";
 import {
   cleanOldConcurrencyLimitEntries,
@@ -316,7 +316,7 @@ async function addScrapeJobRaw(
 
 export async function addScrapeJob(
   webScraperOptions: ScrapeJobData,
-  jobId: string = uuidv4(),
+  jobId: string = uuidv7(),
   priority: number = 0,
   directToBullMQ: boolean = false,
   listenable: boolean = false,

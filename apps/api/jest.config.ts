@@ -1,9 +1,8 @@
-import type { Config } from "jest";
+import { createDefaultEsmPreset, type JestConfigWithTsJest } from "ts-jest";
 
-const config: Config = {
+const config: JestConfigWithTsJest = {
+  ...createDefaultEsmPreset(),
   verbose: true,
-  preset: "ts-jest",
-  testEnvironment: "node",
   testPathIgnorePatterns: ["<rootDir>/dist/"],
   forceExit: true,
   detectOpenHandles: true,

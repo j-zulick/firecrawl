@@ -13,7 +13,7 @@ import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
 import { getMapResults, MapResult } from "../../lib/map-utils";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 
 configDotenv();
@@ -23,7 +23,7 @@ export async function mapController(
   res: Response<MapResponse>,
 ) {
   const logger = _logger.child({
-    jobId: uuidv4(),
+    jobId: uuidv7(),
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "mapController",

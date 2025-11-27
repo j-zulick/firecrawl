@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import {
   MapDocument,
   mapRequestSchema,
@@ -115,7 +115,7 @@ export async function getMapResults({
   timeout?: number;
   location?: ScrapeOptions["location"];
 }): Promise<MapResult> {
-  const id = uuidv4();
+  const id = uuidv7();
   let links: string[] = [url];
   let mapResults: MapDocument[] = [];
 

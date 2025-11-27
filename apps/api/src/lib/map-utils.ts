@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import {
   TeamFlags,
   MapDocument,
@@ -122,7 +122,7 @@ export async function getMapResults({
     url = urlObj.toString();
   }
 
-  const id = uuidv4();
+  const id = uuidv7();
   let mapResults: MapDocument[] = [];
   const zeroDataRetention = flags?.forceZDR ?? false;
 

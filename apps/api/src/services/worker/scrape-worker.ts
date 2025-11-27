@@ -10,7 +10,7 @@ import {
 } from "../../lib/concurrency-limit";
 import { addJobPriority, deleteJobPriority } from "../../lib/job-priority";
 import { cacheableLookup } from "../../scraper/scrapeURL/lib/cacheableLookup";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import {
   addCrawlJob,
   addCrawlJobs,
@@ -110,7 +110,7 @@ async function billScrapeJob(
       process.env.USE_DB_AUTHENTICATION === "true"
     ) {
       try {
-        const billingJobId = uuidv4();
+        const billingJobId = uuidv7();
         logger.debug(
           `Adding billing job to queue for team ${job.data.team_id}`,
           {
@@ -372,7 +372,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 team_id: sc.team_id,
                 basePriority: job.data.crawl_id ? 20 : 10,
               });
-              const jobId = uuidv4();
+              const jobId = uuidv7();
 
               logger.debug(
                 "Determined job priority " +
@@ -779,7 +779,7 @@ async function addKickoffSitemapJob(
     return;
   }
 
-  const jobId = uuidv4();
+  const jobId = uuidv7();
   await _addScrapeJobToBullMQ(
     {
       mode: "kickoff_sitemap" as const,
@@ -828,7 +828,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
     logger.debug("Locking URL...");
     await lockURL(job.data.crawl_id, sc, job.data.url);
-    const jobId = uuidv4();
+    const jobId = uuidv7();
     logger.debug("Adding scrape job to Redis...", { jobId });
     await addScrapeJob(
       {
@@ -914,7 +914,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       logger.debug("Using job priority " + jobPriority, { jobPriority });
 
       const jobs = indexLinks.map(url => {
-        const uuid = uuidv4();
+        const uuid = uuidv7();
         return {
           jobId: uuid,
           data: {
@@ -1040,7 +1040,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
             job.data.zeroDataRetention || (sc.zeroDataRetention ?? false),
           apiKeyId: job.data.apiKeyId,
         } satisfies ScrapeJobSingleUrls,
-        jobId: uuidv4(),
+        jobId: uuidv7(),
         priority: jobPriority,
       }));
 

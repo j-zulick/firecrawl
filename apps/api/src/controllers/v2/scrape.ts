@@ -8,7 +8,7 @@ import {
   scrapeRequestSchema,
   ScrapeResponse,
 } from "./types";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { TransportableError } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
@@ -31,7 +31,7 @@ export async function scrapeController(
         (req as any).requestTiming?.startTime || new Date().getTime();
       const controllerStartTime = new Date().getTime();
 
-      const jobId = uuidv4();
+      const jobId = uuidv7();
       const preNormalizedBody = { ...req.body };
 
       // Set initial span attributes
