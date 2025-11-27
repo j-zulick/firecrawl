@@ -116,7 +116,7 @@ export async function extractStatusController(
     success: status === "failed" ? false : true,
     data,
     status,
-    error: extract?.error ?? undefined,
+    error: typeof extract?.error === "string" ? extract.error : undefined,
     expiresAt: (await getExtractExpiry(req.params.jobId)).toISOString(),
     steps: extract?.showSteps ? extract.steps : undefined,
     llmUsage: extract?.showLLMUsage ? extract.llmUsage : undefined,
