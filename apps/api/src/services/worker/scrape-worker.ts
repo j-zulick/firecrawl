@@ -51,6 +51,7 @@ import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
 import { getBillingQueue } from "../queue-service";
 import type { Logger } from "winston";
 import {
+  CrawlDenialError,
   RacedRedirectError,
   ScrapeJobTimeoutError,
   TransportableError,
@@ -567,8 +568,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       if (
         job.data.crawl_id &&
         job.data.crawlerOptions !== null &&
-        error instanceof Error &&
-        error.message === "URL blocked by robots.txt"
+        error instanceof CrawlDenialError &&
+        error.reason === "URL blocked by robots.txt"
       ) {
         await recordRobotsBlocked(job.data.crawl_id, job.data.url);
       }
@@ -606,11 +607,14 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     } else {
       logger.error(`🐂 Job errored ${job.id} - ${error}`, { error });
 
-      Sentry.captureException(error, {
-        data: {
-          job: job.id,
-        },
-      });
+      // Filter out TransportableErrors (flow control)
+      if (!(error instanceof TransportableError)) {
+        Sentry.captureException(error, {
+          data: {
+            job: job.id,
+          },
+        });
+      }
 
       if (error instanceof CustomError) {
         // Here we handle the error, then save the failed job
@@ -1197,7 +1201,11 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
     }
   } catch (error) {
     logger.warn("Job failed", { error });
-    Sentry.captureException(error);
+
+    // Filter out TransportableErrors (flow control)
+    if (!(error instanceof TransportableError)) {
+      Sentry.captureException(error);
+    }
 
     if (job.data.skipNuq) {
       throw error;

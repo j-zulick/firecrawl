@@ -69,7 +69,7 @@ import {
   AbortManager,
   AbortManagerThrownError,
 } from "./lib/abortManager";
-import { ScrapeJobTimeoutError } from "../../lib/error";
+import { ScrapeJobTimeoutError, CrawlDenialError } from "../../lib/error";
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
 
@@ -923,10 +923,10 @@ export async function scrapeURL(
               setSpanAttributes(span, {
                 "scrape.blocked_by_robots": true,
               });
-              throw new Error("URL blocked by robots.txt");
+              throw new CrawlDenialError("URL blocked by robots.txt");
             }
           } catch (error) {
-            if (error.message === "URL blocked by robots.txt") {
+            if (error instanceof CrawlDenialError) {
               throw error;
             }
             meta.logger.debug("Failed to fetch robots.txt, allowing scrape", {
