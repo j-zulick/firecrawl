@@ -5,13 +5,23 @@ import { logger } from "../lib/logger";
 
 if (process.env.SENTRY_DSN) {
   logger.info("Setting up Sentry...");
+
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
-    integrations: [nodeProfilingIntegration()],
-    tracesSampleRate: process.env.SENTRY_ENVIRONMENT === "dev" ? 1.0 : 0.045,
-    profilesSampleRate: 1.0,
-    serverName: process.env.FLY_MACHINE_ID,
+    integrations: integrations => [...integrations, nodeProfilingIntegration()],
+    tracesSampleRate: 0,
+    serverName: process.env.NUQ_POD_NAME,
     environment: process.env.SENTRY_ENVIRONMENT ?? "production",
     skipOpenTelemetrySetup: true,
   });
+}
+
+/**
+ * Set the service type tag for this Sentry instance
+ * This helps distinguish between API server and worker errors in Sentry
+ */
+export function setSentryServiceTag(serviceType: string) {
+  if (process.env.SENTRY_DSN) {
+    Sentry.setTag("service_type", serviceType);
+  }
 }

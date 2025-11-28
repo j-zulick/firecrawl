@@ -1,5 +1,6 @@
 import "dotenv/config";
 import "../sentry";
+import { setSentryServiceTag } from "../sentry";
 import * as Sentry from "@sentry/node";
 import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger, logger } from "../../lib/logger";
@@ -694,6 +695,8 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
 
 // Start the workers
 (async () => {
+  setSentryServiceTag("index-worker");
+
   // Start billing worker and batch processing
   startBillingBatchProcessing();
   const billingWorkerPromise = workerFun(

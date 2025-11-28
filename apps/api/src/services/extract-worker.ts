@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { shutdownOtel } from "../otel";
 import "./sentry";
+import { setSentryServiceTag } from "./sentry";
 import * as Sentry from "@sentry/node";
 import { getExtractQueue, getRedisConnection } from "./queue-service";
 import { Job, Queue, Worker } from "bullmq";
@@ -293,6 +294,8 @@ app.listen(workerPort, () => {
 });
 
 (async () => {
+  setSentryServiceTag("extract-worker");
+
   await initializeBlocklist().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);

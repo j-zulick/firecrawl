@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { shutdownOtel } from "./otel";
 import "./services/sentry";
+import { setSentryServiceTag } from "./services/sentry";
 import * as Sentry from "@sentry/node";
 import express, { NextFunction, Request, Response } from "express";
 import bodyParser from "body-parser";
@@ -58,6 +59,8 @@ const ws = expressWs(expressApp);
 const app = ws.app;
 
 global.isProduction = process.env.IS_PRODUCTION === "true";
+
+setSentryServiceTag("api");
 
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json({ limit: "10mb" }));
