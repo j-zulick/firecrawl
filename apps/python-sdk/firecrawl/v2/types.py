@@ -504,6 +504,7 @@ class ScrapeOptions(BaseModel):
     block_ads: Optional[bool] = None
     proxy: Optional[Literal["basic", "stealth", "auto"]] = None
     max_age: Optional[int] = None
+    min_age: Optional[int] = None
     store_in_cache: Optional[bool] = None
     integration: Optional[str] = None
 

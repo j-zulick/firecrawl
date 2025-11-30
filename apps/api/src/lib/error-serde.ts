@@ -22,6 +22,7 @@ import {
   SiteError,
   SSLError,
   ProxySelectionError,
+  NoCachedDataError,
 } from "../scraper/scrapeURL/error";
 
 // TODO: figure out correct typing for this
@@ -41,6 +42,7 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_PDF_ANTIBOT_ERROR: PDFAntibotError,
   SCRAPE_DOCUMENT_ANTIBOT_ERROR: DocumentAntibotError,
   SCRAPE_UNSUPPORTED_FILE_ERROR: UnsupportedFileError,
+  SCRAPE_NO_CACHED_DATA: NoCachedDataError,
   SCRAPE_ACTION_ERROR: ActionError,
   SCRAPE_RACED_REDIRECT_ERROR: RacedRedirectError,
   SCRAPE_SITEMAP_ERROR: SitemapError,

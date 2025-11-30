@@ -155,6 +155,7 @@ export interface ScrapeOptions {
   blockAds?: boolean;
   proxy?: 'basic' | 'stealth' | 'auto' | string;
   maxAge?: number;
+  minAge?: number;
   storeInCache?: boolean;
   integration?: string;
 }

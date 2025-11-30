@@ -35,6 +35,7 @@ import {
   SSLError,
   PDFInsufficientTimeError,
   IndexMissError,
+  NoCachedDataError,
   DNSResolutionError,
   ZDRViolationError,
   PDFPrefetchFailed,
@@ -636,7 +637,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof PDFAntibotError ||
               error.error instanceof DocumentAntibotError ||
               error.error instanceof PDFInsufficientTimeError ||
-              error.error instanceof ProxySelectionError
+              error.error instanceof ProxySelectionError ||
+              error.error instanceof NoCachedDataError
             ) {
               throw error.error;
             } else if (error.error instanceof LLMRefusalError) {
