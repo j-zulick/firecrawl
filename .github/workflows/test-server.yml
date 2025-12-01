@@ -44,6 +44,7 @@ jobs:
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       USE_GO_MARKDOWN_PARSER: true
       ALLOW_LOCAL_WEBHOOKS: true
+      FIRECRAWL_LOG_TO_FILE: true
     steps:
       - uses: actions/checkout@v5
 
@@ -201,7 +202,8 @@ jobs:
         if: always()
         run: |
           mkdir -p logs
-          cp ./apps/api/firecrawl.log logs/firecrawl.log
+          cp ./apps/api/firecrawl-app.log logs/firecrawl.log || true
+          cp ./apps/api/firecrawl-worker.log logs/firecrawl-worker.log || true
 
       - name: Copy SearXNG logs
         if: always() && matrix.search == 'searxng'
