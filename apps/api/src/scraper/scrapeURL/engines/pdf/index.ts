@@ -87,6 +87,7 @@ async function scrapePDFWithRunPodMU(
         const resp = await robustFetch({
           url: process.env.PDF_MU_V2_BASE_URL ?? "",
           method: "POST",
+          headers: process.env.PDF_MU_V2_API_KEY ? { Authorization: `Bearer ${process.env.PDF_MU_V2_API_KEY}` } : undefined,
           body: {
             input: {
               file_content: base64Content,
