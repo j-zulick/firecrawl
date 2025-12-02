@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	maxRequestSize = 10 * 1024 * 1024 // 10MB max request size
+	maxRequestSize = 60 * 1024 * 1024 // 60MB max request size
 )
 
 // Handler manages HTTP request handling
