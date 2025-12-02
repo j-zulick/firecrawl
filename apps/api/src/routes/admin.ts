@@ -14,7 +14,8 @@ import {
 import { crawlCheckController } from "../controllers/v0/admin/crawl-check";
 import { realtimeSearchController } from "../controllers/v2/f-search";
 import { concurrencyQueueBackfillController } from "../controllers/v0/admin/concurrency-queue-backfill";
-import { createUserController } from "../controllers/v0/admin/create-user";
+import { integCreateUserController } from "../controllers/v0/admin/create-user";
+import { integValidateApiKeyController } from "../controllers/v0/admin/validate-api-key";
 
 export const adminRouter = express.Router();
 
@@ -78,4 +79,12 @@ adminRouter.post(
   wrap(concurrencyQueueBackfillController),
 );
 
-adminRouter.post(`/admin/create-user`, wrap(createUserController));
+adminRouter.post(
+  `/admin/integration/create-user`,
+  wrap(integCreateUserController),
+);
+
+adminRouter.post(
+  `/admin/integration/validate-api-key`,
+  wrap(integValidateApiKeyController),
+);

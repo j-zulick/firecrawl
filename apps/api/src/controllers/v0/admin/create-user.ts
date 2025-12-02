@@ -30,7 +30,7 @@ async function addCoupon(teamId: string, integration: any) {
   }
 }
 
-export async function createUserController(req: Request, res: Response) {
+export async function integCreateUserController(req: Request, res: Response) {
   let logger = _logger.child({
     module: "v0/admin/create-user",
     method: "createUserController",
