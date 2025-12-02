@@ -457,7 +457,12 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               scrapeOptions: undefined, // same here
             };
 
-            const scrapeOptions = scrapeOptionsSchema.parse({});
+            const scrapeOptions = scrapeOptionsSchema.parse({
+              formats: ["rawHtml"],
+              maxAge: 0,
+              storeInCache: true,
+              onlyMainContent: false,
+            });
             const sc: StoredCrawl = {
               originUrl: url,
               crawlerOptions: toV0CrawlerOptions(crawlerOptions),
@@ -467,7 +472,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
                 teamId,
                 saveScrapeResultToGCS:
                   !!process.env.GCS_FIRE_ENGINE_BUCKET_NAME,
-                zeroDataRetention: true, // is this meant to be true?
+                zeroDataRetention: false,
                 isPreCrawl: true, // NOTE: must be added to internal options for indexing, if not it will be treated as a normal scrape in the index
               },
               team_id: teamId,
@@ -477,22 +482,6 @@ const processPrecrawlJob = async (token: string, job: Job) => {
             };
 
             const crawlId = uuidv7();
-
-            // robots disabled for now
-            // const crawler = crawlToCrawler(crawlId, sc, null);
-            // try {
-            //   sc.robots = await crawler.getRobotsTxt(
-            //     scrapeOptions.skipTlsVerification,
-            //   );
-            //   const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
-            //   if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
-            //     sc.crawlerOptions.delay = robotsCrawlDelay;
-            //   }
-            // } catch (e) {
-            //   logger.debug("Failed to get robots.txt (this is probably fine!)", {
-            //     error: e,
-            //   });
-            // }
 
             await crawlGroup.addGroup(
               crawlId,
