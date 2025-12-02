@@ -7,6 +7,17 @@ import { scrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "./engines";
 import { CostTracking } from "../../lib/cost-tracking";
 
+// Mock parseMarkdown but delegate to real implementation for other tests
+jest.mock("../../lib/html-to-markdown", () => {
+  const actual = jest.requireActual("../../lib/html-to-markdown");
+  return {
+    ...actual,
+    parseMarkdown: jest.fn(actual.parseMarkdown),
+  };
+});
+
+import { parseMarkdown } from "../../lib/html-to-markdown";
+
 const testEngines: (Engine | undefined)[] = [
   undefined,
   "fire-engine;chrome-cdp",
@@ -388,6 +399,31 @@ describe("Standalone scrapeURL tests", () => {
     }
   }, 60000);
 
+  it("Scrapes a XLSX file", async () => {
+    const out = await scrapeURL(
+      "test:scrape-xlsx",
+      "https://download.microsoft.com/download/1/4/E/14EDED28-6C58-4055-A65C-23B4DA81C4DE/Financial%20Sample.xlsx",
+      scrapeOptions.parse({}),
+      { teamId: "test" },
+      new CostTracking(),
+    );
+
+    // expect(out.logs.length).toBeGreaterThan(0);
+    expect(out.success).toBe(true);
+    if (out.success) {
+      expect(out.document.warning).toBeUndefined();
+      expect(out.document).toHaveProperty("metadata");
+      // sheet name
+      expect(out.document.markdown).toContain("Sheet1");
+      // headers
+      expect(out.document.markdown).toContain("Segment");
+      expect(out.document.markdown).toContain("Product");
+      expect(out.document.markdown).toContain("Country");
+      expect(out.document.metadata.statusCode).toBe(200);
+      expect(out.document.metadata.error).toBeUndefined();
+    }
+  }, 60000);
+
   it("LLM extract with prompt and schema", async () => {
     const out = await scrapeURL(
       "test:llm-extract-prompt-schema",
@@ -504,4 +540,35 @@ describe("Standalone scrapeURL tests", () => {
     },
     30000,
   );
+
+  it("Sitemap scrape should not convert to markdown", async () => {
+    const mockParseMarkdown = parseMarkdown as jest.MockedFunction<
+      typeof parseMarkdown
+    >;
+    mockParseMarkdown.mockClear();
+
+    const out = await scrapeURL(
+      "test:sitemap-no-markdown",
+      "https://www.scrapethissite.com/sitemap.xml",
+      scrapeOptions.parse({
+        formats: ["rawHtml"],
+      }),
+      { teamId: "sitemap" },
+      new CostTracking(),
+    );
+
+    expect(out.success).toBe(true);
+    if (out.success) {
+      expect(out.document.warning).toBeUndefined();
+      // Verify markdown conversion was never called
+      expect(mockParseMarkdown).not.toHaveBeenCalled();
+      // Sitemap scrapes should not have markdown field
+      expect(out.document).not.toHaveProperty("markdown");
+      // But should have rawHtml
+      expect(out.document).toHaveProperty("rawHtml");
+      expect(out.document.rawHtml).toBeTruthy();
+      expect(out.document).toHaveProperty("metadata");
+      expect(out.document.metadata.error).toBeUndefined();
+    }
+  }, 30000);
 });

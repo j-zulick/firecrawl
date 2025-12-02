@@ -17,6 +17,7 @@ import { BLOCKLISTED_URL_MESSAGE } from "../lib/strings";
 import { addDomainFrequencyJob } from "../services";
 import * as geoip from "geoip-country";
 import { isSelfHosted } from "../lib/deployment";
+import { validate as isUuid } from "uuid";
 
 export function checkCreditsMiddleware(
   _minimum?: number,
@@ -110,7 +111,7 @@ export function authMiddleware(
         // Use the URL from the request body if available
         const urlToTrack = (req.body as any)?.url;
         if (urlToTrack) {
-          await addDomainFrequencyJob(urlToTrack);
+          // await addDomainFrequencyJob(urlToTrack);
         }
       } catch (error) {
         // Log error without meta.logger since it's not available in this context
@@ -193,6 +194,10 @@ export function countryCheck(
   res: Response,
   next: NextFunction,
 ) {
+  if (req.acuc?.flags?.skipCountryCheck) {
+    return next();
+  }
+
   const couldBeRestricted =
     req.body &&
     (req.body.actions ||
@@ -241,6 +246,59 @@ export function countryCheck(
   }
 
   next();
+}
+
+export function isValidJobId(jobId: string | undefined): jobId is string {
+  return typeof jobId === "string" && isUuid(jobId);
+}
+
+export function validateJobIdParam(
+  req: Request<{ jobId?: string }>,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!isValidJobId(req.params.jobId)) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid job ID format. Job ID must be a valid UUID.",
+    });
+  }
+
+  next();
+}
+
+export function requestTimingMiddleware(version: string) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const startTime = new Date().getTime();
+
+    // Attach timing data to request
+    (req as any).requestTiming = {
+      startTime,
+      version,
+    };
+
+    // Override res.json to log timing when response is sent
+    const originalJson = res.json.bind(res);
+    res.json = function (body: any) {
+      const requestTime = new Date().getTime() - startTime;
+
+      // Only log for successful responses to avoid duplicate error logs
+      if (body?.success !== false) {
+        logger.info(`${version} request completed`, {
+          version,
+          path: req.path,
+          method: req.method,
+          startTime,
+          requestTime,
+          statusCode: res.statusCode,
+        });
+      }
+
+      return originalJson(body);
+    };
+
+    next();
+  };
 }
 
 export function wrap(

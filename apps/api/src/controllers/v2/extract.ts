@@ -1,3 +1,4 @@
+import { v7 as uuidv7 } from "uuid";
 import { Response } from "express";
 import {
   RequestWithAuth,
@@ -47,8 +48,8 @@ export async function extractController(
     }
   }
 
-  const extractId = crypto.randomUUID();
-
+  const extractId = uuidv7();
+  const createdAt = Date.now();
   _logger.info("Extract starting...", {
     request: req.body,
     originalRequest,
@@ -65,12 +66,13 @@ export async function extractController(
     subId: req.acuc?.sub_id,
     extractId,
     agent: req.body.agent,
+    createdAt,
   };
 
   await saveExtract(extractId, {
     id: extractId,
     team_id: req.auth.team_id,
-    createdAt: Date.now(),
+    createdAt,
     status: "processing",
     showSteps: req.body.__experimental_streamSteps,
     showLLMUsage: req.body.__experimental_llmUsage,

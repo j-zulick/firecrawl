@@ -13,7 +13,10 @@ type BlocklistBlob = {
 let blob: BlocklistBlob | null = null;
 
 export async function initializeBlocklist() {
-  if (process.env.USE_DB_AUTHENTICATION !== "true") {
+  if (
+    process.env.USE_DB_AUTHENTICATION !== "true" ||
+    process.env.DISABLE_BLOCKLIST === "true"
+  ) {
     blob = {
       blocklist: [],
       allowedKeywords: [],
@@ -25,8 +28,13 @@ export async function initializeBlocklist() {
     .from("blocklist")
     .select("*")
     .single();
-  if (error || !data) {
-    throw new Error("Error getting blocklist");
+
+  if (error) {
+    throw new Error(`Error getting blocklist: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error("Error getting blocklist: No data returned from database");
   }
   blob = data.data;
 }

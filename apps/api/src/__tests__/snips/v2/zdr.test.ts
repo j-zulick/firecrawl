@@ -1,4 +1,3 @@
-import { supabase_service } from "../../../services/supabase";
 import { getJobFromGCS } from "../../../lib/gcs-jobs";
 import {
   scrape,
@@ -8,272 +7,145 @@ import {
   zdrcleaner,
   idmux,
 } from "./lib";
-import { readFile, stat } from "node:fs/promises";
+import { describeIf, TEST_PRODUCTION } from "../lib";
+import {
+  getLogs,
+  expectJobRecordIsCleanedUp,
+  expectJobsArrayIsCleanedUp,
+  expectJobsAreFullyCleanedAfterZDRCleaner,
+} from "../zdr-helpers";
 
-const logIgnoreList = [
-  "Billing queue created",
-  "No billing operations to process in batch",
-  "billing batch queue",
-  "billing batch processing lock",
-  "Batch billing team",
-  "Successfully billed team",
-  "Billing batch processing",
-  "Processing batch of",
-  "Billing team",
-  "No jobs to process",
-  "nuqHealthCheck metrics",
-  "nuqGetJobToProcess metrics",
-  "Domain frequency processor",
-  "billing operation to batch queue",
-  "billing operation to queue",
-  "billing operation for team",
-  "Added billing operation to queue",
-  "Index RF inserter found",
-  "Redis connected",
-];
+describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
+  describe.each(["Team-scoped", "Request-scoped"] as const)("%s", scope => {
+    it("should clean up a scrape immediately", async () => {
+      let identity = await idmux({
+        name: `zdr/${scope}/scrape`,
+        credits: 10000,
+        flags: {
+          allowZDR: true,
+          ...(scope === "Team-scoped"
+            ? {
+                forceZDR: true,
+              }
+            : {}),
+        },
+      });
 
-if (process.env.TEST_SUITE_SELF_HOSTED) {
-  it("mocked", () => {
-    expect(true).toBe(true);
-  });
-} else {
-  async function getLogs() {
-    let logs: string;
-    try {
-      await stat("firecrawl.log");
-    } catch (e) {
-      console.warn("No firecrawl.log file found");
-      return [];
-    }
-    logs = await readFile("firecrawl.log", "utf8");
-    return logs
-      .split("\n")
-      .filter(
-        x => x.trim().length > 0 && !logIgnoreList.some(y => x.includes(y)),
+      const testId = crypto.randomUUID();
+      const scrape1 = await scrape(
+        {
+          url: "https://firecrawl.dev/?test=" + testId,
+          zeroDataRetention: scope === "Request-scoped" ? true : undefined,
+        },
+        identity,
       );
-  }
 
-  describe("Zero Data Retention", () => {
-    describe.each(["Team-scoped", "Request-scoped"] as const)("%s", scope => {
-      it("should clean up a scrape immediately", async () => {
-        let identity = await idmux({
-          name: `zdr/${scope}/scrape`,
-          credits: 10000,
-          flags: {
-            allowZDR: true,
-            ...(scope === "Team-scoped"
-              ? {
-                  forceZDR: true,
-                }
-              : {}),
-          },
-        });
+      const gcsJob = await getJobFromGCS(scrape1.metadata.scrapeId!);
+      expect(gcsJob).toBeNull();
 
-        const testId = crypto.randomUUID();
-        const scrape1 = await scrape(
-          {
-            url: "https://firecrawl.dev/?test=" + testId,
-            zeroDataRetention: scope === "Request-scoped" ? true : undefined,
-          },
+      await expectJobRecordIsCleanedUp(scrape1.metadata.scrapeId!);
+
+      if (scope === "Request-scoped") {
+        const status = await scrapeStatusRaw(
+          scrape1.metadata.scrapeId!,
           identity,
         );
 
-        const gcsJob = await getJobFromGCS(scrape1.metadata.scrapeId!);
-        expect(gcsJob).toBeNull();
+        expect(status.statusCode).toBe(404);
+      }
+    }, 60000);
 
-        const { data, error } = await supabase_service
-          .from("firecrawl_jobs")
-          .select("*")
-          .eq("job_id", scrape1.metadata.scrapeId!)
-          .limit(1);
+    it("should clean up a crawl", async () => {
+      const preLogs = await getLogs();
 
-        expect(error).toBeFalsy();
-        expect(data).toHaveLength(1);
+      let identity = await idmux({
+        name: `zdr/${scope}/crawl`,
+        credits: 10000,
+        flags: {
+          allowZDR: true,
+          ...(scope === "Team-scoped"
+            ? {
+                forceZDR: true,
+              }
+            : {}),
+        },
+      });
 
-        if (data && data.length === 1) {
-          const record = data[0];
-          expect(record.url).not.toContain("://"); // no url stored
-          expect(record.docs).toBeNull();
-          expect(record.page_options).toBeNull();
-          expect(record.crawler_options).toBeNull();
-        }
+      const crawl1 = await crawl(
+        {
+          url: "https://firecrawl.dev",
+          limit: 10,
+          zeroDataRetention: scope === "Request-scoped" ? true : undefined,
+        },
+        identity,
+      );
 
-        if (scope === "Request-scoped") {
-          const status = await scrapeStatusRaw(
-            scrape1.metadata.scrapeId!,
-            identity,
-          );
+      const postLogs = (await getLogs()).slice(preLogs.length);
 
-          expect(status.statusCode).toBe(404);
-        }
-      }, 60000);
+      if (postLogs.length > 0) {
+        console.warn("Logs changed during crawl", postLogs);
+      }
 
-      it("should clean up a crawl", async () => {
-        const preLogs = await getLogs();
+      expect(postLogs).toHaveLength(0);
 
-        let identity = await idmux({
-          name: `zdr/${scope}/crawl`,
-          credits: 10000,
-          flags: {
-            allowZDR: true,
-            ...(scope === "Team-scoped"
-              ? {
-                  forceZDR: true,
-                }
-              : {}),
-          },
-        });
+      await expectJobRecordIsCleanedUp(crawl1.id);
 
-        const crawl1 = await crawl(
-          {
-            url: "https://firecrawl.dev",
-            limit: 10,
-            zeroDataRetention: scope === "Request-scoped" ? true : undefined,
-          },
-          identity,
-        );
+      const jobs = await expectJobsArrayIsCleanedUp(crawl1.id);
 
-        const postLogs = (await getLogs()).slice(preLogs.length);
+      await zdrcleaner(identity.teamId!);
 
-        if (postLogs.length > 0) {
-          console.warn("Logs changed during crawl", postLogs);
-        }
+      await expectJobsAreFullyCleanedAfterZDRCleaner(
+        jobs,
+        scope,
+        identity,
+        scrapeStatusRaw,
+      );
+    }, 600000);
 
-        expect(postLogs).toHaveLength(0);
+    it("should clean up a batch scrape", async () => {
+      const preLogs = await getLogs();
 
-        const { data, error } = await supabase_service
-          .from("firecrawl_jobs")
-          .select("*")
-          .eq("job_id", crawl1.id)
-          .limit(1);
+      let identity = await idmux({
+        name: `zdr/${scope}/batch-scrape`,
+        credits: 10000,
+        flags: {
+          allowZDR: true,
+          ...(scope === "Team-scoped"
+            ? {
+                forceZDR: true,
+              }
+            : {}),
+        },
+      });
 
-        expect(error).toBeFalsy();
-        expect(data).toHaveLength(1);
+      const crawl1 = await batchScrape(
+        {
+          urls: ["https://firecrawl.dev", "https://mendable.ai"],
+          zeroDataRetention: scope === "Request-scoped" ? true : undefined,
+        },
+        identity,
+      );
 
-        if (data && data.length === 1) {
-          const record = data[0];
-          expect(record.url).not.toContain("://"); // no url stored
-          expect(record.docs).toBeNull();
-          expect(record.page_options).toBeNull();
-          expect(record.crawler_options).toBeNull();
-        }
+      const postLogs = (await getLogs()).slice(preLogs.length);
 
-        const { data: jobs, error: jobsError } = await supabase_service
-          .from("firecrawl_jobs")
-          .select("*")
-          .eq("crawl_id", crawl1.id);
+      if (postLogs.length > 0) {
+        console.warn("Logs changed during batch scrape", postLogs);
+      }
 
-        expect(jobsError).toBeFalsy();
-        expect((jobs ?? []).length).toBeGreaterThanOrEqual(1);
+      expect(postLogs).toHaveLength(0);
 
-        for (const job of jobs ?? []) {
-          expect(job.url).not.toContain("://"); // no url stored
-          expect(job.docs).toBeNull();
-          expect(job.page_options).toBeNull();
-          expect(job.crawler_options).toBeNull();
-          expect(typeof job.dr_clean_by).toBe("string"); // clean up happens async on a worker after expiry
+      await expectJobRecordIsCleanedUp(crawl1.id);
 
-          if (job.success) {
-            const gcsJob = await getJobFromGCS(job.job_id);
-            expect(gcsJob).not.toBeNull(); // clean up happens async on a worker after expiry
-          }
-        }
+      const jobs = await expectJobsArrayIsCleanedUp(crawl1.id, 2);
 
-        await zdrcleaner(identity.teamId!);
+      await zdrcleaner(identity.teamId!);
 
-        for (const job of jobs ?? []) {
-          const gcsJob = await getJobFromGCS(job.job_id);
-          expect(gcsJob).toBeNull();
-
-          if (scope === "Request-scoped") {
-            const status = await scrapeStatusRaw(job.job_id, identity);
-            expect(status.statusCode).toBe(404);
-          }
-        }
-      }, 600000);
-
-      it("should clean up a batch scrape", async () => {
-        const preLogs = await getLogs();
-
-        let identity = await idmux({
-          name: `zdr/${scope}/batch-scrape`,
-          credits: 10000,
-          flags: {
-            allowZDR: true,
-            ...(scope === "Team-scoped"
-              ? {
-                  forceZDR: true,
-                }
-              : {}),
-          },
-        });
-
-        const crawl1 = await batchScrape(
-          {
-            urls: ["https://firecrawl.dev", "https://mendable.ai"],
-            zeroDataRetention: scope === "Request-scoped" ? true : undefined,
-          },
-          identity,
-        );
-
-        const postLogs = (await getLogs()).slice(preLogs.length);
-
-        if (postLogs.length > 0) {
-          console.warn("Logs changed during batch scrape", postLogs);
-        }
-
-        expect(postLogs).toHaveLength(0);
-
-        const { data, error } = await supabase_service
-          .from("firecrawl_jobs")
-          .select("*")
-          .eq("job_id", crawl1.id)
-          .limit(1);
-
-        expect(error).toBeFalsy();
-        expect(data).toHaveLength(1);
-
-        if (data && data.length === 1) {
-          const record = data[0];
-          expect(record.url).not.toContain("://"); // no url stored
-          expect(record.docs).toBeNull();
-          expect(record.page_options).toBeNull();
-          expect(record.crawler_options).toBeNull();
-        }
-
-        const { data: jobs, error: jobsError } = await supabase_service
-          .from("firecrawl_jobs")
-          .select("*")
-          .eq("crawl_id", crawl1.id);
-
-        expect(jobsError).toBeFalsy();
-        expect((jobs ?? []).length).toBe(2);
-
-        for (const job of jobs ?? []) {
-          expect(job.url).not.toContain("://"); // no url stored
-          expect(job.docs).toBeNull();
-          expect(job.page_options).toBeNull();
-          expect(job.crawler_options).toBeNull();
-          expect(typeof job.dr_clean_by).toBe("string"); // clean up happens async on a worker after expiry
-
-          if (job.success) {
-            const gcsJob = await getJobFromGCS(job.job_id);
-            expect(gcsJob).not.toBeNull(); // clean up happens async on a worker after expiry
-          }
-        }
-
-        await zdrcleaner(identity.teamId!);
-
-        for (const job of jobs ?? []) {
-          const gcsJob = await getJobFromGCS(job.job_id);
-          expect(gcsJob).toBeNull();
-
-          if (scope === "Request-scoped") {
-            const status = await scrapeStatusRaw(job.job_id, identity);
-            expect(status.statusCode).toBe(404);
-          }
-        }
-      }, 600000);
-    });
+      await expectJobsAreFullyCleanedAfterZDRCleaner(
+        jobs,
+        scope,
+        identity,
+        scrapeStatusRaw,
+      );
+    }, 600000);
   });
-}
+});

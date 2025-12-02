@@ -131,8 +131,10 @@ async function supaCheckTeamCredits(
       autoRechargeThreshold,
       remainingCredits: chunk.remaining_credits,
     });
+
     const autoChargeResult = await autoCharge(chunk, autoRechargeThreshold);
-    if (autoChargeResult.success) {
+
+    if (autoChargeResult && autoChargeResult.success) {
       return {
         success: true,
         message: autoChargeResult.message,

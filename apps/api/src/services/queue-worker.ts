@@ -1,8 +1,9 @@
 import "dotenv/config";
+import { shutdownOtel } from "../otel";
 import "./sentry";
+import { setSentryServiceTag } from "./sentry";
 import * as Sentry from "@sentry/node";
 import {
-  getExtractQueue,
   getDeepResearchQueue,
   getGenerateLlmsTxtQueue,
   getRedisConnection,
@@ -10,35 +11,21 @@ import {
 import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger } from "../lib/logger";
 import systemMonitor from "./system-monitor";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { configDotenv } from "dotenv";
-import {
-  ExtractResult,
-  performExtraction,
-} from "../lib/extract/extraction-service";
-import { updateExtract } from "../lib/extract/extract-redis";
 import { updateDeepResearch } from "../lib/deep-research/deep-research-redis";
 import { performDeepResearch } from "../lib/deep-research/deep-research-service";
 import { performGenerateLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-service";
 import { updateGeneratedLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-redis";
-import { performExtraction_F0 } from "../lib/extract/fire-0/extraction-service-f0";
-import { createWebhookSender, WebhookEvent } from "./webhook";
 import Express from "express";
-import http from "http";
-import https from "https";
-import { cacheableLookup } from "../scraper/scrapeURL/lib/cacheableLookup";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { LangfuseExporter } from "langfuse-vercel";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
-import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
-import { resourceFromAttributes } from "@opentelemetry/resources";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { BullMQOtel } from "bullmq-otel";
-import { pathToFileURL } from "url";
-import { getErrorContactMessage } from "../lib/deployment";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
+import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
+import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
+import { finishCrawlSuper } from "./worker/crawl-logic";
+import { getCrawl } from "../lib/crawl-redis";
+import { TransportableError } from "../lib/error";
 
 configDotenv();
 
@@ -56,166 +43,6 @@ const connectionMonitorInterval =
 const gotJobInterval = Number(process.env.CONNECTION_MONITOR_INTERVAL) || 20;
 
 const runningJobs: Set<string> = new Set();
-
-// Install cacheable lookup for all other requests
-cacheableLookup.install(http.globalAgent);
-cacheableLookup.install(https.globalAgent);
-
-const shouldOtel =
-  process.env.LANGFUSE_PUBLIC_KEY || process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-const otelSdk = shouldOtel
-  ? new NodeSDK({
-      resource: resourceFromAttributes({
-        [ATTR_SERVICE_NAME]: "firecrawl-worker",
-      }),
-      spanProcessors: [
-        ...(process.env.LANGFUSE_PUBLIC_KEY
-          ? [new BatchSpanProcessor(new LangfuseExporter())]
-          : []),
-        ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT
-          ? [
-              new BatchSpanProcessor(
-                new OTLPTraceExporter({
-                  url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
-                }),
-              ),
-            ]
-          : []),
-      ],
-      instrumentations: [getNodeAutoInstrumentations()],
-    })
-  : null;
-
-if (otelSdk) {
-  otelSdk.start();
-}
-
-const processExtractJobInternal = async (
-  token: string,
-  job: Job & { id: string },
-) => {
-  const logger = _logger.child({
-    module: "extract-worker",
-    method: "processJobInternal",
-    jobId: job.id,
-    extractId: job.data.extractId,
-    teamId: job.data?.teamId ?? undefined,
-  });
-
-  const extendLockInterval = setInterval(async () => {
-    logger.info(`🔄 Worker extending lock on job ${job.id}`);
-    await job.extendLock(token, jobLockExtensionTime);
-  }, jobLockExtendInterval);
-
-  const sender = await createWebhookSender({
-    teamId: job.data.teamId,
-    jobId: job.data.extractId,
-    webhook: job.data.request.webhook,
-    v0: false,
-  });
-
-  try {
-    if (sender) {
-      sender.send(WebhookEvent.EXTRACT_STARTED, {
-        success: true,
-      });
-    }
-
-    let result: ExtractResult | null = null;
-
-    const model = job.data.request.agent?.model;
-    if (
-      job.data.request.agent &&
-      model &&
-      model.toLowerCase().includes("fire-1")
-    ) {
-      result = await performExtraction(job.data.extractId, {
-        request: job.data.request,
-        teamId: job.data.teamId,
-        subId: job.data.subId,
-        apiKeyId: job.data.apiKeyId,
-      });
-    } else {
-      result = await performExtraction_F0(job.data.extractId, {
-        request: job.data.request,
-        teamId: job.data.teamId,
-        subId: job.data.subId,
-        apiKeyId: job.data.apiKeyId,
-      });
-    }
-    // result = await performExtraction_F0(job.data.extractId, {
-    //   request: job.data.request,
-    //   teamId: job.data.teamId,
-    //   subId: job.data.subId,
-    // });
-
-    if (result && result.success) {
-      // Move job to completed state in Redis
-      await job.moveToCompleted(result, token, false);
-
-      if (sender) {
-        sender.send(WebhookEvent.EXTRACT_COMPLETED, {
-          success: true,
-          data: [result],
-        });
-      }
-
-      return result;
-    } else {
-      // throw new Error(result.error || "Unknown error during extraction");
-
-      await job.moveToCompleted(result, token, false);
-      await updateExtract(job.data.extractId, {
-        error: result?.error ?? getErrorContactMessage(job.data.extractId),
-      });
-
-      if (sender) {
-        sender.send(WebhookEvent.EXTRACT_FAILED, {
-          success: false,
-          error: result?.error ?? getErrorContactMessage(job.data.extractId),
-        });
-      }
-
-      return result;
-    }
-  } catch (error) {
-    logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
-
-    Sentry.captureException(error, {
-      data: {
-        job: job.id,
-      },
-    });
-
-    try {
-      // Move job to failed state in Redis
-      await job.moveToFailed(error, token, false);
-    } catch (e) {
-      logger.log("Failed to move job to failed state in Redis", { error });
-    }
-
-    await updateExtract(job.data.extractId, {
-      status: "failed",
-      error: error.error ?? error ?? getErrorContactMessage(job.data.extractId),
-    });
-
-    if (sender) {
-      sender.send(WebhookEvent.EXTRACT_FAILED, {
-        success: false,
-        error:
-          (error as any)?.message ?? getErrorContactMessage(job.data.extractId),
-      });
-    }
-
-    return {
-      success: false,
-      error: error.error ?? error ?? getErrorContactMessage(job.data.extractId),
-    };
-    // throw error;
-  } finally {
-    clearInterval(extendLockInterval);
-  }
-};
 
 const processDeepResearchJobInternal = async (
   token: string,
@@ -272,11 +99,14 @@ const processDeepResearchJobInternal = async (
   } catch (error) {
     logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
 
-    Sentry.captureException(error, {
-      data: {
-        job: job.id,
-      },
-    });
+    // Filter out TransportableErrors (flow control)
+    if (!(error instanceof TransportableError)) {
+      Sentry.captureException(error, {
+        data: {
+          job: job.id,
+        },
+      });
+    }
 
     try {
       // Move job to failed state in Redis
@@ -347,11 +177,14 @@ const processGenerateLlmsTxtJobInternal = async (
   } catch (error) {
     logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
 
-    Sentry.captureException(error, {
-      data: {
-        job: job.id,
-      },
-    });
+    // Filter out TransportableErrors (flow control)
+    if (!(error instanceof TransportableError)) {
+      Sentry.captureException(error, {
+        data: {
+          job: job.id,
+        },
+      });
+    }
 
     try {
       await job.moveToFailed(error, token, false);
@@ -370,16 +203,46 @@ const processGenerateLlmsTxtJobInternal = async (
   }
 };
 
+async function processFinishCrawlJobInternal(_job: NuQJob) {
+  const job = await crawlFinishedQueue.getJob(_job.id);
+
+  if (!job) {
+    throw new Error("crawlFinish job disappeared");
+  }
+
+  if (!job.groupId) {
+    throw new Error("crawlFinish job with no groupId");
+  }
+
+  if (!job.ownerId) {
+    throw new Error("crawlFinish job with no ownerId");
+  }
+
+  const sc = await getCrawl(job.groupId);
+
+  if (!sc) {
+    throw new Error("crawlFinish job with sc expired");
+  }
+
+  const anyJob = await scrapeQueue.getGroupAnyJob(job.groupId, job.ownerId);
+
+  if (!anyJob) {
+    throw new Error("crawlFinish couldn't find anyJob");
+  }
+
+  await finishCrawlSuper(anyJob);
+}
+
 let isShuttingDown = false;
 let isWorkerStalled = false;
 
 process.on("SIGINT", () => {
-  console.log("Received SIGTERM. Shutting down gracefully...");
+  _logger.debug("Received SIGINT. Shutting down gracefully...");
   isShuttingDown = true;
 });
 
 process.on("SIGTERM", () => {
-  console.log("Received SIGTERM. Shutting down gracefully...");
+  _logger.debug("Received SIGTERM. Shutting down gracefully...");
   isShuttingDown = true;
 });
 
@@ -405,10 +268,10 @@ const workerFun = async (
 
   while (true) {
     if (isShuttingDown) {
-      console.log("No longer accepting new jobs. SIGINT");
+      _logger.info("No longer accepting new jobs. SIGINT");
       break;
     }
-    const token = uuidv4();
+    const token = uuidv7();
     const canAcceptConnection = await monitor.acceptConnection();
     if (!canAcceptConnection) {
       console.log("Can't accept connection due to RAM/CPU load");
@@ -450,6 +313,93 @@ const workerFun = async (
       await sleep(gotJobInterval);
     } else {
       await sleep(connectionMonitorInterval);
+    }
+  }
+};
+
+const crawlFinishWorker = async () => {
+  const __logger = _logger.child({
+    module: "extract-worker",
+    method: "crawlFinishWorker",
+  });
+
+  let noJobTimeout = 1500;
+
+  while (!isShuttingDown) {
+    const job = await crawlFinishedQueue.getJobToProcess();
+
+    if (job === null) {
+      __logger.info("No jobs to process", { module: "nuq/metrics" });
+      await new Promise(resolve => setTimeout(resolve, noJobTimeout));
+      if (!process.env.NUQ_RABBITMQ_URL) {
+        noJobTimeout = Math.min(noJobTimeout * 2, 10000);
+      }
+      continue;
+    }
+
+    noJobTimeout = 500;
+
+    const logger = __logger.child({
+      zeroDataRetention: job.data?.zeroDataRetention ?? false,
+      crawlId: job.groupId,
+    });
+
+    logger.info("Acquired job");
+
+    const lockRenewInterval = setInterval(async () => {
+      logger.info("Renewing lock");
+      if (!(await crawlFinishedQueue.renewLock(job.id, job.lock!, logger))) {
+        logger.warn("Failed to renew lock");
+        clearInterval(lockRenewInterval);
+        return;
+      }
+      logger.info("Renewed lock");
+    }, 15000);
+
+    let processResult:
+      | {
+          ok: true;
+          data: Awaited<ReturnType<typeof processFinishCrawlJobInternal>>;
+        }
+      | { ok: false; error: any };
+
+    try {
+      processResult = {
+        ok: true,
+        data: await processFinishCrawlJobInternal(job),
+      };
+    } catch (error) {
+      processResult = { ok: false, error };
+    }
+
+    clearInterval(lockRenewInterval);
+
+    if (processResult.ok) {
+      if (
+        !(await crawlFinishedQueue.jobFinish(
+          job.id,
+          job.lock!,
+          processResult.data,
+          logger,
+        ))
+      ) {
+        logger.warn("Could not update job status");
+      }
+    } else {
+      if (
+        !(await crawlFinishedQueue.jobFail(
+          job.id,
+          job.lock!,
+          processResult.error instanceof Error
+            ? processResult.error.message
+            : typeof processResult.error === "string"
+              ? processResult.error
+              : JSON.stringify(processResult.error),
+          logger,
+        ))
+      ) {
+        logger.warn("Could not update job status");
+      }
     }
   }
 };
@@ -497,23 +447,30 @@ app.listen(workerPort, () => {
 });
 
 (async () => {
-  await initializeBlocklist().catch(e => { _logger.error("Failed to initialize blocklist", { error: e }); process.exit(1); });
+  setSentryServiceTag("queue-worker");
+
+  await initializeBlocklist().catch(e => {
+    _logger.error("Failed to initialize blocklist", { error: e });
+    process.exit(1);
+  });
+
+  initializeEngineForcing();
 
   await Promise.all([
-    workerFun(getExtractQueue(), processExtractJobInternal),
     workerFun(getDeepResearchQueue(), processDeepResearchJobInternal),
     workerFun(getGenerateLlmsTxtQueue(), processGenerateLlmsTxtJobInternal),
+    crawlFinishWorker(),
   ]);
 
-  console.log("All workers exited. Waiting for all jobs to finish...");
+  _logger.info("All workers exited. Waiting for all jobs to finish...");
 
   while (runningJobs.size > 0) {
     await new Promise(resolve => setTimeout(resolve, 500));
   }
 
-  console.log("All jobs finished. Worker out!");
-  if (otelSdk) {
-    await otelSdk.shutdown();
-  }
-  process.exit(0);
+  _logger.info("All jobs finished. Shutting down...");
+  shutdownOtel().finally(() => {
+    _logger.debug("OTEL shutdown");
+    process.exit(0);
+  });
 })();

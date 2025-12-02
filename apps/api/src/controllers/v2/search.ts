@@ -9,7 +9,7 @@ import {
   TeamFlags,
 } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { logJob } from "../../services/logging/log_job";
 import { search } from "../../search/v2";
@@ -51,15 +51,17 @@ async function startScrapeJob(
     scrapeOptions: ScrapeOptions;
     bypassBilling?: boolean;
     apiKeyId: number | null;
+    zeroDataRetention?: boolean;
   },
   logger: Logger,
   flags: TeamFlags,
   directToBullMQ: boolean = false,
   isSearchPreview: boolean = false,
 ): Promise<string> {
-  const jobId = uuidv4();
+  const jobId = uuidv7();
 
-  const zeroDataRetention = flags?.forceZDR ?? false;
+  const zeroDataRetention =
+    options.zeroDataRetention ?? flags?.forceZDR ?? false;
 
   logger.info("Adding scrape job", {
     scrapeId: jobId,
@@ -99,6 +101,7 @@ async function startScrapeJob(
     jobId,
     jobPriority,
     directToBullMQ,
+    true,
   );
 
   return jobId;
@@ -113,6 +116,7 @@ async function scrapeSearchResult(
     scrapeOptions: ScrapeOptions;
     bypassBilling?: boolean;
     apiKeyId: number | null;
+    zeroDataRetention?: boolean;
   },
   logger: Logger,
   flags: TeamFlags,
@@ -200,7 +204,12 @@ export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
   res: Response<SearchResponse>,
 ) {
-  const jobId = uuidv4();
+  // Get timing data from middleware (includes all middleware processing time)
+  const middlewareStartTime =
+    (req as any).requestTiming?.startTime || new Date().getTime();
+  const controllerStartTime = new Date().getTime();
+
+  const jobId = uuidv7();
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
@@ -217,7 +226,7 @@ export async function searchController(
     });
   }
 
-  const startTime = new Date().getTime();
+  const middlewareTime = controllerStartTime - middlewareStartTime;
   const isSearchPreview =
     process.env.SEARCH_PREVIEW_TOKEN !== undefined &&
     process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
@@ -228,6 +237,7 @@ export async function searchController(
     req.body = searchRequestSchema.parse(req.body);
 
     logger = logger.child({
+      version: "v2",
       query: req.body.query,
       origin: req.body.origin,
     });
@@ -242,6 +252,10 @@ export async function searchController(
     // Extract unique types from sources for the search function
     // After transformation, sources is always an array of objects
     const searchTypes = [...new Set(req.body.sources.map((s: any) => s.type))];
+
+    const isZDR = req.body.enterprise?.includes("zdr");
+    const isAnon = req.body.enterprise?.includes("anon");
+    const isZDROrAnon = isZDR || isAnon;
 
     // Build search query with category filters
     const { query: searchQuery, categoryMap } = buildSearchQuery(
@@ -260,6 +274,7 @@ export async function searchController(
       country: req.body.country,
       location: req.body.location,
       type: searchTypes,
+      enterprise: req.body.enterprise,
     })) as SearchV2Response;
 
     // Add category labels to web results
@@ -314,8 +329,8 @@ export async function searchController(
     const isAsyncScraping = req.body.asyncScraping && shouldScrape;
 
     if (!shouldScrape) {
-      // No scraping - just count results for billing
-      credits_billed = totalResultsCount;
+      const creditsPerTenResults = isZDR ? 10 : 2;
+      credits_billed = Math.ceil(totalResultsCount / 10) * creditsPerTenResults;
     } else {
       // Common setup for both async and sync scraping
       logger.info(
@@ -330,6 +345,7 @@ export async function searchController(
         scrapeOptions: req.body.scrapeOptions,
         bypassBilling: !isAsyncScraping, // Async mode bills per job, sync mode bills manually
         apiKeyId: req.acuc?.api_key_id ?? null,
+        zeroDataRetention: isZDROrAnon,
       };
 
       const directToBullMQ = (req.acuc?.price_credits ?? 0) <= 3000;
@@ -465,45 +481,76 @@ export async function searchController(
           );
         }
 
-        // Don't bill here - let each job bill itself when it completes
-        credits_billed = allJobIds.length; // Just for reporting, not billing
+        const creditsPerTenResults = isZDR ? 10 : 2;
+        credits_billed =
+          Math.ceil(totalResultsCount / 10) * creditsPerTenResults;
+
+        // Bill for search results now (scrape jobs will bill themselves when they complete)
+        if (!isSearchPreview) {
+          billTeam(
+            req.auth.team_id,
+            req.acuc?.sub_id ?? undefined,
+            credits_billed,
+            req.acuc?.api_key_id ?? null,
+          ).catch(error => {
+            logger.error(
+              `Failed to bill team ${req.acuc?.sub_id} for ${credits_billed} credits: ${error}`,
+            );
+          });
+        }
 
         const endTime = new Date().getTime();
-        const timeTakenInSeconds = (endTime - startTime) / 1000;
+        const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
         logger.info("Logging job (async scraping)", {
           num_docs: credits_billed,
           time_taken: timeTakenInSeconds,
           scrapeIds,
         });
-
-        logJob(
-          {
-            job_id: jobId,
-            success: true,
-            num_docs:
-              (searchResponse.web?.length ?? 0) +
-              (searchResponse.images?.length ?? 0) +
-              (searchResponse.news?.length ?? 0),
-            docs: [searchResponse],
-            time_taken: timeTakenInSeconds,
-            team_id: req.auth.team_id,
-            mode: "search",
-            url: req.body.query,
-            scrapeOptions: req.body.scrapeOptions,
-            crawlerOptions: {
-              ...req.body,
-              query: undefined,
-              scrapeOptions: undefined,
+        if (!isZDROrAnon) {
+          logJob(
+            {
+              job_id: jobId,
+              success: true,
+              num_docs:
+                (searchResponse.web?.length ?? 0) +
+                (searchResponse.images?.length ?? 0) +
+                (searchResponse.news?.length ?? 0),
+              docs: [searchResponse],
+              time_taken: timeTakenInSeconds,
+              team_id: req.auth.team_id,
+              mode: "search",
+              url: req.body.query,
+              scrapeOptions: req.body.scrapeOptions,
+              crawlerOptions: {
+                ...req.body,
+                query: undefined,
+                scrapeOptions: undefined,
+              },
+              origin: req.body.origin,
+              integration: req.body.integration,
+              credits_billed,
+              zeroDataRetention: false,
             },
-            origin: req.body.origin,
-            integration: req.body.integration,
-            credits_billed,
-            zeroDataRetention: false,
-          },
-          false,
-          isSearchPreview,
-        );
+            false,
+            isSearchPreview,
+          );
+        }
+
+        // Log final timing information for async mode
+        const totalRequestTime = new Date().getTime() - middlewareStartTime;
+        const controllerTime = new Date().getTime() - controllerStartTime;
+        logger.info("Search completed successfully (async)", {
+          version: "v2",
+          jobId,
+          middlewareStartTime,
+          controllerStartTime,
+          middlewareTime,
+          controllerTime,
+          totalRequestTime,
+          creditsUsed: credits_billed,
+          scrapeful: shouldScrape,
+        });
 
         return res.status(200).json({
           success: true,
@@ -566,7 +613,7 @@ export async function searchController(
               {
                 teamId: req.auth.team_id,
                 bypassBilling: true,
-                zeroDataRetention: false,
+                zeroDataRetention: isZDROrAnon,
               },
               docWithCost.document,
               docWithCost.costTracking,
@@ -577,10 +624,16 @@ export async function searchController(
 
         try {
           const individualCredits = await Promise.all(creditPromises);
-          credits_billed = individualCredits.reduce(
+          const scrapeCredits = individualCredits.reduce(
             (sum, credit) => sum + credit,
             0,
           );
+
+          const creditsPerTenResults = isZDR ? 10 : 2;
+          const searchCredits =
+            Math.ceil(totalResultsCount / 10) * creditsPerTenResults;
+
+          credits_billed = scrapeCredits + searchCredits;
         } catch (error) {
           logger.error("Error calculating credits for billing", { error });
           credits_billed = totalResultsCount;
@@ -612,41 +665,59 @@ export async function searchController(
     }
 
     const endTime = new Date().getTime();
-    const timeTakenInSeconds = (endTime - startTime) / 1000;
+    const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
-    logger.info("Logging job", {
-      num_docs: credits_billed,
-      time_taken: timeTakenInSeconds,
-    });
-
-    logJob(
-      {
-        job_id: jobId,
-        success: true,
-        num_docs:
-          (searchResponse.web?.length ?? 0) +
-          (searchResponse.images?.length ?? 0) +
-          (searchResponse.news?.length ?? 0),
-        docs: [searchResponse],
+    if (!isZDROrAnon) {
+      logger.info("Logging job", {
+        num_docs: credits_billed,
         time_taken: timeTakenInSeconds,
-        team_id: req.auth.team_id,
-        mode: "search",
-        url: req.body.query,
-        scrapeOptions: req.body.scrapeOptions,
-        crawlerOptions: {
-          ...req.body,
-          query: undefined,
-          scrapeOptions: undefined,
-          asyncScraping: isAsyncScraping,
+      });
+      logJob(
+        {
+          job_id: jobId,
+          success: true,
+          num_docs:
+            (searchResponse.web?.length ?? 0) +
+            (searchResponse.images?.length ?? 0) +
+            (searchResponse.news?.length ?? 0),
+          docs: [searchResponse],
+          time_taken: timeTakenInSeconds,
+          team_id: req.auth.team_id,
+          mode: "search",
+          url: req.body.query,
+          scrapeOptions: req.body.scrapeOptions,
+          crawlerOptions: {
+            ...req.body,
+            query: undefined,
+            scrapeOptions: undefined,
+            asyncScraping: isAsyncScraping,
+          },
+          origin: req.body.origin,
+          integration: req.body.integration,
+          credits_billed,
+          zeroDataRetention: false, // not supported
         },
-        origin: req.body.origin,
-        integration: req.body.integration,
-        credits_billed,
-        zeroDataRetention: false, // not supported
-      },
-      false,
-      isSearchPreview,
-    );
+        false,
+        isSearchPreview,
+      );
+    }
+
+    // Log final timing information
+    const totalRequestTime = new Date().getTime() - middlewareStartTime;
+    const controllerTime = new Date().getTime() - controllerStartTime;
+
+    logger.info("Request metrics", {
+      version: "v2",
+      jobId,
+      mode: "search",
+      middlewareStartTime,
+      controllerStartTime,
+      middlewareTime,
+      controllerTime,
+      totalRequestTime,
+      creditsUsed: credits_billed,
+      scrapeful: shouldScrape,
+    });
 
     // For sync scraping or no scraping, don't include scrapeIds
     return res.status(200).json({
@@ -673,7 +744,10 @@ export async function searchController(
     }
 
     Sentry.captureException(error);
-    logger.error("Unhandled error occurred in search", { error });
+    logger.error("Unhandled error occurred in search", {
+      version: "v2",
+      error,
+    });
     return res.status(500).json({
       success: false,
       error: error.message,

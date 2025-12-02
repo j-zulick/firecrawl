@@ -18,6 +18,7 @@ import { useIndex } from "../../../services";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { getPDFMaxPages } from "../../../controllers/v2/types";
 import { PdfMetadata } from "@mendable/firecrawl-rs";
+import { BrandingProfile } from "../../../types/branding";
 
 export type Engine =
   | "fire-engine;chrome-cdp"
@@ -75,6 +76,7 @@ const featureFlags = [
   "skipTlsVerification",
   "useFastMode",
   "stealthProxy",
+  "branding",
   "disableAdblock",
 ] as const;
 
@@ -97,6 +99,7 @@ const featureFlagOptions: {
   mobile: { priority: 10 },
   skipTlsVerification: { priority: 10 },
   stealthProxy: { priority: 20 },
+  branding: { priority: 20 }, // Requires CDP executeJavascript
   disableAdblock: { priority: 10 },
 } as const;
 
@@ -118,6 +121,8 @@ export type EngineScrapeResult = {
     }[];
     pdfs: string[];
   };
+
+  branding?: BrandingProfile;
 
   pdfMetadata?: PdfMetadata;
 
@@ -203,6 +208,7 @@ const engineOptions: {
       skipTlsVerification: true,
       useFastMode: true,
       stealthProxy: false,
+      branding: false,
       disableAdblock: true,
     },
     quality: 1000, // index should always be tried first
@@ -221,6 +227,7 @@ const engineOptions: {
       skipTlsVerification: true,
       useFastMode: false,
       stealthProxy: false,
+      branding: true,
       disableAdblock: false,
     },
     quality: 50,
@@ -239,6 +246,7 @@ const engineOptions: {
       skipTlsVerification: true,
       useFastMode: false,
       stealthProxy: false,
+      branding: true,
       disableAdblock: false,
     },
     quality: 45,
@@ -257,6 +265,7 @@ const engineOptions: {
       skipTlsVerification: true,
       useFastMode: true,
       stealthProxy: false,
+      branding: false,
       disableAdblock: false,
     },
     quality: -1,
@@ -275,6 +284,7 @@ const engineOptions: {
       skipTlsVerification: true,
       useFastMode: false,
       stealthProxy: true,
+      branding: true,
       disableAdblock: false,
     },
     quality: -2,
@@ -293,6 +303,7 @@ const engineOptions: {
       skipTlsVerification: true,
       useFastMode: false,
       stealthProxy: true,
+      branding: true,
       disableAdblock: false,
     },
     quality: -5,
@@ -311,6 +322,7 @@ const engineOptions: {
       skipTlsVerification: false,
       useFastMode: false,
       stealthProxy: false,
+      branding: false,
       disableAdblock: true,
     },
     quality: 40,
@@ -329,6 +341,7 @@ const engineOptions: {
       skipTlsVerification: false,
       useFastMode: false,
       stealthProxy: true,
+      branding: false,
       disableAdblock: true,
     },
     quality: -10,
@@ -347,6 +360,7 @@ const engineOptions: {
       skipTlsVerification: true,
       useFastMode: false,
       stealthProxy: false,
+      branding: false,
       disableAdblock: false,
     },
     quality: 20,
@@ -365,6 +379,7 @@ const engineOptions: {
       skipTlsVerification: true,
       useFastMode: true,
       stealthProxy: false,
+      branding: false,
       disableAdblock: false,
     },
     quality: 10,
@@ -383,6 +398,7 @@ const engineOptions: {
       skipTlsVerification: true,
       useFastMode: true,
       stealthProxy: true,
+      branding: false,
       disableAdblock: false,
     },
     quality: -15,
@@ -401,6 +417,7 @@ const engineOptions: {
       skipTlsVerification: true,
       useFastMode: true,
       stealthProxy: false,
+      branding: false,
       disableAdblock: false,
     },
     quality: 5,
@@ -419,6 +436,7 @@ const engineOptions: {
       skipTlsVerification: false,
       useFastMode: true,
       stealthProxy: true, // kinda...
+      branding: false,
       disableAdblock: true,
     },
     quality: -20,
@@ -437,6 +455,7 @@ const engineOptions: {
       skipTlsVerification: false,
       useFastMode: true,
       stealthProxy: true, // kinda...
+      branding: false,
       disableAdblock: true,
     },
     quality: -20,
@@ -447,8 +466,8 @@ export function shouldUseIndex(meta: Meta) {
   return (
     useIndex &&
     process.env.FIRECRAWL_INDEX_WRITE_ONLY !== "true" &&
-    meta.options.waitFor === 0 &&
     !hasFormatOfType(meta.options.formats, "changeTracking") &&
+    !hasFormatOfType(meta.options.formats, "branding") &&
     // Skip index if a non-default PDF maxPages is specified
     getPDFMaxPages(meta.options.parsers) === undefined &&
     meta.options.maxAge !== 0 &&
@@ -554,6 +573,17 @@ export function buildFallbackList(meta: Meta): {
     selectedEngines,
   });
 
+  if (meta.featureFlags.has("branding")) {
+    const hasCDPEngine = selectedEngines.some(
+      f => !f.unsupportedFeatures.has("branding"),
+    );
+    if (!hasCDPEngine) {
+      throw new Error(
+        "Branding extraction requires Chrome CDP (fire-engine). ",
+      );
+    }
+  }
+
   return selectedEngines;
 }
 
@@ -566,9 +596,16 @@ export async function scrapeURLWithEngine(
     method: fn.name ?? "scrapeURLWithEngine",
     engine,
   });
+
+  const featureFlags = new Set(meta.featureFlags);
+  if (engineOptions[engine].features.stealthProxy) {
+    featureFlags.add("stealthProxy");
+  }
+
   const _meta = {
     ...meta,
     logger,
+    featureFlags,
   };
 
   return await fn(_meta);

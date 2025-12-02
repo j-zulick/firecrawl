@@ -1,3 +1,4 @@
+import { v7 as uuidv7 } from "uuid";
 import { Request, Response } from "express";
 import {
   RequestWithAuth,
@@ -110,6 +111,8 @@ export async function extractController(
       isUrlBlocked(url, req.acuc?.flags ?? null),
     ) ?? [];
 
+  const createdAt = Date.now();
+
   if (invalidURLs.length > 0 && !req.body.ignoreInvalidURLs) {
     if (!res.headersSent) {
       return res.status(403).json({
@@ -119,7 +122,7 @@ export async function extractController(
     }
   }
 
-  const extractId = crypto.randomUUID();
+  const extractId = uuidv7();
 
   _logger.info("Extract starting...", {
     request: req.body,
@@ -149,6 +152,7 @@ export async function extractController(
     extractId,
     agent: req.body.agent,
     apiKeyId: req.acuc?.api_key_id ?? null,
+    createdAt,
   };
 
   if (
@@ -164,7 +168,7 @@ export async function extractController(
   await saveExtract(extractId, {
     id: extractId,
     team_id: req.auth.team_id,
-    createdAt: Date.now(),
+    createdAt,
     status: "processing",
     showSteps: req.body.__experimental_streamSteps,
     showLLMUsage: req.body.__experimental_llmUsage,

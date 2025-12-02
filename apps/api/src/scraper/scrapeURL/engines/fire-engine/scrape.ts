@@ -73,6 +73,8 @@ export type FireEngineScrapeRequestTLSClient = {
 };
 
 const successSchema = z.object({
+  jobId: z.string().optional(), // only defined if we are deferring deletion
+
   timeTaken: z.number(),
   content: z.string(),
   url: z.string().optional(),
@@ -262,7 +264,10 @@ export async function fireEngineScrape<
       (status.error.includes("Element") ||
         status.error.includes("Javascript execution failed"))
     ) {
-      throw new ActionError(status.error.split("Error: ")[1]);
+      const errorMessage = status.error.startsWith("Error: ")
+        ? status.error.substring(7)
+        : status.error;
+      throw new ActionError(errorMessage);
     } else if (
       typeof status.error === "string" &&
       status.error.includes("proxies available for")

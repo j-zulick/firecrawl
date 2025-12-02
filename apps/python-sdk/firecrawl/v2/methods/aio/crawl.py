@@ -87,9 +87,11 @@ async def start_crawl(client: AsyncHttpClient, request: CrawlRequest) -> CrawlRe
 
 
 async def get_crawl_status(
-    client: AsyncHttpClient, 
+    client: AsyncHttpClient,
     job_id: str,
-    pagination_config: Optional[PaginationConfig] = None
+    pagination_config: Optional[PaginationConfig] = None,
+    *,
+    request_timeout: Optional[float] = None,
 ) -> CrawlJob:
     """
     Get the status of a crawl job.
@@ -98,6 +100,9 @@ async def get_crawl_status(
         client: Async HTTP client instance
         job_id: ID of the crawl job
         pagination_config: Optional configuration for pagination limits
+        request_timeout: Timeout (in seconds) for each individual HTTP request. When auto-pagination 
+            is enabled (default) and there are multiple pages of results, this timeout applies to 
+            each page request separately, not to the entire operation
         
     Returns:
         CrawlJob with job information
@@ -105,7 +110,7 @@ async def get_crawl_status(
     Raises:
         Exception: If the status check fails
     """
-    response = await client.get(f"/v2/crawl/{job_id}")
+    response = await client.get(f"/v2/crawl/{job_id}", timeout=request_timeout)
     if response.status_code >= 400:
         handle_response_error(response, "get crawl status")
     body = response.json()
@@ -120,10 +125,11 @@ async def get_crawl_status(
         auto_paginate = pagination_config.auto_paginate if pagination_config else True
         if auto_paginate and body.get("next"):
             documents = await _fetch_all_pages_async(
-                client, 
-                body.get("next"), 
-                documents, 
-                pagination_config
+                client,
+                body.get("next"),
+                documents,
+                pagination_config,
+                request_timeout=request_timeout,
             )
         
         return CrawlJob(
@@ -142,7 +148,9 @@ async def _fetch_all_pages_async(
     client: AsyncHttpClient,
     next_url: str,
     initial_documents: List[Document],
-    pagination_config: Optional[PaginationConfig] = None
+    pagination_config: Optional[PaginationConfig] = None,
+    *,
+    request_timeout: Optional[float] = None,
 ) -> List[Document]:
     """
     Fetch all pages of crawl results asynchronously.
@@ -152,6 +160,7 @@ async def _fetch_all_pages_async(
         next_url: URL for the next page
         initial_documents: Documents from the first page
         pagination_config: Optional configuration for pagination limits
+        request_timeout: Optional timeout (in seconds) for the underlying HTTP request
         
     Returns:
         List of all documents from all pages
@@ -176,7 +185,7 @@ async def _fetch_all_pages_async(
             break
         
         # Fetch next page
-        response = await client.get(current_url)
+        response = await client.get(current_url, timeout=request_timeout)
         
         if response.status_code >= 400:
             # Log error but continue with what we have

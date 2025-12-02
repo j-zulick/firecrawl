@@ -1,3 +1,4 @@
+import { v7 as uuidv7 } from "uuid";
 import {
   Document,
   ScrapeOptions,
@@ -39,7 +40,7 @@ export async function scrapeDocument_F0(
   }
 
   async function attemptScrape(timeout: number) {
-    const jobId = crypto.randomUUID();
+    const jobId = uuidv7();
     const jobPriority = await getJobPriority({
       team_id: options.teamId,
       basePriority: 10,
@@ -70,6 +71,8 @@ export async function scrapeDocument_F0(
       },
       jobId,
       jobPriority,
+      false,
+      true,
     );
 
     const doc = await waitForJob(jobId, timeout, false, logger);

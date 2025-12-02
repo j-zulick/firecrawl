@@ -1,5 +1,7 @@
 import "dotenv/config";
+import { shutdownOtel } from "./otel";
 import "./services/sentry";
+import { setSentryServiceTag } from "./services/sentry";
 import * as Sentry from "@sentry/node";
 import express, { NextFunction, Request, Response } from "express";
 import bodyParser from "body-parser";
@@ -25,21 +27,16 @@ import {
   ResponseWithSentry,
 } from "./controllers/v1/types";
 import { ZodError } from "zod";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { attachWsProxy } from "./services/agentLivecastWS";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
 import domainFrequencyRouter from "./routes/domain-frequency";
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import { LangfuseExporter } from "langfuse-vercel";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
-import { resourceFromAttributes } from "@opentelemetry/resources";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
+import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
+import responseTime from "response-time";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -56,35 +53,6 @@ logger.info("Network info dump", {
 cacheableLookup.install(http.globalAgent);
 cacheableLookup.install(https.globalAgent);
 
-const shouldOtel =
-  process.env.LANGFUSE_PUBLIC_KEY || process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-const otelSdk = shouldOtel
-  ? new NodeSDK({
-      resource: resourceFromAttributes({
-        [ATTR_SERVICE_NAME]: "firecrawl-app",
-      }),
-      spanProcessors: [
-        ...(process.env.LANGFUSE_PUBLIC_KEY
-          ? [new BatchSpanProcessor(new LangfuseExporter())]
-          : []),
-        ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT
-          ? [
-              new BatchSpanProcessor(
-                new OTLPTraceExporter({
-                  url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
-                }),
-              ),
-            ]
-          : []),
-      ],
-      instrumentations: [getNodeAutoInstrumentations()],
-    })
-  : null;
-
-if (otelSdk) {
-  otelSdk.start();
-}
-
 // Initialize Express with WebSocket support
 const expressApp = express();
 const ws = expressWs(expressApp);
@@ -92,10 +60,14 @@ const app = ws.app;
 
 global.isProduction = process.env.IS_PRODUCTION === "true";
 
+setSentryServiceTag("api");
+
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json({ limit: "10mb" }));
 
 app.use(cors()); // Add this line to enable CORS
+
+app.use(responseTime());
 
 if (process.env.EXPRESS_TRUST_PROXY) {
   app.set("trust proxy", parseInt(process.env.EXPRESS_TRUST_PROXY, 10));
@@ -120,13 +92,12 @@ app.use(
   serverAdapter.getRouter(),
 );
 
-app.get("/", (req, res) => {
-  res.send("SCRAPERS-JS: Hello, world! K8s!");
+app.get("/", (_, res) => {
+  res.redirect("https://docs.firecrawl.dev/api-reference/v2-introduction");
 });
 
-//write a simple test function
-app.get("/test", async (req, res) => {
-  res.send("Hello, world!");
+app.get("/e2e-test", (_, res) => {
+  res.status(200).send("OK");
 });
 
 // register router
@@ -142,11 +113,14 @@ const HOST = process.env.HOST ?? "localhost";
 async function startServer(port = DEFAULT_PORT) {
   try {
     await initializeBlocklist();
+    initializeEngineForcing();
   } catch (error) {
-    logger.error("Failed to initialize blocklist", { error });
+    logger.error("Failed to initialize blocklist and engine forcing", {
+      error,
+    });
     throw error;
   }
-  
+
   // Attach WebSocket proxy to the Express app
   attachWsProxy(app);
 
@@ -165,14 +139,10 @@ async function startServer(port = DEFAULT_PORT) {
       logger.info("Server closed.");
       nuqShutdown().finally(() => {
         logger.info("NUQ shutdown complete");
-        if (otelSdk) {
-          otelSdk.shutdown().finally(() => {
-            logger.info("OTEL shutdown");
-            process.exit(0);
-          });
-        } else {
+        shutdownOtel().finally(() => {
+          logger.info("OTEL shutdown");
           process.exit(0);
-        }
+        });
       });
     });
   };
@@ -208,10 +178,15 @@ app.use(
         logger.warn("Unsupported protocol error: " + JSON.stringify(req.body));
       }
 
+      const customErrorMessage =
+        err.errors.length > 0 && err.errors[0].code === "custom"
+          ? err.errors[0].message
+          : "Bad Request";
+
       res.status(400).json({
         success: false,
         code: "BAD_REQUEST",
-        error: "Bad Request",
+        error: customErrorMessage,
         details: err.errors,
       });
     } else {
@@ -242,7 +217,7 @@ app.use(
       });
     }
 
-    const id = res.sentry ?? uuidv4();
+    const id = res.sentry ?? uuidv7();
 
     logger.error(
       "Error occurred in request! (" + req.path + ") -- ID " + id + " -- ",

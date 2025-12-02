@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import {
   CrawlRequest,
   crawlRequestSchema,
@@ -7,11 +7,17 @@ import {
   RequestWithAuth,
   toLegacyCrawlerOptions,
 } from "./types";
-import { crawlToCrawler, saveCrawl, StoredCrawl } from "../../lib/crawl-redis";
+import {
+  crawlToCrawler,
+  saveCrawl,
+  StoredCrawl,
+  markCrawlActive,
+} from "../../lib/crawl-redis";
 import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
+import { crawlGroup } from "../../services/worker/nuq";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -31,7 +37,7 @@ export async function crawlController(
   const zeroDataRetention =
     req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
 
-  const id = uuidv4();
+  const id = uuidv7();
   const logger = _logger.child({
     crawlId: id,
     module: "api/v1",
@@ -120,17 +126,25 @@ export async function crawlController(
 
   try {
     sc.robots = await crawler.getRobotsTxt(scrapeOptions.skipTlsVerification);
-    const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
-    if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
-      sc.crawlerOptions.delay = robotsCrawlDelay;
-    }
+    // const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
+    // if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
+    //   sc.crawlerOptions.delay = robotsCrawlDelay;
+    // }
   } catch (e) {
     logger.debug("Failed to get robots.txt (this is probably fine!)", {
       error: e,
     });
   }
 
+  await crawlGroup.addGroup(
+    id,
+    sc.team_id,
+    (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+  );
+
   await saveCrawl(id, sc);
+
+  await markCrawlActive(id);
 
   await _addScrapeJobToBullMQ(
     {
@@ -151,7 +165,7 @@ export async function crawlController(
     crypto.randomUUID(),
   );
 
-  const protocol = process.env.ENV === "local" ? req.protocol : "https";
+  const protocol = req.protocol;
 
   return res.status(200).json({
     success: true,

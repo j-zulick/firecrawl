@@ -115,6 +115,7 @@ const processingSchema = z.object({
     "waiting-children",
     "unknown",
     "prioritized",
+    "pending",
   ]),
   processing: z.boolean(),
 });
@@ -215,7 +216,10 @@ export async function fireEngineCheckStatus(
       (status.error.includes("Element") ||
         status.error.includes("Javascript execution failed"))
     ) {
-      throw new ActionError(status.error.split("Error: ")[1]);
+      const errorMessage = status.error.startsWith("Error: ")
+        ? status.error.substring(7)
+        : status.error;
+      throw new ActionError(errorMessage);
     } else {
       throw new EngineError("Scrape job failed", {
         cause: {

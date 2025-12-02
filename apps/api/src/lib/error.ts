@@ -7,13 +7,18 @@ export type ErrorCodes =
   | "SCRAPE_SITE_ERROR"
   | "SCRAPE_PROXY_SELECTION_ERROR"
   | "SCRAPE_PDF_PREFETCH_FAILED"
+  | "SCRAPE_DOCUMENT_PREFETCH_FAILED"
   | "SCRAPE_ZDR_VIOLATION_ERROR"
   | "SCRAPE_DNS_RESOLUTION_ERROR"
   | "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR"
   | "SCRAPE_PDF_ANTIBOT_ERROR"
+  | "SCRAPE_DOCUMENT_ANTIBOT_ERROR"
   | "SCRAPE_UNSUPPORTED_FILE_ERROR"
   | "SCRAPE_ACTION_ERROR"
   | "SCRAPE_RACED_REDIRECT_ERROR"
+  | "SCRAPE_NO_CACHED_DATA"
+  | "SCRAPE_SITEMAP_ERROR"
+  | "CRAWL_DENIAL"
   | "BAD_REQUEST_INVALID_JSON"
   | "BAD_REQUEST";
 
@@ -122,6 +127,47 @@ export class RacedRedirectError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new RacedRedirectError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class SitemapError extends TransportableError {
+  constructor(message: string, cause?: unknown) {
+    super("SCRAPE_SITEMAP_ERROR", message, { cause });
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new SitemapError(data.message, data.cause);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class CrawlDenialError extends TransportableError {
+  constructor(public reason: string) {
+    super("CRAWL_DENIAL", reason);
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+      reason: this.reason,
+    };
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize> & { reason: string },
+  ) {
+    const x = new CrawlDenialError(data.reason);
     x.stack = data.stack;
     return x;
   }

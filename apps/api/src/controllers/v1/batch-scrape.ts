@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import {
   BatchScrapeRequest,
   batchScrapeRequestSchema,
@@ -13,6 +13,7 @@ import {
   finishCrawlKickoff,
   getCrawl,
   lockURLs,
+  markCrawlActive,
   saveCrawl,
   StoredCrawl,
 } from "../../lib/crawl-redis";
@@ -24,6 +25,7 @@ import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
+import { crawlGroup } from "../../services/worker/nuq";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -47,7 +49,7 @@ export async function batchScrapeController(
   const zeroDataRetention =
     req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
 
-  const id = req.body.appendToId ?? uuidv4();
+  const id = req.body.appendToId ?? uuidv7();
   const logger = _logger.child({
     crawlId: id,
     batchScrapeId: id,
@@ -95,6 +97,13 @@ export async function batchScrapeController(
     }
   }
 
+  if (urls.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: "No valid URLs provided",
+    });
+  }
+
   logger.debug("Batch scrape " + id + " starting", {
     urlsLength: urls.length,
     appendToId: req.body.appendToId,
@@ -128,7 +137,13 @@ export async function batchScrapeController(
       };
 
   if (!req.body.appendToId) {
+    await crawlGroup.addGroup(
+      id,
+      sc.team_id,
+      (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+    );
     await saveCrawl(id, sc);
+    await markCrawlActive(id);
   }
 
   let jobPriority = 20;
@@ -145,7 +160,7 @@ export async function batchScrapeController(
   logger.debug("Using job priority " + jobPriority, { jobPriority });
 
   const jobs = urls.map(x => ({
-    jobId: uuidv4(),
+    jobId: uuidv7(),
     data: {
       url: x,
       mode: "single_urls" as const,
@@ -196,7 +211,7 @@ export async function batchScrapeController(
     await sender?.send(WebhookEvent.BATCH_SCRAPE_STARTED, { success: true });
   }
 
-  const protocol = process.env.ENV === "local" ? req.protocol : "https";
+  const protocol = req.protocol;
 
   return res.status(200).json({
     success: true,

@@ -1,5 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
-import request from "supertest";
+import { describe, it, expect } from "@jest/globals";
 
 describe("V2 Crawl API with Prompt", () => {
   it("should accept prompt parameter in schema", () => {

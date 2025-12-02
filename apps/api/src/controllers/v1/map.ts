@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import {
   MapDocument,
   mapRequestSchema,
@@ -115,7 +115,7 @@ export async function getMapResults({
   timeout?: number;
   location?: ScrapeOptions["location"];
 }): Promise<MapResult> {
-  const id = uuidv4();
+  const id = uuidv7();
   let links: string[] = [url];
   let mapResults: MapDocument[] = [];
 
@@ -350,6 +350,11 @@ export async function mapController(
   req: RequestWithAuth<{}, MapResponse, MapRequest>,
   res: Response<MapResponse>,
 ) {
+  // Get timing data from middleware (includes all middleware processing time)
+  const middlewareStartTime =
+    (req as any).requestTiming?.startTime || new Date().getTime();
+  const controllerStartTime = new Date().getTime();
+
   const originalRequest = req.body;
   req.body = mapRequestSchema.parse(req.body);
 
@@ -369,6 +374,8 @@ export async function mapController(
     });
   }
 
+  const middlewareTime = controllerStartTime - middlewareStartTime;
+
   logger.info("Map request", {
     request: req.body,
     originalRequest,
@@ -376,6 +383,8 @@ export async function mapController(
   });
 
   let result: Awaited<ReturnType<typeof getMapResults>>;
+  let timeoutHandle: NodeJS.Timeout | null = null;
+
   const abort = new AbortController();
   try {
     result = (await Promise.race([
@@ -398,11 +407,12 @@ export async function mapController(
       }),
       ...(req.body.timeout !== undefined
         ? [
-            new Promise((resolve, reject) =>
-              setTimeout(() => {
-                abort.abort(new MapTimeoutError());
-                reject(new MapTimeoutError());
-              }, req.body.timeout),
+            new Promise(
+              (_resolve, reject) =>
+                (timeoutHandle = setTimeout(() => {
+                  abort.abort(new MapTimeoutError());
+                  reject(new MapTimeoutError());
+                }, req.body.timeout)),
             ),
           ]
         : []),
@@ -416,6 +426,10 @@ export async function mapController(
       });
     } else {
       throw error;
+    }
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
     }
   }
 
@@ -449,6 +463,22 @@ export async function mapController(
     num_tokens: 0,
     credits_billed: 1,
     zeroDataRetention: false, // not supported
+  });
+
+  // Log final timing information
+  const totalRequestTime = new Date().getTime() - middlewareStartTime;
+  const controllerTime = new Date().getTime() - controllerStartTime;
+
+  logger.info("Request metrics", {
+    version: "v1",
+    jobId: result.job_id,
+    mode: "map",
+    middlewareStartTime,
+    controllerStartTime,
+    middlewareTime,
+    controllerTime,
+    totalRequestTime,
+    linksCount: result.links.length,
   });
 
   const response = {

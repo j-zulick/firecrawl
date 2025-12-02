@@ -1,4 +1,5 @@
 import type { Action } from "../controllers/v1/types";
+import type { BrandingProfile } from "../types/branding";
 
 export type PageOptions = {
   includeMarkdown?: boolean;
@@ -70,7 +71,13 @@ export class Document {
   actions?: {
     screenshots?: string[];
     scrapes?: ScrapeActionContent[];
+    javascriptReturns?: {
+      type: string;
+      value: unknown;
+    }[];
+    pdfs?: string[];
   };
+  branding?: BrandingProfile;
 
   index?: number;
   linksOnPage?: string[]; // Add this new field as a separate property

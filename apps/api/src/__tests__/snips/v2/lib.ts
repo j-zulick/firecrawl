@@ -1,6 +1,5 @@
 import {
   ScrapeRequestInput,
-  ScrapeResponse,
   Document,
   ExtractRequestInput,
   ExtractResponse,
@@ -11,30 +10,31 @@ import {
   ErrorResponse,
   CrawlErrorsResponse,
   MapRequestInput,
-  MapResponse,
   BatchScrapeRequestInput,
   SearchRequestInput,
 } from "../../../controllers/v2/types";
 import request from "supertest";
 import {
-  TEST_URL,
+  TEST_API_URL,
   scrapeTimeout,
   indexCooldown,
   Identity,
-  IdmuxRequest,
   idmux,
 } from "../lib";
 import { SearchV2Response } from "../../../lib/entities";
 
 // Re-export shared utilities for backwards compatibility
-export { scrapeTimeout, indexCooldown, Identity, idmux };
+export { scrapeTimeout, indexCooldown, Identity, idmux, TEST_API_URL };
+export default request;
+
+const pollSleep = async () => new Promise(r => setTimeout(r, 50));
 
 // =========================================
 // Scrape API
 // =========================================
 
 export async function scrapeRaw(body: ScrapeRequestInput, identity: Identity) {
-  return await request(TEST_URL)
+  return await request(TEST_API_URL)
     .post("/v2/scrape")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json")
@@ -84,7 +84,7 @@ export async function scrapeWithFailure(
 }
 
 export async function scrapeStatusRaw(jobId: string, identity: Identity) {
-  return await request(TEST_URL)
+  return await request(TEST_API_URL)
     .get("/v2/scrape/" + encodeURIComponent(jobId))
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .send();
@@ -108,7 +108,7 @@ export async function scrapeStatus(
 // =========================================
 
 export async function crawlStart(body: CrawlRequestInput, identity: Identity) {
-  return await request(TEST_URL)
+  return await request(TEST_API_URL)
     .post("/v2/crawl")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json")
@@ -116,14 +116,14 @@ export async function crawlStart(body: CrawlRequestInput, identity: Identity) {
 }
 
 async function crawlStatus(id: string, identity: Identity) {
-  return await request(TEST_URL)
+  return await request(TEST_API_URL)
     .get("/v2/crawl/" + encodeURIComponent(id))
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .send();
 }
 
 async function crawlOngoingRaw(identity: Identity) {
-  return await request(TEST_URL)
+  return await request(TEST_API_URL)
     .get("/v2/crawl/ongoing")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .send();
@@ -189,9 +189,10 @@ export async function asyncCrawlWaitForFinish(
   id: string,
   identity: Identity,
 ): Promise<Exclude<CrawlStatusResponse, ErrorResponse>> {
-  let x;
+  let x: Awaited<ReturnType<typeof crawlStatus>> | undefined;
 
   do {
+    if (x) await pollSleep();
     x = await crawlStatus(id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");
@@ -205,7 +206,7 @@ async function crawlErrors(
   id: string,
   identity: Identity,
 ): Promise<Exclude<CrawlErrorsResponse, ErrorResponse>> {
-  const res = await request(TEST_URL)
+  const res = await request(TEST_API_URL)
     .get("/v2/crawl/" + id + "/errors")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .send();
@@ -224,9 +225,10 @@ export async function crawl(
   const cs = await crawlStart(body, identity);
   expectCrawlStartToSucceed(cs);
 
-  let x;
+  let x: Awaited<ReturnType<typeof crawlStatus>> | undefined;
 
   do {
+    if (x) await pollSleep();
     x = await crawlStatus(cs.body.id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");
@@ -255,7 +257,7 @@ async function batchScrapeStart(
   body: BatchScrapeRequestInput,
   identity: Identity,
 ) {
-  return await request(TEST_URL)
+  return await request(TEST_API_URL)
     .post("/v2/batch/scrape")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json")
@@ -263,7 +265,7 @@ async function batchScrapeStart(
 }
 
 async function batchScrapeStatus(id: string, identity: Identity) {
-  return await request(TEST_URL)
+  return await request(TEST_API_URL)
     .get("/v2/batch/scrape/" + encodeURIComponent(id))
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .send();
@@ -312,9 +314,10 @@ export async function batchScrape(
   const bss = await batchScrapeStart(body, identity);
   expectBatchScrapeStartToSucceed(bss);
 
-  let x;
+  let x: Awaited<ReturnType<typeof batchScrapeStatus>> | undefined;
 
   do {
+    if (x) await pollSleep();
     x = await batchScrapeStatus(bss.body.id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");
@@ -332,7 +335,7 @@ export async function batchScrape(
 // =========================================
 
 export async function map(body: MapRequestInput, identity: Identity) {
-  return await request(TEST_URL)
+  return await request(TEST_API_URL)
     .post("/v2/map")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json")
@@ -355,7 +358,7 @@ export function expectMapToSucceed(response: Awaited<ReturnType<typeof map>>) {
 // =========================================
 
 async function searchRaw(body: SearchRequestInput, identity: Identity) {
-  return await request(TEST_URL)
+  return await request(TEST_API_URL)
     .post("/v2/search")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json")
@@ -386,7 +389,7 @@ export async function search(
 export async function creditUsage(
   identity: Identity,
 ): Promise<{ remainingCredits: number }> {
-  const req = await request(TEST_URL)
+  const req = await request(TEST_API_URL)
     .get("/v2/team/credit-usage")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json");
@@ -405,7 +408,7 @@ export async function creditUsage(
 async function concurrencyCheck(
   identity: Identity,
 ): Promise<{ concurrency: number; maxConcurrency: number }> {
-  const x = await request(TEST_URL)
+  const x = await request(TEST_API_URL)
     .get("/v2/team/queue-status")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json");
@@ -432,6 +435,7 @@ export async function crawlWithConcurrencyTracking(
     concurrencies: number[] = [];
 
   do {
+    if (x) await pollSleep();
     x = await crawlStatus(cs.body.id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");
@@ -459,6 +463,7 @@ export async function batchScrapeWithConcurrencyTracking(
     concurrencies: number[] = [];
 
   do {
+    if (x) await pollSleep();
     x = await batchScrapeStatus(cs.body.id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");
@@ -473,11 +478,75 @@ export async function batchScrapeWithConcurrencyTracking(
 }
 
 // =========================================
+// Extract API
+// =========================================
+
+async function extractStart(body: ExtractRequestInput, identity: Identity) {
+  return await request(TEST_API_URL)
+    .post("/v2/extract")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+async function extractStatus(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .get("/v2/extract/" + encodeURIComponent(id))
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .send();
+}
+
+function expectExtractStartToSucceed(
+  response: Awaited<ReturnType<typeof extractStart>>,
+) {
+  expect(response.statusCode).toBe(200);
+  expect(response.body.success).toBe(true);
+  expect(typeof response.body.id).toBe("string");
+}
+
+function expectExtractToSucceed(
+  response: Awaited<ReturnType<typeof extractStatus>>,
+) {
+  expect(response.statusCode).toBe(200);
+  expect(response.body.success).toBe(true);
+  expect(typeof response.body.status).toBe("string");
+  expect(response.body.status).toBe("completed");
+  expect(response.body).toHaveProperty("data");
+}
+
+export async function extract(
+  body: ExtractRequestInput,
+  identity: Identity,
+): Promise<ExtractResponse> {
+  const es = await extractStart(body, identity);
+  expectExtractStartToSucceed(es);
+
+  let x: Awaited<ReturnType<typeof extractStatus>> | undefined;
+
+  do {
+    if (x) await pollSleep();
+    x = await extractStatus(es.body.id, identity);
+    expect(x.statusCode).toBe(200);
+    expect(typeof x.body.status).toBe("string");
+  } while (x.body.status === "processing");
+
+  expectExtractToSucceed(x);
+  return x.body;
+}
+
+export async function extractRaw(
+  body: ExtractRequestInput,
+  identity: Identity,
+) {
+  return await extractStart(body, identity);
+}
+
+// =========================================
 // ZDR API
 // =========================================
 
 export async function zdrcleaner(teamId: string) {
-  const res = await request(TEST_URL)
+  const res = await request(TEST_API_URL)
     .get(`/admin/${process.env.BULL_AUTH_KEY}/zdrcleaner`)
     .query({ teamId });
 

@@ -3,7 +3,6 @@ import { load } from "cheerio"; // rustified
 import { URL } from "url";
 import { getLinksFromSitemap } from "./sitemap";
 import robotsParser, { Robot } from "robots-parser";
-import psl from "psl";
 import { getURLDepth } from "./utils/maxDepthUtils";
 import { logger as _logger } from "../../lib/logger";
 import { redisEvictConnection } from "../../services/redis";
@@ -36,6 +35,7 @@ enum DenialReason {
   SOCIAL_MEDIA = "URL is a social media or email link",
   EXTERNAL_LINK = "External URL not allowed",
   SECTION_LINK = "URL contains section anchor (#)",
+  NON_WEB_PROTOCOL = "URL uses a non-web protocol (telnet, ftp, ssh, file, mailto, etc.)",
 }
 
 interface FilterLinksResult {
@@ -143,6 +143,7 @@ export class WebCrawler {
     limit: number,
     maxDepth: number,
     fromMap: boolean = false,
+    skipRobots: boolean = false,
   ): Promise<FilterLinksResult> {
     const denialReasons = new Map<string, string>();
 
@@ -173,7 +174,7 @@ export class WebCrawler {
         excludes: this.excludes,
         includes: this.includes,
         allowBackwardCrawling: this.allowBackwardCrawling,
-        ignoreRobotsTxt: this.ignoreRobotsTxt,
+        ignoreRobotsTxt: this.ignoreRobotsTxt || skipRobots,
         robotsTxt: this.robotsTxt,
         allowExternalContentLinks: this.allowExternalContentLinks,
         allowSubdomains: this.allowSubdomains,
@@ -219,6 +220,24 @@ export class WebCrawler {
           return false;
         }
         const path = url.pathname;
+
+        const urlStr = url.toString();
+        const nonWebProtocols = [
+          "mailto:",
+          "tel:",
+          "telnet:",
+          "ftp:",
+          "ftps:",
+          "ssh:",
+          "file:",
+        ];
+        if (nonWebProtocols.some(protocol => urlStr.startsWith(protocol))) {
+          if (process.env.FIRECRAWL_DEBUG_FILTER_LINKS) {
+            this.logger.debug(`${link} NON-WEB PROTOCOL FAIL`);
+          }
+          denialReasons.set(link, DenialReason.NON_WEB_PROTOCOL);
+          return false;
+        }
 
         const depth = getURLDepth(url.toString());
 
@@ -300,11 +319,12 @@ export class WebCrawler {
           }
         }
 
-        const isAllowed = this.ignoreRobotsTxt
-          ? true
-          : ((this.robots.isAllowed(link, "FireCrawlAgent") ||
-              this.robots.isAllowed(link, "FirecrawlAgent")) ??
-            true);
+        const isAllowed =
+          this.ignoreRobotsTxt || skipRobots
+            ? true
+            : ((this.robots.isAllowed(link, "FireCrawlAgent") ||
+                this.robots.isAllowed(link, "FirecrawlAgent")) ??
+              true);
         // Check if the link is disallowed by robots.txt
         if (!isAllowed) {
           this.logger.debug(`Link disallowed by robots.txt: ${link}`, {
@@ -433,6 +453,7 @@ export class WebCrawler {
           leftOfLimit,
           this.maxCrawledDepth,
           fromMap,
+          fromMap,
         );
         let filteredLinks = filteredLinksResult.links;
         leftOfLimit -= filteredLinks.length;
@@ -465,8 +486,12 @@ export class WebCrawler {
       }
     };
 
+    let timeoutHandle: NodeJS.Timeout;
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Sitemap fetch timeout")), timeout);
+      timeoutHandle = setTimeout(
+        () => reject(new Error("Sitemap fetch timeout")),
+        timeout,
+      );
     });
 
     // Allow sitemaps to be cached for 48 hours if they are requested from /map
@@ -497,7 +522,9 @@ export class WebCrawler {
           ),
         ]).then(results => results.reduce((a, x) => a + x, 0)),
         timeoutPromise,
-      ])) as number;
+      ]).finally(() => {
+        clearTimeout(timeoutHandle);
+      })) as number;
 
       if (count > 0) {
         if (

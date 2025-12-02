@@ -96,6 +96,13 @@ BULL_AUTH_KEY=CHANGEME
 # REDIS_URL=redis://redis:6379
 # REDIS_RATE_LIMIT_URL=redis://redis:6379
 
+## === PostgreSQL Database Configuration ===
+# Configure PostgreSQL credentials. These should match the credentials used by the nuq-postgres container.
+# If you change these, ensure all three are set consistently.
+# POSTGRES_USER=postgres
+# POSTGRES_PASSWORD=postgres
+# POSTGRES_DB=postgres
+
 # Set if you have a llamaparse key you'd like to use to parse pdfs
 # LLAMAPARSE_API_KEY=
 
@@ -114,6 +121,9 @@ BULL_AUTH_KEY=CHANGEME
 # Maximum RAM usage threshold (0.0-1.0). Worker will reject new jobs when memory usage exceeds this value.
 # Default: 0.8 (80%)
 # MAX_RAM=0.8
+
+# Set if you'd like to allow local webhooks to be sent to your self-hosted instance
+# ALLOW_LOCAL_WEBHOOKS=true
 ```
 
 3.  Build and run the Docker containers:

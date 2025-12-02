@@ -12,12 +12,11 @@ import { performAgent } from "./agent";
 import { performAttributes } from "./performAttributes";
 
 import { deriveDiff } from "./diff";
-import { useIndex } from "../../../services/index";
+import { useIndex, useSearchIndex } from "../../../services/index";
 import { sendDocumentToIndex } from "../engines/index/index";
-import {
-  hasFormatOfType,
-  hasAnyFormatOfTypes,
-} from "../../../lib/format-utils";
+import { sendDocumentToSearchIndex } from "./sendToSearchIndex";
+import { hasFormatOfType } from "../../../lib/format-utils";
+import { brandingTransformer } from "../../../lib/branding/transformer";
 
 type Transformer = (
   meta: Meta,
@@ -72,7 +71,19 @@ async function deriveMarkdownFromHTML(
     );
   }
 
-  if (document.metadata.postprocessorsUsed?.includes("youtube")) {
+  // Only derive markdown if markdown format is requested or if formats that require markdown are requested:
+  // - changeTracking requires markdown
+  // - json format requires markdown (for LLM extraction)
+  // - summary format requires markdown (for summarization)
+  const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
+  const hasChangeTracking = hasFormatOfType(
+    meta.options.formats,
+    "changeTracking",
+  );
+  const hasJson = hasFormatOfType(meta.options.formats, "json");
+  const hasSummary = hasFormatOfType(meta.options.formats, "summary");
+
+  if (!hasMarkdown && !hasChangeTracking && !hasJson && !hasSummary) {
     return document;
   }
 
@@ -164,6 +175,46 @@ async function deriveImagesFromHTML(
   return document;
 }
 
+async function deriveBrandingFromActions(
+  meta: Meta,
+  document: Document,
+): Promise<Document> {
+  const hasBranding = hasFormatOfType(meta.options.formats, "branding");
+
+  if (!hasBranding) {
+    return document;
+  }
+
+  if (document.branding !== undefined) {
+    return document;
+  }
+
+  /**
+   * Find the branding return in the actions javascript returns
+   * @see src/scraper/scrapeURL/engines/fire-engine/scripts/branding.js
+   */
+  const brandingReturnIndex = document.actions?.javascriptReturns?.findIndex(
+    x => x.type === "object" && "branding" in (x.value as any),
+  );
+
+  if (brandingReturnIndex === -1 || brandingReturnIndex === undefined) {
+    return document;
+  }
+
+  // cast as any since this is js return, we might need to validate this
+  const javascriptReturn = document.actions!.javascriptReturns![
+    brandingReturnIndex
+  ].value as any;
+
+  const rawBranding = javascriptReturn?.branding;
+
+  document.actions!.javascriptReturns!.splice(brandingReturnIndex, 1);
+
+  document.branding = await brandingTransformer(meta, document, rawBranding);
+
+  return document;
+}
+
 function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
   const hasRawHtml = hasFormatOfType(meta.options.formats, "rawHtml");
@@ -177,6 +228,7 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasJson = hasFormatOfType(meta.options.formats, "json");
   const hasScreenshot = hasFormatOfType(meta.options.formats, "screenshot");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
+  const hasBranding = hasFormatOfType(meta.options.formats, "branding");
 
   if (!hasMarkdown && document.markdown !== undefined) {
     delete document.markdown;
@@ -291,6 +343,17 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     );
   }
 
+  if (!hasBranding && document.branding !== undefined) {
+    meta.logger.warn(
+      "Removed branding from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
+    );
+    delete document.branding;
+  } else if (hasBranding && document.branding === undefined) {
+    meta.logger.warn(
+      "Request had format branding, but there was no branding field in the result.",
+    );
+  }
+
   if (!hasChangeTracking && document.changeTracking !== undefined) {
     meta.logger.warn(
       "Removed changeTracking from Document because it wasn't in formats -- this is extremely wasteful and indicates a bug.",
@@ -326,6 +389,20 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
 
   if (meta.options.actions === undefined || meta.options.actions.length === 0) {
     delete document.actions;
+  } else if (document.actions) {
+    // Check if all action arrays are empty
+    const hasScreenshots =
+      document.actions.screenshots && document.actions.screenshots.length > 0;
+    const hasScrapes =
+      document.actions.scrapes && document.actions.scrapes.length > 0;
+    const hasJsReturns =
+      document.actions.javascriptReturns &&
+      document.actions.javascriptReturns.length > 0;
+    const hasPdfs = document.actions.pdfs && document.actions.pdfs.length > 0;
+
+    if (!hasScreenshots && !hasScrapes && !hasJsReturns && !hasPdfs) {
+      delete document.actions;
+    }
   }
 
   return document;
@@ -337,9 +414,11 @@ const transformerStack: Transformer[] = [
   deriveMarkdownFromHTML,
   deriveLinksFromHTML,
   deriveImagesFromHTML,
+  deriveBrandingFromActions,
   deriveMetadataFromRawHTML,
   uploadScreenshot,
   ...(useIndex ? [sendDocumentToIndex] : []),
+  ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
   performLLMExtract,
   performSummary,
   performAttributes,

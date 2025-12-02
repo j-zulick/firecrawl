@@ -1,3 +1,8 @@
+import {
+  ALLOW_TEST_SUITE_WEBSITE,
+  describeIf,
+  TEST_SUITE_WEBSITE,
+} from "../lib";
 import { scrape, scrapeRaw, scrapeTimeout, idmux, Identity } from "./lib";
 
 let identity: Identity;
@@ -10,9 +15,9 @@ beforeAll(async () => {
   });
 }, 10000 + scrapeTimeout);
 
-describe("Parsers parameter tests", () => {
-  const pdfUrl = "https://www.orimi.com/pdf-test.pdf";
-  const htmlUrl = "https://firecrawl.dev";
+describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
+  const pdfUrl = `${TEST_SUITE_WEBSITE}/example.pdf`;
+  const htmlUrl = TEST_SUITE_WEBSITE;
 
   describe("Array format", () => {
     it.concurrent(
