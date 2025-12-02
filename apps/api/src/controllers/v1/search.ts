@@ -391,10 +391,15 @@ export async function searchController(
 
       try {
         const individualCredits = await Promise.all(creditPromises);
-        credits_billed = individualCredits.reduce(
+        const scrapeCredits = individualCredits.reduce(
           (sum, credit) => sum + credit,
           0,
         );
+
+        // Add search credits (same as when no scrape options are specified)
+        const searchCredits = Math.ceil(responseData.data.length / 10) * 2;
+
+        credits_billed = scrapeCredits + searchCredits;
       } catch (error) {
         logger.error("Error calculating credits for billing", { error });
         credits_billed = responseData.data.length;

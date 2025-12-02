@@ -42,6 +42,7 @@ export async function fire_engine_search_v2(
     numResults: number;
     page?: number;
     type?: SearchResultType | SearchResultType[];
+    enterprise?: ("default" | "anon" | "zdr")[];
   },
   abort?: AbortSignal,
 ): Promise<SearchV2Response> {
@@ -61,6 +62,7 @@ export async function fire_engine_search_v2(
     numResults: options.numResults,
     page: options.page ?? 1,
     type: options.type || "web",
+    enterprise: options.enterprise,
   };
 
   const requestedTypes = normalizeSearchTypes(options.type);

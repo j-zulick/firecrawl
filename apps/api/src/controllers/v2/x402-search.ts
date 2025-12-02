@@ -265,6 +265,7 @@ export async function x402SearchController(
       country: req.body.country,
       location: req.body.location,
       type: searchTypes,
+      enterprise: req.body.enterprise,
     })) as SearchV2Response;
 
     // Add category labels to web results

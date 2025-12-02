@@ -1486,6 +1486,7 @@ export const searchRequestSchema = z
         ),
       ])
       .optional(),
+    enterprise: z.array(z.enum(["default", "anon", "zdr"])).optional(),
     lang: z.string().optional().default("en"),
     country: z.string().optional(),
     location: z.string().optional(),
