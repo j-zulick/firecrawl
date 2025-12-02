@@ -286,7 +286,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           const reason =
             filterResult.denialReason ||
             "Redirected target URL is not allowed by crawlOptions";
-          throw new Error(reason);
+          throw new CrawlDenialError(reason);
         }
 
         // Only re-set originUrl if it's different from the current hostname
@@ -309,7 +309,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             (await getACUCTeam(job.data.team_id))?.flags ?? null,
           )
         ) {
-          throw new Error(BLOCKLISTED_URL_MESSAGE); // TODO: make this its own error type that is ignored by error tracking
+          throw new CrawlDenialError(BLOCKLISTED_URL_MESSAGE); // TODO: make this its own error type that is ignored by error tracking
         }
 
         const p1 = generateURLPermutations(normalizeURL(doc.metadata.url, sc));
@@ -433,7 +433,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               const reason =
                 filterResult.denialReasons.get(url) ||
                 "Source URL is not allowed by crawl configuration";
-              throw new Error(reason);
+              throw new CrawlDenialError(reason);
             }
           }
         }

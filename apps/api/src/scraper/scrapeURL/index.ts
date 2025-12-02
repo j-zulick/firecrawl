@@ -1238,6 +1238,9 @@ export async function scrapeURL(
       } else if (error instanceof ProxySelectionError) {
         errorType = "ProxySelectionError";
         meta.logger.warn("scrapeURL: Proxy selection error", { error });
+      } else if (error instanceof DNSResolutionError) {
+        errorType = "DNSResolutionError";
+        meta.logger.warn("scrapeURL: DNS resolution error", { error });
       } else if (error instanceof AbortManagerThrownError) {
         errorType = "AbortManagerThrownError";
         throw error.inner;
