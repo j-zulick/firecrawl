@@ -183,7 +183,8 @@ async function withSemaphore<T>(
   timeoutMs: number,
   func: (limited: boolean) => Promise<T>,
 ): Promise<T> {
-  if (isSelfHosted() && limit <= 1) {
+  // Bypass concurrency limits for self-hosted deployments
+  if (isSelfHosted()) {
     _logger.debug(`Bypassing concurrency limit for ${teamId}`, {
       teamId,
       jobId: holderId,

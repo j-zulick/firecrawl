@@ -22,6 +22,7 @@ import { deserializeTransportableError } from "../lib/error-serde";
 import { abTestJob } from "./ab-test";
 import { NuQJob, scrapeQueue } from "./worker/nuq";
 import { serializeTraceContext } from "../lib/otel-tracer";
+import { isSelfHosted } from "../lib/deployment";
 
 /**
  * Checks if a job is a crawl or batch scrape based on its options
@@ -216,7 +217,10 @@ async function addScrapeJobRaw(
   let currentActiveConcurrency = 0;
   let maxConcurrency = 0;
 
-  if (directToBullMQ) {
+  // Bypass concurrency limits for self-hosted deployments
+  if (isSelfHosted()) {
+    concurrencyLimited = "no";
+  } else if (directToBullMQ) {
     concurrencyLimited = "no";
   } else {
     if (webScraperOptions.crawl_id) {
@@ -442,36 +446,51 @@ export async function addScrapeJobs(
     // All jobs without a crawl ID may be in the CQ depending on the global team concurrency limit
     jobsPotentiallyInCQ.push(...jobsWithoutCrawlID);
 
-    const now = Date.now();
-    const maxConcurrency =
-      (
-        await getACUCTeam(
-          teamId,
-          false,
-          true,
-          jobs[0].data.mode === "single_urls" && jobs[0].data.from_extract
-            ? RateLimiterMode.Extract
-            : RateLimiterMode.Crawl,
-        )
-      )?.concurrency ?? 2;
-    await cleanOldConcurrencyLimitEntries(teamId, now);
+    // Bypass concurrency limits for self-hosted deployments
+    let addToBull: typeof jobsPotentiallyInCQ;
+    let addToCQ: typeof jobsPotentiallyInCQ;
+    let maxConcurrency = 0;
+    let countCanBeDirectlyAdded = 0;
 
-    const currentActiveConcurrency = (
-      await getConcurrencyLimitActiveJobs(teamId, now)
-    ).length;
+    if (isSelfHosted()) {
+      // For self-hosted, add all jobs directly to BullMQ
+      addToBull = jobsPotentiallyInCQ;
+      addToCQ = jobsForcedToCQ;
+    } else {
+      const now = Date.now();
+      maxConcurrency =
+        (
+          await getACUCTeam(
+            teamId,
+            false,
+            true,
+            jobs[0].data.mode === "single_urls" && jobs[0].data.from_extract
+              ? RateLimiterMode.Extract
+              : RateLimiterMode.Crawl,
+          )
+        )?.concurrency ?? 2;
+      await cleanOldConcurrencyLimitEntries(teamId, now);
 
-    const countCanBeDirectlyAdded = Math.max(
-      maxConcurrency - currentActiveConcurrency,
-      0,
-    );
+      const currentActiveConcurrency = (
+        await getConcurrencyLimitActiveJobs(teamId, now)
+      ).length;
 
-    const addToBull = jobsPotentiallyInCQ.slice(0, countCanBeDirectlyAdded);
-    const addToCQ = jobsPotentiallyInCQ
-      .slice(countCanBeDirectlyAdded)
-      .concat(jobsForcedToCQ);
+      countCanBeDirectlyAdded = Math.max(
+        maxConcurrency - currentActiveConcurrency,
+        0,
+      );
 
-    // equals 2x the max concurrency
-    if (jobsPotentiallyInCQ.length - countCanBeDirectlyAdded > maxConcurrency) {
+      addToBull = jobsPotentiallyInCQ.slice(0, countCanBeDirectlyAdded);
+      addToCQ = jobsPotentiallyInCQ
+        .slice(countCanBeDirectlyAdded)
+        .concat(jobsForcedToCQ);
+    }
+
+    // equals 2x the max concurrency (only check for non-self-hosted)
+    if (
+      !isSelfHosted() &&
+      jobsPotentiallyInCQ.length - countCanBeDirectlyAdded > maxConcurrency
+    ) {
       // logger.info(`Concurrency limited 2x (multiple) - Concurrency queue jobs: ${addToCQ.length} Max concurrency: ${maxConcurrency} Team ID: ${jobs[0].data.team_id}`);
       // Only send notification if it's not a crawl or batch scrape
       if (!isCrawlOrBatchScrape(jobs[0].data)) {
