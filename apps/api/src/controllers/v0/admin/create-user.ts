@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import { supabase_service } from "../../../services/supabase";
 import crypto from "crypto";
 import { z } from "zod";
+import { apiKeyToFcApiKey } from "../../../lib/parseApi";
 
 async function addCoupon(teamId: string, integration: any) {
   if (!integration.coupon_credits) {
@@ -259,7 +260,7 @@ export async function createUserController(req: Request, res: Response) {
     }
 
     return res.status(200).json({
-      apiKey,
+      apiKey: apiKeyToFcApiKey(apiKey),
       alreadyExisted,
     });
   } catch (error) {
