@@ -124,6 +124,7 @@ export async function integValidateApiKeyController(
     const user = userData[0];
 
     return res.status(200).json({
+      teamName: team.name,
       email: user.email,
     });
   } catch (error) {
