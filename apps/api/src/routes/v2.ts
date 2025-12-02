@@ -27,6 +27,8 @@ import {
   idempotencyMiddleware,
   requestTimingMiddleware,
   wrap,
+  isValidJobId,
+  validateJobIdParam,
 } from "./shared";
 import { queueStatusController } from "../controllers/v2/queue-status";
 import { creditUsageHistoricalController } from "../controllers/v2/credit-usage-historical";
@@ -177,6 +179,7 @@ v2Router.post(
 v2Router.get(
   "/scrape/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  validateJobIdParam,
   wrap(scrapeStatusController),
 );
 
@@ -229,26 +232,40 @@ v2Router.get(
 v2Router.get(
   "/crawl/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  validateJobIdParam,
   wrap(crawlStatusController),
 );
 
 v2Router.delete(
   "/crawl/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  validateJobIdParam,
   wrap(crawlCancelController),
 );
 
-v2Router.ws("/crawl/:jobId", crawlStatusWSController);
+v2Router.ws(
+  "/crawl/:jobId",
+  ((ws: any, req: express.Request, next: (err?: unknown) => void) => {
+    if (!isValidJobId(req.params.jobId)) {
+      ws.close(1008, "Invalid job ID");
+      return;
+    }
+    next();
+  }) as any,
+  crawlStatusWSController,
+);
 
 v2Router.get(
   "/batch/scrape/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  validateJobIdParam,
   wrap((req: any, res: any) => crawlStatusController(req, res, true)),
 );
 
 v2Router.delete(
   "/batch/scrape/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  validateJobIdParam,
   wrap(crawlCancelController),
 );
 
@@ -261,6 +278,7 @@ v2Router.get(
 v2Router.get(
   "/crawl/:jobId/errors",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  validateJobIdParam,
   wrap(crawlErrorsController),
 );
 
@@ -276,6 +294,7 @@ v2Router.post(
 v2Router.get(
   "/extract/:jobId",
   authMiddleware(RateLimiterMode.ExtractStatus),
+  validateJobIdParam,
   wrap(extractStatusController),
 );
 

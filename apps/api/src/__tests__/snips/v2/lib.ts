@@ -24,7 +24,8 @@ import {
 import { SearchV2Response } from "../../../lib/entities";
 
 // Re-export shared utilities for backwards compatibility
-export { scrapeTimeout, indexCooldown, Identity, idmux };
+export { scrapeTimeout, indexCooldown, Identity, idmux, TEST_API_URL };
+export default request;
 
 const pollSleep = async () => new Promise(r => setTimeout(r, 50));
 
