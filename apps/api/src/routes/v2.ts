@@ -253,6 +253,12 @@ v2Router.delete(
 );
 
 v2Router.get(
+  "/batch/scrape/:jobId/errors",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(crawlErrorsController),
+);
+
+v2Router.get(
   "/crawl/:jobId/errors",
   authMiddleware(RateLimiterMode.CrawlStatus),
   wrap(crawlErrorsController),
