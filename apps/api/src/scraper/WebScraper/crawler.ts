@@ -760,49 +760,57 @@ export class WebCrawler {
     try {
       const urlObj = new URL(url);
       const hostname = urlObj.hostname;
-      const domainParts = hostname.split(".");
 
-      // Check if this is a subdomain (has more than 2 parts and not www)
-      if (domainParts.length > 2 && domainParts[0] !== "www") {
-        // Get the main domain by taking the last two parts
-        const mainDomain = domainParts.slice(-2).join(".");
-        const mainDomainUrl = `${urlObj.protocol}//${mainDomain}`;
-        const mainDomainSitemapUrl = `${mainDomainUrl}/sitemap.xml`;
+      // Skip subdomain logic for IP addresses (IPv4 or IPv6)
+      const isIPv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+      const isIPv6 = hostname.includes(":");
+      if (isIPv4 || isIPv6) {
+        // IP addresses don't have subdomains, skip this logic
+      } else {
+        const domainParts = hostname.split(".");
 
-        try {
-          // Get all links from the main domain's sitemap
-          sitemapCount += await getLinksFromSitemap(
-            {
-              sitemapUrl: mainDomainSitemapUrl,
-              urlsHandler(urls) {
-                return urlsHandler(
-                  urls.filter(link => {
-                    try {
-                      const linkUrl = new URL(link);
-                      return linkUrl.hostname.endsWith(hostname);
-                    } catch {}
-                  }),
-                );
+        // Check if this is a subdomain (has more than 2 parts and not www)
+        if (domainParts.length > 2 && domainParts[0] !== "www") {
+          // Get the main domain by taking the last two parts
+          const mainDomain = domainParts.slice(-2).join(".");
+          const mainDomainUrl = `${urlObj.protocol}//${mainDomain}`;
+          const mainDomainSitemapUrl = `${mainDomainUrl}/sitemap.xml`;
+
+          try {
+            // Get all links from the main domain's sitemap
+            sitemapCount += await getLinksFromSitemap(
+              {
+                sitemapUrl: mainDomainSitemapUrl,
+                urlsHandler(urls) {
+                  return urlsHandler(
+                    urls.filter(link => {
+                      try {
+                        const linkUrl = new URL(link);
+                        return linkUrl.hostname.endsWith(hostname);
+                      } catch {}
+                    }),
+                  );
+                },
+                mode: "fire-engine",
+                maxAge,
+                zeroDataRetention: this.zeroDataRetention,
+                location: this.location,
               },
-              mode: "fire-engine",
-              maxAge,
-              zeroDataRetention: this.zeroDataRetention,
-              location: this.location,
-            },
-            this.logger,
-            this.jobId,
-            this.sitemapsHit,
-            abort,
-            mock,
-          );
-        } catch (error) {
-          if (error instanceof ScrapeJobTimeoutError) {
-            throw error;
-          } else {
-            this.logger.debug(
-              `Failed to fetch main domain sitemap from ${mainDomainSitemapUrl}`,
-              { method: "tryFetchSitemapLinks", mainDomainSitemapUrl, error },
+              this.logger,
+              this.jobId,
+              this.sitemapsHit,
+              abort,
+              mock,
             );
+          } catch (error) {
+            if (error instanceof ScrapeJobTimeoutError) {
+              throw error;
+            } else {
+              this.logger.debug(
+                `Failed to fetch main domain sitemap from ${mainDomainSitemapUrl}`,
+                { method: "tryFetchSitemapLinks", mainDomainSitemapUrl, error },
+              );
+            }
           }
         }
       }
