@@ -84,6 +84,11 @@ export async function fetchRobotsTxt(
   ) {
     content = response.document.rawHtml!;
   } else {
+    if (response.success && response.document.metadata.statusCode === 404) {
+      logger.warn("Robots.txt not found", { robotsTxtUrl }); // should probably index 404 robots.txt
+      return { content: "", url: robotsTxtUrl };
+    }
+
     logger.error(`Request failed for robots.txt fetch`, {
       method: "fetchRobotsTxt",
       robotsTxtUrl,

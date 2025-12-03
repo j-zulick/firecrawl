@@ -17,6 +17,7 @@ import { ScrapeOptions } from "../../controllers/v2/types";
 import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
 
 export const SITEMAP_LIMIT = 100;
+const SITEMAP_MAX_AGE = 48 * 60 * 60 * 1000;
 
 interface FilterResult {
   allowed: boolean;
@@ -494,7 +495,6 @@ export class WebCrawler {
       );
     });
 
-    const maxAge = 48 * 60 * 60 * 1000;
     try {
       const robotsSitemaps = this.robots.getSitemaps();
       this.logger.debug("Attempting to fetch sitemap links", {
@@ -512,10 +512,16 @@ export class WebCrawler {
             _urlsHandler,
             abort,
             mock,
-            maxAge,
+            SITEMAP_MAX_AGE,
           ),
           ...robotsSitemaps.map(x =>
-            this.tryFetchSitemapLinks(x, _urlsHandler, abort, mock, maxAge),
+            this.tryFetchSitemapLinks(
+              x,
+              _urlsHandler,
+              abort,
+              mock,
+              SITEMAP_MAX_AGE,
+            ),
           ),
         ]).then(results => results.reduce((a, x) => a + x, 0)),
         timeoutPromise,
@@ -714,6 +720,7 @@ export class WebCrawler {
       method: "tryFetchSitemapLinks",
       originalUrl: url,
       sitemapUrl,
+      maxAge,
       isXmlUrl: url.endsWith(".xml"),
       isGzUrl: url.endsWith(".xml.gz"),
     });
