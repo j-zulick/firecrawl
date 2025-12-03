@@ -2,7 +2,7 @@ import { ExtractorOptions, PageOptions } from "./../../lib/entities";
 import { Request, Response } from "express";
 import { checkTeamCredits } from "../../services/billing/credit_billing";
 import { authenticateUser } from "../auth";
-import { RateLimiterMode } from "../../types";
+import { RateLimiterMode, AuthResponse } from "../../types";
 import { TeamFlags, toLegacyDocument, url as urlSchema } from "../v1/types";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist"; // Import the isUrlBlocked function
 import {
@@ -42,7 +42,21 @@ async function scrapeHelper(
   data?: V0Document | { url: string };
   returnCode: number;
 }> {
-  const url = urlSchema.parse(req.body.url);
+  let url: string;
+  try {
+    url = urlSchema.parse(req.body.url);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      const errorMessage =
+        error.issues
+          .map(issue => issue.message)
+          .filter((msg, idx, arr) => arr.indexOf(msg) === idx)
+          .join("; ") || "Invalid URL";
+
+      return { success: false, error: errorMessage, returnCode: 400 };
+    }
+    throw error;
+  }
   if (typeof url !== "string") {
     return { success: false, error: "Url is required", returnCode: 400 };
   }
