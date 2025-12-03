@@ -69,6 +69,8 @@ app.use(cors()); // Add this line to enable CORS
 
 app.use(responseTime());
 
+app.disable("x-powered-by");
+
 if (process.env.EXPRESS_TRUST_PROXY) {
   app.set("trust proxy", parseInt(process.env.EXPRESS_TRUST_PROXY, 10));
 }
