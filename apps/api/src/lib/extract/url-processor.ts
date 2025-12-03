@@ -55,12 +55,12 @@ export async function generateBasicCompletion(
       model: "openai/gpt-4o",
       cost: calculateCost(
         "openai/gpt-4o",
-        result.usage?.promptTokens ?? 0,
-        result.usage?.completionTokens ?? 0,
+        result.usage?.inputTokens ?? 0,
+        result.usage?.outputTokens ?? 0,
       ),
       tokens: {
-        input: result.usage?.promptTokens ?? 0,
-        output: result.usage?.completionTokens ?? 0,
+        input: result.usage?.inputTokens ?? 0,
+        output: result.usage?.outputTokens ?? 0,
       },
     });
     return { text: result.text };
@@ -104,12 +104,12 @@ export async function generateBasicCompletion(
           model: "openai/gpt-4o-mini",
           cost: calculateCost(
             "openai/gpt-4o-mini",
-            result.usage?.promptTokens ?? 0,
-            result.usage?.completionTokens ?? 0,
+            result.usage?.inputTokens ?? 0,
+            result.usage?.outputTokens ?? 0,
           ),
           tokens: {
-            input: result.usage?.promptTokens ?? 0,
-            output: result.usage?.completionTokens ?? 0,
+            input: result.usage?.inputTokens ?? 0,
+            output: result.usage?.outputTokens ?? 0,
           },
         });
         return { text: result.text };

@@ -75,9 +75,12 @@ export async function crawlController(
     url: undefined,
     scrapeOptions: undefined,
   };
+
+  const bodyScrapeOptions =
+    req.body.scrapeOptions ?? ({} as typeof req.body.scrapeOptions);
   const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(
-    req.body.scrapeOptions,
-    req.body.scrapeOptions.timeout,
+    bodyScrapeOptions,
+    bodyScrapeOptions.timeout,
     req.auth.team_id,
   );
 

@@ -173,23 +173,34 @@ app.use(
     next: NextFunction,
   ) => {
     if (err instanceof ZodError) {
+      // In zod v4, ZodError uses 'issues' instead of 'errors'
+      const issues = err.issues;
+
       if (
-        Array.isArray(err.errors) &&
-        err.errors.find(x => x.message === "URL uses unsupported protocol")
+        Array.isArray(issues) &&
+        issues.find(x => x.message === "URL uses unsupported protocol")
       ) {
         logger.warn("Unsupported protocol error: " + JSON.stringify(req.body));
       }
 
-      const customErrorMessage =
-        err.errors.length > 0 && err.errors[0].code === "custom"
-          ? err.errors[0].message
+      // Check for unrecognized_keys errors and replace with custom message
+      const hasUnrecognizedKeys = issues.some(
+        e => e.code === "unrecognized_keys",
+      );
+      const strictMessage =
+        "Unrecognized key in body -- please review the v2 API documentation for request body changes";
+
+      const customErrorMessage = hasUnrecognizedKeys
+        ? strictMessage
+        : issues.length > 0 && issues[0].code === "custom"
+          ? issues[0].message
           : "Bad Request";
 
       res.status(400).json({
         success: false,
         code: "BAD_REQUEST",
         error: customErrorMessage,
-        details: err.errors,
+        details: issues,
       });
     } else {
       next(err);

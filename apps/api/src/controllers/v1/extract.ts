@@ -17,7 +17,10 @@ import { performExtraction_F0 } from "../../lib/extract/fire-0/extraction-servic
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { logger as _logger } from "../../lib/logger";
-import { fromV1ScrapeOptions } from "../v2/types";
+import {
+  fromV1ScrapeOptions,
+  ExtractRequest as V2ExtractRequest,
+} from "../v2/types";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logRequest } from "../../services/logging/log_job";
 
@@ -39,18 +42,33 @@ async function oldExtract(
   sender?.send(WebhookEvent.EXTRACT_STARTED, { success: true });
 
   try {
+    // Convert v1 scrapeOptions to v2 format
+    const scrapeOptions = req.body.scrapeOptions
+      ? fromV1ScrapeOptions(
+          req.body.scrapeOptions,
+          req.body.scrapeOptions.timeout,
+          req.auth.team_id,
+        ).scrapeOptions
+      : undefined;
+
+    // Create request with converted scrapeOptions (v2 format)
+    const request: V2ExtractRequest = {
+      ...req.body,
+      scrapeOptions,
+    } as V2ExtractRequest;
+
     let result: ExtractResult;
     const model = req.body.agent?.model;
     if (req.body.agent && model && model.toLowerCase().includes("fire-1")) {
       result = await performExtraction(extractId, {
-        request: req.body,
+        request,
         teamId: req.auth.team_id,
         subId: req.acuc?.sub_id ?? undefined,
         apiKeyId: req.acuc?.api_key_id ?? null,
       });
     } else {
       result = await performExtraction_F0(extractId, {
-        request: req.body,
+        request,
         teamId: req.auth.team_id,
         subId: req.acuc?.sub_id ?? undefined,
         apiKeyId: req.acuc?.api_key_id ?? null,

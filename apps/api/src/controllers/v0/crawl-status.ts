@@ -11,6 +11,7 @@ import { toLegacyDocument } from "../v1/types";
 import type { DBScrape, PseudoJob } from "../v1/crawl-status";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { scrapeQueue, NuQJob } from "../../services/worker/nuq";
+import { includesFormat } from "../../lib/format-utils";
 configDotenv();
 
 async function getJobs(
@@ -170,7 +171,7 @@ export async function crawlStatusController(req: Request, res: Response) {
       jobs[0].data &&
       jobs[0].data.scrapeOptions &&
       jobs[0].data.scrapeOptions.formats &&
-      !jobs[0].data.scrapeOptions.formats.includes("rawHtml")
+      !includesFormat(jobs[0].data.scrapeOptions.formats, "rawHtml")
     ) {
       data.forEach(item => {
         if (item) {

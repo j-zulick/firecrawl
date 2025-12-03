@@ -7,6 +7,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { ExtractOptions } from "../../controllers/v1/types";
 import { CostTracking } from "../cost-tracking";
 import { getACUCTeam } from "../../controllers/auth";
+import { includesFormat } from "../format-utils";
 export interface DeepResearchServiceOptions {
   researchId: string;
   teamId: string;
@@ -355,7 +356,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
 
     let finalAnalysis = "";
     let finalAnalysisJson = null;
-    if (options.formats.includes("json")) {
+    if (includesFormat(options.formats, "json")) {
       finalAnalysisJson = await llmService.generateFinalAnalysis(
         options.query,
         state.getFindings(),
@@ -371,7 +372,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
         options.jsonOptions,
       );
     }
-    if (options.formats.includes("markdown")) {
+    if (includesFormat(options.formats, "markdown")) {
       finalAnalysis = await llmService.generateFinalAnalysis(
         options.query,
         state.getFindings(),

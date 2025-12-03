@@ -48,7 +48,7 @@ export async function batchScrapeController(
   }
 
   const zeroDataRetention =
-    req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
+    req.acuc?.flags?.forceZDR ?? req.body.zeroDataRetention ?? false;
 
   const id = req.body.appendToId ?? uuidv7();
   const logger = _logger.child({

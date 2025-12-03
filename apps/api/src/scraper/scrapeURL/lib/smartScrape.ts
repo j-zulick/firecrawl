@@ -11,8 +11,8 @@ configDotenv();
 
 // Define schemas outside the function scope
 const tokenUsageDetailSchema = z.object({
-  input_tokens: z.number().int(),
-  output_tokens: z.number().int(),
+  input_tokens: z.int(),
+  output_tokens: z.int(),
   total_cost: z.number().nullable(), // Allows number or null
 });
 

@@ -77,7 +77,7 @@ export async function scrapeController(
       }
 
       const zeroDataRetention =
-        req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
+        req.acuc?.flags?.forceZDR ?? req.body.zeroDataRetention ?? false;
 
       const logger = _logger.child({
         method: "scrapeController",
@@ -169,7 +169,7 @@ export async function scrapeController(
               async waitSpan => {
                 setSpanAttributes(waitSpan, {
                   "wait.timeout":
-                    timeout !== undefined ? timeout + totalWait : null,
+                    timeout !== undefined ? timeout + totalWait : undefined,
                   "wait.job_id": jobId,
                 });
 
@@ -185,7 +185,7 @@ export async function scrapeController(
                     team_id: req.auth.team_id,
                     scrapeOptions: {
                       ...req.body,
-                      ...(req.body.__experimental_cache
+                      ...((req.body as any).__experimental_cache
                         ? {
                             maxAge: req.body.maxAge ?? 4 * 60 * 60 * 1000, // 4 hours
                           }

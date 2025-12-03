@@ -343,7 +343,7 @@ export async function searchController(
 
     // Check if scraping is requested
     const shouldScrape =
-      req.body.scrapeOptions.formats &&
+      req.body.scrapeOptions?.formats &&
       req.body.scrapeOptions.formats.length > 0;
     const isAsyncScraping = req.body.asyncScraping && shouldScrape;
 
@@ -356,12 +356,25 @@ export async function searchController(
         `Starting ${isAsyncScraping ? "async" : "sync"} search scraping`,
       );
 
+      // Safely extract scrapeOptions with runtime check
+      if (!req.body.scrapeOptions) {
+        logger.error(
+          "scrapeOptions is undefined despite shouldScrape being true",
+        );
+        return res.status(500).json({
+          success: false,
+          error: "Internal server error: scrapeOptions is missing",
+        });
+      }
+
+      const bodyScrapeOptions = req.body.scrapeOptions;
+
       // Create common options
       const scrapeOptions = {
         teamId: req.auth.team_id,
         origin: req.body.origin,
         timeout: req.body.timeout,
-        scrapeOptions: req.body.scrapeOptions,
+        scrapeOptions: bodyScrapeOptions,
         bypassBilling: !isAsyncScraping, // Async mode bills per job, sync mode bills manually
         apiKeyId: req.acuc?.api_key_id ?? null,
         zeroDataRetention: isZDROrAnon,
@@ -615,10 +628,11 @@ export async function searchController(
         }
 
         // Calculate credits
+        // bodyScrapeOptions is guaranteed to exist here because we're in the shouldScrape block
         const creditPromises = allDocsWithCostTracking.map(
           async docWithCost => {
             return await calculateCreditsToBeBilled(
-              req.body.scrapeOptions,
+              bodyScrapeOptions,
               {
                 teamId: req.auth.team_id,
                 bypassBilling: true,
@@ -724,11 +738,11 @@ export async function searchController(
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      logger.warn("Invalid request body", { error: error.errors });
+      logger.warn("Invalid request body", { error: error.issues });
       return res.status(400).json({
         success: false,
         error: "Invalid request body",
-        details: error.errors,
+        details: error.issues,
       });
     }
 

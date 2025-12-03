@@ -13,6 +13,7 @@ import { fromV1ScrapeOptions } from "../v2/types";
 import { TransportableError } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
+import { includesFormat } from "../../lib/format-utils";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
@@ -205,7 +206,7 @@ export async function scrapeController(
 
   logger.info("Removed job from queue");
 
-  if (!req.body.formats.includes("rawHtml")) {
+  if (!includesFormat(req.body.formats, "rawHtml")) {
     if (doc && doc.rawHtml) {
       delete doc.rawHtml;
     }
@@ -215,14 +216,14 @@ export async function scrapeController(
   const controllerTime = new Date().getTime() - controllerStartTime;
 
   let usedLlm =
-    req.body.formats?.includes("json") ||
-    req.body.formats?.includes("summary") ||
-    req.body.formats?.includes("branding") ||
-    req.body.formats?.includes("extract");
+    includesFormat(req.body.formats, "json") ||
+    includesFormat(req.body.formats, "summary") ||
+    includesFormat(req.body.formats, "branding") ||
+    includesFormat(req.body.formats, "extract");
 
   if (
     !usedLlm &&
-    req.body.formats?.includes("changeTracking") &&
+    includesFormat(req.body.formats, "changeTracking") &&
     req.body.changeTrackingOptions?.modes?.includes("json")
   ) {
     usedLlm = true;
