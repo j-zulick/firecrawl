@@ -73,6 +73,7 @@ import {
 } from "../../lib/otel-tracer";
 import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
 import { logScrape } from "../logging/log_job";
+import { FeatureFlag } from "../../scraper/scrapeURL/engines";
 
 configDotenv();
 
@@ -93,6 +94,7 @@ async function billScrapeJob(
   costTracking: CostTracking,
   flags: TeamFlags,
   error?: Error | null,
+  unsupportedFeatures?: Set<FeatureFlag>,
 ) {
   let creditsToBeBilled: number | null = null;
 
@@ -104,6 +106,7 @@ async function billScrapeJob(
       costTracking,
       flags,
       error,
+      unsupportedFeatures,
     );
 
     if (
@@ -452,6 +455,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         logger,
         costTracking,
         (await getACUCTeam(job.data.team_id))?.flags ?? null,
+        undefined,
+        pipeline.unsupportedFeatures,
       );
 
       doc.metadata.creditsUsed = credits_billed ?? undefined;
@@ -521,6 +526,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         logger,
         costTracking,
         (await getACUCTeam(job.data.team_id))?.flags ?? null,
+        undefined,
+        pipeline.unsupportedFeatures,
       );
 
       doc.metadata.creditsUsed = credits_billed ?? undefined;

@@ -78,6 +78,7 @@ export type ScrapeUrlResponse =
   | {
       success: true;
       document: Document;
+      unsupportedFeatures?: Set<FeatureFlag>;
     }
   | {
       success: false;
@@ -838,6 +839,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     return {
       success: true,
       document,
+      unsupportedFeatures: result.unsupportedFeatures,
     };
   });
 }
