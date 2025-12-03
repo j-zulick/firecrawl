@@ -494,10 +494,7 @@ export class WebCrawler {
       );
     });
 
-    // Allow sitemaps to be cached for 48 hours if they are requested from /map
-    // - mogery
-    const maxAge = fromMap && !onlySitemap ? 48 * 60 * 60 * 1000 : 0;
-
+    const maxAge = 48 * 60 * 60 * 1000;
     try {
       const robotsSitemaps = this.robots.getSitemaps();
       this.logger.debug("Attempting to fetch sitemap links", {
