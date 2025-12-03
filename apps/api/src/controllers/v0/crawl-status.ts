@@ -4,11 +4,11 @@ import { RateLimiterMode } from "../../../src/types";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { logger } from "../../../src/lib/logger";
 import { getCrawl, getCrawlJobs } from "../../../src/lib/crawl-redis";
-import { supabaseGetJobsByCrawlId } from "../../../src/lib/supabase-jobs";
+import { supabaseGetScrapesByRequestId } from "../../../src/lib/supabase-jobs";
 import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { toLegacyDocument } from "../v1/types";
-import type { DBJob, PseudoJob } from "../v1/crawl-status";
+import type { DBScrape, PseudoJob } from "../v1/crawl-status";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { scrapeQueue, NuQJob } from "../../services/worker/nuq";
 configDotenv();
@@ -17,10 +17,10 @@ async function getJobs(
   crawlId: string,
   ids: string[],
 ): Promise<PseudoJob<any>[]> {
-  const [nuqJobs, dbJobs, gcsJobs] = await Promise.all([
+  const [nuqJobs, dbScrapes, gcsJobs] = await Promise.all([
     scrapeQueue.getJobs(ids),
     process.env.USE_DB_AUTHENTICATION === "true"
-      ? await supabaseGetJobsByCrawlId(crawlId)
+      ? await supabaseGetScrapesByRequestId(crawlId)
       : [],
     process.env.GCS_BUCKET_NAME
       ? (Promise.all(
@@ -32,15 +32,15 @@ async function getJobs(
   ]);
 
   const nuqJobMap = new Map<string, NuQJob<any, any>>();
-  const dbJobMap = new Map<string, DBJob>();
+  const dbScrapeMap = new Map<string, DBScrape>();
   const gcsJobMap = new Map<string, any>();
 
   for (const job of nuqJobs) {
     nuqJobMap.set(job.id, job);
   }
 
-  for (const job of dbJobs) {
-    dbJobMap.set(job.job_id, job);
+  for (const scrape of dbScrapes) {
+    dbScrapeMap.set(scrape.id, scrape);
   }
 
   for (const job of gcsJobs) {
@@ -51,12 +51,12 @@ async function getJobs(
 
   for (const id of ids) {
     const nuqJob = nuqJobMap.get(id);
-    const dbJob = dbJobMap.get(id);
+    const dbScrape = dbScrapeMap.get(id);
     const gcsJob = gcsJobMap.get(id);
 
-    if (!nuqJob && !dbJob) continue;
+    if (!nuqJob && !dbScrape) continue;
 
-    const data = gcsJob ?? dbJob?.docs ?? nuqJob?.returnvalue;
+    const data = gcsJob ?? nuqJob?.returnvalue;
     if (gcsJob === null && data) {
       logger.warn("GCS Job not found", {
         jobId: id,
@@ -65,16 +65,20 @@ async function getJobs(
 
     const job: PseudoJob<any> = {
       id,
-      status: dbJob ? (dbJob.success ? "completed" : "failed") : nuqJob!.status,
+      status: dbScrape
+        ? dbScrape.success
+          ? "completed"
+          : "failed"
+        : nuqJob!.status,
       returnvalue: Array.isArray(data) ? data[0] : data,
       data: {
-        scrapeOptions: nuqJob ? nuqJob.data.scrapeOptions : dbJob!.page_options,
+        scrapeOptions: nuqJob ? nuqJob.data.scrapeOptions : dbScrape!.options,
       },
       timestamp: nuqJob
         ? nuqJob.createdAt.valueOf()
-        : new Date(dbJob!.date_added).valueOf(),
+        : new Date(dbScrape!.created_at).valueOf(),
       failedReason:
-        (nuqJob ? nuqJob.failedReason : dbJob!.message) || undefined,
+        (nuqJob ? nuqJob.failedReason : dbScrape!.error) || undefined,
     };
 
     jobs.push(job);

@@ -21,6 +21,7 @@ import { checkPermissions } from "../../lib/permissions";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 import { modifyCrawlUrl } from "../../utils/url-utils";
 import { crawlGroup } from "../../services/worker/nuq";
+import { logRequest } from "../../services/logging/log_job";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -57,6 +58,17 @@ export async function crawlController(
     request: req.body,
     originalRequest: preNormalizedBody,
     account: req.account,
+  });
+
+  await logRequest({
+    id,
+    kind: "crawl",
+    api_version: "v2",
+    team_id: req.auth.team_id,
+    origin: req.body.origin ?? "api",
+    integration: req.body.integration,
+    target_hint: req.body.url,
+    zeroDataRetention: zeroDataRetention || false,
   });
 
   let { remainingCredits } = req.account!;
@@ -229,7 +241,7 @@ export async function crawlController(
       zeroDataRetention: zeroDataRetention || false,
       apiKeyId: req.acuc?.api_key_id ?? null,
     },
-    crypto.randomUUID(),
+    uuidv7(),
   );
 
   const protocol = req.protocol;

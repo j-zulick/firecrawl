@@ -11,7 +11,7 @@ import {
 import { billTeam } from "../../services/billing/credit_billing";
 import { v7 as uuidv7 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
-import { logJob } from "../../services/logging/log_job";
+import { logSearch, logRequest } from "../../services/logging/log_job";
 import { search } from "../../search";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import * as Sentry from "@sentry/node";
@@ -40,6 +40,7 @@ export async function searchAndScrapeSearchResult(
     timeout: number;
     scrapeOptions: ScrapeOptions;
     apiKeyId: number | null;
+    requestId?: string;
   },
   logger: Logger,
   flags: TeamFlags,
@@ -80,6 +81,7 @@ async function scrapeSearchResult(
     timeout: number;
     scrapeOptions: ScrapeOptions;
     apiKeyId: number | null;
+    requestId?: string;
   },
   logger: Logger,
   flags: TeamFlags,
@@ -138,6 +140,7 @@ async function scrapeSearchResult(
         startTime: Date.now(),
         zeroDataRetention,
         apiKeyId: options.apiKeyId,
+        requestId: options.requestId,
       },
       jobId,
       jobPriority,
@@ -170,9 +173,9 @@ async function scrapeSearchResult(
     if (process.env.USE_DB_AUTHENTICATION === "true") {
       const { data: costTrackingResponse, error: costTrackingError } =
         await supabase_service
-          .from("firecrawl_jobs")
+          .from("scrapes")
           .select("cost_tracking")
-          .eq("job_id", jobId);
+          .eq("id", jobId);
 
       if (costTrackingError) {
         logger.error("Error getting cost tracking", {
@@ -268,6 +271,17 @@ export async function searchController(
       origin: req.body.origin,
     });
 
+    await logRequest({
+      id: jobId,
+      kind: "search",
+      api_version: "v1",
+      team_id: req.auth.team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: req.body.query,
+      zeroDataRetention: false, // not supported for search
+    });
+
     let limit = req.body.limit;
 
     // Buffer results by 50% to account for filtered URLs
@@ -326,6 +340,7 @@ export async function searchController(
             timeout: req.body.timeout,
             scrapeOptions: req.body.scrapeOptions,
             apiKeyId: req.acuc?.api_key_id ?? null,
+            requestId: jobId,
           },
           logger,
           req.acuc?.flags ?? null,
@@ -430,29 +445,26 @@ export async function searchController(
       time_taken: timeTakenInSeconds,
     });
 
-    logJob(
+    logSearch(
       {
-        job_id: jobId,
-        success: true,
-        num_docs: responseData.data.length,
-        docs: responseData.data,
+        id: jobId,
+        request_id: jobId,
+        query: req.body.query,
+        is_successful: true,
+        error: undefined,
+        results: responseData.data,
+        num_results: responseData.data.length,
         time_taken: timeTakenInSeconds,
         team_id: req.auth.team_id,
-        mode: "search",
-        url: req.body.query,
-        scrapeOptions: req.body.scrapeOptions,
-        crawlerOptions: {
+        options: {
           ...req.body,
           query: undefined,
           scrapeOptions: undefined,
         },
-        origin: req.body.origin,
-        integration: req.body.integration,
-        credits_billed,
+        credits_cost: credits_billed,
         zeroDataRetention: false, // not supported
       },
       false,
-      isSearchPreview,
     );
 
     // Log final timing information

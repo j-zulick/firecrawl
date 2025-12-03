@@ -11,7 +11,7 @@ import {
 import { billTeam } from "../../services/billing/credit_billing";
 import { v7 as uuidv7 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
-import { logJob } from "../../services/logging/log_job";
+import { logSearch, logRequest } from "../../services/logging/log_job";
 import { search } from "../../search/v2";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import * as Sentry from "@sentry/node";
@@ -52,6 +52,7 @@ async function startScrapeJob(
     bypassBilling?: boolean;
     apiKeyId: number | null;
     zeroDataRetention?: boolean;
+    requestId?: string;
   },
   logger: Logger,
   flags: TeamFlags,
@@ -97,6 +98,7 @@ async function startScrapeJob(
       startTime: Date.now(),
       zeroDataRetention,
       apiKeyId: options.apiKeyId,
+      requestId: options.requestId,
     },
     jobId,
     jobPriority,
@@ -117,6 +119,7 @@ async function scrapeSearchResult(
     bypassBilling?: boolean;
     apiKeyId: number | null;
     zeroDataRetention?: boolean;
+    requestId?: string;
   },
   logger: Logger,
   flags: TeamFlags,
@@ -134,7 +137,12 @@ async function scrapeSearchResult(
       isSearchPreview,
     );
 
-    const doc: Document = await waitForJob(jobId, options.timeout, false);
+    const doc: Document = await waitForJob(
+      jobId,
+      options.timeout,
+      options.zeroDataRetention ?? false,
+      logger,
+    );
 
     logger.info("Scrape job completed", {
       scrapeId: jobId,
@@ -156,9 +164,9 @@ async function scrapeSearchResult(
     if (process.env.USE_DB_AUTHENTICATION === "true") {
       const { data: costTrackingResponse, error: costTrackingError } =
         await supabase_service
-          .from("firecrawl_jobs")
+          .from("scrapes")
           .select("cost_tracking")
-          .eq("job_id", jobId);
+          .eq("id", jobId);
 
       if (costTrackingError) {
         logger.error("Error getting cost tracking", {
@@ -242,6 +250,21 @@ export async function searchController(
       origin: req.body.origin,
     });
 
+    const isZDR = req.body.enterprise?.includes("zdr");
+    const isAnon = req.body.enterprise?.includes("anon");
+    const isZDROrAnon = isZDR || isAnon;
+
+    await logRequest({
+      id: jobId,
+      kind: "search",
+      api_version: "v2",
+      team_id: req.auth.team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: req.body.query,
+      zeroDataRetention: isZDROrAnon ?? false, // not supported for search
+    });
+
     let limit = req.body.limit;
 
     // Buffer results by 50% to account for filtered URLs
@@ -252,10 +275,6 @@ export async function searchController(
     // Extract unique types from sources for the search function
     // After transformation, sources is always an array of objects
     const searchTypes = [...new Set(req.body.sources.map((s: any) => s.type))];
-
-    const isZDR = req.body.enterprise?.includes("zdr");
-    const isAnon = req.body.enterprise?.includes("anon");
-    const isZDROrAnon = isZDR || isAnon;
 
     // Build search query with category filters
     const { query: searchQuery, categoryMap } = buildSearchQuery(
@@ -346,6 +365,7 @@ export async function searchController(
         bypassBilling: !isAsyncScraping, // Async mode bills per job, sync mode bills manually
         apiKeyId: req.acuc?.api_key_id ?? null,
         zeroDataRetention: isZDROrAnon,
+        requestId: jobId,
       };
 
       const directToBullMQ = (req.acuc?.price_credits ?? 0) <= 3000;
@@ -507,35 +527,24 @@ export async function searchController(
           time_taken: timeTakenInSeconds,
           scrapeIds,
         });
-        if (!isZDROrAnon) {
-          logJob(
-            {
-              job_id: jobId,
-              success: true,
-              num_docs:
-                (searchResponse.web?.length ?? 0) +
-                (searchResponse.images?.length ?? 0) +
-                (searchResponse.news?.length ?? 0),
-              docs: [searchResponse],
-              time_taken: timeTakenInSeconds,
-              team_id: req.auth.team_id,
-              mode: "search",
-              url: req.body.query,
-              scrapeOptions: req.body.scrapeOptions,
-              crawlerOptions: {
-                ...req.body,
-                query: undefined,
-                scrapeOptions: undefined,
-              },
-              origin: req.body.origin,
-              integration: req.body.integration,
-              credits_billed,
-              zeroDataRetention: false,
-            },
-            false,
-            isSearchPreview,
-          );
-        }
+
+        logSearch(
+          {
+            id: jobId,
+            request_id: jobId,
+            query: req.body.query,
+            is_successful: true,
+            error: undefined,
+            results: searchResponse as any,
+            num_results: totalResultsCount,
+            time_taken: timeTakenInSeconds,
+            team_id: req.auth.team_id,
+            options: req.body,
+            credits_cost: credits_billed,
+            zeroDataRetention: isZDROrAnon ?? false,
+          },
+          false,
+        );
 
         // Log final timing information for async mode
         const totalRequestTime = new Date().getTime() - middlewareStartTime;
@@ -667,40 +676,28 @@ export async function searchController(
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
-    if (!isZDROrAnon) {
-      logger.info("Logging job", {
-        num_docs: credits_billed,
+    logger.info("Logging job", {
+      num_docs: credits_billed,
+      time_taken: timeTakenInSeconds,
+    });
+
+    logSearch(
+      {
+        id: jobId,
+        request_id: jobId,
+        query: req.body.query,
+        is_successful: true,
+        error: undefined,
+        results: searchResponse as any,
+        num_results: totalResultsCount,
         time_taken: timeTakenInSeconds,
-      });
-      logJob(
-        {
-          job_id: jobId,
-          success: true,
-          num_docs:
-            (searchResponse.web?.length ?? 0) +
-            (searchResponse.images?.length ?? 0) +
-            (searchResponse.news?.length ?? 0),
-          docs: [searchResponse],
-          time_taken: timeTakenInSeconds,
-          team_id: req.auth.team_id,
-          mode: "search",
-          url: req.body.query,
-          scrapeOptions: req.body.scrapeOptions,
-          crawlerOptions: {
-            ...req.body,
-            query: undefined,
-            scrapeOptions: undefined,
-            asyncScraping: isAsyncScraping,
-          },
-          origin: req.body.origin,
-          integration: req.body.integration,
-          credits_billed,
-          zeroDataRetention: false, // not supported
-        },
-        false,
-        isSearchPreview,
-      );
-    }
+        team_id: req.auth.team_id,
+        options: req.body,
+        credits_cost: credits_billed,
+        zeroDataRetention: isZDROrAnon ?? false, // not supported
+      },
+      false,
+    );
 
     // Log final timing information
     const totalRequestTime = new Date().getTime() - middlewareStartTime;

@@ -4,6 +4,7 @@ import { supabase_service } from "../../../services/supabase";
 import crypto from "crypto";
 import { z } from "zod";
 import { validate as isUuid } from "uuid";
+import { parseApi } from "../../../lib/parseApi";
 
 export async function integValidateApiKeyController(
   req: Request,
@@ -53,7 +54,7 @@ export async function integValidateApiKeyController(
 
     const body = bodySchema.parse(req.body);
 
-    const normalizedApiKey = body.apiKey.replace(/^fc-/, "");
+    const normalizedApiKey = parseApi(body.apiKey);
 
     if (!isUuid(normalizedApiKey)) {
       return res.status(400).json({ error: "API key is invalid" });

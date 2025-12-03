@@ -24,6 +24,7 @@ import { fromV0Combo } from "../v2/types";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq";
 import { getErrorContactMessage } from "../../lib/deployment";
+import { logRequest } from "../../services/logging/log_job";
 
 async function scrapeHelper(
   jobId: string,
@@ -177,6 +178,17 @@ export async function scrapeController(req: Request, res: Response) {
     }
 
     const jobId = uuidv7();
+
+    await logRequest({
+      id: jobId,
+      kind: "scrape",
+      api_version: "v0",
+      team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: req.body.url ?? "",
+      zeroDataRetention: false, // not supported on v0
+    });
 
     redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
       logger.error("Failed to add team to teams_using_v0", {

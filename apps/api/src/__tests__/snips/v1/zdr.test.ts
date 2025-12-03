@@ -10,9 +10,11 @@ import {
 import { describeIf, TEST_PRODUCTION } from "../lib";
 import {
   getLogs,
-  expectJobRecordIsCleanedUp,
-  expectJobsArrayIsCleanedUp,
-  expectJobsAreFullyCleanedAfterZDRCleaner,
+  expectScrapeIsCleanedUp,
+  expectCrawlIsCleanedUp,
+  expectScrapesOfRequestAreCleanedUp,
+  expectScrapesAreFullyCleanedAfterZDRCleaner,
+  expectBatchScrapeIsCleanedUp,
 } from "../zdr-helpers";
 
 describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
@@ -43,7 +45,7 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
       const gcsJob = await getJobFromGCS(scrape1.metadata.scrapeId!);
       expect(gcsJob).toBeNull();
 
-      await expectJobRecordIsCleanedUp(scrape1.metadata.scrapeId!);
+      await expectScrapeIsCleanedUp(scrape1.metadata.scrapeId!);
 
       if (scope === "Request-scoped") {
         const status = await scrapeStatusRaw(
@@ -55,101 +57,115 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
       }
     }, 60000);
 
-    it("should clean up a crawl", async () => {
-      const preLogs = await getLogs();
+    it(
+      "should clean up a crawl",
+      async () => {
+        const preLogs = await getLogs();
 
-      let identity = await idmux({
-        name: `zdr/${scope}/crawl`,
-        credits: 10000,
-        flags: {
-          allowZDR: true,
-          ...(scope === "Team-scoped"
-            ? {
-                forceZDR: true,
-              }
-            : {}),
-        },
-      });
+        let identity = await idmux({
+          name: `zdr/${scope}/crawl`,
+          credits: 10000,
+          flags: {
+            allowZDR: true,
+            ...(scope === "Team-scoped"
+              ? {
+                  forceZDR: true,
+                }
+              : {}),
+          },
+        });
 
-      const crawl1 = await crawl(
-        {
-          url: "https://firecrawl.dev",
-          limit: 10,
-          zeroDataRetention: scope === "Request-scoped" ? true : undefined,
-        },
-        identity,
-      );
+        const crawl1 = await crawl(
+          {
+            url: "https://firecrawl.dev",
+            limit: 10,
+            zeroDataRetention: scope === "Request-scoped" ? true : undefined,
+          },
+          identity,
+        );
 
-      await new Promise(resolve => setTimeout(resolve, 2500));
+        await new Promise(resolve => setTimeout(resolve, 2500));
 
-      const postLogs = (await getLogs()).slice(preLogs.length);
+        const postLogs = (await getLogs()).slice(preLogs.length);
 
-      if (postLogs.length > 0) {
-        console.warn("Logs changed during crawl", postLogs);
-      }
+        if (postLogs.length > 0) {
+          console.warn("Logs changed during crawl", postLogs);
+        }
 
-      expect(postLogs).toHaveLength(0);
+        expect(postLogs).toHaveLength(0);
 
-      await expectJobRecordIsCleanedUp(crawl1.id);
+        // wait 20 seconds for crawl finish cron to fire
+        await new Promise(resolve => setTimeout(resolve, 20000));
 
-      const jobs = await expectJobsArrayIsCleanedUp(crawl1.id);
+        await expectCrawlIsCleanedUp(crawl1.id);
 
-      await zdrcleaner(identity.teamId!);
+        const scrapes = await expectScrapesOfRequestAreCleanedUp(crawl1.id);
 
-      await expectJobsAreFullyCleanedAfterZDRCleaner(
-        jobs,
-        scope,
-        identity,
-        scrapeStatusRaw,
-      );
-    }, 600000);
+        await zdrcleaner(identity.teamId!);
 
-    it("should clean up a batch scrape", async () => {
-      const preLogs = await getLogs();
+        await expectScrapesAreFullyCleanedAfterZDRCleaner(
+          scrapes,
+          scope,
+          identity,
+          scrapeStatusRaw,
+        );
+      },
+      600000 + 20000,
+    );
 
-      let identity = await idmux({
-        name: `zdr/${scope}/batch-scrape`,
-        credits: 10000,
-        flags: {
-          allowZDR: true,
-          ...(scope === "Team-scoped"
-            ? {
-                forceZDR: true,
-              }
-            : {}),
-        },
-      });
+    it(
+      "should clean up a batch scrape",
+      async () => {
+        const preLogs = await getLogs();
 
-      const crawl1 = await batchScrape(
-        {
-          urls: ["https://firecrawl.dev", "https://mendable.ai"],
-          zeroDataRetention: scope === "Request-scoped" ? true : undefined,
-        },
-        identity,
-      );
+        let identity = await idmux({
+          name: `zdr/${scope}/batch-scrape`,
+          credits: 10000,
+          flags: {
+            allowZDR: true,
+            ...(scope === "Team-scoped"
+              ? {
+                  forceZDR: true,
+                }
+              : {}),
+          },
+        });
 
-      await new Promise(resolve => setTimeout(resolve, 2500));
+        const crawl1 = await batchScrape(
+          {
+            urls: ["https://firecrawl.dev", "https://mendable.ai"],
+            zeroDataRetention: scope === "Request-scoped" ? true : undefined,
+          },
+          identity,
+        );
 
-      const postLogs = (await getLogs()).slice(preLogs.length);
+        await new Promise(resolve => setTimeout(resolve, 2500));
 
-      if (postLogs.length > 0) {
-        console.warn("Logs changed during batch scrape", postLogs);
-      }
+        const postLogs = (await getLogs()).slice(preLogs.length);
 
-      expect(postLogs).toHaveLength(0);
+        if (postLogs.length > 0) {
+          console.warn("Logs changed during batch scrape", postLogs);
+        }
 
-      await expectJobRecordIsCleanedUp(crawl1.id);
+        expect(postLogs).toHaveLength(0);
 
-      const jobs = await expectJobsArrayIsCleanedUp(crawl1.id, 2);
+        // wait 20 seconds for batch scrape finish cron to fire
+        await new Promise(resolve => setTimeout(resolve, 20000));
 
-      await zdrcleaner(identity.teamId!);
+        await expectBatchScrapeIsCleanedUp(crawl1.id);
 
-      await expectJobsAreFullyCleanedAfterZDRCleaner(
-        jobs,
-        scope,
-        identity,
-        scrapeStatusRaw,
-      );
-    }, 600000);
+        const scrapes = await expectScrapesOfRequestAreCleanedUp(crawl1.id, 2);
+
+        await zdrcleaner(identity.teamId!);
+
+        await expectScrapesAreFullyCleanedAfterZDRCleaner(
+          scrapes,
+          scope,
+          identity,
+          scrapeStatusRaw,
+        );
+      },
+      600000 + 20000,
+    );
   });
 });

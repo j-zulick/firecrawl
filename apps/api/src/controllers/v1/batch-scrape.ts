@@ -26,6 +26,7 @@ import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
 import { crawlGroup } from "../../services/worker/nuq";
+import { logRequest } from "../../services/logging/log_job";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -109,6 +110,19 @@ export async function batchScrapeController(
     appendToId: req.body.appendToId,
     account: req.account,
   });
+
+  if (!req.body.appendToId) {
+    await logRequest({
+      id,
+      kind: "batch_scrape",
+      api_version: "v1",
+      team_id: req.auth.team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: urls[0] ?? "",
+      zeroDataRetention: zeroDataRetention || false,
+    });
+  }
 
   const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(
     req.body,

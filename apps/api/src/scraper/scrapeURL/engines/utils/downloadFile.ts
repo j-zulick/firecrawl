@@ -9,7 +9,7 @@ import {
   SSLError,
 } from "../../error";
 import { Writable } from "stream";
-import { v4 as uuid } from "uuid";
+import { v7 as uuid } from "uuid";
 import * as undici from "undici";
 import { getSecureDispatcher } from "./safeFetch";
 import { logger } from "../../../../lib/logger";

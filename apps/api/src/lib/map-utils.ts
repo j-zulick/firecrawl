@@ -92,6 +92,7 @@ export async function getMapResults({
   useIndex = true,
   location,
   maxFireEngineResults = MAX_FIRE_ENGINE_RESULTS,
+  id: providedId,
 }: {
   url: string;
   search?: string;
@@ -109,6 +110,7 @@ export async function getMapResults({
   useIndex?: boolean;
   location?: ScrapeOptions["location"];
   maxFireEngineResults?: number;
+  id?: string;
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
 
@@ -122,7 +124,7 @@ export async function getMapResults({
     url = urlObj.toString();
   }
 
-  const id = uuidv7();
+  const id = providedId ?? uuidv7();
   let mapResults: MapDocument[] = [];
   const zeroDataRetention = flags?.forceZDR ?? false;
 

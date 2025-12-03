@@ -18,6 +18,7 @@ import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { getJobPriority } from "../../lib/job-priority";
+import { logRequest } from "../../services/logging/log_job";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -96,6 +97,17 @@ export async function scrapeController(
         request: req.body,
         originalRequest: preNormalizedBody,
         account: req.account,
+      });
+
+      await logRequest({
+        id: jobId,
+        kind: "scrape",
+        api_version: "v2",
+        team_id: req.auth.team_id,
+        origin: req.body.origin ?? "api",
+        integration: req.body.integration,
+        target_hint: req.body.url,
+        zeroDataRetention: zeroDataRetention || false,
       });
 
       setSpanAttributes(span, {

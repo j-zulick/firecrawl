@@ -10,7 +10,7 @@ import {
 } from "./types";
 import { v7 as uuidv7 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
-import { logJob } from "../../services/logging/log_job";
+import { logSearch, logRequest } from "../../services/logging/log_job";
 import { search } from "../../search";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import * as Sentry from "@sentry/node";
@@ -123,9 +123,9 @@ async function scrapeX402SearchResult(
     if (process.env.USE_DB_AUTHENTICATION === "true") {
       const { data: costTrackingResponse, error: costTrackingError } =
         await supabase_service
-          .from("firecrawl_jobs")
+          .from("scrapes")
           .select("cost_tracking")
-          .eq("job_id", jobId);
+          .eq("id", jobId);
 
       if (costTrackingError) {
         throw costTrackingError;
@@ -212,6 +212,17 @@ export async function x402SearchController(
     logger = logger.child({
       query: req.body.query,
       origin: req.body.origin,
+    });
+
+    await logRequest({
+      id: jobId,
+      kind: "search",
+      api_version: "v1",
+      team_id: req.auth.team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: req.body.query,
+      zeroDataRetention: false, // not supported for x402 search
     });
 
     let limit = req.body.limit;
@@ -310,29 +321,22 @@ export async function x402SearchController(
       time_taken: timeTakenInSeconds,
     });
 
-    logJob(
+    logSearch(
       {
-        job_id: jobId,
-        success: true,
-        num_docs: responseData.data.length,
-        docs: responseData.data,
+        id: jobId,
+        request_id: jobId,
+        query: req.body.query,
+        is_successful: true,
+        error: undefined,
+        results: responseData.data,
+        num_results: responseData.data.length,
         time_taken: timeTakenInSeconds,
         team_id: req.auth.team_id,
-        mode: "x402-search",
-        url: req.body.query,
-        scrapeOptions: req.body.scrapeOptions,
-        crawlerOptions: {
-          ...req.body,
-          query: undefined,
-          scrapeOptions: undefined,
-        },
-        origin: req.body.origin,
-        integration: req.body.integration,
-        credits_billed: 0,
+        options: { ...req.body, scrapeOptions: undefined, query: undefined },
+        credits_cost: responseData.data.length,
         zeroDataRetention: false, // not supported
       },
       false,
-      isSearchPreview,
     );
 
     return res.status(200).json(responseData);

@@ -33,6 +33,15 @@ export const logIgnoreList = [
   "request completed",
   "nuqAddJobs metrics",
   "nuqGetJobs metrics",
+  "nuqAddGroup metrics",
+  "nuqGetGroup metrics",
+  "NuQ job prefetch sent",
+  "Acquired job",
+  "nuqGetJob metrics",
+  "nuqJobFinish metrics",
+  "Starting to update tallies",
+  "tally for team",
+  "Finished updating tallies",
 ];
 
 export async function getLogs() {
@@ -76,70 +85,130 @@ export async function getLogs() {
     );
 }
 
-export async function expectJobRecordIsCleanedUp(jobId: string) {
-  const { data, error } = await supabase_service
-    .from("firecrawl_jobs")
+export async function expectScrapeIsCleanedUp(scrapeId: string) {
+  const { data: scrapeData, error: scrapeError } = await supabase_service
+    .from("scrapes")
     .select("*")
-    .eq("job_id", jobId)
+    .eq("id", scrapeId)
     .limit(1);
 
-  expect(error).toBeFalsy();
-  expect(data).toHaveLength(1);
+  expect(scrapeError).toBeFalsy();
+  expect(scrapeData).toHaveLength(1);
 
-  if (data && data.length === 1) {
-    const record = data[0];
+  if (scrapeData && scrapeData.length === 1) {
+    const record = scrapeData[0];
     expect(record.url).not.toContain("://"); // no url stored
-    expect(record.docs).toBeNull();
-    expect(record.page_options).toBeNull();
-    expect(record.crawler_options).toBeNull();
+    expect(record.options).toBeNull();
   }
 }
 
-export async function expectJobsArrayIsCleanedUp(
-  crawlId: string,
-  expectedJobCount?: number,
-) {
-  const { data: jobs, error: jobsError } = await supabase_service
-    .from("firecrawl_jobs")
+export async function expectCrawlIsCleanedUp(crawlId: string) {
+  const { data: requestData, error: requestError } = await supabase_service
+    .from("requests")
     .select("*")
-    .eq("crawl_id", crawlId);
+    .eq("id", crawlId)
+    .limit(1);
 
-  expect(jobsError).toBeFalsy();
-
-  if (expectedJobCount !== undefined) {
-    expect((jobs ?? []).length).toBe(expectedJobCount);
-  } else {
-    expect((jobs ?? []).length).toBeGreaterThanOrEqual(1);
+  expect(requestError).toBeFalsy();
+  expect(requestData).toHaveLength(1);
+  
+  if (requestData && requestData.length === 1) {
+    const record = requestData[0];
+    expect(record.url).not.toContain("://"); // no url stored
+    expect(record.kind).toBe("crawl");
+    expect(record.dr_clean_by).not.toBeNull();
   }
 
-  for (const job of jobs ?? []) {
-    expect(job.url).not.toContain("://"); // no url stored
-    expect(job.docs).toBeNull();
-    expect(job.page_options).toBeNull();
-    expect(job.crawler_options).toBeNull();
-    expect(typeof job.dr_clean_by).toBe("string"); // clean up happens async on a worker after expiry
+  const { data: crawlData, error: crawlError } = await supabase_service
+    .from("crawls")
+    .select("*")
+    .eq("id", crawlId)
+    .limit(1);
 
-    if (job.success) {
-      const gcsJob = await getJobFromGCS(job.job_id);
+  expect(crawlError).toBeFalsy();
+  expect(crawlData).toHaveLength(1);
+
+  if (crawlData && crawlData.length === 1) {
+    const record = crawlData[0];
+    expect(record.url).not.toContain("://"); // no url stored
+    expect(record.options).toBeNull();
+  }
+}
+
+export async function expectBatchScrapeIsCleanedUp(batchScrapeId: string) {
+  const { data: requestData, error: requestError } = await supabase_service
+    .from("requests")
+    .select("*")
+    .eq("id", batchScrapeId)
+    .limit(1);
+
+  expect(requestError).toBeFalsy();
+  expect(requestData).toHaveLength(1);
+  
+  if (requestData && requestData.length === 1) {
+    const record = requestData[0];
+    expect(record.url).not.toContain("://"); // no url stored
+    expect(record.kind).toBe("batch_scrape");
+    expect(record.dr_clean_by).not.toBeNull();
+  }
+
+  const { data: batchScrapeData, error: batchScrapeError } = await supabase_service
+    .from("batch_scrapes")
+    .select("*")
+    .eq("id", batchScrapeId)
+    .limit(1);
+
+  expect(batchScrapeError).toBeFalsy();
+  expect(batchScrapeData).toHaveLength(1);
+
+  if (batchScrapeData && batchScrapeData.length === 1) {
+    const record = batchScrapeData[0];
+    expect(record.url).not.toContain("://"); // no url stored
+  }
+}
+
+export async function expectScrapesOfRequestAreCleanedUp(
+  requestId: string,
+  expectedScrapeCount?: number,
+) {
+  const { data: scrapes, error: scrapesError } = await supabase_service
+    .from("scrapes")
+    .select("*")
+    .eq("request_id", requestId);
+
+  expect(scrapesError).toBeFalsy();
+
+  if (expectedScrapeCount !== undefined) {
+    expect((scrapes ?? []).length).toBe(expectedScrapeCount);
+  } else {
+    expect((scrapes ?? []).length).toBeGreaterThanOrEqual(1);
+  }
+
+  for (const scrape of scrapes ?? []) {
+    expect(scrape.url).not.toContain("://"); // no url stored
+    expect(scrape.options).toBeNull();
+
+    if (scrape.success) {
+      const gcsJob = await getJobFromGCS(scrape.id);
       expect(gcsJob).not.toBeNull(); // clean up happens async on a worker after expiry
     }
   }
 
-  return jobs ?? [];
+  return scrapes ?? [];
 }
 
-export async function expectJobsAreFullyCleanedAfterZDRCleaner(
-  jobs: any[],
+export async function expectScrapesAreFullyCleanedAfterZDRCleaner(
+  scrapes: any[],
   scope: "Team-scoped" | "Request-scoped",
   identity: Identity,
   scrapeStatusRaw: ScrapeStatusRawFn,
 ) {
-  for (const job of jobs) {
-    const gcsJob = await getJobFromGCS(job.job_id);
+  for (const scrape of scrapes) {
+    const gcsJob = await getJobFromGCS(scrape.id);
     expect(gcsJob).toBeNull();
 
     if (scope === "Request-scoped") {
-      const status = await scrapeStatusRaw(job.job_id, identity);
+      const status = await scrapeStatusRaw(scrape.id, identity);
       expect(status.statusCode).toBe(404);
     }
   }

@@ -13,7 +13,7 @@ import {
   generateSchemaFromPrompt,
 } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { billTeam } from "../../services/billing/credit_billing";
-import { logJob } from "../../services/logging/log_job";
+import { logExtract } from "../../services/logging/log_job";
 import { dereferenceSchema } from "./helpers/dereference-schema";
 import { spreadSchemas } from "./helpers/spread-schemas";
 import { transformArrayToObject } from "./helpers/transform-array-to-obj";
@@ -133,24 +133,17 @@ export async function performExtraction(
       });
 
       const tokens_billed = 300 + calculateThinkingCost(costTracking);
-      logJob({
-        job_id: extractId,
-        success: false,
-        message: "No search results found",
-        num_docs: 1,
-        docs: [],
-        time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
+      logExtract({
+        id: extractId,
+        request_id: extractId,
+        urls: request.urls || [],
         team_id: teamId,
-        mode: "extract",
-        url: request.urls?.join(", ") || "",
-        scrapeOptions: request,
-        origin: request.origin ?? "api",
-        integration: request.integration,
-        num_tokens: 0,
-        tokens_billed,
-        sources,
-        cost_tracking: costTracking,
-        zeroDataRetention: false, // not supported
+        options: request,
+        model_kind: "fire-1",
+        credits_cost: Math.ceil(tokens_billed / 15),
+        is_successful: false,
+        error: "No search results found",
+        cost_tracking: costTracking.toJSON(),
       });
 
       await billTeam(
@@ -405,6 +398,7 @@ export async function performExtraction(
               timeout,
               flags: acuc?.flags ?? null,
               apiKeyId,
+              requestId: extractId,
             },
             urlTraces,
             logger.child({
@@ -676,27 +670,17 @@ export async function performExtraction(
           multiEntitySchema: JSON.stringify(multiEntitySchema),
         });
         const tokens_billed = 300 + calculateThinkingCost(costTracking);
-        logJob({
-          job_id: extractId,
-          success: false,
-          message:
-            error instanceof Error
-              ? error.message
-              : "Failed to transform array to object",
-          num_docs: 1,
-          docs: [],
-          time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
+        logExtract({
+          id: extractId,
+          request_id: extractId,
+          urls: request.urls || [],
           team_id: teamId,
-          mode: "extract",
-          url: request.urls?.join(", ") || "",
-          scrapeOptions: request,
-          origin: request.origin ?? "api",
-          integration: request.integration,
-          num_tokens: 0,
-          tokens_billed,
-          sources,
-          cost_tracking: costTracking,
-          zeroDataRetention: false, // not supported
+          options: request,
+          model_kind: "fire-1",
+          credits_cost: Math.ceil(tokens_billed / 15),
+          is_successful: false,
+          error: "Failed to transform array to object",
+          cost_tracking: costTracking.toJSON(),
         });
         await billTeam(
           teamId,
@@ -759,6 +743,7 @@ export async function performExtraction(
               timeout,
               flags: acuc?.flags ?? null,
               apiKeyId,
+              requestId: extractId,
             },
             urlTraces,
             logger.child({
@@ -796,24 +781,17 @@ export async function performExtraction(
         logger.debug("Scrapes finished.", { docCount: validResults.length });
       } catch (error) {
         const tokens_billed = 300 + calculateThinkingCost(costTracking);
-        logJob({
-          job_id: extractId,
-          success: false,
-          message: error.message,
-          num_docs: 1,
-          docs: [],
-          time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
+        logExtract({
+          id: extractId,
+          request_id: extractId,
+          urls: request.urls || [],
           team_id: teamId,
-          mode: "extract",
-          url: request.urls?.join(", ") || "",
-          scrapeOptions: request,
-          origin: request.origin ?? "api",
-          integration: request.integration,
-          num_tokens: 0,
-          tokens_billed,
-          sources,
-          cost_tracking: costTracking,
-          zeroDataRetention: false, // not supported
+          options: request,
+          credits_cost: Math.ceil(tokens_billed / 15),
+          is_successful: false,
+          error: "Failed to scrape documents",
+          model_kind: "fire-1",
+          cost_tracking: costTracking.toJSON(),
         });
         await billTeam(
           teamId,
@@ -854,24 +832,17 @@ export async function performExtraction(
             `Failed to bill team ${teamId} for thinking tokens: ${error}`,
           );
         });
-        logJob({
-          job_id: extractId,
-          success: false,
-          message: errorMessage,
-          num_docs: 1,
-          docs: [],
-          time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
+        logExtract({
+          id: extractId,
+          request_id: extractId,
+          urls: request.urls || [],
           team_id: teamId,
-          mode: "extract",
-          url: request.urls?.join(", ") || "",
-          scrapeOptions: request,
-          origin: request.origin ?? "api",
-          integration: request.integration,
-          num_tokens: 0,
-          tokens_billed,
-          sources,
-          cost_tracking: costTracking,
-          zeroDataRetention: false, // not supported
+          options: request,
+          credits_cost: Math.ceil(tokens_billed / 15),
+          is_successful: false,
+          error: errorMessage,
+          model_kind: "fire-1",
+          cost_tracking: costTracking.toJSON(),
         });
         return {
           success: false,
@@ -1048,24 +1019,17 @@ export async function performExtraction(
     );
 
     // Log job with token usage and sources
-    logJob({
-      job_id: extractId,
-      success: true,
-      message: "Extract completed",
-      num_docs: 1,
-      docs: finalResult ?? {},
-      time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
+    logExtract({
+      id: extractId,
+      request_id: extractId,
+      urls: request.urls || [],
       team_id: teamId,
-      mode: "extract",
-      url: request.urls?.join(", ") || "",
-      scrapeOptions: request,
-      origin: request.origin ?? "api",
-      integration: request.integration,
-      num_tokens: totalTokensUsed,
-      tokens_billed: tokensToBill,
-      sources,
-      cost_tracking: costTracking,
-      zeroDataRetention: false, // not supported
+      options: request,
+      credits_cost: Math.ceil(tokensToBill / 15),
+      is_successful: true,
+      result: finalResult ?? {},
+      model_kind: "fire-1",
+      cost_tracking: costTracking.toJSON(),
     }).then(() => {
       updateExtract(extractId, {
         status: "completed",
@@ -1121,29 +1085,18 @@ export async function performExtraction(
         );
       },
     );
-    await logJob({
-      job_id: extractId,
-      success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : typeof error === "string"
-            ? error
-            : "An unexpected error occurred",
-      num_docs: 1,
-      docs: [],
-      time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
+    await logExtract({
+      id: extractId,
+      request_id: extractId,
+      urls: request.urls || [],
       team_id: teamId,
-      mode: "extract",
-      url: request.urls?.join(", ") || "",
-      scrapeOptions: request,
-      origin: request.origin ?? "api",
-      integration: request.integration,
-      num_tokens: 0,
-      tokens_billed,
-      sources,
-      cost_tracking: costTracking,
-      zeroDataRetention: false, // not supported
+      options: request,
+      credits_cost: Math.ceil(tokens_billed / 15),
+      is_successful: false,
+      error:
+        error instanceof Error ? error.message : "An unexpected error occurred",
+      model_kind: "fire-1",
+      cost_tracking: costTracking.toJSON(),
     });
 
     throw error;

@@ -11,6 +11,7 @@ import { saveExtract } from "../../lib/extract/extract-redis";
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { logger as _logger } from "../../lib/logger";
+import { logRequest } from "../../services/logging/log_job";
 
 /**
  * Extracts data from the provided URLs based on the request parameters.
@@ -58,6 +59,17 @@ export async function extractController(
     subId: req.acuc?.sub_id,
     extractId,
     zeroDataRetention: req.acuc?.flags?.forceZDR,
+  });
+
+  await logRequest({
+    id: extractId,
+    kind: "extract",
+    api_version: "v2",
+    team_id: req.auth.team_id,
+    origin: req.body.origin ?? "api",
+    integration: req.body.integration,
+    target_hint: req.body.urls?.[0] ?? "",
+    zeroDataRetention: false, // not supported for extract
   });
 
   const jobData = {

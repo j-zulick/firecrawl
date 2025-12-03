@@ -19,6 +19,7 @@ import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { logger as _logger } from "../../lib/logger";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
+import { logRequest } from "../../services/logging/log_job";
 
 async function oldExtract(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
@@ -132,6 +133,17 @@ export async function extractController(
     subId: req.acuc?.sub_id,
     extractId,
     zeroDataRetention: req.acuc?.flags?.forceZDR,
+  });
+
+  await logRequest({
+    id: extractId,
+    kind: "extract",
+    api_version: "v1",
+    team_id: req.auth.team_id,
+    origin: req.body.origin ?? "api",
+    integration: req.body.integration,
+    target_hint: req.body.urls?.[0] ?? "",
+    zeroDataRetention: false, // not supported for extract
   });
 
   const scrapeOptions = req.body.scrapeOptions

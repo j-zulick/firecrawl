@@ -34,6 +34,7 @@ import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { fromV0ScrapeOptions } from "../v2/types";
 import { isSelfHosted } from "../../lib/deployment";
 import { crawlGroup } from "../../services/worker/nuq";
+import { logRequest } from "../../services/logging/log_job";
 
 export async function crawlController(req: Request, res: Response) {
   try {
@@ -52,6 +53,17 @@ export async function crawlController(req: Request, res: Response) {
     }
 
     const id = uuidv7();
+
+    await logRequest({
+      id,
+      kind: "crawl",
+      api_version: "v0",
+      team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: req.body.url ?? "",
+      zeroDataRetention: false, // not supported on v0
+    });
 
     redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
       logger.error("Failed to add team to teams_using_v0", {

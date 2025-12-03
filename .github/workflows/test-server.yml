@@ -238,7 +238,6 @@ jobs:
   # prod-test:
   #   name: Production environment tests
   #   runs-on: big-runner
-  #   needs: audit
   #   services:
   #     redis:
   #       image: redis
