@@ -187,7 +187,7 @@ export async function getACUC(
           ? supabase_rr_service
           : supabase_service;
       ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_36",
+        "auth_credit_usage_chunk_37",
         {
           input_key: api_key,
           i_is_extract: isExtract,
@@ -320,7 +320,7 @@ export async function getACUCTeam(
           ? supabase_rr_service
           : supabase_service;
       ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_36_from_team",
+        "auth_credit_usage_chunk_37_from_team",
         {
           input_team: team_id,
           i_is_extract: isExtract,
