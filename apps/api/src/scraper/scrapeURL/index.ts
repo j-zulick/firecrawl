@@ -384,7 +384,10 @@ async function scrapeURLLoopIter(
     );
 
     let checkMarkdown: string;
-    if (meta.internalOptions.teamId === "sitemap") {
+    if (
+      meta.internalOptions.teamId === "sitemap" ||
+      meta.internalOptions.teamId === "robots-txt"
+    ) {
       checkMarkdown = engineResult.html?.trim() ?? "";
     } else {
       checkMarkdown = await parseMarkdown(

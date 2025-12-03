@@ -131,6 +131,14 @@ export async function getLinksFromSitemap(
         ) {
           content = response.document.rawHtml!;
         } else {
+          if (
+            response.success &&
+            response.document.metadata.statusCode === 404
+          ) {
+            logger.warn("Sitemap not found", { sitemapUrl }); // should probably index 404 sitemaps
+            return 0;
+          }
+
           logger.error(`Request failed for sitemap fetch`, {
             method: "getLinksFromSitemap",
             mode,
