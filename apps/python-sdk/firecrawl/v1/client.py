@@ -339,6 +339,7 @@ class V1ExtractResponse(pydantic.BaseModel, Generic[T]):
     error: Optional[str] = None
     warning: Optional[str] = None
     sources: Optional[Dict[Any, Any]] = None
+    creditsUsed: Optional[int] = None
 
 class V1SearchParams(pydantic.BaseModel):
     query: str

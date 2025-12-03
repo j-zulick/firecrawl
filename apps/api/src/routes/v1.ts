@@ -213,7 +213,7 @@ v1Router.post(
   "/extract",
   authMiddleware(RateLimiterMode.Extract),
   countryCheck,
-  checkCreditsMiddleware(1),
+  checkCreditsMiddleware(20),
   wrap(extractController),
 );
 

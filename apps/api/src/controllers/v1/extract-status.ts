@@ -128,7 +128,11 @@ export async function extractStatusController(
     error: (() => {
       if (typeof extract?.error === "string") return extract.error;
       if (extract?.error && typeof extract.error === "object") {
-        return typeof extract.error.message === "string" ? extract.error.message : (typeof extract.error.error === "string" ? extract.error.error : JSON.stringify(extract.error));
+        return typeof extract.error.message === "string"
+          ? extract.error.message
+          : typeof extract.error.error === "string"
+            ? extract.error.error
+            : JSON.stringify(extract.error);
       }
       return undefined;
     })(),
@@ -139,5 +143,6 @@ export async function extractStatusController(
     costTracking: extract?.showCostTracking ? extract.costTracking : undefined,
     sessionIds: extract?.sessionIds ? extract.sessionIds : undefined,
     tokensUsed: extract?.tokensBilled ? extract.tokensBilled : undefined,
+    creditsUsed: extract?.creditsBilled ? extract.creditsBilled : undefined,
   });
 }

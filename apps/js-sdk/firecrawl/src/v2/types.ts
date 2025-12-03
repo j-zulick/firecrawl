@@ -529,6 +529,7 @@ export interface ExtractResponse {
   warning?: string;
   sources?: Record<string, unknown>;
   expiresAt?: string;
+  creditsUsed?: number;
 }
 
 export interface AgentOptions {

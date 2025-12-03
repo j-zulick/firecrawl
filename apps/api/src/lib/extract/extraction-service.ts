@@ -133,6 +133,7 @@ export async function performExtraction(
       });
 
       const tokens_billed = 300 + calculateThinkingCost(costTracking);
+      const creditsToBill = Math.ceil(tokens_billed / 15);
       logExtract({
         id: extractId,
         request_id: extractId,
@@ -140,24 +141,19 @@ export async function performExtraction(
         team_id: teamId,
         options: request,
         model_kind: "fire-1",
-        credits_cost: Math.ceil(tokens_billed / 15),
+        credits_cost: creditsToBill,
         is_successful: false,
         error: "No search results found",
         cost_tracking: costTracking.toJSON(),
       });
 
-      await billTeam(
-        teamId,
-        subId,
-        tokens_billed,
-        apiKeyId,
-        logger,
-        true,
-      ).catch(error => {
-        logger.error(
-          `Failed to bill team ${teamId} for thinking tokens: ${error}`,
-        );
-      });
+      await billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(
+        error => {
+          logger.error(
+            `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
+          );
+        },
+      );
 
       return {
         success: false,
@@ -670,6 +666,7 @@ export async function performExtraction(
           multiEntitySchema: JSON.stringify(multiEntitySchema),
         });
         const tokens_billed = 300 + calculateThinkingCost(costTracking);
+        const creditsToBill = Math.ceil(tokens_billed / 15);
         logExtract({
           id: extractId,
           request_id: extractId,
@@ -677,23 +674,18 @@ export async function performExtraction(
           team_id: teamId,
           options: request,
           model_kind: "fire-1",
-          credits_cost: Math.ceil(tokens_billed / 15),
+          credits_cost: creditsToBill,
           is_successful: false,
           error: "Failed to transform array to object",
           cost_tracking: costTracking.toJSON(),
         });
-        await billTeam(
-          teamId,
-          subId,
-          tokens_billed,
-          apiKeyId,
-          logger,
-          true,
-        ).catch(error => {
-          logger.error(
-            `Failed to bill team ${teamId} for thinking tokens: ${error}`,
-          );
-        });
+        await billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(
+          error => {
+            logger.error(
+              `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
+            );
+          },
+        );
         return {
           success: false,
           error: getErrorContactMessage(),
@@ -781,30 +773,26 @@ export async function performExtraction(
         logger.debug("Scrapes finished.", { docCount: validResults.length });
       } catch (error) {
         const tokens_billed = 300 + calculateThinkingCost(costTracking);
+        const creditsToBill = Math.ceil(tokens_billed / 15);
         logExtract({
           id: extractId,
           request_id: extractId,
           urls: request.urls || [],
           team_id: teamId,
           options: request,
-          credits_cost: Math.ceil(tokens_billed / 15),
+          credits_cost: creditsToBill,
           is_successful: false,
           error: "Failed to scrape documents",
           model_kind: "fire-1",
           cost_tracking: costTracking.toJSON(),
         });
-        await billTeam(
-          teamId,
-          subId,
-          tokens_billed,
-          apiKeyId,
-          logger,
-          true,
-        ).catch(error => {
-          logger.error(
-            `Failed to bill team ${teamId} for thinking tokens: ${error}`,
-          );
-        });
+        await billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(
+          error => {
+            logger.error(
+              `Failed to bill team ${teamId} for thinking tokens: ${error}`,
+            );
+          },
+        );
         return {
           success: false,
           error: error.message,
@@ -820,25 +808,21 @@ export async function performExtraction(
           "All provided URLs are either invalid, unsupported or failed to be scraped.";
         logger.error(errorMessage);
         const tokens_billed = 300 + calculateThinkingCost(costTracking);
-        await billTeam(
-          teamId,
-          subId,
-          tokens_billed,
-          apiKeyId,
-          logger,
-          true,
-        ).catch(error => {
-          logger.error(
-            `Failed to bill team ${teamId} for thinking tokens: ${error}`,
-          );
-        });
+        const creditsToBill = Math.ceil(tokens_billed / 15);
+        await billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(
+          error => {
+            logger.error(
+              `Failed to bill team ${teamId} for thinking tokens: ${error}`,
+            );
+          },
+        );
         logExtract({
           id: extractId,
           request_id: extractId,
           urls: request.urls || [],
           team_id: teamId,
           options: request,
-          credits_cost: Math.ceil(tokens_billed / 15),
+          credits_cost: creditsToBill,
           is_successful: false,
           error: errorMessage,
           model_kind: "fire-1",
@@ -1009,11 +993,13 @@ export async function performExtraction(
       tokensToBill = 1;
     }
 
+    const creditsToBill = Math.ceil(tokensToBill / 15);
+
     // Bill team for usage
-    await billTeam(teamId, subId, tokensToBill, apiKeyId, logger, true).catch(
+    await billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(
       error => {
         logger.error(
-          `Failed to bill team ${teamId} for ${tokensToBill} tokens: ${error}`,
+          `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
         );
       },
     );
@@ -1025,7 +1011,7 @@ export async function performExtraction(
       urls: request.urls || [],
       team_id: teamId,
       options: request,
-      credits_cost: Math.ceil(tokensToBill / 15),
+      credits_cost: creditsToBill,
       is_successful: true,
       result: finalResult ?? {},
       model_kind: "fire-1",
@@ -1036,6 +1022,7 @@ export async function performExtraction(
         llmUsage,
         sources,
         tokensBilled: tokensToBill,
+        creditsBilled: creditsToBill,
         // costTracking,
       }).catch(error => {
         logger.error(
@@ -1078,10 +1065,11 @@ export async function performExtraction(
     };
   } catch (error) {
     const tokens_billed = 300 + calculateThinkingCost(costTracking);
-    await billTeam(teamId, subId, tokens_billed, apiKeyId, logger, true).catch(
+    const creditsToBill = Math.ceil(tokens_billed / 15);
+    await billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(
       error => {
         logger.error(
-          `Failed to bill team ${teamId} for thinking tokens: ${error}`,
+          `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
         );
       },
     );
@@ -1091,7 +1079,7 @@ export async function performExtraction(
       urls: request.urls || [],
       team_id: teamId,
       options: request,
-      credits_cost: Math.ceil(tokens_billed / 15),
+      credits_cost: creditsToBill,
       is_successful: false,
       error:
         error instanceof Error ? error.message : "An unexpected error occurred",

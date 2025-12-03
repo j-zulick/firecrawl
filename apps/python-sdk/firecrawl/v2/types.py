@@ -771,7 +771,8 @@ class ExtractResponse(BaseModel):
     warning: Optional[str] = None
     sources: Optional[Dict[str, Any]] = None
     expires_at: Optional[datetime] = None
-
+    credits_used: Optional[int] = None
+    tokens_used: Optional[int] = None
 
 # Usage/limits types
 class ConcurrencyCheck(BaseModel):

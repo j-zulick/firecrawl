@@ -465,7 +465,7 @@ async function supaAuthenticateUser(
       };
     }
 
-    chunk = await getACUC(normalizedApi, false, true, mode);
+    chunk = await getACUC(normalizedApi, false, true, RateLimiterMode.Scrape);
 
     if (chunk === null) {
       return {

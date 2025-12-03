@@ -360,6 +360,7 @@ export interface ExtractResponse<LLMSchema extends zt.ZodSchema = any> {
   error?: string;
   warning?: string;
   sources?: string[];
+  creditsUsed?: number;
 }
 
 /**

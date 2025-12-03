@@ -866,10 +866,12 @@ export async function performExtraction_F0(
     tokensToBill = 1;
   }
 
+  const creditsToBill = Math.ceil(tokensToBill / 15);
+
   // Bill team for usage
-  billTeam(teamId, subId, tokensToBill, apiKeyId, logger, true).catch(error => {
+  billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(error => {
     logger.error(
-      `Failed to bill team ${teamId} for ${tokensToBill} tokens: ${error}`,
+      `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
     );
   });
 
@@ -881,7 +883,7 @@ export async function performExtraction_F0(
     team_id: teamId,
     options: request,
     model_kind: "fire-0",
-    credits_cost: Math.ceil(tokensToBill / 15),
+    credits_cost: creditsToBill,
     is_successful: true,
     result: finalResult ?? {},
     cost_tracking: {
@@ -908,6 +910,7 @@ export async function performExtraction_F0(
       llmUsage,
       sources,
       tokensBilled: tokensToBill,
+      creditsBilled: creditsToBill,
     }).catch(error => {
       logger.error(
         `Failed to update extract ${extractId} status to completed: ${error}`,

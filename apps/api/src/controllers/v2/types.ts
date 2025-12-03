@@ -1004,6 +1004,7 @@ export interface ExtractResponse {
     [key: string]: string[];
   };
   tokensUsed?: number;
+  creditsUsed?: number;
 }
 
 export type CrawlResponse =
