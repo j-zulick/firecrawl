@@ -7,10 +7,16 @@ import { CostTracking } from "../../lib/cost-tracking";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import type { ScrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "../scrapeURL/engines";
-import { parseSitemapXml, processSitemap } from "@mendable/firecrawl-rs";
+import {
+  ParsedSitemap,
+  parseSitemapXml,
+  processSitemap,
+  SitemapProcessingResult,
+} from "@mendable/firecrawl-rs";
 import { gunzip } from "node:zlib";
 import { promisify } from "node:util";
 import { fetchFileToBuffer } from "../scrapeURL/engines/utils/downloadFile";
+import { useIndex } from "../../services";
 
 const useFireEngine =
   process.env.FIRE_ENGINE_BETA_URL !== "" &&
@@ -73,7 +79,7 @@ export async function getLinksFromSitemap(
           location && mode === "fire-engine" && useFireEngine;
 
         const forceEngine: Engine[] = [
-          ...(maxAge > 0 ? ["index" as const] : []),
+          ...(maxAge > 0 && useIndex ? ["index" as const] : []),
           ...(shouldPrioritizeFireEngine
             ? [
                 "fire-engine;tlsclient" as const,
@@ -150,7 +156,7 @@ export async function getLinksFromSitemap(
       }
     }
 
-    let instructions;
+    let instructions: SitemapProcessingResult;
     try {
       instructions = await processSitemap(content);
     } catch (error) {
@@ -163,7 +169,7 @@ export async function getLinksFromSitemap(
         },
       );
 
-      let parsed;
+      let parsed: ParsedSitemap;
       try {
         parsed = await parseSitemapXml(content);
       } catch (parseError) {
@@ -181,14 +187,21 @@ export async function getLinksFromSitemap(
       const root = parsed.urlset || parsed.sitemapindex;
       let count = 0;
 
-      if (root && root.sitemap) {
+      if (root && "sitemap" in root && root.sitemap) {
         const sitemapUrls = root.sitemap
           .filter(sitemap => sitemap.loc && sitemap.loc.length > 0)
           .map(sitemap => sitemap.loc[0].trim());
 
         const sitemapPromises: Promise<number>[] = sitemapUrls.map(sitemapUrl =>
           getLinksFromSitemap(
-            { sitemapUrl, urlsHandler, mode, zeroDataRetention, location },
+            {
+              sitemapUrl,
+              urlsHandler,
+              mode,
+              zeroDataRetention,
+              location,
+              maxAge,
+            },
             logger,
             crawlId,
             sitemapsHit,
@@ -199,7 +212,7 @@ export async function getLinksFromSitemap(
 
         const results = await Promise.all(sitemapPromises);
         count = results.reduce((a, x) => a + x);
-      } else if (root && root.url) {
+      } else if (root && "url" in root && root.url) {
         const xmlSitemaps: string[] = root.url
           .filter(
             url =>
@@ -219,6 +232,7 @@ export async function getLinksFromSitemap(
                 mode,
                 zeroDataRetention,
                 location,
+                maxAge,
               },
               logger,
               crawlId,
@@ -260,7 +274,14 @@ export async function getLinksFromSitemap(
         const sitemapPromises: Promise<number>[] = instruction.urls.map(
           sitemapUrl =>
             getLinksFromSitemap(
-              { sitemapUrl, urlsHandler, mode, zeroDataRetention, location },
+              {
+                sitemapUrl,
+                urlsHandler,
+                mode,
+                zeroDataRetention,
+                location,
+                maxAge,
+              },
               logger,
               crawlId,
               sitemapsHit,
@@ -268,6 +289,7 @@ export async function getLinksFromSitemap(
               mock,
             ),
         );
+
         const results = await Promise.all(sitemapPromises);
         count += results.reduce((a, x) => a + x, 0);
       } else if (instruction.action === "process") {
