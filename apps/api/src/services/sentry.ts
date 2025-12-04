@@ -4,6 +4,13 @@ import { logger } from "../lib/logger";
 if (process.env.SENTRY_DSN) {
   logger.info("Setting up Sentry...");
 
+  const TRACE_SAMPLE_RATE = parseFloat(
+    process.env.SENTRY_TRACE_SAMPLE_RATE || "0.01",
+  );
+  const ERROR_SAMPLE_RATE = parseFloat(
+    process.env.SENTRY_ERROR_SAMPLE_RATE || "0.05",
+  );
+
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     integrations: integrations => [
@@ -15,9 +22,9 @@ if (process.env.SENTRY_DSN) {
     ],
     tracesSampler: samplingContext => {
       // trace all AI spans, sample 1% of all others
-      return samplingContext.name?.startsWith("ai.") ? 1.0 : 0.01;
+      return samplingContext.name?.startsWith("ai.") ? 1.0 : TRACE_SAMPLE_RATE;
     },
-    sampleRate: 0.05,
+    sampleRate: ERROR_SAMPLE_RATE,
     serverName: process.env.NUQ_POD_NAME,
     environment: process.env.SENTRY_ENVIRONMENT ?? "production",
     beforeSend(event, hint) {
