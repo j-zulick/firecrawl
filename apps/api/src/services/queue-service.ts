@@ -1,7 +1,6 @@
 import { Queue } from "bullmq";
 import { logger } from "../lib/logger";
 import IORedis from "ioredis";
-import { BullMQOtel } from "bullmq-otel";
 import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
 
 let extractQueue: Queue;
@@ -43,7 +42,6 @@ export function getExtractQueue() {
           age: 90000, // 25 hours
         },
       },
-      telemetry: new BullMQOtel("firecrawl-bullmq"),
     });
   }
   return extractQueue;
@@ -61,7 +59,6 @@ export function getGenerateLlmsTxtQueue() {
           age: 90000, // 25 hours
         },
       },
-      telemetry: new BullMQOtel("firecrawl-bullmq"),
     });
   }
   return generateLlmsTxtQueue;
@@ -81,7 +78,6 @@ export function getDeepResearchQueue() {
             age: 90000, // 25 hours
           },
         },
-        telemetry: new BullMQOtel("firecrawl-bullmq"),
       },
     );
   }
@@ -100,7 +96,6 @@ export function getBillingQueue() {
           age: 3600, // 1 hour
         },
       },
-      telemetry: new BullMQOtel("firecrawl-bullmq"),
     });
   }
   return billingQueue;
@@ -118,7 +113,6 @@ export function getPrecrawlQueue() {
           age: 24 * 60 * 60, // 1 day
         },
       },
-      telemetry: new BullMQOtel("firecrawl-bullmq"),
     });
   }
   return precrawlQueue;

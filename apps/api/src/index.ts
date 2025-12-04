@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { shutdownOtel } from "./otel";
 import "./services/sentry";
 import { setSentryServiceTag } from "./services/sentry";
 import * as Sentry from "@sentry/node";
@@ -141,10 +140,7 @@ async function startServer(port = DEFAULT_PORT) {
       logger.info("Server closed.");
       nuqShutdown().finally(() => {
         logger.info("NUQ shutdown complete");
-        shutdownOtel().finally(() => {
-          logger.info("OTEL shutdown");
-          process.exit(0);
-        });
+        process.exit(0);
       });
     });
   };

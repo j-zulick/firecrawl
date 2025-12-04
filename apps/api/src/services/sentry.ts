@@ -1,6 +1,4 @@
-// Import with `import * as Sentry from "@sentry/node"` if you are using ESM
 import * as Sentry from "@sentry/node";
-import { nodeProfilingIntegration } from "@sentry/profiling-node";
 import { logger } from "../lib/logger";
 
 if (process.env.SENTRY_DSN) {
@@ -8,12 +6,20 @@ if (process.env.SENTRY_DSN) {
 
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
-    integrations: integrations => [...integrations, nodeProfilingIntegration()],
-    tracesSampleRate: 0,
+    integrations: integrations => [
+      ...integrations,
+      Sentry.vercelAIIntegration({
+        recordInputs: true,
+        recordOutputs: true,
+      }),
+    ],
+    tracesSampler: samplingContext => {
+      // trace all AI spans, sample 1% of all others
+      return samplingContext.name?.startsWith("ai.") ? 1.0 : 0.01;
+    },
     sampleRate: 0.05,
     serverName: process.env.NUQ_POD_NAME,
     environment: process.env.SENTRY_ENVIRONMENT ?? "production",
-    skipOpenTelemetrySetup: true,
     beforeSend(event, hint) {
       const error = hint?.originalException;
 

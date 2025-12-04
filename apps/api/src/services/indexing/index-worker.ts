@@ -36,7 +36,6 @@ import {
 } from "../../controllers/v2/types";
 import { StoredCrawl, crawlToCrawler, saveCrawl } from "../../lib/crawl-redis";
 import { _addScrapeJobToBullMQ } from "../queue-jobs";
-import { BullMQOtel } from "bullmq-otel";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { crawlGroup } from "../worker/nuq";
 import { getACUCTeam } from "../../controllers/auth";
@@ -574,7 +573,6 @@ const workerFun = async (
     lockDuration: workerLockDuration,
     stalledInterval: workerStalledCheckInterval,
     maxStalledCount: queue.name === precrawlQueueName ? 0 : 10,
-    telemetry: new BullMQOtel("firecrawl-bullmq"),
   });
 
   worker.startStalledCheckTimer();

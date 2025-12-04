@@ -84,6 +84,7 @@ export async function generateBasicCompletion(
           },
           experimental_telemetry: {
             isEnabled: true,
+            functionId: "generateBasicCompletion/fallback",
             metadata: {
               ...(metadata.extractId
                 ? {

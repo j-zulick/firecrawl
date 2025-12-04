@@ -67,6 +67,7 @@ export async function brandingTransformer(
         backgroundCandidates.length > 0 ? backgroundCandidates : undefined,
       screenshot: document.screenshot,
       url: document.url || meta.url,
+      teamId: meta.internalOptions.teamId,
     });
 
     meta.logger.info("LLM enhancement complete", {

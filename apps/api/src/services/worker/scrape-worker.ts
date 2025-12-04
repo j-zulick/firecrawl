@@ -65,7 +65,6 @@ import {
   ScrapeJobSingleUrls,
 } from "../../types";
 import { scrapeSitemap } from "../../scraper/crawler/sitemap";
-import { shutdownOtel } from "../../otel";
 import {
   withTraceContextAsync,
   withSpan,
@@ -1210,10 +1209,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
 }
 
 const exitHandler = () => {
-  shutdownOtel().finally(() => {
-    _logger.debug("OTEL shutdown");
-    process.exit(0);
-  });
+  process.exit(0);
 };
 
 process.on("SIGINT", exitHandler);

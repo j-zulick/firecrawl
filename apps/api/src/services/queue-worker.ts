@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { shutdownOtel } from "../otel";
 import "./sentry";
 import { setSentryServiceTag } from "./sentry";
 import * as Sentry from "@sentry/node";
@@ -19,7 +18,6 @@ import { performGenerateLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt
 import { updateGeneratedLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-redis";
 import Express from "express";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
-import { BullMQOtel } from "bullmq-otel";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
@@ -259,7 +257,6 @@ const workerFun = async (
     lockDuration: 60 * 1000, // 60 seconds
     stalledInterval: 60 * 1000, // 60 seconds
     maxStalledCount: 10, // 10 times
-    telemetry: new BullMQOtel("firecrawl-bullmq"),
   });
 
   worker.startStalledCheckTimer();
@@ -469,8 +466,5 @@ app.listen(workerPort, () => {
   }
 
   _logger.info("All jobs finished. Shutting down...");
-  shutdownOtel().finally(() => {
-    _logger.debug("OTEL shutdown");
-    process.exit(0);
-  });
+  process.exit(0);
 })();

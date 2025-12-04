@@ -607,7 +607,7 @@ async function startServices(command?: string[]): Promise<Services> {
   const api = execForward(
     "api",
     process.argv[2] === "--start-docker"
-      ? "node --import ./dist/src/otel.js dist/src/index.js"
+      ? "node dist/src/index.js"
       : "pnpm server:production:nobuild",
     {
       NUQ_REDUCE_NOISE: "true",
@@ -618,7 +618,7 @@ async function startServices(command?: string[]): Promise<Services> {
   const worker = execForward(
     "worker",
     process.argv[2] === "--start-docker"
-      ? "node --import ./dist/src/otel.js dist/src/services/queue-worker.js"
+      ? "node dist/src/services/queue-worker.js"
       : "pnpm worker:production",
     {
       NUQ_REDUCE_NOISE: "true",
@@ -630,7 +630,7 @@ async function startServices(command?: string[]): Promise<Services> {
   const extractWorker = execForward(
     "extract-worker",
     process.argv[2] === "--start-docker"
-      ? "node --import ./dist/src/otel.js dist/src/services/extract-worker.js"
+      ? "node dist/src/services/extract-worker.js"
       : "pnpm extract-worker:production",
     {
       NUQ_REDUCE_NOISE: "true",
@@ -643,7 +643,7 @@ async function startServices(command?: string[]): Promise<Services> {
     execForward(
       `nuq-worker-${i}`,
       process.argv[2] === "--start-docker"
-        ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-worker.js"
+        ? "node dist/src/services/worker/nuq-worker.js"
         : "pnpm nuq-worker:production",
       {
         NUQ_WORKER_PORT: String(NUQ_WORKER_START_PORT + i),
@@ -657,7 +657,7 @@ async function startServices(command?: string[]): Promise<Services> {
     ? execForward(
         "nuq-prefetch-worker",
         process.argv[2] === "--start-docker"
-          ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js"
+          ? "node dist/src/services/worker/nuq-prefetch-worker.js"
           : "pnpm nuq-prefetch-worker:production",
         {
           NUQ_PREFETCH_WORKER_PORT: String(NUQ_PREFETCH_WORKER_PORT),
@@ -673,7 +673,7 @@ async function startServices(command?: string[]): Promise<Services> {
       ? execForward(
           "index-worker",
           process.argv[2] === "--start-docker"
-            ? "node --import ./dist/src/otel.js dist/src/services/indexing/index-worker.js"
+            ? "node dist/src/services/indexing/index-worker.js"
             : "pnpm index-worker:production",
           {
             NUQ_REDUCE_NOISE: "true",
