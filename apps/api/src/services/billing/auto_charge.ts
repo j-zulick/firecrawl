@@ -326,6 +326,8 @@ async function _autoChargeScale(
               chunk.sub_current_period_end,
               chunk,
               true,
+              false,
+              { autoRechargeCredits: price.credits },
             );
 
             logger.info("Scale auto-recharge successful");
@@ -565,6 +567,8 @@ async function _autoChargeSelfServe(
                   chunk.sub_current_period_end,
                   chunk,
                   true,
+                  false,
+                  { autoRechargeCredits: AUTO_RECHARGE_CREDITS },
                 );
 
                 // Reset ACUC cache to reflect the new credit balance
