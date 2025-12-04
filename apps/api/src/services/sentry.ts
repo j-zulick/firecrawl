@@ -5,7 +5,7 @@ if (process.env.SENTRY_DSN) {
   logger.info("Setting up Sentry...");
 
   const TRACE_SAMPLE_RATE = parseFloat(
-    process.env.SENTRY_TRACE_SAMPLE_RATE || "0.01",
+    process.env.SENTRY_TRACE_SAMPLE_RATE || "0",
   );
   const ERROR_SAMPLE_RATE = parseFloat(
     process.env.SENTRY_ERROR_SAMPLE_RATE || "0.05",
