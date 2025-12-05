@@ -991,6 +991,8 @@ export type Document = {
     creditsUsed?: number;
     postprocessorsUsed?: string[];
     indexId?: string; // ID used to store the document in the index (GCS)
+    concurrencyLimited?: boolean;
+    concurrencyQueueDurationMs?: number;
     // [key: string]: string | string[] | number | { smartScrape: number; other: number; total: number } | undefined;
   };
   serpResults?: {
