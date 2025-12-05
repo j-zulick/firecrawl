@@ -770,6 +770,11 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
   );
 
   const engpickerPromise = (async () => {
+    if (config.DISABLE_ENGPICKER) {
+      logger.info("Engpicker is disabled, skipping");
+      return;
+    }
+
     while (!isShuttingDown) {
       await new Promise(resolve => setTimeout(resolve, 1000));
       try {
