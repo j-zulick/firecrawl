@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { config } from "../../config";
 import {
   CrawlStatusParams,
   CrawlStatusResponse,
@@ -62,12 +63,10 @@ export async function getJob(
       id,
       _logger,
     ) as Promise<NuQJob<ScrapeJobSingleUrls> | null>,
-    (process.env.USE_DB_AUTHENTICATION === "true"
+    (config.USE_DB_AUTHENTICATION
       ? supabaseGetScrapeById(id)
       : null) as Promise<DBScrape | null>,
-    (process.env.GCS_BUCKET_NAME ? getJobFromGCS(id) : null) as Promise<
-      any | null
-    >,
+    (config.GCS_BUCKET_NAME ? getJobFromGCS(id) : null) as Promise<any | null>,
   ]);
 
   if (!nuqJob && !dbScrape) return null;
@@ -109,10 +108,8 @@ export async function getJobs(
 ): Promise<PseudoJob<any>[]> {
   const [nuqJobs, dbScrapes, gcsJobs] = await Promise.all([
     scrapeQueue.getJobs(ids, _logger) as Promise<NuQJob<ScrapeJobSingleUrls>[]>,
-    process.env.USE_DB_AUTHENTICATION === "true"
-      ? supabaseGetScrapesById(ids)
-      : [],
-    process.env.GCS_BUCKET_NAME
+    config.USE_DB_AUTHENTICATION ? supabaseGetScrapesById(ids) : [],
+    config.GCS_BUCKET_NAME
       ? (Promise.all(
           ids.map(async x => ({ id: x, job: await getJobFromGCS(x) })),
         ).then(x => x.filter(x => x.job)) as Promise<
@@ -218,16 +215,15 @@ export async function crawlStatusController(
     logger.child({ zeroDataRetention }),
   );
 
-  const creditsRpc =
-    process.env.USE_DB_AUTHENTICATION === "true"
-      ? await supabase_service.rpc(
-          "credits_billed_by_crawl_id_2",
-          {
-            i_crawl_id: req.params.jobId,
-          },
-          { get: true },
-        )
-      : null;
+  const creditsRpc = config.USE_DB_AUTHENTICATION
+    ? await supabase_service.rpc(
+        "credits_billed_by_crawl_id_2",
+        {
+          i_crawl_id: req.params.jobId,
+        },
+        { get: true },
+      )
+    : null;
 
   let outputBulkA: {
     status?: "completed" | "scraping" | "cancelled";

@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { config } from "../../../../config";
 import { Document } from "../../../../controllers/v1/types";
 import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
@@ -208,8 +209,8 @@ export async function scrapeURLWithIndex(
 
     if (
       domainSplitsHash.length === 0 ||
-      process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true" ||
-      process.env.USE_DB_AUTHENTICATION !== "true"
+      config.FIRECRAWL_INDEX_WRITE_ONLY ||
+      config.USE_DB_AUTHENTICATION !== true
     ) {
       maxAge = 2 * 24 * 60 * 60 * 1000; // 2 days
     } else {

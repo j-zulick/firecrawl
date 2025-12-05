@@ -1,4 +1,5 @@
 import { v7 as uuidv7 } from "uuid";
+import { config } from "../../config";
 import {
   Document,
   ScrapeOptions,
@@ -59,7 +60,7 @@ export async function scrapeDocument(
         }),
         internalOptions: {
           teamId: options.teamId,
-          saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
+          saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
             ? true
             : false,
           bypassBilling: true,

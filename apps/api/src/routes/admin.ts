@@ -1,4 +1,5 @@
 import express from "express";
+import { config } from "../config";
 import { redisHealthController } from "../controllers/v0/admin/redis-health";
 import { wrap } from "./shared";
 import { acucCacheClearController } from "../controllers/v0/admin/acuc-cache-clear";
@@ -19,57 +20,54 @@ import { integValidateApiKeyController } from "../controllers/v0/admin/validate-
 export const adminRouter = express.Router();
 
 adminRouter.get(
-  `/admin/${process.env.BULL_AUTH_KEY}/redis-health`,
+  `/admin/${config.BULL_AUTH_KEY}/redis-health`,
   redisHealthController,
 );
 
 adminRouter.post(
-  `/admin/${process.env.BULL_AUTH_KEY}/acuc-cache-clear`,
+  `/admin/${config.BULL_AUTH_KEY}/acuc-cache-clear`,
   wrap(acucCacheClearController),
 );
 
 adminRouter.get(
-  `/admin/${process.env.BULL_AUTH_KEY}/feng-check`,
+  `/admin/${config.BULL_AUTH_KEY}/feng-check`,
   wrap(checkFireEngine),
 );
 
-adminRouter.get(
-  `/admin/${process.env.BULL_AUTH_KEY}/cclog`,
-  wrap(cclogController),
-);
+adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/cclog`, wrap(cclogController));
 
 adminRouter.get(
-  `/admin/${process.env.BULL_AUTH_KEY}/zdrcleaner`,
+  `/admin/${config.BULL_AUTH_KEY}/zdrcleaner`,
   wrap(zdrcleanerController),
 );
 
 adminRouter.get(
-  `/admin/${process.env.BULL_AUTH_KEY}/index-queue-prometheus`,
+  `/admin/${config.BULL_AUTH_KEY}/index-queue-prometheus`,
   wrap(indexQueuePrometheus),
 );
 
 adminRouter.get(
-  `/admin/${process.env.BULL_AUTH_KEY}/precrawl`,
+  `/admin/${config.BULL_AUTH_KEY}/precrawl`,
   wrap(triggerPrecrawl),
 );
 
 adminRouter.get(
-  `/admin/${process.env.BULL_AUTH_KEY}/metrics`,
+  `/admin/${config.BULL_AUTH_KEY}/metrics`,
   wrap(metricsController),
 );
 
 adminRouter.get(
-  `/admin/${process.env.BULL_AUTH_KEY}/nuq-metrics`,
+  `/admin/${config.BULL_AUTH_KEY}/nuq-metrics`,
   wrap(nuqMetricsController),
 );
 
 adminRouter.post(
-  `/admin/${process.env.BULL_AUTH_KEY}/fsearch`,
+  `/admin/${config.BULL_AUTH_KEY}/fsearch`,
   wrap(realtimeSearchController),
 );
 
 adminRouter.post(
-  `/admin/${process.env.BULL_AUTH_KEY}/concurrency-queue-backfill`,
+  `/admin/${config.BULL_AUTH_KEY}/concurrency-queue-backfill`,
   wrap(concurrencyQueueBackfillController),
 );
 

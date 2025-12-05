@@ -1,4 +1,5 @@
 import { AxiosError } from "axios";
+import { config } from "../../config";
 import { load } from "cheerio"; // rustified
 import { URL } from "url";
 import { getLinksFromSitemap } from "./sitemap";
@@ -186,7 +187,7 @@ export class WebCrawler {
         fancyDenialReasons.set(key, DenialReason[value]);
       });
 
-      if (process.env.FIRECRAWL_DEBUG_FILTER_LINKS) {
+      if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
         for (const link of res.links) {
           this.logger.debug(`${link} OK`);
         }
@@ -233,7 +234,7 @@ export class WebCrawler {
           "file:",
         ];
         if (nonWebProtocols.some(protocol => urlStr.startsWith(protocol))) {
-          if (process.env.FIRECRAWL_DEBUG_FILTER_LINKS) {
+          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
             this.logger.debug(`${link} NON-WEB PROTOCOL FAIL`);
           }
           denialReasons.set(link, DenialReason.NON_WEB_PROTOCOL);
@@ -244,7 +245,7 @@ export class WebCrawler {
 
         // Check if the link exceeds the maximum depth allowed
         if (depth > maxDepth) {
-          if (process.env.FIRECRAWL_DEBUG_FILTER_LINKS) {
+          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
             this.logger.debug(`${link} DEPTH FAIL`);
           }
           denialReasons.set(link, DenialReason.DEPTH_LIMIT);
@@ -260,7 +261,7 @@ export class WebCrawler {
               new RegExp(excludePattern).test(excincPath),
             )
           ) {
-            if (process.env.FIRECRAWL_DEBUG_FILTER_LINKS) {
+            if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
               this.logger.debug(`${link} EXCLUDE FAIL`);
             }
             denialReasons.set(link, DenialReason.EXCLUDE_PATTERN);
@@ -275,7 +276,7 @@ export class WebCrawler {
               new RegExp(includePattern).test(excincPath),
             )
           ) {
-            if (process.env.FIRECRAWL_DEBUG_FILTER_LINKS) {
+            if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
               this.logger.debug(`${link} INCLUDE FAIL`);
             }
             denialReasons.set(link, DenialReason.INCLUDE_PATTERN);
@@ -289,7 +290,7 @@ export class WebCrawler {
         try {
           normalizedLink = new URL(link);
         } catch (_) {
-          if (process.env.FIRECRAWL_DEBUG_FILTER_LINKS) {
+          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
             this.logger.debug(`${link} URL PARSE FAIL`);
           }
           return false;
@@ -310,7 +311,7 @@ export class WebCrawler {
           if (
             !normalizedLink.pathname.startsWith(normalizedInitialUrl.pathname)
           ) {
-            if (process.env.FIRECRAWL_DEBUG_FILTER_LINKS) {
+            if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
               this.logger.debug(
                 `${link} BACKWARDS FAIL ${normalizedLink.pathname} ${normalizedInitialUrl.pathname}`,
               );
@@ -332,7 +333,7 @@ export class WebCrawler {
             method: "filterLinks",
             link,
           });
-          if (process.env.FIRECRAWL_DEBUG_FILTER_LINKS) {
+          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
             this.logger.debug(`${link} ROBOTS FAIL`);
           }
           denialReasons.set(link, DenialReason.ROBOTS_TXT);
@@ -340,14 +341,14 @@ export class WebCrawler {
         }
 
         if (this.isFile(link)) {
-          if (process.env.FIRECRAWL_DEBUG_FILTER_LINKS) {
+          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
             this.logger.debug(`${link} FILE FAIL`);
           }
           denialReasons.set(link, DenialReason.FILE_TYPE);
           return false;
         }
 
-        if (process.env.FIRECRAWL_DEBUG_FILTER_LINKS) {
+        if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
           this.logger.debug(`${link} OK`);
         }
         return true;

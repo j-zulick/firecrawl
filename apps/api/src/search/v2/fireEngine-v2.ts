@@ -1,4 +1,4 @@
-import dotenv from "dotenv";
+import { config } from "../../config";
 import {
   SearchResult,
   SearchV2Response,
@@ -8,11 +8,9 @@ import * as Sentry from "@sentry/node";
 import { logger } from "../../lib/logger";
 import { executeWithRetry, attemptRequest } from "../../lib/retry-utils";
 
-dotenv.config();
-
 const useFireEngine =
-  process.env.FIRE_ENGINE_BETA_URL !== "" &&
-  process.env.FIRE_ENGINE_BETA_URL !== undefined;
+  config.FIRE_ENGINE_BETA_URL !== "" &&
+  config.FIRE_ENGINE_BETA_URL !== undefined;
 
 function normalizeSearchTypes(
   type?: SearchResultType | SearchResultType[],
@@ -72,7 +70,7 @@ export async function fire_engine_search_v2(
   };
 
   const requestedTypes = normalizeSearchTypes(options.type);
-  const url = `${process.env.FIRE_ENGINE_BETA_URL}/v2/search`;
+  const url = `${config.FIRE_ENGINE_BETA_URL}/v2/search`;
   const data = JSON.stringify(payload);
 
   const result = await executeWithRetry<SearchV2Response>(

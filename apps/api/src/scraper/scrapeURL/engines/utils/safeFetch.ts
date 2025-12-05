@@ -1,10 +1,10 @@
 import type { Socket } from "net";
+import { config } from "../../../../config";
 import type { TLSSocket } from "tls";
 import * as undici from "undici";
 import { CookieJar } from "tough-cookie";
 import { cookie } from "http-cookie-agent/undici";
 import IPAddr from "ipaddr.js";
-
 export class InsecureConnectionError extends Error {
   constructor() {
     super("Connection violated security rules.");
@@ -23,13 +23,13 @@ function createBaseAgent(skipTlsVerification: boolean) {
     maxRedirections: 5000,
   };
 
-  return process.env.PROXY_SERVER
+  return config.PROXY_SERVER
     ? new undici.ProxyAgent({
-        uri: process.env.PROXY_SERVER.includes("://")
-          ? process.env.PROXY_SERVER
-          : "http://" + process.env.PROXY_SERVER,
-        token: process.env.PROXY_USERNAME
-          ? `Basic ${Buffer.from(process.env.PROXY_USERNAME + ":" + (process.env.PROXY_PASSWORD ?? "")).toString("base64")}`
+        uri: config.PROXY_SERVER.includes("://")
+          ? config.PROXY_SERVER
+          : "http://" + config.PROXY_SERVER,
+        token: config.PROXY_USERNAME
+          ? `Basic ${Buffer.from(config.PROXY_USERNAME + ":" + (config.PROXY_PASSWORD ?? "")).toString("base64")}`
           : undefined,
         requestTls: {
           rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
@@ -55,7 +55,7 @@ function attachSecurityCheck(agent: undici.Dispatcher) {
     if (
       socket.remoteAddress &&
       isIPPrivate(socket.remoteAddress) &&
-      process.env.ALLOW_LOCAL_WEBHOOKS !== "true"
+      config.ALLOW_LOCAL_WEBHOOKS !== true
     ) {
       socket.destroy(new InsecureConnectionError());
     }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { config } from "../../../config";
 import { logger as _logger } from "../../../lib/logger";
 import { robustFetch } from "./fetch";
 import fs from "fs/promises";
@@ -79,7 +80,7 @@ export async function smartScrape({
 
     // Pass schema type as generic parameter to robustFeth
     const response = await robustFetch<typeof smartScrapeResultSchema>({
-      url: `${process.env.SMART_SCRAPE_API_URL}/smart-scrape`,
+      url: `${config.SMART_SCRAPE_API_URL}/smart-scrape`,
       method: "POST",
       body: {
         url,

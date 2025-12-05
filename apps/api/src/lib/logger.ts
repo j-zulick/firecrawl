@@ -1,5 +1,6 @@
 import * as winston from "winston";
 
+import { config } from "../config";
 import { configDotenv } from "dotenv";
 configDotenv();
 
@@ -36,7 +37,7 @@ const zeroDataRetentionFilter = winston.format(info => {
 })();
 
 export const logger = winston.createLogger({
-  level: process.env.LOGGING_LEVEL?.toLowerCase() ?? "debug",
+  level: config.LOGGING_LEVEL?.toLowerCase() ?? "debug",
   format: winston.format.json({
     replacer(key, value) {
       if (value instanceof Error) {
@@ -53,7 +54,7 @@ export const logger = winston.createLogger({
     },
   }),
   transports: [
-    ...(process.env.FIRECRAWL_LOG_TO_FILE
+    ...(config.FIRECRAWL_LOG_TO_FILE
       ? [
           new winston.transports.File({
             filename:
@@ -77,9 +78,9 @@ export const logger = winston.createLogger({
         winston.format.metadata({
           fillExcept: ["message", "level", "timestamp"],
         }),
-        ...((process.env.ENV === "production" &&
-          process.env.SENTRY_ENVIRONMENT === "dev") ||
-        process.env.ENV !== "production"
+        ...((config.ENV === "production" &&
+          config.SENTRY_ENVIRONMENT === "dev") ||
+        config.ENV !== "production"
           ? [winston.format.colorize(), logFormat]
           : []),
       ),

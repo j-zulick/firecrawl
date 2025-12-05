@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { config } from "../../config";
 import { RequestWithAuth } from "./types";
 import { getExtract, getExtractExpiry } from "../../lib/extract/extract-redis";
 import { getExtractQueue } from "../../services/queue-service";
@@ -33,7 +34,7 @@ async function getExtractJob(
 ): Promise<ExtractPseudoJob<ExtractResult> | null> {
   const [bullJob, dbExtract] = await Promise.all([
     getExtractQueue().getJob(id),
-    (process.env.USE_DB_AUTHENTICATION === "true"
+    (config.USE_DB_AUTHENTICATION
       ? supabaseGetExtractByIdDirect(id)
       : null) as Promise<DBExtract | null>,
   ]);

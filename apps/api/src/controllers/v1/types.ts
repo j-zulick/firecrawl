@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { config } from "../../config";
 import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { countries } from "../../lib/validate-country";
@@ -52,10 +53,7 @@ export const url = z.preprocess(
     .url()
     .regex(/^https?:\/\//i, "URL uses unsupported protocol")
     .refine(x => {
-      if (
-        process.env.TEST_SUITE_SELF_HOSTED === "true" &&
-        process.env.ALLOW_LOCAL_WEBHOOKS === "true"
-      ) {
+      if (config.TEST_SUITE_SELF_HOSTED && config.ALLOW_LOCAL_WEBHOOKS) {
         if (
           /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
             x as string,

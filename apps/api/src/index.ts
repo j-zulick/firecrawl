@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { config } from "./config";
 import "./services/sentry";
 import { setSentryServiceTag } from "./services/sentry";
 import * as Sentry from "@sentry/node";
@@ -41,7 +42,7 @@ const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
 const { ExpressAdapter } = require("@bull-board/express");
 
-const numCPUs = process.env.ENV === "local" ? 2 : os.cpus().length;
+const numCPUs = config.ENV === "local" ? 2 : os.cpus().length;
 logger.info(`Number of CPUs: ${numCPUs} available`);
 
 logger.info("Network info dump", {
@@ -57,7 +58,7 @@ const expressApp = express();
 const ws = expressWs(expressApp);
 const app = ws.app;
 
-global.isProduction = process.env.IS_PRODUCTION === "true";
+global.isProduction = config.IS_PRODUCTION;
 
 setSentryServiceTag("api");
 
@@ -70,12 +71,12 @@ app.use(responseTime());
 
 app.disable("x-powered-by");
 
-if (process.env.EXPRESS_TRUST_PROXY) {
-  app.set("trust proxy", parseInt(process.env.EXPRESS_TRUST_PROXY, 10));
+if (config.EXPRESS_TRUST_PROXY) {
+  app.set("trust proxy", config.EXPRESS_TRUST_PROXY);
 }
 
 const serverAdapter = new ExpressAdapter();
-serverAdapter.setBasePath(`/admin/${process.env.BULL_AUTH_KEY}/queues`);
+serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
 
 const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
   queues: [
@@ -88,10 +89,7 @@ const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
   serverAdapter: serverAdapter,
 });
 
-app.use(
-  `/admin/${process.env.BULL_AUTH_KEY}/queues`,
-  serverAdapter.getRouter(),
-);
+app.use(`/admin/${config.BULL_AUTH_KEY}/queues`, serverAdapter.getRouter());
 
 app.get("/", (_, res) => {
   res.redirect("https://docs.firecrawl.dev/api-reference/v2-introduction");
@@ -108,8 +106,8 @@ app.use("/v2", v2Router);
 app.use(adminRouter);
 app.use(domainFrequencyRouter);
 
-const DEFAULT_PORT = process.env.PORT ?? 3002;
-const HOST = process.env.HOST ?? "localhost";
+const DEFAULT_PORT = config.PORT;
+const HOST = config.HOST;
 
 async function startServer(port = DEFAULT_PORT) {
   try {
@@ -131,7 +129,7 @@ async function startServer(port = DEFAULT_PORT) {
 
   const exitHandler = async () => {
     logger.info("SIGTERM signal received: closing HTTP server");
-    if (process.env.IS_KUBERNETES === "true") {
+    if (config.IS_KUBERNETES) {
       // Account for GCE load balancer drain timeout
       logger.info("Waiting 60s for GCE load balancer drain timeout");
       await new Promise(resolve => setTimeout(resolve, 60000));

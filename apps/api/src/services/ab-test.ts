@@ -1,6 +1,7 @@
 import { ScrapeJobData } from "../types";
 import { logger as _logger } from "../lib/logger";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
+import { config } from "../config";
 import {
   FireEngineScrapeRequestChromeCDP,
   FireEngineScrapeRequestCommon,
@@ -12,10 +13,9 @@ export function abTestJob(webScraperOptions: ScrapeJobData) {
   // Global A/B test: mirror request to staging /v1/scrape based on SCRAPEURL_AB_RATE
   const abLogger = _logger.child({ method: "ABTestToStaging" });
   try {
-    const abRateEnv = process.env.SCRAPEURL_AB_RATE;
-    const abHostEnv = process.env.SCRAPEURL_AB_HOST;
-    const shouldExtendMaxAge =
-      process.env.SCRAPEURL_AB_EXTEND_MAXAGE === "true";
+    const abRateEnv = config.SCRAPEURL_AB_RATE;
+    const abHostEnv = config.SCRAPEURL_AB_HOST;
+    const shouldExtendMaxAge = config.SCRAPEURL_AB_EXTEND_MAXAGE;
     const abRate =
       abRateEnv !== undefined ? Math.max(0, Math.min(1, Number(abRateEnv))) : 0;
     const shouldABTest =
@@ -82,8 +82,8 @@ export function abTestFireEngine(
   // Global A/B test: mirror request to staging fire-engine based on SCRAPEURL_AB_RATE
   const abLogger = _logger.child({ method: "ABTestToStaging" });
   try {
-    const abRateEnv = process.env.FIRE_ENGINE_AB_RATE;
-    const abHostEnv = process.env.FIRE_ENGINE_AB_HOST;
+    const abRateEnv = config.FIRE_ENGINE_AB_RATE;
+    const abHostEnv = config.FIRE_ENGINE_AB_HOST;
     const abRate =
       abRateEnv !== undefined ? Math.max(0, Math.min(1, Number(abRateEnv))) : 0;
     const shouldABTest =

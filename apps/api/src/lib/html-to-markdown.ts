@@ -1,14 +1,12 @@
 import koffi from "koffi";
+import { config } from "../config";
 import "../services/sentry";
 import * as Sentry from "@sentry/node";
-
-import dotenv from "dotenv";
 import { logger } from "./logger";
 import { stat } from "fs/promises";
 import { HTML_TO_MARKDOWN_PATH } from "../natives";
 import { convertHTMLToMarkdownWithHttpService } from "./html-to-markdown-client";
 import { postProcessMarkdown } from "@mendable/firecrawl-rs";
-dotenv.config();
 
 // TODO: add a timeout to the Go parser
 
@@ -60,7 +58,7 @@ export async function parseMarkdown(
   }
 
   // Try HTTP service first if enabled
-  if (process.env.HTML_TO_MARKDOWN_SERVICE_URL) {
+  if (config.HTML_TO_MARKDOWN_SERVICE_URL) {
     try {
       let markdownContent = await convertHTMLToMarkdownWithHttpService(html);
       markdownContent = await postProcessMarkdown(markdownContent);
@@ -79,7 +77,7 @@ export async function parseMarkdown(
   }
 
   try {
-    if (process.env.USE_GO_MARKDOWN_PARSER == "true") {
+    if (config.USE_GO_MARKDOWN_PARSER) {
       const converter = await GoMarkdownConverter.getInstance();
       let markdownContent = await converter.convertHTMLToMarkdown(html);
       markdownContent = await postProcessMarkdown(markdownContent);

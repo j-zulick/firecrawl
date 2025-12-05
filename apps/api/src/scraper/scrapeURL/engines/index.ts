@@ -1,4 +1,5 @@
 import { ScrapeActionContent } from "../../../lib/entities";
+import { config } from "../../../config";
 import { Meta } from "..";
 import { documentMaxReasonableTime, scrapeDocument } from "./document";
 import {
@@ -37,11 +38,11 @@ export type Engine =
   | "index;documents";
 
 const useFireEngine =
-  process.env.FIRE_ENGINE_BETA_URL !== "" &&
-  process.env.FIRE_ENGINE_BETA_URL !== undefined;
+  config.FIRE_ENGINE_BETA_URL !== "" &&
+  config.FIRE_ENGINE_BETA_URL !== undefined;
 const usePlaywright =
-  process.env.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
-  process.env.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
+  config.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
+  config.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
 
 const engines: Engine[] = [
   ...(useIndex ? ["index" as const, "index;documents" as const] : []),
@@ -465,7 +466,7 @@ const engineOptions: {
 export function shouldUseIndex(meta: Meta) {
   return (
     useIndex &&
-    process.env.FIRECRAWL_INDEX_WRITE_ONLY !== "true" &&
+    config.FIRECRAWL_INDEX_WRITE_ONLY !== true &&
     !hasFormatOfType(meta.options.formats, "changeTracking") &&
     !hasFormatOfType(meta.options.formats, "branding") &&
     // Skip index if a non-default PDF maxPages is specified

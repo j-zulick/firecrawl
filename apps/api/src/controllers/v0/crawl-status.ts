@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { config } from "../../config";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../../src/types";
 import { redisEvictConnection } from "../../../src/services/redis";
@@ -20,10 +21,10 @@ async function getJobs(
 ): Promise<PseudoJob<any>[]> {
   const [nuqJobs, dbScrapes, gcsJobs] = await Promise.all([
     scrapeQueue.getJobs(ids),
-    process.env.USE_DB_AUTHENTICATION === "true"
+    config.USE_DB_AUTHENTICATION
       ? await supabaseGetScrapesByRequestId(crawlId)
       : [],
-    process.env.GCS_BUCKET_NAME
+    config.GCS_BUCKET_NAME
       ? (Promise.all(
           ids.map(async x => ({ id: x, job: await getJobFromGCS(x) })),
         ).then(x => x.filter(x => x.job)) as Promise<

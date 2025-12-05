@@ -1,4 +1,5 @@
 import { Queue } from "bullmq";
+import { config } from "../config";
 import { logger } from "../lib/logger";
 import IORedis from "ioredis";
 import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
@@ -14,7 +15,7 @@ let redisConnection: IORedis;
 
 export function getRedisConnection(): IORedis {
   if (!redisConnection) {
-    redisConnection = new IORedis(process.env.REDIS_URL!, {
+    redisConnection = new IORedis(config.REDIS_URL!, {
       maxRetriesPerRequest: null,
     });
     redisConnection.on("connect", () => logger.info("Redis connected"));

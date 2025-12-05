@@ -1,7 +1,8 @@
 import { logger } from "../../lib/logger";
+import { config } from "../../config";
 import Stripe from "stripe";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? "");
+const stripe = new Stripe(config.STRIPE_SECRET_KEY ?? "");
 
 async function getCustomerDefaultPaymentMethod(customerId: string) {
   const paymentMethods = await stripe.customers.listPaymentMethods(customerId, {

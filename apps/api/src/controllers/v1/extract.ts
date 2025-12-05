@@ -24,6 +24,7 @@ import {
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logRequest } from "../../services/logging/log_job";
 
+import { config } from "../../config";
 async function oldExtract(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
   res: Response<ExtractResponse>,
@@ -113,7 +114,7 @@ export async function extractController(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
   res: Response<ExtractResponse>,
 ) {
-  const selfHosted = process.env.USE_DB_AUTHENTICATION !== "true";
+  const selfHosted = config.USE_DB_AUTHENTICATION !== true;
   const originalRequest = { ...req.body };
   req.body = extractRequestSchema.parse(req.body);
 

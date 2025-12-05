@@ -1,4 +1,5 @@
 import { supabase_service } from "../supabase";
+import { config } from "../../config";
 import { withAuth } from "../../lib/withAuth";
 import { Resend } from "resend";
 import { NotificationType } from "../../types";
@@ -104,7 +105,7 @@ async function sendEmailNotification(
   notificationType: NotificationType,
   context: NotificationContext = {},
 ) {
-  const resend = new Resend(process.env.RESEND_API_KEY);
+  const resend = new Resend(config.RESEND_API_KEY);
 
   try {
     // Get user's email preferences
@@ -297,11 +298,11 @@ async function sendNotificationInternal(
           },
         ]);
 
-      if (process.env.SLACK_ADMIN_WEBHOOK_URL && emails.length > 0) {
+      if (config.SLACK_ADMIN_WEBHOOK_URL && emails.length > 0) {
         sendSlackWebhook(
           `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}. Number of credits used: ${chunk.adjusted_credits_used} | Number of credits in the plan: ${chunk.price_credits}`,
           false,
-          process.env.SLACK_ADMIN_WEBHOOK_URL,
+          config.SLACK_ADMIN_WEBHOOK_URL,
         ).catch(error => {
           logger.debug(`Error sending slack notification: ${error}`);
         });
@@ -428,14 +429,14 @@ export async function sendNotificationWithCustomDays(
         ]);
 
       if (
-        process.env.SLACK_ADMIN_WEBHOOK_URL &&
+        config.SLACK_ADMIN_WEBHOOK_URL &&
         emails.length > 0 &&
         notificationType !== NotificationType.CONCURRENCY_LIMIT_REACHED
       ) {
         sendSlackWebhook(
           `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}.`,
           false,
-          process.env.SLACK_ADMIN_WEBHOOK_URL,
+          config.SLACK_ADMIN_WEBHOOK_URL,
         ).catch(error => {
           logger.debug(`Error sending slack notification: ${error}`);
         });

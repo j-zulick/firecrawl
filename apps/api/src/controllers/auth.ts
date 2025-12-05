@@ -1,4 +1,5 @@
 import { parseApi } from "../lib/parseApi";
+import { config } from "../config";
 import { getRateLimiter } from "../services/rate-limiter";
 import { AuthResponse, NotificationType, RateLimiterMode } from "../types";
 import {
@@ -151,16 +152,13 @@ export async function getACUC(
     mode === RateLimiterMode.ExtractStatus ||
     mode === RateLimiterMode.ExtractAgentPreview;
 
-  if (api_key === process.env.PREVIEW_TOKEN) {
+  if (api_key === config.PREVIEW_TOKEN) {
     const acuc = mockPreviewACUC(api_key, isExtract);
     acuc.is_extract = isExtract;
     return acuc;
   }
 
-  if (
-    process.env.USE_DB_AUTHENTICATION !== "true" &&
-    !process.env.SUPABASE_ACUC_URL
-  ) {
+  if (config.USE_DB_AUTHENTICATION !== true && !config.SUPABASE_ACUC_URL) {
     const acuc = mockACUC();
     acuc.is_extract = isExtract;
     return acuc;
@@ -181,7 +179,7 @@ export async function getACUC(
     let retries = 0;
     const maxRetries = 5;
     while (retries < maxRetries) {
-      const client = !!process.env.SUPABASE_ACUC_URL
+      const client = !!config.SUPABASE_ACUC_URL
         ? supabase_acuc_only_service
         : Math.random() > 2 / 3
           ? supabase_rr_service
@@ -289,10 +287,7 @@ export async function getACUCTeam(
     return acuc;
   }
 
-  if (
-    process.env.USE_DB_AUTHENTICATION !== "true" &&
-    !process.env.SUPABASE_ACUC_URL
-  ) {
+  if (config.USE_DB_AUTHENTICATION !== true && !config.SUPABASE_ACUC_URL) {
     const acuc = mockACUC();
     acuc.is_extract = isExtract;
     return acuc;
@@ -314,7 +309,7 @@ export async function getACUCTeam(
     const maxRetries = 5;
 
     while (retries < maxRetries) {
-      const client = !!process.env.SUPABASE_ACUC_URL
+      const client = !!config.SUPABASE_ACUC_URL
         ? supabase_acuc_only_service
         : Math.random() > 2 / 3
           ? supabase_rr_service
@@ -396,7 +391,7 @@ export async function authenticateUser(
   res,
   mode?: RateLimiterMode,
 ): Promise<AuthResponse> {
-  if (!!process.env.SUPABASE_ACUC_URL) {
+  if (!!config.SUPABASE_ACUC_URL) {
     return supaAuthenticateUser(req, res, mode);
   }
 
@@ -446,7 +441,7 @@ async function supaAuthenticateUser(
       "Unauthenticated Playground calls are temporarily disabled due to abuse. Please sign up.",
     );
   }
-  if (token == process.env.PREVIEW_TOKEN) {
+  if (token == config.PREVIEW_TOKEN) {
     if (mode == RateLimiterMode.CrawlStatus) {
       rateLimiter = getRateLimiter(RateLimiterMode.CrawlStatus, token);
     } else if (mode == RateLimiterMode.ExtractStatus) {
@@ -487,8 +482,7 @@ async function supaAuthenticateUser(
     );
   }
 
-  const team_endpoint_token =
-    token === process.env.PREVIEW_TOKEN ? iptoken : teamId;
+  const team_endpoint_token = token === config.PREVIEW_TOKEN ? iptoken : teamId;
 
   try {
     await rateLimiter.consume(team_endpoint_token);
@@ -518,7 +512,7 @@ async function supaAuthenticateUser(
   }
 
   if (
-    token === process.env.PREVIEW_TOKEN &&
+    token === config.PREVIEW_TOKEN &&
     (mode === RateLimiterMode.Scrape ||
       mode === RateLimiterMode.Preview ||
       mode === RateLimiterMode.Map ||
@@ -537,7 +531,7 @@ async function supaAuthenticateUser(
     // if (origin && origin.includes("firecrawl.dev")){
     //   return { success: true, team_id: "preview" };
     // }
-    // if(process.env.ENV !== "production") {
+    // if(config.ENV !== "production") {
     //   return { success: true, team_id: "preview" };
     // }
 

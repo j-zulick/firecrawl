@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { config } from "../config";
 import { logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
 configDotenv();
@@ -11,16 +12,15 @@ class SupabaseService {
   private acucClient: SupabaseClient | null = null;
 
   constructor() {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseReplicaUrl = process.env.SUPABASE_REPLICA_URL;
-    const supabaseServiceToken = process.env.SUPABASE_SERVICE_TOKEN;
-    const useDbAuthentication = process.env.USE_DB_AUTHENTICATION === "true";
+    const supabaseUrl = config.SUPABASE_URL;
+    const supabaseReplicaUrl = config.SUPABASE_REPLICA_URL;
+    const supabaseServiceToken = config.SUPABASE_SERVICE_TOKEN;
+    const useDbAuthentication = config.USE_DB_AUTHENTICATION;
     // Only initialize the Supabase client if both URL and Service Token are provided.
     if (!useDbAuthentication) {
-      if (!!process.env.SUPABASE_ACUC_URL) {
-        const supabaseAcucUrl = process.env.SUPABASE_ACUC_URL;
-        const supabaseAcucServiceToken =
-          process.env.SUPABASE_ACUC_SERVICE_TOKEN;
+      if (!!config.SUPABASE_ACUC_URL) {
+        const supabaseAcucUrl = config.SUPABASE_ACUC_URL;
+        const supabaseAcucServiceToken = config.SUPABASE_ACUC_SERVICE_TOKEN;
         if (!supabaseAcucUrl || !supabaseAcucServiceToken) {
           logger.error(
             "Supabase ACUC environment variables aren't configured correctly. Supabase ACUC client will not be initialized. Fix ENV configuration or disable ACUC with USE_DB_AUTHENTICATION env variable",

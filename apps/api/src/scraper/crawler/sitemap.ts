@@ -1,4 +1,5 @@
 import type { Logger } from "winston";
+import { config } from "../../config";
 import { scrapeOptions, ScrapeOptions } from "../../controllers/v2/types";
 import { logger as _logger } from "../../lib/logger";
 import { Engine } from "../scrapeURL/engines";
@@ -15,8 +16,8 @@ import { SitemapError } from "../../lib/error";
 import { useIndex } from "../../services";
 
 const useFireEngine =
-  process.env.FIRE_ENGINE_BETA_URL !== "" &&
-  process.env.FIRE_ENGINE_BETA_URL !== undefined;
+  config.FIRE_ENGINE_BETA_URL !== "" &&
+  config.FIRE_ENGINE_BETA_URL !== undefined;
 
 type SitemapScrapeOptions = {
   url: string;

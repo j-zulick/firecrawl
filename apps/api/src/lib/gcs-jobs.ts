@@ -10,9 +10,10 @@ import type {
   LoggedScrape,
   LoggedSearch,
 } from "../services/logging/log_job";
+import { config } from "../config";
 
-const credentials = process.env.GCS_CREDENTIALS
-  ? JSON.parse(atob(process.env.GCS_CREDENTIALS))
+const credentials = config.GCS_CREDENTIALS
+  ? JSON.parse(atob(config.GCS_CREDENTIALS))
   : undefined;
 export const storage = new Storage({ credentials });
 
@@ -27,12 +28,12 @@ export async function saveScrapeToGCS(scrape: LoggedScrape): Promise<void> {
       "job.num_docs": 1,
     });
 
-    if (!process.env.GCS_BUCKET_NAME) {
+    if (!config.GCS_BUCKET_NAME) {
       setSpanAttributes(span, { "gcs.bucket_configured": false });
       return;
     }
 
-    const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${scrape.id}.json`);
 
     // Save job docs with retry
@@ -119,12 +120,12 @@ export async function saveSearchToGCS(search: LoggedSearch): Promise<void> {
       request_id: search.request_id,
     });
 
-    if (!process.env.GCS_BUCKET_NAME) {
+    if (!config.GCS_BUCKET_NAME) {
       setSpanAttributes(span, { "gcs.bucket_configured": false });
       return;
     }
 
-    const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${search.id}.json`);
 
     for (let i = 0; i < 3; i++) {
@@ -197,12 +198,12 @@ export async function saveExtractToGCS(extract: LoggedExtract): Promise<void> {
       "extract.team_id": extract.team_id,
     });
 
-    if (!process.env.GCS_BUCKET_NAME) {
+    if (!config.GCS_BUCKET_NAME) {
       setSpanAttributes(span, { "gcs.bucket_configured": false });
       return;
     }
 
-    const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${extract.id}.json`);
 
     for (let i = 0; i < 3; i++) {
@@ -271,12 +272,12 @@ export async function saveMapToGCS(map: LoggedMap): Promise<void> {
       "map.team_id": map.team_id,
     });
 
-    if (!process.env.GCS_BUCKET_NAME) {
+    if (!config.GCS_BUCKET_NAME) {
       setSpanAttributes(span, { "gcs.bucket_configured": false });
       return;
     }
 
-    const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${map.id}.json`);
 
     for (let i = 0; i < 3; i++) {
@@ -345,12 +346,12 @@ export async function saveDeepResearchToGCS(
       "deep_research.team_id": deepResearch.team_id,
     });
 
-    if (!process.env.GCS_BUCKET_NAME) {
+    if (!config.GCS_BUCKET_NAME) {
       setSpanAttributes(span, { "gcs.bucket_configured": false });
       return;
     }
 
-    const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${deepResearch.id}.json`);
 
     for (let i = 0; i < 3; i++) {
@@ -418,12 +419,12 @@ export async function saveLlmsTxtToGCS(llmsTxt: LoggedLlmsTxt): Promise<void> {
       "llms_txt.team_id": llmsTxt.team_id,
     });
 
-    if (!process.env.GCS_BUCKET_NAME) {
+    if (!config.GCS_BUCKET_NAME) {
       setSpanAttributes(span, { "gcs.bucket_configured": false });
       return;
     }
 
-    const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${llmsTxt.id}.json`);
 
     for (let i = 0; i < 3; i++) {
@@ -491,12 +492,12 @@ export async function getJobFromGCS(jobId: string): Promise<Document[] | null> {
       "job.id": jobId,
     });
 
-    if (!process.env.GCS_BUCKET_NAME) {
+    if (!config.GCS_BUCKET_NAME) {
       setSpanAttributes(span, { "gcs.bucket_configured": false });
       return null;
     }
 
-    const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${jobId}.json`);
 
     try {
@@ -531,12 +532,12 @@ export async function removeJobFromGCS(jobId: string): Promise<void> {
       "job.id": jobId,
     });
 
-    if (!process.env.GCS_BUCKET_NAME) {
+    if (!config.GCS_BUCKET_NAME) {
       setSpanAttributes(span, { "gcs.bucket_configured": false });
       return;
     }
 
-    const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${jobId}.json`);
 
     try {
@@ -570,11 +571,11 @@ export async function getDocFromGCS(url: string): Promise<any | null> {
   //     url,
   //   });
   try {
-    if (!process.env.GCS_FIRE_ENGINE_BUCKET_NAME) {
+    if (!config.GCS_FIRE_ENGINE_BUCKET_NAME) {
       return null;
     }
 
-    const bucket = storage.bucket(process.env.GCS_FIRE_ENGINE_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_FIRE_ENGINE_BUCKET_NAME);
     const blob = bucket.file(`${url}`);
     const [exists] = await blob.exists();
     if (!exists) {

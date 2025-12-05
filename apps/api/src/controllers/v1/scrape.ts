@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import {
   Document,
@@ -81,8 +82,8 @@ export async function scrapeController(
   // const startTime = new Date().getTime();
 
   const isDirectToBullMQ =
-    process.env.SEARCH_PREVIEW_TOKEN !== undefined &&
-    process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+    config.SEARCH_PREVIEW_TOKEN !== undefined &&
+    config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
 
   const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(
     req.body,
@@ -147,7 +148,7 @@ export async function scrapeController(
             internalOptions: {
               ...internalOptions,
               teamId: req.auth.team_id,
-              saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
+              saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
                 ? true
                 : false,
               unnormalizedSourceURL: preNormalizedBody.url,

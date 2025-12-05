@@ -1,4 +1,5 @@
 import { parseStringPromise } from "xml2js";
+import { config } from "../../config";
 import { WebCrawler, SITEMAP_LIMIT } from "./crawler";
 import { scrapeURL } from "../scrapeURL";
 import { scrapeOptions } from "../../controllers/v2/types";
@@ -19,8 +20,8 @@ import { fetchFileToBuffer } from "../scrapeURL/engines/utils/downloadFile";
 import { useIndex } from "../../services";
 
 const useFireEngine =
-  process.env.FIRE_ENGINE_BETA_URL !== "" &&
-  process.env.FIRE_ENGINE_BETA_URL !== undefined;
+  config.FIRE_ENGINE_BETA_URL !== "" &&
+  config.FIRE_ENGINE_BETA_URL !== undefined;
 
 const gunzipAsync = promisify(gunzip);
 

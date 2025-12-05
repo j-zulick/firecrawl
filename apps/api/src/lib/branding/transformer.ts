@@ -1,4 +1,5 @@
 import { processRawBranding } from "./processor";
+import { config } from "../../config";
 import { BrandingProfile } from "../../types/branding";
 import { enhanceBrandingWithLLM } from "./llm";
 import { Meta } from "../../scraper/scrapeURL";
@@ -94,7 +95,7 @@ export async function brandingTransformer(
     brandingProfile = jsBranding;
   }
 
-  if (process.env.DEBUG_BRANDING !== "true") {
+  if (config.DEBUG_BRANDING !== true) {
     delete (brandingProfile as any).__button_snapshots;
   }
 

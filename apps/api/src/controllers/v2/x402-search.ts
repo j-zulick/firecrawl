@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { config } from "../../config";
 import {
   Document,
   RequestWithAuth,
@@ -148,7 +149,7 @@ async function scrapeX420SearchResult(
     };
 
     let costTracking: ReturnType<typeof CostTracking.prototype.toJSON>;
-    if (process.env.USE_DB_AUTHENTICATION === "true") {
+    if (config.USE_DB_AUTHENTICATION) {
       const { data: costTrackingResponse, error: costTrackingError } =
         await supabase_service
           .from("scrapes")
@@ -218,8 +219,8 @@ export async function x402SearchController(
 
   const startTime = new Date().getTime();
   const isSearchPreview =
-    process.env.SEARCH_PREVIEW_TOKEN !== undefined &&
-    process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+    config.SEARCH_PREVIEW_TOKEN !== undefined &&
+    config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
 
   let credits_billed = 0;
 

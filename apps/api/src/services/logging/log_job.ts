@@ -1,4 +1,5 @@
 import { supabase_service } from "../supabase";
+import { config } from "../../config";
 import "dotenv/config";
 import { logger as _logger } from "../../lib/logger";
 import { configDotenv } from "dotenv";
@@ -24,7 +25,7 @@ async function robustInsert(
   force: boolean,
   logger: Logger,
 ) {
-  if (process.env.USE_DB_AUTHENTICATION !== "true") {
+  if (config.USE_DB_AUTHENTICATION !== true) {
     logger.info(
       "Skipping database insertion due to USE_DB_AUTHENTICATION being off",
       { table },
@@ -193,7 +194,7 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
 
   if (
     scrape.doc &&
-    process.env.GCS_BUCKET_NAME &&
+    config.GCS_BUCKET_NAME &&
     !(scrape.skipNuq && scrape.zeroDataRetention)
   ) {
     await saveScrapeToGCS(scrape);
@@ -202,7 +203,7 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
   if (
     scrape.is_successful &&
     !scrape.zeroDataRetention &&
-    process.env.USE_DB_AUTHENTICATION === "true"
+    config.USE_DB_AUTHENTICATION
   ) {
     const hasMarkdown = hasFormatOfType(scrape.options.formats, "markdown");
     const hasChangeTracking = hasFormatOfType(

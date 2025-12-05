@@ -1,4 +1,5 @@
 import IORedis, { Redis } from "ioredis";
+import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 
 const logger = _logger.child({ module: "nuq/redis" });
@@ -57,7 +58,7 @@ type ScriptHashes = {
 
 const scripts: ScriptHashes = {} as ScriptHashes;
 
-const redis = new IORedis(process.env.REDIS_URL!, {
+const redis = new IORedis(config.REDIS_URL!, {
   lazyConnect: true,
   maxRetriesPerRequest: null,
   enableReadyCheck: false,

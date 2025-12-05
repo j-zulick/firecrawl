@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import {
   Document,
@@ -120,8 +121,8 @@ export async function scrapeController(
       const timeout = req.body.timeout;
 
       const isDirectToBullMQ =
-        process.env.SEARCH_PREVIEW_TOKEN !== undefined &&
-        process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+        config.SEARCH_PREVIEW_TOKEN !== undefined &&
+        config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
 
       const totalWait =
         (req.body.waitFor ?? 0) +

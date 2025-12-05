@@ -1,6 +1,7 @@
 import "dotenv/config";
 
-process.env.ENV = "test";
+import { config } from "../../config";
+config.ENV = "test";
 
 import { scrapeURL } from ".";
 import { scrapeOptions } from "../../controllers/v2/types";

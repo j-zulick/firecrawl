@@ -1,4 +1,5 @@
 import { configDotenv } from "dotenv";
+import { config } from "../../config";
 import * as Sentry from "@sentry/node";
 import http from "http";
 import https from "https";
@@ -76,10 +77,8 @@ import { FeatureFlag } from "../../scraper/scrapeURL/engines";
 
 configDotenv();
 
-const jobLockExtendInterval =
-  Number(process.env.JOB_LOCK_EXTEND_INTERVAL) || 10000;
-const jobLockExtensionTime =
-  Number(process.env.JOB_LOCK_EXTENSION_TIME) || 60000;
+const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
+const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
 
 if (require.main === module) {
   cacheableLookup.install(http.globalAgent);
@@ -109,8 +108,8 @@ async function billScrapeJob(
     );
 
     if (
-      job.data.team_id !== process.env.BACKGROUND_INDEX_TEAM_ID! &&
-      process.env.USE_DB_AUTHENTICATION === "true"
+      job.data.team_id !== config.BACKGROUND_INDEX_TEAM_ID! &&
+      config.USE_DB_AUTHENTICATION
     ) {
       try {
         const billingJobId = uuidv7();
@@ -1165,7 +1164,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
             }
 
             try {
-              if (process.env.GCS_BUCKET_NAME && !job.data.skipNuq) {
+              if (config.GCS_BUCKET_NAME && !job.data.skipNuq) {
                 logger.debug("Job succeeded -- putting null in Redis");
                 return null;
               } else {

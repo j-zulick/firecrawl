@@ -1,4 +1,5 @@
 import { Meta } from "../..";
+import { config } from "../../../../config";
 import { EngineScrapeResult } from "..";
 import * as marked from "marked";
 import { robustFetch } from "../../lib/fetch";
@@ -68,10 +69,9 @@ async function scrapePDFWithRunPodMU(
   });
 
   if (
-    process.env.PDF_MU_V2_EXPERIMENT === "true" &&
-    process.env.PDF_MU_V2_BASE_URL &&
-    Math.random() * 100 <
-      Number(process.env.PDF_MU_V2_EXPERIMENT_PERCENT ?? "100")
+    config.PDF_MU_V2_EXPERIMENT === "true" &&
+    config.PDF_MU_V2_BASE_URL &&
+    Math.random() * 100 < config.PDF_MU_V2_EXPERIMENT_PERCENT
   ) {
     (async () => {
       const pdfParseId = crypto.randomUUID();
@@ -85,9 +85,11 @@ async function scrapePDFWithRunPodMU(
       });
       try {
         const resp = await robustFetch({
-          url: process.env.PDF_MU_V2_BASE_URL ?? "",
+          url: config.PDF_MU_V2_BASE_URL ?? "",
           method: "POST",
-          headers: process.env.PDF_MU_V2_API_KEY ? { Authorization: `Bearer ${process.env.PDF_MU_V2_API_KEY}` } : undefined,
+          headers: config.PDF_MU_V2_API_KEY
+            ? { Authorization: `Bearer ${config.PDF_MU_V2_API_KEY}` }
+            : undefined,
           body: {
             input: {
               file_content: base64Content,
@@ -124,11 +126,10 @@ async function scrapePDFWithRunPodMU(
 
   const muV1StartedAt = Date.now();
   const podStart = await robustFetch({
-    url:
-      "https://api.runpod.ai/v2/" + process.env.RUNPOD_MU_POD_ID + "/runsync",
+    url: "https://api.runpod.ai/v2/" + config.RUNPOD_MU_POD_ID + "/runsync",
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.RUNPOD_MU_API_KEY}`,
+      Authorization: `Bearer ${config.RUNPOD_MU_API_KEY}`,
     },
     body: {
       input: {
@@ -164,10 +165,10 @@ async function scrapePDFWithRunPodMU(
       await new Promise(resolve => setTimeout(resolve, 2500));
       meta.abort.throwIfAborted();
       const podStatus = await robustFetch({
-        url: `https://api.runpod.ai/v2/${process.env.RUNPOD_MU_POD_ID}/status/${podStart.id}`,
+        url: `https://api.runpod.ai/v2/${config.RUNPOD_MU_POD_ID}/status/${podStart.id}`,
         method: "GET",
         headers: {
-          Authorization: `Bearer ${process.env.RUNPOD_MU_API_KEY}`,
+          Authorization: `Bearer ${config.RUNPOD_MU_API_KEY}`,
         },
         logger: meta.logger.child({
           method: "scrapePDFWithRunPodMU/status/robustFetch",
@@ -359,8 +360,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     // First try RunPod MU if conditions are met
     if (
       base64Content.length < MAX_FILE_SIZE &&
-      process.env.RUNPOD_MU_API_KEY &&
-      process.env.RUNPOD_MU_POD_ID
+      config.RUNPOD_MU_API_KEY &&
+      config.RUNPOD_MU_POD_ID
     ) {
       const muV1StartedAt = Date.now();
       try {

@@ -19,6 +19,7 @@ import * as geoip from "geoip-country";
 import { isSelfHosted } from "../lib/deployment";
 import { validate as isUuid } from "uuid";
 
+import { config } from "../config";
 export function checkCreditsMiddleware(
   _minimum?: number,
 ): (req: RequestWithAuth, res: Response, next: NextFunction) => void {
@@ -230,8 +231,7 @@ export function countryCheck(
     return next();
   }
 
-  const restricted = process.env.RESTRICTED_COUNTRIES?.split(",") ?? [];
-  if (restricted.includes(country.country)) {
+  if (config.RESTRICTED_COUNTRIES?.includes(country.country)) {
     logger.warn("Denied access to restricted country", {
       ip: req.ip,
       country: country.country,

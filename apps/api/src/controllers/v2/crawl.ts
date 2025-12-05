@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { config } from "../../config";
 import { v7 as uuidv7 } from "uuid";
 import {
   CrawlRequest,
@@ -72,7 +73,7 @@ export async function crawlController(
   });
 
   let { remainingCredits } = req.account!;
-  const useDbAuthentication = process.env.USE_DB_AUTHENTICATION === "true";
+  const useDbAuthentication = config.USE_DB_AUTHENTICATION;
   if (!useDbAuthentication) {
     remainingCredits = Infinity;
   }
@@ -185,9 +186,7 @@ export async function crawlController(
     internalOptions: {
       disableSmartWaitCache: true,
       teamId: req.auth.team_id,
-      saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
-        ? true
-        : false,
+      saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
       zeroDataRetention,
     },
     team_id: req.auth.team_id,

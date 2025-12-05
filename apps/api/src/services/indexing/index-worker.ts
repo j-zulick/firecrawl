@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { config } from "../../config";
 import "../sentry";
 import { setSentryServiceTag } from "../sentry";
 import * as Sentry from "@sentry/node";
@@ -42,19 +43,14 @@ import { getACUCTeam } from "../../controllers/auth";
 import { supabase_service } from "../supabase";
 import { processEngpickerJob } from "../../lib/engpicker";
 
-const workerLockDuration = Number(process.env.WORKER_LOCK_DURATION) || 60000;
-const workerStalledCheckInterval =
-  Number(process.env.WORKER_STALLED_CHECK_INTERVAL) || 30000;
-const jobLockExtendInterval =
-  Number(process.env.JOB_LOCK_EXTEND_INTERVAL) || 15000;
-const jobLockExtensionTime =
-  Number(process.env.JOB_LOCK_EXTENSION_TIME) || 60000;
+const workerLockDuration = config.WORKER_LOCK_DURATION;
+const workerStalledCheckInterval = config.WORKER_STALLED_CHECK_INTERVAL;
+const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
+const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
 
-const cantAcceptConnectionInterval =
-  Number(process.env.CANT_ACCEPT_CONNECTION_INTERVAL) || 2000;
-const connectionMonitorInterval =
-  Number(process.env.CONNECTION_MONITOR_INTERVAL) || 10;
-const gotJobInterval = Number(process.env.CONNECTION_MONITOR_INTERVAL) || 20;
+const cantAcceptConnectionInterval = config.CANT_ACCEPT_CONNECTION_INTERVAL;
+const connectionMonitorInterval = config.CONNECTION_MONITOR_INTERVAL;
+const gotJobInterval = config.CONNECTION_MONITOR_INTERVAL;
 
 const runningJobs: Set<string> = new Set();
 
@@ -150,7 +146,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
   const MIN_URLS_PER_DOMAIN = 10;
   const MAX_URLS_PER_DOMAIN = 250;
 
-  const teamId = process.env.PRECRAWL_TEAM_ID;
+  const teamId = config.PRECRAWL_TEAM_ID;
 
   try {
     await withSpan("precrawl.job", async span => {
@@ -470,8 +466,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               internalOptions: {
                 disableSmartWaitCache: true, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
                 teamId,
-                saveScrapeResultToGCS:
-                  !!process.env.GCS_FIRE_ENGINE_BUCKET_NAME,
+                saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
                 zeroDataRetention: false,
                 isPreCrawl: true, // NOTE: must be added to internal options for indexing, if not it will be treated as a normal scrape in the index
               },
@@ -692,7 +687,7 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
     processBillingJobInternal,
   );
 
-  const precrawlWorkerPromise = process.env.PRECRAWL_TEAM_ID
+  const precrawlWorkerPromise = config.PRECRAWL_TEAM_ID
     ? workerFun(getPrecrawlQueue(), processPrecrawlJob)
     : (async () => {
         logger.warn("PRECRAWL_TEAM_ID not set, skipping precrawl worker");

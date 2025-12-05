@@ -1,4 +1,5 @@
 import undici from "undici";
+import { config } from "../../config";
 import { createHmac } from "crypto";
 import { logger as _logger, logger } from "../../lib/logger";
 import {
@@ -62,7 +63,7 @@ export class WebhookSender {
   }
 
   private shouldSendEvent(event: WebhookEvent): boolean {
-    if (process.env.DISABLE_WEBHOOK_DELIVERY === "true") {
+    if (config.DISABLE_WEBHOOK_DELIVERY) {
       return false;
     }
 
@@ -76,10 +77,7 @@ export class WebhookSender {
 
   private async deliver(payload: any, scrapeId?: string): Promise<void> {
     const webhookHost = new URL(this.config.url).hostname;
-    if (
-      isIPPrivate(webhookHost) &&
-      process.env.ALLOW_LOCAL_WEBHOOKS !== "true"
-    ) {
+    if (isIPPrivate(webhookHost) && config.ALLOW_LOCAL_WEBHOOKS !== true) {
       this.logger.warn("Aborting webhook call to private IP address", {
         webhookUrl: this.config.url,
       });

@@ -1,5 +1,6 @@
 // Import necessary dependencies and types
 import { AuthCreditUsageChunk } from "../../controllers/v1/types";
+import { config } from "../../config";
 import { clearACUC, clearACUCTeam, getACUC } from "../../controllers/auth";
 import { redlock } from "../redlock";
 import { supabase_rr_service, supabase_service } from "../supabase";
@@ -332,11 +333,11 @@ async function _autoChargeScale(
 
             logger.info("Scale auto-recharge successful");
 
-            if (process.env.SLACK_ADMIN_WEBHOOK_URL) {
+            if (config.SLACK_ADMIN_WEBHOOK_URL) {
               sendSlackWebhook(
                 `💰 Auto-recharge successful on team ${chunk.team_id} for ${price.credits} credits (total auto-recharges this month: ${rechargesThisMonth.length + 1}).`,
                 false,
-                process.env.SLACK_ADMIN_WEBHOOK_URL,
+                config.SLACK_ADMIN_WEBHOOK_URL,
               ).catch(error => {
                 logger.debug(`Error sending slack notification: ${error}`);
               });
@@ -580,7 +581,7 @@ async function _autoChargeSelfServe(
                   paymentStatus: paymentStatus.return_status,
                 });
 
-                if (process.env.SLACK_ADMIN_WEBHOOK_URL) {
+                if (config.SLACK_ADMIN_WEBHOOK_URL) {
                   const webhookCooldownKey = `webhook_cooldown_${chunk.team_id}`;
                   const isInCooldown = await getValue(webhookCooldownKey);
 
@@ -588,7 +589,7 @@ async function _autoChargeSelfServe(
                     sendSlackWebhook(
                       `Auto-recharge: Team ${chunk.team_id}. ${AUTO_RECHARGE_CREDITS} credits added. Payment status: ${paymentStatus.return_status}.`,
                       false,
-                      process.env.SLACK_ADMIN_WEBHOOK_URL,
+                      config.SLACK_ADMIN_WEBHOOK_URL,
                     ).catch(error => {
                       logger.debug(
                         `Error sending slack notification: ${error}`,

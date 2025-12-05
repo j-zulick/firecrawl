@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { config } from "../config";
 import "./sentry";
 import { setSentryServiceTag } from "./sentry";
 import * as Sentry from "@sentry/node";
@@ -26,16 +27,12 @@ configDotenv();
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const jobLockExtendInterval =
-  Number(process.env.JOB_LOCK_EXTEND_INTERVAL) || 10000;
-const jobLockExtensionTime =
-  Number(process.env.JOB_LOCK_EXTENSION_TIME) || 60000;
+const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
+const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
 
-const cantAcceptConnectionInterval =
-  Number(process.env.CANT_ACCEPT_CONNECTION_INTERVAL) || 2000;
-const connectionMonitorInterval =
-  Number(process.env.CONNECTION_MONITOR_INTERVAL) || 10;
-const gotJobInterval = Number(process.env.CONNECTION_MONITOR_INTERVAL) || 20;
+const cantAcceptConnectionInterval = config.CANT_ACCEPT_CONNECTION_INTERVAL;
+const connectionMonitorInterval = config.CONNECTION_MONITOR_INTERVAL;
+const gotJobInterval = config.CONNECTION_MONITOR_INTERVAL;
 
 const runningJobs: Set<string> = new Set();
 
@@ -259,11 +256,11 @@ let currentLiveness: boolean = true;
 
 app.get("/liveness", (req, res) => {
   _logger.info("Liveness endpoint hit");
-  if (process.env.USE_DB_AUTHENTICATION === "true") {
+  if (config.USE_DB_AUTHENTICATION) {
     // networking check for Kubernetes environments
-    const host = process.env.FIRECRAWL_APP_HOST || "firecrawl-app-service";
-    const port = process.env.FIRECRAWL_APP_PORT || "3002";
-    const scheme = process.env.FIRECRAWL_APP_SCHEME || "http";
+    const host = config.FIRECRAWL_APP_HOST;
+    const port = config.FIRECRAWL_APP_PORT;
+    const scheme = config.FIRECRAWL_APP_SCHEME;
 
     robustFetch({
       url: `${scheme}://${host}:${port}`,
@@ -289,7 +286,7 @@ app.get("/liveness", (req, res) => {
   }
 });
 
-const workerPort = process.env.EXTRACT_WORKER_PORT || process.env.PORT || 3005;
+const workerPort = config.EXTRACT_WORKER_PORT || config.PORT;
 app.listen(workerPort, () => {
   _logger.info(`Liveness endpoint is running on port ${workerPort}`);
 });

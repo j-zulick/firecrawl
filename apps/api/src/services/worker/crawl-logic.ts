@@ -1,4 +1,5 @@
 import { logger as _logger } from "../../lib/logger";
+import { config } from "../../config";
 import {
   finishCrawl,
   getCrawlJobs,
@@ -128,7 +129,7 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
 
     let credits_billed = null;
 
-    if (process.env.USE_DB_AUTHENTICATION === "true") {
+    if (config.USE_DB_AUTHENTICATION) {
       const creditsRpc = await supabase_service.rpc(
         "credits_billed_by_crawl_id_2",
         {

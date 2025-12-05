@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { config } from "../../config";
 import { v7 as uuidv7 } from "uuid";
 import {
   MapDocument,
@@ -31,7 +32,7 @@ import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
 
 configDotenv();
-const redis = new Redis(process.env.REDIS_URL!);
+const redis = new Redis(config.REDIS_URL!);
 
 // Max Links that "Smart /map" can return
 const MAX_FIRE_ENGINE_RESULTS = 500;

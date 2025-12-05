@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { config } from "../../config";
 import "../sentry";
 import { setSentryServiceTag } from "../sentry";
 import {
@@ -27,12 +28,9 @@ import { logger } from "../../lib/logger";
     }
   });
 
-  const server = app.listen(
-    Number(process.env.NUQ_PREFETCH_WORKER_PORT ?? process.env.PORT ?? 3011),
-    () => {
-      logger.info("NuQ prefetch worker metrics server started");
-    },
-  );
+  const server = app.listen(config.NUQ_PREFETCH_WORKER_PORT, () => {
+    logger.info("NuQ prefetch worker metrics server started");
+  });
 
   async function shutdown() {
     server.close();

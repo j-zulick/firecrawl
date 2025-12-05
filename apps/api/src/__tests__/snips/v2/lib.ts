@@ -1,3 +1,4 @@
+import { config } from "../../../config";
 import {
   ScrapeRequestInput,
   Document,
@@ -547,7 +548,7 @@ export async function extractRaw(
 
 export async function zdrcleaner(teamId: string) {
   const res = await request(TEST_API_URL)
-    .get(`/admin/${process.env.BULL_AUTH_KEY}/zdrcleaner`)
+    .get(`/admin/${config.BULL_AUTH_KEY}/zdrcleaner`)
     .query({ teamId });
 
   expect(res.statusCode).toBe(200);

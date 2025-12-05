@@ -1,18 +1,12 @@
 import * as Sentry from "@sentry/node";
 import { logger } from "../lib/logger";
+import { config } from "../config";
 
-if (process.env.SENTRY_DSN) {
+if (config.SENTRY_DSN) {
   logger.info("Setting up Sentry...");
 
-  const TRACE_SAMPLE_RATE = parseFloat(
-    process.env.SENTRY_TRACE_SAMPLE_RATE || "0",
-  );
-  const ERROR_SAMPLE_RATE = parseFloat(
-    process.env.SENTRY_ERROR_SAMPLE_RATE || "0.05",
-  );
-
   Sentry.init({
-    dsn: process.env.SENTRY_DSN,
+    dsn: config.SENTRY_DSN,
     integrations: integrations => [
       ...integrations,
       Sentry.vercelAIIntegration({
@@ -22,11 +16,13 @@ if (process.env.SENTRY_DSN) {
     ],
     tracesSampler: samplingContext => {
       // trace all AI spans, sample 1% of all others
-      return samplingContext.name?.startsWith("ai.") ? 1.0 : TRACE_SAMPLE_RATE;
+      return samplingContext.name?.startsWith("ai.")
+        ? 1.0
+        : config.SENTRY_TRACE_SAMPLE_RATE;
     },
-    sampleRate: ERROR_SAMPLE_RATE,
-    serverName: process.env.NUQ_POD_NAME,
-    environment: process.env.SENTRY_ENVIRONMENT ?? "production",
+    sampleRate: config.SENTRY_ERROR_SAMPLE_RATE,
+    serverName: config.NUQ_POD_NAME,
+    environment: config.SENTRY_ENVIRONMENT,
     beforeSend(event, hint) {
       const error = hint?.originalException;
 
@@ -70,7 +66,7 @@ if (process.env.SENTRY_DSN) {
  * This helps distinguish between API server and worker errors in Sentry
  */
 export function setSentryServiceTag(serviceType: string) {
-  if (process.env.SENTRY_DSN) {
+  if (config.SENTRY_DSN) {
     Sentry.setTag("service_type", serviceType);
   }
 }

@@ -1,4 +1,5 @@
 import { Logger } from "winston";
+import { config } from "../../config";
 import * as Sentry from "@sentry/node";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 
@@ -499,7 +500,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
       const waitUntilWaterfall =
         getEngineMaxReasonableTime(meta, engine) +
-        parseInt(process.env.SCRAPEURL_ENGINE_WATERFALL_DELAY_MS || "0", 10);
+        config.SCRAPEURL_ENGINE_WATERFALL_DELAY_MS;
 
       if (
         !isFinite(waitUntilWaterfall) ||
@@ -923,7 +924,7 @@ export async function scrapeURL(
       useIndex &&
       meta.options.storeInCache &&
       !meta.internalOptions.zeroDataRetention &&
-      internalOptions.teamId !== process.env.PRECRAWL_TEAM_ID &&
+      internalOptions.teamId !== config.PRECRAWL_TEAM_ID &&
       meta.internalOptions.isPreCrawl !== true; // sitemap crawls override teamId but keep the isPreCrawl flag
     if (shouldRecordFrequency) {
       (async () => {

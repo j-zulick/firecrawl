@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { config } from "../../config";
 import {
   CrawlErrorsResponse,
   CrawlStatusParams,
@@ -72,7 +73,7 @@ export async function crawlErrorsController(
         "crawl:" + req.params.jobId + ":robots_blocked",
       ),
     });
-  } else if (process.env.USE_DB_AUTHENTICATION === "true") {
+  } else if (config.USE_DB_AUTHENTICATION) {
     // Check the requests table for the crawl/batch scrape request
     const { data: request, error: requestError } = await supabase_rr_service
       .from("requests")

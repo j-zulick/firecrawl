@@ -1,3 +1,4 @@
+import { config } from "../../../config";
 import {
   createTestIdUrl,
   describeIf,
@@ -236,7 +237,7 @@ describe("Scrape tests", () => {
       );
 
       expect(response.markdown?.trim()).toContain(
-        process.env.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+        config.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
       );
     },
     scrapeTimeout,
@@ -255,7 +256,7 @@ describe("Scrape tests", () => {
       );
 
       expect(response.markdown?.trim()).toContain(
-        process.env.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+        config.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
       );
     },
     scrapeTimeout,
