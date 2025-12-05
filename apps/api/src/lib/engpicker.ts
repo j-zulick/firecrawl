@@ -163,10 +163,27 @@ export async function processEngpickerJob() {
     return;
   }
 
+  // Filter out non-content URLs (sitemaps, feeds, etc.)
+  const EXCLUDED_EXTENSIONS = [
+    ".xml",
+    ".json",
+    ".txt",
+    ".rss",
+    ".atom",
+    ".pdf",
+    ".zip",
+    ".gz",
+  ];
+  const filteredRows = indexRows.filter((row: { url: string }) => {
+    const url = row.url.toLowerCase();
+    const pathname = new URL(url).pathname.toLowerCase();
+    return !EXCLUDED_EXTENSIONS.some(ext => pathname.endsWith(ext));
+  });
+
   const randomizedURLs: string[] = [];
   for (let i = 0; i < 10; i++) {
-    const elem = indexRows.splice(
-      Math.floor(Math.random() * indexRows.length),
+    const elem = filteredRows.splice(
+      Math.floor(Math.random() * filteredRows.length),
       1,
     );
     if (elem && elem.length > 0) {
