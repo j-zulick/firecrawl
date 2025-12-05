@@ -90,10 +90,10 @@ const configSchema = z.object({
 
   // Worker Configuration
   WORKER_PORT: z.coerce.number().default(3005),
-  NUQ_WORKER_PORT: z.coerce.number().default(3000),
+  NUQ_WORKER_PORT: z.coerce.number().default(3000).catch(3000), // todo: investigate why .catch is needed
   NUQ_WORKER_START_PORT: z.coerce.number().default(3006),
   NUQ_WORKER_COUNT: z.coerce.number().default(5),
-  NUQ_PREFETCH_WORKER_PORT: z.coerce.number().default(3011),
+  NUQ_PREFETCH_WORKER_PORT: z.coerce.number().default(3011).catch(3011), // todo: investigate why .catch is needed
   EXTRACT_WORKER_PORT: z.coerce.number().default(3004),
   NUQ_WAIT_MODE: z.string().optional(),
 
