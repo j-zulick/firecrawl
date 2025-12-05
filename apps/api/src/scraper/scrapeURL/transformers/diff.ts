@@ -113,9 +113,16 @@ export async function deriveDiff(
       | undefined
       | null = (res.data ?? [])[0] as any;
 
-    const job: Document | null = data?.o_job_id
-      ? ((await getJobFromGCS(data.o_job_id)?.[0]) ?? null)
-      : null;
+    const rawJob = data?.o_job_id ? await getJobFromGCS(data.o_job_id) : null;
+    const job: Document | null = rawJob?.[0] ?? null;
+
+    meta.logger.debug("Change tracking debugging", {
+      isDataPresent: !!data,
+      data,
+      isRawJobPresent: !!rawJob,
+      isJobPresent: !!job,
+    });
+
     if (data && job) {
       const previousMarkdown = job.markdown!;
       const currentMarkdown = document.markdown!;
