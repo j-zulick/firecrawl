@@ -351,6 +351,8 @@ export interface DocumentMetadata {
   cacheState?: 'hit' | 'miss';
   cachedAt?: string;
   creditsUsed?: number;
+  concurrencyLimited?: boolean;
+  concurrencyQueueDurationMs?: number;
 
   // Error information
   error?: string;

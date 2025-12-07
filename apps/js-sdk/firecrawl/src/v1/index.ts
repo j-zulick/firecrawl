@@ -53,6 +53,9 @@ export interface FirecrawlDocumentMetadata {
   proxyUsed?: "basic" | "stealth";
   cacheState?: "miss" | "hit";
   cachedAt?: string;
+  creditsUsed?: number;
+  concurrencyLimited?: boolean;
+  concurrencyQueueDurationMs?: number;
   [key: string]: any; // Allows for additional metadata properties not explicitly defined.
 }
 

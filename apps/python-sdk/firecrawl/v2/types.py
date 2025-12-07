@@ -120,6 +120,8 @@ class DocumentMetadata(BaseModel):
     cache_state: Optional[Literal["hit", "miss"]] = None
     cached_at: Optional[str] = None
     credits_used: Optional[int] = None
+    concurrency_limited: Optional[bool] = None
+    concurrency_queue_duration_ms: Optional[int] = None
 
     # Error information
     error: Optional[str] = None
