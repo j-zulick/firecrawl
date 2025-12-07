@@ -198,7 +198,7 @@ class FirecrawlClient:
             limit: Maximum number of results to return (default: 5)
             tbs: Time-based search filter
             location: Location string for search
-            timeout: Request timeout in milliseconds (default: 60000)
+            timeout: Request timeout in milliseconds (default: 300000)
             page_options: Options for scraping individual pages
             
         Returns:

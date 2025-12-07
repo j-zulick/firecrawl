@@ -948,7 +948,7 @@ class SearchRequest(BaseModel):
     tbs: Optional[str] = None
     location: Optional[str] = None
     ignore_invalid_urls: Optional[bool] = None
-    timeout: Optional[int] = 60000
+    timeout: Optional[int] = 300000
     scrape_options: Optional[ScrapeOptions] = None
     integration: Optional[str] = None
 
