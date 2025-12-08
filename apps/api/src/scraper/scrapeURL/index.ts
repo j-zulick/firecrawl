@@ -465,7 +465,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     // TODO: handle sitemap data, see WebScraper/index.ts:280
     // TODO: ScrapeEvents
 
-    const fallbackList = buildFallbackList(meta);
+    const fallbackList = await buildFallbackList(meta);
 
     setSpanAttributes(span, {
       "engine.fallback_list": fallbackList.map(f => f.engine).join(","),

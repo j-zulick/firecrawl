@@ -796,6 +796,54 @@ export async function queryOMCESignatures(
   return data?.[0]?.signatures ?? [];
 }
 
+export async function queryEngpickerVerdict(
+  hostname: string,
+): Promise<"TlsClientOk" | "ChromeCdpRequired" | "Uncertain" | "Unknown"> {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
+    return "Unknown";
+  }
+
+  const domainSplitsHash = generateDomainSplits(hostname).map(x => hashURL(x));
+
+  const level = domainSplitsHash.length - 1;
+  if (domainSplitsHash.length === 0) {
+    return "Unknown";
+  }
+
+  // 250ms max time taken
+
+  const res: { data: any; error: any } = await Promise.any([
+    index_supabase_service.rpc("query_engpicker_verdict", {
+      i_domain_hash: domainSplitsHash[level],
+    }),
+    new Promise<{
+      data: {
+        verdict: "TlsClientOk" | "ChromeCdpRequired" | "Uncertain" | "Unknown";
+      }[];
+      error: any;
+    }>(resolve =>
+      setTimeout(
+        () =>
+          resolve({
+            data: [{ verdict: "Unknown" }],
+            error: "Took longer than 250ms",
+          }),
+        250,
+      ),
+    ),
+  ]);
+
+  if (res.error) {
+    _logger.warn("Error querying index (engpicker)", {
+      error: res.error,
+      hostname,
+    });
+    return "Unknown";
+  }
+
+  return res.data?.[0]?.verdict ?? "Unknown";
+}
+
 export async function queryIndexAtSplitLevelWithMeta(
   url: string,
   limit: number,

@@ -15,7 +15,7 @@ import {
   scrapeURLWithPlaywright,
 } from "./playwright";
 import { indexMaxReasonableTime, scrapeURLWithIndex } from "./index/index";
-import { useIndex } from "../../../services";
+import { queryEngpickerVerdict, useIndex } from "../../../services";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { getPDFMaxPages } from "../../../controllers/v2/types";
 import { PdfMetadata } from "@mendable/firecrawl-rs";
@@ -479,10 +479,18 @@ export function shouldUseIndex(meta: Meta) {
   );
 }
 
-export function buildFallbackList(meta: Meta): {
-  engine: Engine;
-  unsupportedFeatures: Set<FeatureFlag>;
-}[] {
+export async function buildFallbackList(meta: Meta): Promise<
+  {
+    engine: Engine;
+    unsupportedFeatures: Set<FeatureFlag>;
+  }[]
+> {
+  const shouldPrioritizeTlsClient = meta.options.__experimental_engpicker
+    ? (await queryEngpickerVerdict(
+        meta.options.__experimental_omceDomain ?? new URL(meta.url).hostname,
+      )) === "TlsClientOk"
+    : false;
+
   const _engines: Engine[] = [
     ...engines,
 
@@ -563,10 +571,24 @@ export function buildFallbackList(meta: Meta): {
 
   if (meta.internalOptions.forceEngine === undefined) {
     // retain force engine order
+    // THIS SUCKS BUT IT WORKS
+    const getEffectiveQuality = (engine: Engine) => {
+      let quality = engineOptions[engine].quality;
+      // When engpicker says TlsClientOk, prioritize tlsclient over CDP/CDPRetry
+      if (shouldPrioritizeTlsClient) {
+        if (engine === "fire-engine;tlsclient") {
+          quality += 50; // Boost to 60, above CDP (50) but below index (1000)
+        } else if (engine === "fire-engine;tlsclient;stealth") {
+          quality += 14; // Boost to -1, stays negative but above chrome-cdp;stealth (-2)
+        }
+      }
+      return quality;
+    };
+
     selectedEngines.sort(
       (a, b) =>
         b.supportScore - a.supportScore ||
-        engineOptions[b.engine].quality - engineOptions[a.engine].quality,
+        getEffectiveQuality(b.engine) - getEffectiveQuality(a.engine),
     );
   }
 
