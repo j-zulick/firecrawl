@@ -585,6 +585,74 @@ fn _transform_html_inner(
     }
   }
 
+  // Make srcset URLs absolute
+  let srcset_images_for_abs: Vec<_> = document
+    .select("img[srcset]")
+    .map_err(|_| "Failed to select srcset images for absolute URLs")?
+    .collect();
+  for img in srcset_images_for_abs {
+    let srcset_opt = img.attributes.borrow().get("srcset").map(|x| x.to_string());
+    if let Some(srcset) = srcset_opt {
+      let absolute_srcset: Vec<String> = srcset
+        .split(',')
+        .map(|entry| {
+          let entry = entry.trim();
+          let parts: Vec<&str> = entry.split_whitespace().collect();
+          if parts.is_empty() {
+            return entry.to_string();
+          }
+          let img_url = parts[0];
+          let descriptor = if parts.len() > 1 {
+            parts[1..].join(" ")
+          } else {
+            String::new()
+          };
+          let absolute_url = url.join(img_url).map(|u| u.to_string()).unwrap_or_else(|_| img_url.to_string());
+          if descriptor.is_empty() {
+            absolute_url
+          } else {
+            format!("{} {}", absolute_url, descriptor)
+          }
+        })
+        .collect();
+      img.attributes.borrow_mut().insert("srcset", absolute_srcset.join(", "));
+    }
+  }
+
+  // Make source srcset URLs absolute (for picture elements)
+  let source_srcsets: Vec<_> = document
+    .select("source[srcset]")
+    .map_err(|_| "Failed to select source srcset elements")?
+    .collect();
+  for source in source_srcsets {
+    let srcset_opt = source.attributes.borrow().get("srcset").map(|x| x.to_string());
+    if let Some(srcset) = srcset_opt {
+      let absolute_srcset: Vec<String> = srcset
+        .split(',')
+        .map(|entry| {
+          let entry = entry.trim();
+          let parts: Vec<&str> = entry.split_whitespace().collect();
+          if parts.is_empty() {
+            return entry.to_string();
+          }
+          let img_url = parts[0];
+          let descriptor = if parts.len() > 1 {
+            parts[1..].join(" ")
+          } else {
+            String::new()
+          };
+          let absolute_url = url.join(img_url).map(|u| u.to_string()).unwrap_or_else(|_| img_url.to_string());
+          if descriptor.is_empty() {
+            absolute_url
+          } else {
+            format!("{} {}", absolute_url, descriptor)
+          }
+        })
+        .collect();
+      source.attributes.borrow_mut().insert("srcset", absolute_srcset.join(", "));
+    }
+  }
+
   let href_anchors: Vec<_> = document
     .select("a[href]")
     .map_err(|_| "Failed to select href anchors")?

@@ -209,6 +209,52 @@ export const htmlTransform = async (
     } catch (_) {}
   });
 
+  // Make srcset URLs absolute
+  soup("img[srcset]").each((_, el) => {
+    try {
+      const srcset = el.attribs.srcset;
+      const absoluteSrcset = srcset
+        .split(",")
+        .map(entry => {
+          const parts = entry.trim().split(/\s+/);
+          if (parts.length === 0) return entry;
+          const imgUrl = parts[0];
+          const descriptor = parts.slice(1).join(" ");
+          try {
+            const absoluteUrl = new URL(imgUrl, url).href;
+            return descriptor ? `${absoluteUrl} ${descriptor}` : absoluteUrl;
+          } catch (_) {
+            return entry.trim();
+          }
+        })
+        .join(", ");
+      el.attribs.srcset = absoluteSrcset;
+    } catch (_) {}
+  });
+
+  // Make source srcset URLs absolute (for picture elements)
+  soup("source[srcset]").each((_, el) => {
+    try {
+      const srcset = el.attribs.srcset;
+      const absoluteSrcset = srcset
+        .split(",")
+        .map(entry => {
+          const parts = entry.trim().split(/\s+/);
+          if (parts.length === 0) return entry;
+          const imgUrl = parts[0];
+          const descriptor = parts.slice(1).join(" ");
+          try {
+            const absoluteUrl = new URL(imgUrl, url).href;
+            return descriptor ? `${absoluteUrl} ${descriptor}` : absoluteUrl;
+          } catch (_) {
+            return entry.trim();
+          }
+        })
+        .join(", ");
+      el.attribs.srcset = absoluteSrcset;
+    } catch (_) {}
+  });
+
   const cleanedHtml = soup.html();
   return cleanedHtml;
 };
