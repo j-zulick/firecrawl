@@ -209,41 +209,6 @@ export const htmlTransform = async (
     } catch (_) {}
   });
 
-  // Helper function to convert srcset URLs to absolute
-  const makeSrcsetAbsolute = (srcset: string): string => {
-    return srcset
-      .split(",")
-      .map(entry => {
-        const parts = entry.trim().split(/\s+/);
-        if (parts.length === 0) return entry;
-        const imgUrl = parts[0];
-        const descriptor = parts.slice(1).join(" ");
-        try {
-          const absoluteUrl = new URL(imgUrl, url).href;
-          return descriptor ? `${absoluteUrl} ${descriptor}` : absoluteUrl;
-        } catch (_) {
-          return entry.trim();
-        }
-      })
-      .join(", ");
-  };
-
-  // Make srcset URLs absolute for img elements
-  soup("img[srcset]").each((_, el) => {
-    try {
-      const srcset = el.attribs.srcset;
-      el.attribs.srcset = makeSrcsetAbsolute(srcset);
-    } catch (_) {}
-  });
-
-  // Make source srcset URLs absolute (for picture elements)
-  soup("source[srcset]").each((_, el) => {
-    try {
-      const srcset = el.attribs.srcset;
-      el.attribs.srcset = makeSrcsetAbsolute(srcset);
-    } catch (_) {}
-  });
-
   const cleanedHtml = soup.html();
   return cleanedHtml;
 };
