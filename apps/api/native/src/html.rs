@@ -585,37 +585,42 @@ fn _transform_html_inner(
     }
   }
 
-  // Make srcset URLs absolute
+  // Helper function to convert srcset URLs to absolute
+  let make_srcset_absolute = |srcset: &str| -> String {
+    srcset
+      .split(',')
+      .map(|entry| {
+        let entry = entry.trim();
+        let parts: Vec<&str> = entry.split_whitespace().collect();
+        if parts.is_empty() {
+          return entry.to_string();
+        }
+        let img_url = parts[0];
+        let descriptor = if parts.len() > 1 {
+          parts[1..].join(" ")
+        } else {
+          String::new()
+        };
+        let absolute_url = url.join(img_url).map(|u| u.to_string()).unwrap_or_else(|_| img_url.to_string());
+        if descriptor.is_empty() {
+          absolute_url
+        } else {
+          format!("{} {}", absolute_url, descriptor)
+        }
+      })
+      .collect::<Vec<String>>()
+      .join(", ")
+  };
+
+  // Make srcset URLs absolute for img elements
   let srcset_images_for_abs: Vec<_> = document
     .select("img[srcset]")
     .map_err(|_| "Failed to select srcset images for absolute URLs")?
     .collect();
   for img in srcset_images_for_abs {
-    let srcset_opt = img.attributes.borrow().get("srcset").map(|x| x.to_string());
-    if let Some(srcset) = srcset_opt {
-      let absolute_srcset: Vec<String> = srcset
-        .split(',')
-        .map(|entry| {
-          let entry = entry.trim();
-          let parts: Vec<&str> = entry.split_whitespace().collect();
-          if parts.is_empty() {
-            return entry.to_string();
-          }
-          let img_url = parts[0];
-          let descriptor = if parts.len() > 1 {
-            parts[1..].join(" ")
-          } else {
-            String::new()
-          };
-          let absolute_url = url.join(img_url).map(|u| u.to_string()).unwrap_or_else(|_| img_url.to_string());
-          if descriptor.is_empty() {
-            absolute_url
-          } else {
-            format!("{} {}", absolute_url, descriptor)
-          }
-        })
-        .collect();
-      img.attributes.borrow_mut().insert("srcset", absolute_srcset.join(", "));
+    if let Some(srcset) = img.attributes.borrow().get("srcset").map(|x| x.to_string()) {
+      let absolute_srcset = make_srcset_absolute(&srcset);
+      img.attributes.borrow_mut().insert("srcset", absolute_srcset);
     }
   }
 
@@ -625,31 +630,9 @@ fn _transform_html_inner(
     .map_err(|_| "Failed to select source srcset elements")?
     .collect();
   for source in source_srcsets {
-    let srcset_opt = source.attributes.borrow().get("srcset").map(|x| x.to_string());
-    if let Some(srcset) = srcset_opt {
-      let absolute_srcset: Vec<String> = srcset
-        .split(',')
-        .map(|entry| {
-          let entry = entry.trim();
-          let parts: Vec<&str> = entry.split_whitespace().collect();
-          if parts.is_empty() {
-            return entry.to_string();
-          }
-          let img_url = parts[0];
-          let descriptor = if parts.len() > 1 {
-            parts[1..].join(" ")
-          } else {
-            String::new()
-          };
-          let absolute_url = url.join(img_url).map(|u| u.to_string()).unwrap_or_else(|_| img_url.to_string());
-          if descriptor.is_empty() {
-            absolute_url
-          } else {
-            format!("{} {}", absolute_url, descriptor)
-          }
-        })
-        .collect();
-      source.attributes.borrow_mut().insert("srcset", absolute_srcset.join(", "));
+    if let Some(srcset) = source.attributes.borrow().get("srcset").map(|x| x.to_string()) {
+      let absolute_srcset = make_srcset_absolute(&srcset);
+      source.attributes.borrow_mut().insert("srcset", absolute_srcset);
     }
   }
 
