@@ -143,7 +143,7 @@ const configSchema = z.object({
   DEBUG_BRANDING: z.stringbool().optional(),
 
   // AI/ML
-  MODEL_NAME: z.string().default("gpt-4o-mini"),
+  MODEL_NAME: z.string().optional(),
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
