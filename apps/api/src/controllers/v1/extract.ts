@@ -163,6 +163,7 @@ export async function extractController(
     integration: req.body.integration,
     target_hint: req.body.urls?.[0] ?? "",
     zeroDataRetention: false, // not supported for extract
+    api_key_id: req.acuc?.api_key_id ?? null,
   });
 
   const scrapeOptions = req.body.scrapeOptions

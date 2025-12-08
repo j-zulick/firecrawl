@@ -102,6 +102,7 @@ type LoggedRequest = {
   integration?: string | null;
   target_hint: string;
   zeroDataRetention: boolean;
+  api_key_id?: number | null;
 };
 
 export async function logRequest(request: LoggedRequest) {
@@ -131,6 +132,7 @@ export async function logRequest(request: LoggedRequest) {
       dr_clean_by: request.zeroDataRetention
         ? new Date(Date.now() + 24 * 60 * 60 * 1000)
         : null,
+      api_key_id: request.api_key_id ?? null,
     },
     true,
     logger,

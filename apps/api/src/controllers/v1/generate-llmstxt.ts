@@ -48,6 +48,7 @@ export async function generateLLMsTextController(
     origin: "api", // no origin field for llmstxt
     target_hint: req.body.url,
     zeroDataRetention: false, // not supported for llmstxt
+    api_key_id: req.acuc?.api_key_id ?? null,
   });
 
   const jobData = {

@@ -101,6 +101,7 @@ export async function deepResearchController(
     origin: "api",
     target_hint: req.body.query ?? "",
     zeroDataRetention: false, // not supported for deep research
+    api_key_id: req.acuc?.api_key_id ?? null,
   });
 
   const jobData = {

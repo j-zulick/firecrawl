@@ -64,6 +64,7 @@ export async function mapController(
     integration: req.body.integration,
     target_hint: req.body.url,
     zeroDataRetention: false, // not supported for map
+    api_key_id: req.acuc?.api_key_id ?? null,
   });
 
   let result: MapResult;

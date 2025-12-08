@@ -247,6 +247,7 @@ export async function x402SearchController(
       integration: req.body.integration,
       target_hint: req.body.query,
       zeroDataRetention: false, // not supported for x402 search
+      api_key_id: req.acuc?.api_key_id ?? null,
     });
 
     let limit = req.body.limit;

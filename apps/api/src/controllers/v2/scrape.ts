@@ -109,6 +109,7 @@ export async function scrapeController(
         integration: req.body.integration,
         target_hint: req.body.url,
         zeroDataRetention: zeroDataRetention || false,
+        api_key_id: req.acuc?.api_key_id ?? null,
       });
 
       setSpanAttributes(span, {

@@ -122,6 +122,7 @@ export async function batchScrapeController(
       integration: req.body.integration,
       target_hint: urls[0] ?? "",
       zeroDataRetention: zeroDataRetention || false,
+      api_key_id: req.acuc?.api_key_id ?? null,
     });
   }
 

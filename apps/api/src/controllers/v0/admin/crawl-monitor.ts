@@ -48,6 +48,7 @@ export async function crawlMonitorController(
     integration: null,
     target_hint: "https://firecrawl.dev",
     zeroDataRetention: false,
+    api_key_id: req.acuc?.api_key_id ?? null,
   });
 
   const sc: StoredCrawl = {

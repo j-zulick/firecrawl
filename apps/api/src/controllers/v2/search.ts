@@ -264,6 +264,7 @@ export async function searchController(
       integration: req.body.integration,
       target_hint: req.body.query,
       zeroDataRetention: isZDROrAnon ?? false, // not supported for search
+      api_key_id: req.acuc?.api_key_id ?? null,
     });
 
     let limit = req.body.limit;
