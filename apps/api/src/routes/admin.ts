@@ -1,7 +1,7 @@
 import express from "express";
 import { config } from "../config";
 import { redisHealthController } from "../controllers/v0/admin/redis-health";
-import { wrap } from "./shared";
+import { authMiddleware, checkCreditsMiddleware, wrap } from "./shared";
 import { acucCacheClearController } from "../controllers/v0/admin/acuc-cache-clear";
 import { checkFireEngine } from "../controllers/v0/admin/check-fire-engine";
 import { cclogController } from "../controllers/v0/admin/cclog";
@@ -16,6 +16,8 @@ import { realtimeSearchController } from "../controllers/v2/f-search";
 import { concurrencyQueueBackfillController } from "../controllers/v0/admin/concurrency-queue-backfill";
 import { integCreateUserController } from "../controllers/v0/admin/create-user";
 import { integValidateApiKeyController } from "../controllers/v0/admin/validate-api-key";
+import { crawlMonitorController } from "../controllers/v0/admin/crawl-monitor";
+import { RateLimiterMode } from "../types";
 
 export const adminRouter = express.Router();
 
@@ -69,6 +71,13 @@ adminRouter.post(
 adminRouter.post(
   `/admin/${config.BULL_AUTH_KEY}/concurrency-queue-backfill`,
   wrap(concurrencyQueueBackfillController),
+);
+
+adminRouter.post(
+  `/admin/${config.BULL_AUTH_KEY}/crawl-monitor`,
+  authMiddleware(RateLimiterMode.Crawl),
+  checkCreditsMiddleware(2),
+  wrap(crawlMonitorController),
 );
 
 adminRouter.post(

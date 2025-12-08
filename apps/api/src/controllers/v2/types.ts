@@ -794,7 +794,7 @@ export type BatchScrapeRequestInput = Omit<
   zeroDataRetention?: boolean;
 };
 
-const crawlerOptions = z.strictObject({
+export const crawlerOptions = z.strictObject({
   includePaths: z.string().array().prefault([]),
   excludePaths: z.string().array().prefault([]),
   maxDiscoveryDepth: z.number().optional(),
