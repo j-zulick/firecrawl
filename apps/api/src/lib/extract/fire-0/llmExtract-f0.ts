@@ -100,7 +100,7 @@ interface TrimResult {
 function trimToTokenLimit_F0(
   text: string,
   maxTokens: number,
-  modelId: string = "gpt-4o",
+  modelId: string = "gpt-4o-mini",
   previousWarning?: string,
 ): TrimResult {
   try {
@@ -495,7 +495,7 @@ export async function generateSchemaFromPrompt_F0(
   prompt: string,
   metadata: { teamId: string; functionId?: string; extractId?: string },
 ): Promise<any> {
-  const model = getModel("gpt-4o");
+  const model = getModel("gpt-4o-mini");
   const temperatures = [0, 0.1, 0.3]; // Different temperatures to try
   let lastError: Error | null = null;
 

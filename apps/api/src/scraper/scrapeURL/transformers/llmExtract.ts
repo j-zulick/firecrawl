@@ -51,9 +51,9 @@ function selectModelForSchema(schema?: any): {
   const isRecursive = detectRecursiveSchema(schema);
 
   if (isRecursive) {
-    logger.info(`Model: gpt-4o | hasRef: true`);
+    logger.info(`Model: gpt-4o-mini | hasRef: true`);
     return {
-      modelName: "gpt-4o",
+      modelName: "gpt-4o-mini",
       reason: "recursive_schema_detected",
     };
   }
@@ -162,7 +162,7 @@ interface TrimResult {
 export function trimToTokenLimit(
   text: string,
   maxTokens: number,
-  modelId: string = "gpt-4o",
+  modelId: string = "gpt-4o-mini",
   previousWarning?: string,
 ): TrimResult {
   try {
@@ -303,7 +303,7 @@ export async function generateCompletions({
   model = getModel("gpt-4o-mini", "openai"),
   mode = "object",
   providerOptions,
-  retryModel = getModel("claude-3-5-sonnet-20240620", "anthropic"),
+  retryModel = getModel("gpt-4o", "openai"),
   costTrackingOptions,
   metadata,
 }: GenerateCompletionsOptions): Promise<{
@@ -1274,8 +1274,8 @@ export async function generateSchemaFromPrompt(
     scrapeId?: string;
   },
 ): Promise<{ extract: any }> {
-  const model = getModel("gpt-4o", "openai");
-  const retryModel = getModel("gpt-4o-mini", "openai");
+  const model = getModel("gpt-4o-mini", "openai");
+  const retryModel = getModel("gpt-4o", "openai");
   const temperatures = [0, 0.1, 0.3]; // Different temperatures to try
   let lastError: Error | null = null;
 
@@ -1352,8 +1352,8 @@ export async function generateCrawlerOptionsFromPrompt(
   costTracking: CostTracking,
   metadata: { teamId: string; crawlId?: string },
 ): Promise<{ extract: any }> {
-  const model = getModel("gpt-4o", "openai");
-  const retryModel = getModel("gpt-4o-mini", "openai");
+  const model = getModel("gpt-4o-mini", "openai");
+  const retryModel = getModel("gpt-4o", "openai");
   const temperatures = [0, 0.1, 0.3];
   let lastError: Error | null = null;
 
