@@ -33,6 +33,11 @@ function estimateCost(tokenUsage: TokenUsage): number {
   let totalCost = 0;
   try {
     let model = tokenUsage.model ?? config.MODEL_NAME;
+    if (!model) {
+      logger.error("No model name provided");
+      return 0;
+    }
+
     const pricing = modelPrices[model] as ModelPricing;
 
     if (!pricing) {
