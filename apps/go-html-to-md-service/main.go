@@ -16,8 +16,8 @@ import (
 const (
 	defaultPort            = "8080"
 	defaultShutdownTimeout = 30 * time.Second
-	defaultReadTimeout     = 30 * time.Second
-	defaultWriteTimeout    = 30 * time.Second
+	defaultReadTimeout     = 1 * time.Minute
+	defaultWriteTimeout    = 1 * time.Minute
 	maxUploadSize          = 50 * 1024 * 1024
 )
 

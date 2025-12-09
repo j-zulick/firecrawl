@@ -49,7 +49,7 @@ export async function convertHTMLToMarkdownWithHttpService(
       `${url}/convert`,
       request,
       {
-        timeout: 30000, // 30 second timeout
+        timeout: 60_000,
         headers: {
           "Content-Type": "application/json",
         },
