@@ -137,6 +137,7 @@ export type EngineScrapeResult = {
   postprocessorsUsed?: string[];
 
   proxyUsed: "basic" | "stealth";
+  timezone?: string;
 };
 
 const engineHandlers: {

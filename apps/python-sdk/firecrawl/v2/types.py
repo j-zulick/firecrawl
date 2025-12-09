@@ -117,6 +117,7 @@ class DocumentMetadata(BaseModel):
     num_pages: Optional[int] = None
     content_type: Optional[str] = None
     proxy_used: Optional[Literal["basic", "stealth"]] = None
+    timezone: Optional[str] = None
     cache_state: Optional[Literal["hit", "miss"]] = None
     cached_at: Optional[str] = None
     credits_used: Optional[int] = None
@@ -193,6 +194,7 @@ class DocumentMetadata(BaseModel):
             "content_type",
             "cached_at",
             "error",
+            "timezone",
         }
         for k, v in list(data.items()):
             if isinstance(v, list) and k in single_str_fields:

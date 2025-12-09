@@ -102,6 +102,7 @@ const successSchema = z.object({
 
   usedMobileProxy: z.boolean().optional(),
   youtubeTranscriptContent: z.any().optional(),
+  timezone: z.string().optional(),
 });
 
 export type FireEngineCheckStatusSuccess = z.infer<typeof successSchema>;
