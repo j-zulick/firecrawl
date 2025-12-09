@@ -58,7 +58,7 @@ async function startX420ScrapeJob(
 ): Promise<string> {
   const jobId = uuidv7();
 
-  const zeroDataRetention = flags?.forceZDR ?? false;
+  const zeroDataRetention = flags?.forceZDR || false;
 
   logger.info("Adding scrape job [x402]", {
     scrapeId: jobId,

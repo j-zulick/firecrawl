@@ -63,7 +63,7 @@ async function startScrapeJob(
   const jobId = uuidv7();
 
   const zeroDataRetention =
-    options.zeroDataRetention ?? flags?.forceZDR ?? false;
+    flags?.forceZDR || (options.zeroDataRetention ?? false);
 
   logger.info("Adding scrape job", {
     scrapeId: jobId,

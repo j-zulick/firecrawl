@@ -78,7 +78,7 @@ export async function scrapeController(
       }
 
       const zeroDataRetention =
-        req.acuc?.flags?.forceZDR ?? req.body.zeroDataRetention ?? false;
+        req.acuc?.flags?.forceZDR || (req.body.zeroDataRetention ?? false);
 
       const logger = _logger.child({
         method: "scrapeController",

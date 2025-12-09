@@ -93,7 +93,7 @@ async function scrapeSearchResult(
 
   const costTracking = new CostTracking();
 
-  const zeroDataRetention = flags?.forceZDR ?? false;
+  const zeroDataRetention = flags?.forceZDR || false;
 
   try {
     if (isUrlBlocked(searchResult.url, flags)) {

@@ -122,7 +122,7 @@ export async function getMapResults({
   let links: string[] = [url];
   let mapResults: MapDocument[] = [];
 
-  const zeroDataRetention = flags?.forceZDR ?? false;
+  const zeroDataRetention = flags?.forceZDR || false;
 
   const sc: StoredCrawl = {
     originUrl: url,
