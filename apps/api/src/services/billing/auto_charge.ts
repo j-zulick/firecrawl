@@ -103,6 +103,30 @@ async function _autoChargeScale(
           updatedChunk &&
           updatedChunk.remaining_credits < autoRechargeThreshold
         ) {
+          const { data: price, error: priceError } = await supabase_service
+            .from("prices")
+            .select("*")
+            .eq("id", chunk.price_associated_auto_recharge_price_id)
+            .single();
+          if (priceError || !price) {
+            logger.error("Error fetching price", {
+              error: priceError,
+              priceId:
+                chunk.price_associated_auto_recharge_price_id === undefined
+                  ? "undefined"
+                  : JSON.stringify(
+                      chunk.price_associated_auto_recharge_price_id,
+                    ),
+            });
+            return {
+              success: false,
+              message: "Error fetching price",
+              remainingCredits:
+                updatedChunk?.remaining_credits ?? chunk.remaining_credits,
+              chunk: updatedChunk ?? chunk,
+            };
+          }
+
           // Check for recharges this month
 
           const currentMonth = new Date();
@@ -128,7 +152,9 @@ async function _autoChargeScale(
                 updatedChunk?.remaining_credits ?? chunk.remaining_credits,
               chunk: updatedChunk ?? chunk,
             };
-          } else if (rechargesThisMonth.length >= 4) {
+          } else if (
+            rechargesThisMonth.length >= (price.exp_pack_max_per_month ?? 4)
+          ) {
             logger.warn("Auto-recharge failed: too many recharges this month");
             return {
               success: false,
@@ -139,30 +165,6 @@ async function _autoChargeScale(
             };
           } else {
             // Actually re-charge
-
-            const { data: price, error: priceError } = await supabase_service
-              .from("prices")
-              .select("*")
-              .eq("id", chunk.price_associated_auto_recharge_price_id)
-              .single();
-            if (priceError || !price) {
-              logger.error("Error fetching price", {
-                error: priceError,
-                priceId:
-                  chunk.price_associated_auto_recharge_price_id === undefined
-                    ? "undefined"
-                    : JSON.stringify(
-                        chunk.price_associated_auto_recharge_price_id,
-                      ),
-              });
-              return {
-                success: false,
-                message: "Error fetching price",
-                remainingCredits:
-                  updatedChunk?.remaining_credits ?? chunk.remaining_credits,
-                chunk: updatedChunk ?? chunk,
-              };
-            }
 
             if (!chunk.sub_user_id) {
               logger.error("No sub_user_id found in chunk");
