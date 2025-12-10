@@ -51,9 +51,9 @@ function selectModelForSchema(schema?: any): {
   const isRecursive = detectRecursiveSchema(schema);
 
   if (isRecursive) {
-    logger.info(`Model: gpt-4o-mini | hasRef: true`);
+    logger.info(`Model: gpt-4.1 | hasRef: true`);
     return {
-      modelName: "gpt-4o-mini",
+      modelName: "gpt-4.1",
       reason: "recursive_schema_detected",
     };
   }
