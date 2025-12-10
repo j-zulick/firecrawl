@@ -6,6 +6,21 @@ import { z } from "zod";
 import { validate as isUuid } from "uuid";
 import { parseApi } from "../../../lib/parseApi";
 
+/**
+ * Extracts the external user ID from a synthetic email if it matches the pattern.
+ * Returns null if the email is not a synthetic one for this integration.
+ */
+function extractExternalUserId(
+  email: string,
+  integrationSlug: string,
+): string | null {
+  const syntheticDomain = `@${integrationSlug}.partner.firecrawl.dev`;
+  if (email.endsWith(syntheticDomain)) {
+    return email.slice(0, -syntheticDomain.length);
+  }
+  return null;
+}
+
 export async function integValidateApiKeyController(
   req: Request,
   res: Response,
@@ -129,9 +144,12 @@ export async function integValidateApiKeyController(
 
     const user = userData[0];
 
+    const externalUserId = extractExternalUserId(user.email, integration.slug);
+
     return res.status(200).json({
       teamName: team.name,
       email: user.email,
+      ...(externalUserId && { externalUserId }),
     });
   } catch (error) {
     logger.error("Error validating API key", { error });

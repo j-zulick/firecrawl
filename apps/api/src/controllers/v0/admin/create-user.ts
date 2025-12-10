@@ -30,6 +30,19 @@ async function addCoupon(teamId: string, integration: any) {
   }
 }
 
+/**
+ * Generates a synthetic email for partner integrations that don't provide real emails.
+ * Format: <externalUserId>@<integration-slug>.partner.firecrawl.dev
+ */
+function generateSyntheticEmail(
+  externalUserId: string,
+  integrationSlug: string,
+): string {
+  // Sanitize the externalUserId to be email-safe (alphanumeric, dots, hyphens, underscores)
+  const sanitizedId = externalUserId.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return `${sanitizedId}@${integrationSlug}.partner.firecrawl.dev`;
+}
+
 export async function integCreateUserController(req: Request, res: Response) {
   let logger = _logger.child({
     module: "v0/admin/create-user",
@@ -69,17 +82,28 @@ export async function integCreateUserController(req: Request, res: Response) {
       integration: integration.slug,
     });
 
-    const bodySchema = z.object({
-      email: z.string().email(),
-    });
+    // Accept either email OR externalUserId (for partners that don't share emails)
+    const bodySchema = z
+      .object({
+        email: z.string().email().optional(),
+        externalUserId: z.string().min(1).optional(),
+      })
+      .refine(data => data.email || data.externalUserId, {
+        message: "Either email or externalUserId must be provided",
+      });
 
     const body = bodySchema.parse(req.body);
+
+    // Determine the email to use
+    const email = body.email
+      ? body.email
+      : generateSyntheticEmail(body.externalUserId!, integration.slug);
 
     const { data: preexistingUser, error: preexistingUserError } =
       await supabase_service
         .from("users")
         .select("*")
-        .eq("email", body.email)
+        .eq("email", email)
         .limit(1);
     if (preexistingUserError) {
       logger.error("Failed to look up preexisting user", {
@@ -216,10 +240,13 @@ export async function integCreateUserController(req: Request, res: Response) {
     } else {
       const { data: newUser, error: newUserError } =
         await supabase_service.auth.admin.createUser({
-          email: req.body.email,
+          email: email,
           email_confirm: true,
           user_metadata: {
             referrer_integration: integration.slug,
+            ...(body.externalUserId && {
+              external_user_id: body.externalUserId,
+            }),
           },
         });
 
