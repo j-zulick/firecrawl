@@ -52,9 +52,9 @@ export async function generateBasicCompletion(
         module: "extract",
         method: "generateBasicCompletion",
       },
-      model: "openai/gpt-4o",
+      model: "openai/gpt-4.1",
       cost: calculateCost(
-        "openai/gpt-4o",
+        "openai/gpt-4.1",
         result.usage?.inputTokens ?? 0,
         result.usage?.outputTokens ?? 0,
       ),
