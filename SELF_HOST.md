@@ -99,9 +99,9 @@ BULL_AUTH_KEY=CHANGEME
 ## === PostgreSQL Database Configuration ===
 # Configure PostgreSQL credentials. These should match the credentials used by the nuq-postgres container.
 # If you change these, ensure all three are set consistently.
-# POSTGRES_USER=postgres
-# POSTGRES_PASSWORD=postgres
-# POSTGRES_DB=postgres
+# POSTGRES_USER=firecrawl
+# POSTGRES_PASSWORD=firecrawl_password
+# POSTGRES_DB=firecrawl
 
 # Set if you have a llamaparse key you'd like to use to parse pdfs
 # LLAMAPARSE_API_KEY=
@@ -122,8 +122,14 @@ BULL_AUTH_KEY=CHANGEME
 # ALLOW_LOCAL_WEBHOOKS=true
 ```
 
+### Security considerations
+
+- **Use strong PostgreSQL credentials.** The defaults in the `.env` template are for local development only. When deploying to a server, set `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` to secure values and ensure they match the database service configuration.
+- **Keep the database port internal.** The provided `docker-compose.yaml` does not expose PostgreSQL to the host or the internet. Avoid adding a `ports` mapping for `nuq-postgres` unless you are restricting access with a firewall. To access the database for maintenance, prefer using `docker compose exec nuq-postgres psql` or a temporary, firewalled tunnel.
+- **Protect the admin UI.** Set `BULL_AUTH_KEY` to a strong secret, especially on any deployment reachable from untrusted networks.
+
 3.  Build and run the Docker containers:
-    
+
     ```bash
     docker compose build
     docker compose up

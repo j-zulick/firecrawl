@@ -25,12 +25,12 @@ x-common-env: &common-env
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
   REDIS_RATE_LIMIT_URL: ${REDIS_URL:-redis://redis:6379}
   PLAYWRIGHT_MICROSERVICE_URL: ${PLAYWRIGHT_MICROSERVICE_URL:-http://playwright-service:3000/scrape}
-  POSTGRES_USER: ${POSTGRES_USER:-postgres}
-  POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
-  POSTGRES_DB: ${POSTGRES_DB:-postgres}
+  POSTGRES_USER: ${POSTGRES_USER:-firecrawl}
+  POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-firecrawl_password}"
+  POSTGRES_DB: ${POSTGRES_DB:-firecrawl}
   POSTGRES_HOST: ${POSTGRES_HOST:-nuq-postgres}
   POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-  USE_DB_AUTHENTICATION: ${USE_DB_AUTHENTICATION}
+  USE_DB_AUTHENTICATION: ${USE_DB_AUTHENTICATION:-false}
   NUM_WORKERS_PER_QUEUE: ${NUM_WORKERS_PER_QUEUE:-8}
   CRAWL_CONCURRENT_REQUESTS: ${CRAWL_CONCURRENT_REQUESTS:-10}
   MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-5}
@@ -125,13 +125,11 @@ services:
   nuq-postgres:
     build: apps/nuq-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-firecrawl}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-firecrawl_password}
+      POSTGRES_DB: ${POSTGRES_DB:-firecrawl}
     networks:
       - backend
-    ports:
-      - "5432:5432"
     logging:
       driver: "json-file"
       options:
