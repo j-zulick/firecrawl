@@ -1,6 +1,10 @@
 import * as Sentry from "@sentry/node";
 import { logger } from "../lib/logger";
 import { config } from "../config";
+import {
+  AddFeatureError,
+  RemoveFeatureError,
+} from "../scraper/scrapeURL/error";
 
 type CaptureContext = {
   tags?: Record<string, string>;
@@ -53,6 +57,14 @@ if (config.SENTRY_DSN) {
       const error = hint?.originalException;
 
       if (error && typeof error === "object") {
+        // Filter out AddFeatureError and RemoveFeatureError
+        if (
+          error instanceof AddFeatureError ||
+          error instanceof RemoveFeatureError
+        ) {
+          return null;
+        }
+
         const errorCode = "code" in error ? String(error.code) : "";
 
         const transportableErrorCodes = [
