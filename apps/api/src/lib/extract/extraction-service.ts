@@ -1005,6 +1005,13 @@ export async function performExtraction(
     );
 
     // Log job with token usage and sources
+    logger.debug("Logging extract to database", {
+      extractId,
+      llmUsage,
+      sources,
+      tokensBilled: tokensToBill,
+      creditsBilled: creditsToBill,
+    });
     logExtract({
       id: extractId,
       request_id: extractId,
@@ -1016,20 +1023,35 @@ export async function performExtraction(
       result: finalResult ?? {},
       model_kind: "fire-1",
       cost_tracking: costTracking.toJSON(),
-    }).then(() => {
-      updateExtract(extractId, {
-        status: "completed",
-        llmUsage,
-        sources,
-        tokensBilled: tokensToBill,
-        creditsBilled: creditsToBill,
-        // costTracking,
-      }).catch(error => {
+    })
+      .then(() => {
+        logger.debug("Updating extract status to completed", {
+          extractId,
+          llmUsage,
+          sources,
+          tokensBilled: tokensToBill,
+          creditsBilled: creditsToBill,
+        });
+        updateExtract(extractId, {
+          status: "completed",
+          llmUsage,
+          sources,
+          tokensBilled: tokensToBill,
+          creditsBilled: creditsToBill,
+          // costTracking,
+        }).catch(error => {
+          logger.error("Failed to update extract status to completed", {
+            extractId,
+            error,
+          });
+        });
+      })
+      .catch(error => {
         logger.error(
-          `Failed to update extract ${extractId} status to completed: ${error}`,
+          "Failed to log extract to database",
+          { extractId, error },
         );
       });
-    });
 
     logger.debug("Done!");
 
