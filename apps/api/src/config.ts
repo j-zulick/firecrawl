@@ -132,6 +132,7 @@ const configSchema = z.object({
   SLACK_ADMIN_WEBHOOK_URL: z.string().optional(),
   DISABLE_WEBHOOK_DELIVERY: z.stringbool().optional(),
   ALLOW_LOCAL_WEBHOOKS: z.stringbool().optional(),
+  WEBHOOK_USE_RABBITMQ: z.stringbool().optional(),
 
   // Firecrawl Features
   FIRECRAWL_DEBUG_FILTER_LINKS: z.stringbool().optional(),

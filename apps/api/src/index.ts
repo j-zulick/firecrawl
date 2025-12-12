@@ -37,6 +37,7 @@ import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
 import responseTime from "response-time";
+import { shutdownWebhookQueue } from "./services/webhook";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -137,8 +138,10 @@ async function startServer(port = DEFAULT_PORT) {
     server.close(() => {
       logger.info("Server closed.");
       nuqShutdown().finally(() => {
-        logger.info("NUQ shutdown complete");
-        process.exit(0);
+        shutdownWebhookQueue().finally(() => {
+          logger.info("NUQ shutdown complete");
+          process.exit(0);
+        });
       });
     });
   };

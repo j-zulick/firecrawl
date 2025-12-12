@@ -6,9 +6,16 @@ import {
   getSecureDispatcherNoCookies,
   isIPPrivate,
 } from "../../scraper/scrapeURL/engines/utils/safeFetch";
-import { WebhookConfig, WebhookEvent, WebhookEventDataMap } from "./types";
+import type {
+  WebhookConfig,
+  WebhookEvent,
+  WebhookEventDataMap,
+  WebhookQueueMessage,
+} from "./types";
 import { redisEvictConnection } from "../redis";
 import { supabase_service } from "../supabase";
+import { webhookQueue } from "./queue";
+import { randomUUID } from "crypto";
 
 const WEBHOOK_INSERT_QUEUE_KEY = "webhook-insert-queue";
 const WEBHOOK_INSERT_BATCH_SIZE = 1000;
@@ -45,6 +52,7 @@ export class WebhookSender {
       success: data.success,
       type: event,
       [this.context.v0 ? "jobId" : "id"]: this.context.jobId,
+      webhookId: randomUUID(), // Unique ID for this webhook delivery (used for e.g. retries)
       data: "data" in data ? data.data : [],
       error: "error" in data ? data.error : undefined,
       metadata: this.config.metadata || undefined,
@@ -81,6 +89,35 @@ export class WebhookSender {
       this.logger.warn("Aborting webhook call to private IP address", {
         webhookUrl: this.config.url,
       });
+      return;
+    }
+
+    if (config.WEBHOOK_USE_RABBITMQ && config.NUQ_RABBITMQ_URL) {
+      const queueMessage: WebhookQueueMessage = {
+        webhook_url: this.config.url,
+        payload,
+        headers: this.config.headers,
+        team_id: this.context.teamId,
+        job_id: this.context.jobId,
+        scrape_id: scrapeId ?? null,
+        event: payload.type,
+        timeout_ms: this.context.v0 ? 30000 : 10000,
+      };
+
+      try {
+        await webhookQueue.publish(queueMessage);
+        this.logger.info("Webhook queued for delivery", {
+          webhookUrl: this.config.url,
+          event: payload.type,
+        });
+      } catch (error) {
+        this.logger.error("Failed to queue webhook", {
+          error,
+          webhookUrl: this.config.url,
+        });
+        throw error;
+      }
+
       return;
     }
 
