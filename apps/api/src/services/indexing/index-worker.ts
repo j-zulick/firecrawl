@@ -134,17 +134,17 @@ const processPrecrawlJob = async (token: string, job: Job) => {
   // set to true to only run domain precrawl, no individual URLs or crawl jobs
   const DOMAIN_ONLY_RUN = false;
 
-  const MAX_PRE_CRAWL_BUDGET = 10000; // maximum number of pages to precrawl this job
+  const MAX_PRE_CRAWL_BUDGET = 25000; // maximum number of pages to precrawl this job
 
-  const MAX_PRE_CRAWL_DOMAINS = 100; // maximum number of domains to precrawl
-  const MIN_DOMAIN_PRIORITY = 2.0; // minimum priority score to consider a domain
+  const MAX_PRE_CRAWL_DOMAINS = 500; // maximum number of domains to precrawl
+  const MIN_DOMAIN_PRIORITY = 4.0; // minimum priority score to consider a domain
   const MIN_DOMAIN_EVENTS = 1000; // minimum number of events to consider a domain
 
   // number of domain hashes to query in parallel - keep relatively low for now (25 is good)
   const DOMAIN_URL_BATCH_SIZE = 25;
 
   const MIN_URLS_PER_DOMAIN = 10;
-  const MAX_URLS_PER_DOMAIN = 250;
+  const MAX_URLS_PER_DOMAIN = 50;
 
   const teamId = config.PRECRAWL_TEAM_ID;
 
