@@ -16,6 +16,7 @@ import { realtimeSearchController } from "../controllers/v2/f-search";
 import { concurrencyQueueBackfillController } from "../controllers/v0/admin/concurrency-queue-backfill";
 import { integCreateUserController } from "../controllers/v0/admin/create-user";
 import { integValidateApiKeyController } from "../controllers/v0/admin/validate-api-key";
+import { integRotateApiKeyController } from "../controllers/v0/admin/rotate-api-key";
 import { crawlMonitorController } from "../controllers/v0/admin/crawl-monitor";
 import { RateLimiterMode } from "../types";
 
@@ -88,4 +89,9 @@ adminRouter.post(
 adminRouter.post(
   `/admin/integration/validate-api-key`,
   wrap(integValidateApiKeyController),
+);
+
+adminRouter.post(
+  `/admin/integration/rotate-api-key`,
+  wrap(integRotateApiKeyController),
 );
