@@ -17,8 +17,8 @@ import { ScrapeJobTimeoutError } from "../../lib/error";
 import { ScrapeOptions } from "../../controllers/v2/types";
 import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
 
-export const SITEMAP_LIMIT = 100;
-const SITEMAP_MAX_AGE = 48 * 60 * 60 * 1000;
+export const SITEMAP_LIMIT = 25;
+const SITEMAP_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
 interface FilterResult {
   allowed: boolean;
@@ -44,6 +44,7 @@ interface FilterLinksResult {
   links: string[];
   denialReasons: Map<string, string>;
 }
+
 export class WebCrawler {
   private jobId: string;
   private initialUrl: string;

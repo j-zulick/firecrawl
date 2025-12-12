@@ -392,6 +392,11 @@ async function scrapeURLLoopIter(
         "Scrape via " +
           engine +
           " deemed unsuccessful due to proxy inadequacy. Adding stealthProxy flag.",
+        {
+          factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+          statusCode: engineResult.statusCode,
+          length: engineResult.html?.trim().length ?? 0,
+        },
       );
       throw new AddFeatureError(["stealthProxy"]);
     }

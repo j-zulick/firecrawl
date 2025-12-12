@@ -58,6 +58,9 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
       ? [
           "fire-engine;tlsclient" as const,
           "fire-engine;tlsclient;stealth" as const,
+          // final fallback to chrome-cdp to fill the index
+          "fire-engine;chrome-cdp" as const,
+          "fire-engine;chrome-cdp;stealth" as const,
         ]
       : []),
     "fetch",
@@ -65,6 +68,9 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
       ? [
           "fire-engine;tlsclient" as const,
           "fire-engine;tlsclient;stealth" as const,
+          // final fallback to chrome-cdp to fill the index
+          "fire-engine;chrome-cdp" as const,
+          "fire-engine;chrome-cdp;stealth" as const,
         ]
       : []),
   ];

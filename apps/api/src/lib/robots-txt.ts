@@ -5,6 +5,9 @@ import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
 import { Engine } from "../scraper/scrapeURL/engines";
 import { CostTracking } from "./cost-tracking";
+import { useIndex } from "../services";
+
+const ROBOTS_MAX_AGE = 1 * 24 * 60 * 60 * 1000;
 
 const useFireEngine =
   config.FIRE_ENGINE_BETA_URL !== "" &&
@@ -36,10 +39,14 @@ export async function fetchRobotsTxt(
   const shouldPrioritizeFireEngine = location && useFireEngine;
 
   const forceEngine: Engine[] = [
+    ...(useIndex ? ["index" as const] : []),
     ...(shouldPrioritizeFireEngine
       ? [
           "fire-engine;tlsclient" as const,
           "fire-engine;tlsclient;stealth" as const,
+          // final fallback to chrome-cdp to fill the index
+          "fire-engine;chrome-cdp" as const,
+          "fire-engine;chrome-cdp;stealth" as const,
         ]
       : []),
     "fetch",
@@ -47,6 +54,9 @@ export async function fetchRobotsTxt(
       ? [
           "fire-engine;tlsclient" as const,
           "fire-engine;tlsclient;stealth" as const,
+          // final fallback to chrome-cdp to fill the index
+          "fire-engine;chrome-cdp" as const,
+          "fire-engine;chrome-cdp;stealth" as const,
         ]
       : []),
   ];
@@ -57,7 +67,8 @@ export async function fetchRobotsTxt(
     robotsTxtUrl,
     scrapeOptions.parse({
       formats: ["rawHtml"],
-      timeout: 5000,
+      timeout: 8000,
+      maxAge: ROBOTS_MAX_AGE,
       ...(location ? { location } : {}),
     }),
     {
