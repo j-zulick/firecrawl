@@ -93,7 +93,10 @@ const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
 app.use(`/admin/${config.BULL_AUTH_KEY}/queues`, serverAdapter.getRouter());
 
 app.get("/", (_, res) => {
-  res.redirect("https://docs.firecrawl.dev/api-reference/v2-introduction");
+  res.json({
+    message: "Firecrawl API",
+    documentation_url: "https://docs.firecrawl.dev",
+  });
 });
 
 app.get("/e2e-test", (_, res) => {
