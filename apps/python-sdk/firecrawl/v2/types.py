@@ -231,7 +231,7 @@ class DocumentMetadata(BaseModel):
 class AgentOptions(BaseModel):
     """Configuration for the agent in extract operations."""
 
-    model: Literal["FIRE-1"] = "FIRE-1"
+    model: Literal["FIRE-1", "v3-beta"] = "FIRE-1"
 
 
 class AttributeResult(BaseModel):

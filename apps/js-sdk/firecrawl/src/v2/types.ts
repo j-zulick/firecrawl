@@ -536,7 +536,7 @@ export interface ExtractResponse {
 }
 
 export interface AgentOptions {
-  model: 'FIRE-1';
+  model: 'FIRE-1' | 'v3-beta';
 }
 
 export interface ConcurrencyCheck {
