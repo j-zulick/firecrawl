@@ -125,3 +125,24 @@ export const supabaseGetExtractByIdDirect = async (extractId: string) => {
 
   return data;
 };
+
+export const supabaseGetExtractRequestByIdDirect = async (
+  extractId: string,
+) => {
+  const { data, error } = await supabase_service
+    .from("requests")
+    .select("*")
+    .eq("id", extractId)
+    .eq("kind", "extract")
+    .single();
+
+  if (error) {
+    return null;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return data;
+};

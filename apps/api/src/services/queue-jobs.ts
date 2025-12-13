@@ -251,10 +251,7 @@ async function addScrapeJobRaw(
             webScraperOptions.team_id,
             false,
             true,
-            webScraperOptions.mode === "single_urls" &&
-              webScraperOptions.from_extract
-              ? RateLimiterMode.Extract
-              : RateLimiterMode.Crawl,
+            RateLimiterMode.Crawl,
           )
         )?.concurrency ?? 2;
       await cleanOldConcurrencyLimitEntries(webScraperOptions.team_id, now);
@@ -459,16 +456,8 @@ export async function addScrapeJobs(
     } else {
       const now = Date.now();
       maxConcurrency =
-        (
-          await getACUCTeam(
-            teamId,
-            false,
-            true,
-            jobs[0].data.mode === "single_urls" && jobs[0].data.from_extract
-              ? RateLimiterMode.Extract
-              : RateLimiterMode.Crawl,
-          )
-        )?.concurrency ?? 2;
+        (await getACUCTeam(teamId, false, true, RateLimiterMode.Scrape))
+          ?.concurrency ?? 2;
       await cleanOldConcurrencyLimitEntries(teamId, now);
 
       const currentActiveConcurrency = (

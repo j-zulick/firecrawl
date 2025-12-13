@@ -189,6 +189,8 @@ const configSchema = z.object({
   GITHUB_REF_NAME: z.string().optional(),
   RESTRICTED_COUNTRIES: delimitedList(",").optional(),
   DISABLE_ENGPICKER: z.stringbool().optional(),
+
+  EXTRACT_V3_BETA_URL: z.string().optional(),
 });
 
 export const config = configSchema.parse(process.env);

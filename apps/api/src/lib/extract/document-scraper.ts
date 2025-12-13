@@ -46,7 +46,6 @@ export async function scrapeDocument(
     const jobPriority = await getJobPriority({
       team_id: options.teamId,
       basePriority: 10,
-      from_extract: true,
     });
 
     await addScrapeJob(

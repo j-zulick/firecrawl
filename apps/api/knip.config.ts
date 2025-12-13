@@ -14,6 +14,7 @@ const config: KnipConfig = {
   ],
   ignoreDependencies: [
     "openai",
+    "undici-types",
     "@pinecone-database/pinecone", // WIP
   ],
 };

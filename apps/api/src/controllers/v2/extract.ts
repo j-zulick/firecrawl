@@ -12,6 +12,7 @@ import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { logger as _logger } from "../../lib/logger";
 import { logRequest } from "../../services/logging/log_job";
+import { config } from "../../config";
 
 /**
  * Extracts data from the provided URLs based on the request parameters.
@@ -35,6 +36,91 @@ export async function extractController(
     });
   }
 
+  const extractId = uuidv7();
+  const createdAt = Date.now();
+  _logger.info("Extract starting...", {
+    request: req.body,
+    originalRequest,
+    teamId: req.auth.team_id,
+    team_id: req.auth.team_id,
+    subId: req.acuc?.sub_id,
+    extractId,
+    zeroDataRetention: req.acuc?.flags?.forceZDR,
+  });
+
+  if (req.body.agent?.model === "v3-beta") {
+    if (!config.EXTRACT_V3_BETA_URL) {
+      return res.status(400).json({
+        success: false,
+        error: "Extract v3 beta is not enabled.",
+      });
+    }
+
+    if (!req.acuc?.flags?.extractV3Beta) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Extract v3 beta is not enabled for your team. Please contact support@firecrawl.com to join the beta.",
+      });
+    }
+
+    if (!req.body.prompt) {
+      return res.status(400).json({
+        success: false,
+        error: "Prompt is required for extract v3 beta.",
+      });
+    }
+
+    await logRequest({
+      id: extractId,
+      kind: "extract",
+      api_version: "v2",
+      team_id: req.auth.team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: req.body.urls?.[0] ?? "",
+      zeroDataRetention: false, // not supported for extract
+      api_key_id: req.acuc?.api_key_id ?? null,
+    });
+
+    const passthrough = await fetch(
+      config.EXTRACT_V3_BETA_URL + "/internal/extracts",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: extractId,
+          urls: req.body.urls,
+          schema: req.body.schema,
+          prompt: req.body.prompt,
+        }),
+      },
+    );
+
+    if (passthrough.status !== 200) {
+      const text = await passthrough.text();
+
+      _logger.error("Failed to passthrough extract v3 beta request.", {
+        status: passthrough.status,
+        text,
+        teamId: req.auth.team_id,
+        team_id: req.auth.team_id,
+        extractId,
+      });
+      return res.status(500).json({
+        success: false,
+        error: "Failed to passthrough extract v3 beta request.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      id: extractId,
+    });
+  }
+
   const invalidURLs: string[] =
     req.body.urls?.filter((url: string) =>
       isUrlBlocked(url, req.acuc?.flags ?? null),
@@ -48,18 +134,6 @@ export async function extractController(
       });
     }
   }
-
-  const extractId = uuidv7();
-  const createdAt = Date.now();
-  _logger.info("Extract starting...", {
-    request: req.body,
-    originalRequest,
-    teamId: req.auth.team_id,
-    team_id: req.auth.team_id,
-    subId: req.acuc?.sub_id,
-    extractId,
-    zeroDataRetention: req.acuc?.flags?.forceZDR,
-  });
 
   await logRequest({
     id: extractId,
