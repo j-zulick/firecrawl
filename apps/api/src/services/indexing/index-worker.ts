@@ -42,6 +42,7 @@ import { crawlGroup } from "../worker/nuq";
 import { getACUCTeam } from "../../controllers/auth";
 import { supabase_service } from "../supabase";
 import { processEngpickerJob } from "../../lib/engpicker";
+import { logRequest } from "../logging/log_job";
 
 const workerLockDuration = config.WORKER_LOCK_DURATION;
 const workerStalledCheckInterval = config.WORKER_STALLED_CHECK_INTERVAL;
@@ -447,6 +448,18 @@ const processPrecrawlJob = async (token: string, job: Job) => {
           try {
             const { url, budget: limit } = target;
 
+            const crawlId = uuidv7();
+            await logRequest({
+              id: crawlId,
+              kind: "crawl",
+              api_version: "v2",
+              team_id: teamId,
+              origin: "precrawl",
+              target_hint: url,
+              zeroDataRetention: false,
+              api_key_id: null,
+            });
+
             const crawlerOptions = {
               ...crawlRequestSchema.parse({ url, limit }),
               url: undefined, // unsure why this is needed but leaving for now
@@ -475,8 +488,6 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               maxConcurrency: undefined,
               zeroDataRetention: false,
             };
-
-            const crawlId = uuidv7();
 
             await crawlGroup.addGroup(
               crawlId,
