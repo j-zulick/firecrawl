@@ -214,7 +214,8 @@ export function countryCheck(
         Object.keys(req.body.scrapeOptions.headers).length > 0) ||
       req.body.scrapeOptions?.agent ||
       req.body.scrapeOptions?.jsonOptions?.agent ||
-      req.body.scrapeOptions?.extract?.agent);
+      req.body.scrapeOptions?.extract?.agent ||
+      req.path.startsWith("/v2/agent"));
 
   if (!couldBeRestricted) {
     return next();

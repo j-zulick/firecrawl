@@ -49,6 +49,7 @@ from .methods import map as map_module
 from .methods import batch as batch_methods
 from .methods import usage as usage_methods
 from .methods import extract as extract_module
+from .methods import agent as agent_module
 from .watcher import Watcher
 
 class FirecrawlClient:
@@ -753,6 +754,75 @@ class FirecrawlClient:
             Extract response payload with status and optional data
         """
         return extract_module.get_extract_status(self.http_client, job_id)
+
+    def start_agent(
+        self,
+        urls: Optional[List[str]] = None,
+        *,
+        prompt: str,
+        schema: Optional[Dict[str, Any]] = None,
+        integration: Optional[str] = None,
+    ):
+        """Start an agent job (non-blocking).
+
+        Args:
+            urls: URLs to process (optional)
+            prompt: Natural-language instruction for the agent
+            schema: Target JSON schema for the output
+            integration: Integration tag/name
+        Returns:
+            Response payload with job id/status (poll with get_agent_status)
+        """
+        return agent_module.start_agent(
+            self.http_client,
+            urls,
+            prompt=prompt,
+            schema=schema,
+            integration=integration,
+        )
+
+    def agent(
+        self,
+        urls: Optional[List[str]] = None,
+        *,
+        prompt: str,
+        schema: Optional[Dict[str, Any]] = None,
+        integration: Optional[str] = None,
+        poll_interval: int = 2,
+        timeout: Optional[int] = None,
+    ):
+        """Run an agent and wait until completion.
+
+        Args:
+            urls: URLs to process (optional)
+            prompt: Natural-language instruction for the agent
+            schema: Target JSON schema for the output
+            integration: Integration tag/name
+            poll_interval: Seconds between status checks
+            timeout: Maximum seconds to wait (None for no timeout)
+        Returns:
+            Final agent response when completed
+        """
+        return agent_module.agent(
+            self.http_client,
+            urls,
+            prompt=prompt,
+            schema=schema,
+            integration=integration,
+            poll_interval=poll_interval,
+            timeout=timeout,
+        )
+
+    def get_agent_status(self, job_id: str):
+        """Get the current status (and data if completed) of an agent job.
+
+        Args:
+            job_id: Agent job ID
+
+        Returns:
+            Agent response payload with status and optional data
+        """
+        return agent_module.get_agent_status(self.http_client, job_id)
 
     def get_concurrency(self):
         """Get current concurrency and maximum allowed for this team/key (v2)."""

@@ -1255,6 +1255,7 @@ export type TeamFlags = {
   ipWhitelist?: boolean;
   skipCountryCheck?: boolean;
   extractV3Beta?: boolean;
+  agentBeta?: boolean;
 } | null;
 
 export type AuthCreditUsageChunkFromTeam = Omit<

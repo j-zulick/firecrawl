@@ -715,6 +715,33 @@ export const extractRequestSchema = extractOptions;
 export type ExtractRequest = z.infer<typeof extractRequestSchema>;
 export type ExtractRequestInput = z.input<typeof extractRequestSchema>;
 
+export const agentRequestSchema = z.strictObject({
+  urls: URL.array().optional(),
+  prompt: z.string().max(10000),
+  schema: z
+    .any()
+    .optional()
+    .refine(
+      val => {
+        if (!val) return true; // Allow undefined schema
+        try {
+          const validate = ajv.compile(val);
+          return typeof validate === "function";
+        } catch (e) {
+          return false;
+        }
+      },
+      {
+        error: "Invalid JSON schema.",
+      },
+    ),
+  origin: z.string().optional().prefault("api"),
+  integration: integrationSchema.optional().transform(val => val || null),
+});
+
+export type AgentRequest = z.infer<typeof agentRequestSchema>;
+// export type AgentRequestInput = z.input<typeof agentRequestSchema>;
+
 const scrapeRequestSchemaBase = baseScrapeOptions.extend({
   url: URL,
   origin: z.string().optional().prefault("api"),
@@ -1052,6 +1079,24 @@ export interface ExtractResponse {
   tokensUsed?: number;
   creditsUsed?: number;
 }
+
+export type AgentResponse =
+  | ErrorResponse
+  | {
+      success: boolean;
+      id: string;
+    };
+
+export type AgentStatusResponse =
+  | ErrorResponse
+  | {
+      success: boolean;
+      status: "processing" | "completed" | "failed";
+      error?: string;
+      data?: any;
+      expiresAt: string;
+      creditsUsed?: number;
+    };
 
 export type CrawlResponse =
   | ErrorResponse

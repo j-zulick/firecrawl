@@ -52,7 +52,7 @@ export async function extractController(
     if (!config.EXTRACT_V3_BETA_URL) {
       return res.status(400).json({
         success: false,
-        error: "Extract v3 beta is not enabled.",
+        error: "Agent beta is not enabled.",
       });
     }
 
@@ -60,25 +60,25 @@ export async function extractController(
       return res.status(400).json({
         success: false,
         error:
-          "Extract v3 beta is not enabled for your team. Please contact support@firecrawl.com to join the beta.",
+          "Agent beta is not enabled for your team. Please contact support@firecrawl.com to join the beta.",
       });
     }
 
     if (!req.body.prompt) {
       return res.status(400).json({
         success: false,
-        error: "Prompt is required for extract v3 beta.",
+        error: "Prompt is required for agent beta.",
       });
     }
 
     await logRequest({
       id: extractId,
-      kind: "extract",
+      kind: "agent",
       api_version: "v2",
       team_id: req.auth.team_id,
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
-      target_hint: req.body.urls?.[0] ?? "",
+      target_hint: req.body.urls?.[0] ?? req.body.prompt ?? "",
       zeroDataRetention: false, // not supported for extract
       api_key_id: req.acuc?.api_key_id ?? null,
     });
@@ -102,7 +102,7 @@ export async function extractController(
     if (passthrough.status !== 200) {
       const text = await passthrough.text();
 
-      _logger.error("Failed to passthrough extract v3 beta request.", {
+      _logger.error("Failed to passthrough agent beta request.", {
         status: passthrough.status,
         text,
         teamId: req.auth.team_id,
@@ -111,7 +111,7 @@ export async function extractController(
       });
       return res.status(500).json({
         success: false,
-        error: "Failed to passthrough extract v3 beta request.",
+        error: "Failed to passthrough agent beta request.",
       });
     }
 

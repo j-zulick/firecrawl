@@ -19,6 +19,7 @@ import {
   batchScrape as batchWaiter,
 } from "./methods/batch";
 import { startExtract, getExtractStatus, extract as extractWaiter } from "./methods/extract";
+import { startAgent, getAgentStatus, agent as agentWaiter } from "./methods/agent";
 import { getConcurrency, getCreditUsage, getQueueStatus, getTokenUsage, getCreditUsageHistorical, getTokenUsageHistorical } from "./methods/usage";
 import type {
   Document,
@@ -34,6 +35,8 @@ import type {
   BatchScrapeResponse,
   BatchScrapeJob,
   ExtractResponse,
+  AgentResponse,
+  AgentStatusResponse,
   CrawlOptions,
   BatchScrapeOptions,
   PaginationConfig,
@@ -260,6 +263,31 @@ export class FirecrawlClient {
    */
   async extract(args: Parameters<typeof startExtract>[1] & { pollInterval?: number; timeout?: number }): Promise<ExtractResponse> {
     return extractWaiter(this.http, args);
+  }
+
+  // Agent
+  /**
+   * Start an agent job (async).
+   * @param args Agent request (urls, prompt, schema).
+   * @returns Job id or processing state.
+   */
+  async startAgent(args: Parameters<typeof startAgent>[1]): Promise<AgentResponse> {
+    return startAgent(this.http, args);
+  }
+  /**
+   * Get agent job status/data.
+   * @param jobId Agent job id.
+   */
+  async getAgentStatus(jobId: string): Promise<AgentStatusResponse> {
+    return getAgentStatus(this.http, jobId);
+  }
+  /**
+   * Convenience waiter: start an agent and poll until it finishes.
+   * @param args Agent request plus waiter controls (pollInterval, timeout seconds).
+   * @returns Final agent response.
+   */
+  async agent(args: Parameters<typeof startAgent>[1] & { pollInterval?: number; timeout?: number }): Promise<AgentStatusResponse> {
+    return agentWaiter(this.http, args);
   }
 
   // Usage

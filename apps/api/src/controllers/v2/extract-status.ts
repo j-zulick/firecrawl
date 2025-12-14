@@ -5,6 +5,7 @@ import { getExtract, getExtractExpiry } from "../../lib/extract/extract-redis";
 import { getExtractQueue } from "../../services/queue-service";
 import { ExtractResult } from "../../lib/extract/extraction-service";
 import {
+  supabaseGetAgentByIdDirect,
   supabaseGetExtractByIdDirect,
   supabaseGetExtractRequestByIdDirect,
 } from "../../lib/supabase-jobs";
@@ -43,8 +44,6 @@ async function getExtractJob(
       ? supabaseGetExtractByIdDirect(id)
       : null) as Promise<DBExtract | null>,
   ]);
-
-  console.log("JOBS", [bullJob, gcsJob, dbExtract]);
 
   if (!bullJob && !dbExtract) return null;
 
@@ -89,6 +88,31 @@ export async function extractStatusController(
     return res.status(404).json({
       success: false,
       error: "Extract job not found",
+    });
+  }
+
+  if (extractRequest.kind === "agent") {
+    const agent = await supabaseGetAgentByIdDirect(req.params.jobId);
+
+    let data: any = undefined;
+    if (agent?.is_successful) {
+      data = await getJobFromGCS(agent.id);
+    }
+
+    return res.status(200).json({
+      success: true,
+      status: !agent
+        ? "processing"
+        : agent.is_successful
+          ? "completed"
+          : "failed",
+      error: agent?.error || undefined,
+      data,
+      expiresAt: new Date(
+        new Date(agent?.created_at ?? extractRequest.created_at).getTime() +
+          1000 * 60 * 60 * 24,
+      ).toISOString(),
+      creditsUsed: agent?.credits_cost,
     });
   }
 

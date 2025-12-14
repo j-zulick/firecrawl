@@ -152,7 +152,8 @@ type LoggedRequest = {
     | "extract"
     | "llmstxt"
     | "deep_research"
-    | "map";
+    | "map"
+    | "agent";
   api_version: string;
   team_id: string;
   origin?: string;

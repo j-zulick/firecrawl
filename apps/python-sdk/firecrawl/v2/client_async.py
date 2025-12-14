@@ -44,6 +44,7 @@ from .methods.aio import search as async_search  # type: ignore[attr-defined]
 from .methods.aio import map as async_map # type: ignore[attr-defined]
 from .methods.aio import usage as async_usage # type: ignore[attr-defined]
 from .methods.aio import extract as async_extract  # type: ignore[attr-defined]
+from .methods.aio import agent as async_agent  # type: ignore[attr-defined]
 
 from .watcher_async import AsyncWatcher
 
@@ -307,6 +308,46 @@ class AsyncFirecrawlClient:
             show_sources=show_sources,
             scrape_options=scrape_options,
             ignore_invalid_urls=ignore_invalid_urls,
+            integration=integration,
+        )
+
+    # Agent
+    async def agent(
+        self,
+        urls: Optional[List[str]] = None,
+        *,
+        prompt: str,
+        schema: Optional[Dict[str, Any]] = None,
+        integration: Optional[str] = None,
+        poll_interval: int = 2,
+        timeout: Optional[int] = None,
+    ):
+        return await async_agent.agent(
+            self.async_http_client,
+            urls,
+            prompt=prompt,
+            schema=schema,
+            integration=integration,
+            poll_interval=poll_interval,
+            timeout=timeout,
+        )
+
+    async def get_agent_status(self, job_id: str):
+        return await async_agent.get_agent_status(self.async_http_client, job_id)
+
+    async def start_agent(
+        self,
+        urls: Optional[List[str]] = None,
+        *,
+        prompt: str,
+        schema: Optional[Dict[str, Any]] = None,
+        integration: Optional[str] = None,
+    ):
+        return await async_agent.start_agent(
+            self.async_http_client,
+            urls,
+            prompt=prompt,
+            schema=schema,
             integration=integration,
         )
 

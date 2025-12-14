@@ -778,6 +778,18 @@ class ExtractResponse(BaseModel):
     credits_used: Optional[int] = None
     tokens_used: Optional[int] = None
 
+
+class AgentResponse(BaseModel):
+    """Response for agent operations (start/status/final)."""
+
+    success: Optional[bool] = None
+    id: Optional[str] = None
+    status: Optional[Literal["processing", "completed", "failed"]] = None
+    data: Optional[Any] = None
+    error: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    credits_used: Optional[int] = None
+
 # Usage/limits types
 class ConcurrencyCheck(BaseModel):
     """Current concurrency and limits for the team/API key."""
