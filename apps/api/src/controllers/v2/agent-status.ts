@@ -25,7 +25,7 @@ export async function agentStatusController(
   const agent = await supabaseGetAgentByIdDirect(req.params.jobId);
 
   let data: any = undefined;
-  if (agent.is_successful) {
+  if (agent?.is_successful) {
     data = await getJobFromGCS(agent.id);
   }
 
