@@ -556,15 +556,17 @@ const processPrecrawlJob = async (token: string, job: Job) => {
 
 let isShuttingDown = false;
 
-process.on("SIGINT", () => {
-  logger.info("Received SIGINT. Shutting down gracefully...");
-  isShuttingDown = true;
-});
+if (require.main === module) {
+  process.on("SIGINT", () => {
+    logger.info("Received SIGINT. Shutting down gracefully...");
+    isShuttingDown = true;
+  });
 
-process.on("SIGTERM", () => {
-  logger.info("Received SIGTERM. Shutting down gracefully...");
-  isShuttingDown = true;
-});
+  process.on("SIGTERM", () => {
+    logger.info("Received SIGTERM. Shutting down gracefully...");
+    isShuttingDown = true;
+  });
+}
 
 let cantAcceptConnectionCount = 0;
 

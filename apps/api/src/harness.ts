@@ -858,8 +858,10 @@ async function waitForTermination(services: Services): Promise<void> {
 
   const promises: Promise<void>[] = [
     new Promise<void>(resolve => {
-      process.on("SIGINT", resolve);
-      process.on("SIGTERM", resolve);
+      if (require.main === module) {
+        process.on("SIGINT", resolve);
+        process.on("SIGTERM", resolve);
+      }
     }),
   ];
 
@@ -918,8 +920,10 @@ function printUsage() {
 }
 
 async function main() {
-  process.on("SIGINT", gracefulShutdown);
-  process.on("SIGTERM", gracefulShutdown);
+  if (require.main === module) {
+    process.on("SIGINT", gracefulShutdown);
+    process.on("SIGTERM", gracefulShutdown);
+  }
 
   try {
     if (process.argv.length < 3) {

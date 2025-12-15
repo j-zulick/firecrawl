@@ -1218,6 +1218,8 @@ const exitHandler = () => {
   process.exit(0);
 };
 
-process.on("SIGINT", exitHandler);
-process.on("SIGTERM", exitHandler);
-process.on("exit", exitHandler);
+if (require.main === module) {
+  process.on("SIGINT", exitHandler);
+  process.on("SIGTERM", exitHandler);
+  process.on("exit", exitHandler);
+}

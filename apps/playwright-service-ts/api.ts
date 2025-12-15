@@ -292,9 +292,11 @@ app.listen(port, () => {
   });
 });
 
-process.on('SIGINT', () => {
-  shutdownBrowser().then(() => {
-    console.log('Browser closed');
-    process.exit(0);
+if (require.main === module) {
+  process.on('SIGINT', () => {
+    shutdownBrowser().then(() => {
+      console.log('Browser closed');
+      process.exit(0);
+    });
   });
-});
+}

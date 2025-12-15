@@ -46,8 +46,10 @@ import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-f
     isShuttingDown = true;
   }
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  if (require.main === module) {
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+  }
 
   let noJobTimeout = 1500;
 

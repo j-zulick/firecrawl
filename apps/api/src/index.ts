@@ -149,8 +149,10 @@ async function startServer(port = DEFAULT_PORT) {
     });
   };
 
-  process.on("SIGTERM", exitHandler);
-  process.on("SIGINT", exitHandler);
+  if (require.main === module) {
+    process.on("SIGTERM", exitHandler);
+    process.on("SIGINT", exitHandler);
+  }
   return server;
 }
 

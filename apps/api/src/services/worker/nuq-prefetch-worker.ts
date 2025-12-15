@@ -38,8 +38,10 @@ import { logger } from "../../lib/logger";
     process.exit(0);
   }
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  if (require.main === module) {
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+  }
 
   (async () => {
     while (true) {

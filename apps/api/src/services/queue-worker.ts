@@ -231,15 +231,17 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
 let isShuttingDown = false;
 let isWorkerStalled = false;
 
-process.on("SIGINT", () => {
-  _logger.debug("Received SIGINT. Shutting down gracefully...");
-  isShuttingDown = true;
-});
+if (require.main === module) {
+  process.on("SIGINT", () => {
+    _logger.debug("Received SIGINT. Shutting down gracefully...");
+    isShuttingDown = true;
+  });
 
-process.on("SIGTERM", () => {
-  _logger.debug("Received SIGTERM. Shutting down gracefully...");
-  isShuttingDown = true;
-});
+  process.on("SIGTERM", () => {
+    _logger.debug("Received SIGTERM. Shutting down gracefully...");
+    isShuttingDown = true;
+  });
+}
 
 let cantAcceptConnectionCount = 0;
 
