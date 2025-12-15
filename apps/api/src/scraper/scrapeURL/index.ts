@@ -1110,11 +1110,15 @@ export async function scrapeURL(
         meta.logger.debug("scrapeURL index metrics", {
           module: "scrapeURL/index-metrics",
           timeTaken: Date.now() - startTime,
-          changeTracking: hasFormatOfType(
+          changeTracking: !!hasFormatOfType(
             meta.options.formats,
             "changeTracking",
           ),
-          branding: hasFormatOfType(meta.options.formats, "branding"),
+          summary: !!hasFormatOfType(meta.options.formats, "summary"),
+          json: !!hasFormatOfType(meta.options.formats, "json"),
+          screenshot: !!hasFormatOfType(meta.options.formats, "screenshot"),
+          images: !!hasFormatOfType(meta.options.formats, "images"),
+          branding: !!hasFormatOfType(meta.options.formats, "branding"),
           pdfMaxPages: getPDFMaxPages(meta.options.parsers),
           maxAge: meta.options.maxAge,
           headers: meta.options.headers
@@ -1153,11 +1157,15 @@ export async function scrapeURL(
         meta.logger.debug("scrapeURL index metrics", {
           module: "scrapeURL/index-metrics",
           timeTaken: Date.now() - startTime,
-          changeTracking: hasFormatOfType(
+          changeTracking: !!hasFormatOfType(
             meta.options.formats,
             "changeTracking",
           ),
-          branding: hasFormatOfType(meta.options.formats, "branding"),
+          summary: !!hasFormatOfType(meta.options.formats, "summary"),
+          json: !!hasFormatOfType(meta.options.formats, "json"),
+          screenshot: !!hasFormatOfType(meta.options.formats, "screenshot"),
+          images: !!hasFormatOfType(meta.options.formats, "images"),
+          branding: !!hasFormatOfType(meta.options.formats, "branding"),
           pdfMaxPages: getPDFMaxPages(meta.options.parsers),
           maxAge: meta.options.maxAge,
           headers: meta.options.headers
