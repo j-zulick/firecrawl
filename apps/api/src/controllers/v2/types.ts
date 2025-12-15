@@ -24,7 +24,7 @@ import { webhookSchema } from "../../services/webhook/schema";
 import { BrandingProfile } from "../../types/branding";
 
 // Base URL schema with common validation logic
-const URL = z.preprocess(
+export const URL = z.preprocess(
   x => {
     if (!protocolIncluded(x as string)) {
       x = `http://${x}`;
