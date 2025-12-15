@@ -347,11 +347,23 @@ async function scrapeURLLoopIter(
       engine,
     );
 
+    const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
+    const hasChangeTracking = hasFormatOfType(
+      meta.options.formats,
+      "changeTracking",
+    );
+    const hasJson = hasFormatOfType(meta.options.formats, "json");
+    const hasSummary = hasFormatOfType(meta.options.formats, "summary");
+    const needsMarkdown =
+      hasMarkdown || hasChangeTracking || hasJson || hasSummary;
+
     let checkMarkdown: string;
     if (
       meta.internalOptions.teamId === "sitemap" ||
       meta.internalOptions.teamId === "robots-txt"
     ) {
+      checkMarkdown = engineResult.html?.trim() ?? "";
+    } else if (!needsMarkdown) {
       checkMarkdown = engineResult.html?.trim() ?? "";
     } else {
       checkMarkdown = await parseMarkdown(

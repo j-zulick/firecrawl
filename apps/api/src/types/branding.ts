@@ -67,20 +67,43 @@ export interface BrandingProfile {
       textColor?: string;
       borderColor?: string;
       borderRadius?: string;
-      [key: string]: string | undefined;
+      borderRadiusCorners?: {
+        topLeft?: string;
+        topRight?: string;
+        bottomRight?: string;
+        bottomLeft?: string;
+      };
+      shadow?: string;
+      [key: string]: string | object | undefined;
     };
     buttonSecondary?: {
       background?: string;
       textColor?: string;
       borderColor?: string;
       borderRadius?: string;
-      [key: string]: string | undefined;
+      borderRadiusCorners?: {
+        topLeft?: string;
+        topRight?: string;
+        bottomRight?: string;
+        bottomLeft?: string;
+      };
+      shadow?: string;
+      [key: string]: string | object | undefined;
     };
     input?: {
+      background?: string;
+      textColor?: string;
       borderColor?: string;
       focusBorderColor?: string;
       borderRadius?: string;
-      [key: string]: string | undefined;
+      borderRadiusCorners?: {
+        topLeft?: string;
+        topRight?: string;
+        bottomRight?: string;
+        bottomLeft?: string;
+      };
+      shadow?: string;
+      [key: string]: string | object | undefined;
     };
     [key: string]: unknown;
   };

@@ -9,11 +9,37 @@ export interface ButtonSnapshot {
   textColor: string;
   borderColor?: string | null;
   borderRadius?: string;
+  borderRadiusCorners?: {
+    topLeft?: string;
+    topRight?: string;
+    bottomRight?: string;
+    bottomLeft?: string;
+  };
   shadow?: string | null;
   // Debug: original color values before conversion to hex
   originalBackgroundColor?: string;
   originalTextColor?: string;
   originalBorderColor?: string;
+}
+
+export interface InputSnapshot {
+  type: string;
+  placeholder: string;
+  label: string;
+  name: string;
+  required: boolean;
+  classes: string;
+  background: string;
+  textColor: string | null;
+  borderColor?: string | null;
+  borderRadius?: string;
+  borderRadiusCorners?: {
+    topLeft?: string;
+    topRight?: string;
+    bottomRight?: string;
+    bottomLeft?: string;
+  };
+  shadow?: string | null;
 }
 
 export interface BrandingLLMInput {
@@ -24,7 +50,7 @@ export interface BrandingLLMInput {
     alt: string;
     isSvg: boolean;
     isVisible: boolean;
-    location: "header" | "body";
+    location: "header" | "body" | "footer";
     position: { top: number; left: number; width: number; height: number };
     indicators: {
       inHeader: boolean;
@@ -67,6 +93,14 @@ export interface BrandingScriptReturn {
       background: string;
       border: string;
       borderWidth: number | null;
+      borderTop?: string;
+      borderTopWidth?: number | null;
+      borderRight?: string;
+      borderRightWidth?: number | null;
+      borderBottom?: string;
+      borderBottomWidth?: number | null;
+      borderLeft?: string;
+      borderLeftWidth?: number | null;
     };
     typography: {
       fontStack: string[];
@@ -74,11 +108,27 @@ export interface BrandingScriptReturn {
       weight: number | null;
     };
     radius: number | null;
+    borderRadius: {
+      topLeft: number | null;
+      topRight: number | null;
+      bottomRight: number | null;
+      bottomLeft: number | null;
+    };
     shadow: string | null;
     isButton: boolean;
     isNavigation?: boolean;
     hasCTAIndicator?: boolean;
     isInput: boolean;
+    inputMetadata?: {
+      type: string;
+      placeholder: string;
+      value: string;
+      required: boolean;
+      disabled: boolean;
+      name: string;
+      id: string;
+      label: string;
+    } | null;
     isLink: boolean;
   }>;
   images: Array<{ type: string; src: string }>;
@@ -87,7 +137,7 @@ export interface BrandingScriptReturn {
     alt: string;
     isSvg: boolean;
     isVisible: boolean;
-    location: "header" | "body";
+    location: "header" | "body" | "footer";
     position: { top: number; left: number; width: number; height: number };
     indicators: {
       inHeader: boolean;
@@ -121,4 +171,15 @@ export interface BrandingScriptReturn {
     priority: number;
     area?: number;
   }>;
+}
+
+/**
+ * Calculate logo area from position dimensions
+ */
+export function calculateLogoArea(position?: {
+  width?: number;
+  height?: number;
+}): number {
+  if (!position) return 0;
+  return (position.width || 0) * (position.height || 0);
 }

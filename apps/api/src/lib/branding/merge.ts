@@ -1,6 +1,6 @@
 import { BrandingProfile } from "../../types/branding";
 import { BrandingEnhancement } from "./schema";
-import { ButtonSnapshot } from "./types";
+import { ButtonSnapshot, calculateLogoArea } from "./types";
 
 export function mergeBrandingResults(
   js: BrandingProfile,
@@ -11,40 +11,161 @@ export function mergeBrandingResults(
     alt: string;
     isSvg: boolean;
     isVisible: boolean;
-    location: "header" | "body";
+    location: "header" | "body" | "footer";
     position: { top: number; left: number; width: number; height: number };
     indicators: {
       inHeader: boolean;
       altMatch: boolean;
       srcMatch: boolean;
       classMatch: boolean;
+      hrefMatch: boolean;
     };
+    href?: string;
     source: string;
   }>,
 ): BrandingProfile {
   const merged: BrandingProfile = { ...js };
 
-  // Use LLM-selected logo if available
-  if (
-    llm.logoSelection &&
-    llm.logoSelection.selectedLogoIndex !== undefined &&
-    llm.logoSelection.selectedLogoIndex >= 0 &&
-    logoCandidates &&
-    logoCandidates.length > 0 &&
-    llm.logoSelection.selectedLogoIndex < logoCandidates.length
-  ) {
-    const selectedLogo = logoCandidates[llm.logoSelection.selectedLogoIndex];
-    if (selectedLogo) {
-      // Initialize images object if it doesn't exist
-      if (!merged.images) {
-        merged.images = {};
+  // Handle logo selection: if LLM says no logo (-1), clear it
+  if (llm.logoSelection && llm.logoSelection.selectedLogoIndex !== undefined) {
+    // If LLM explicitly says no logo (returns -1), remove any logo that was set
+    if (llm.logoSelection.selectedLogoIndex === -1) {
+      if (merged.images) {
+        delete merged.images.logo;
       }
-      merged.images.logo = selectedLogo.src;
       (merged as any).__llm_logo_reasoning = {
-        selectedIndex: llm.logoSelection.selectedLogoIndex,
-        reasoning: llm.logoSelection.selectedLogoReasoning,
-        confidence: llm.logoSelection.confidence,
+        selectedIndex: -1,
+        reasoning:
+          llm.logoSelection.selectedLogoReasoning || "No valid logo found",
+        confidence: llm.logoSelection.confidence || 0,
+        rejected: true,
       };
+    }
+    // If LLM selected a valid logo index
+    else if (
+      llm.logoSelection.selectedLogoIndex >= 0 &&
+      logoCandidates &&
+      logoCandidates.length > 0 &&
+      llm.logoSelection.selectedLogoIndex < logoCandidates.length
+    ) {
+      const selectedLogo = logoCandidates[llm.logoSelection.selectedLogoIndex];
+      if (selectedLogo) {
+        // Quality checks before accepting the logo
+        const confidence = llm.logoSelection.confidence || 0;
+        const alt = selectedLogo.alt || "";
+        const altLower = alt.toLowerCase().trim();
+        const href = selectedLogo.href || "";
+
+        // Red flags: these patterns indicate it's NOT a brand logo
+        const isLanguageWord =
+          /^(english|español|français|deutsch|italiano|português|中文|日本語|한국어|русский|العربية|en|es|fr|de|it|pt|zh|ja|ko|ru|ar)$/i.test(
+            altLower,
+          );
+        const isCommonMenuWord =
+          /^(menu|search|cart|login|signup|register|account|profile|settings|help|support|contact|about|home|shop|store|products|services|blog|news)$/i.test(
+            altLower,
+          );
+        const isUIIcon =
+          /search|icon|menu|hamburger|cart|user|bell|notification|settings|close|times/i.test(
+            altLower,
+          );
+
+        // Check for external links - brand logos should NOT link to external websites
+        // Note: External links should already be filtered out in brandingScript.ts
+        // This is a minimal safety check - we can't verify external links without page URL
+        let isExternalLink = false;
+        if (href && href.trim()) {
+          const hrefLower = href.toLowerCase().trim();
+          // Relative URLs (starting with /) are always internal
+          // Full URLs should have been filtered already, but if they got through,
+          // we can't verify they're internal without the page URL (window.location not available in Node.js)
+          // So we'll only flag known external service patterns that should have been filtered
+          if (
+            hrefLower.startsWith("http://") ||
+            hrefLower.startsWith("https://") ||
+            hrefLower.startsWith("//")
+          ) {
+            // Check for known external service domains (should have been filtered already)
+            const externalServiceDomains = [
+              "github.com",
+              "twitter.com",
+              "x.com",
+              "facebook.com",
+              "linkedin.com",
+            ];
+            if (
+              externalServiceDomains.some(domain => hrefLower.includes(domain))
+            ) {
+              isExternalLink = true;
+            }
+            // Note: We can't verify other full URLs without page URL, so we trust
+            // that brandingScript.ts already filtered them correctly
+          }
+        }
+
+        // Check for very small square icons (typical UI icons: 16x16, 20x20, 24x24, etc.)
+        const width = selectedLogo.position?.width || 0;
+        const height = selectedLogo.position?.height || 0;
+        const isSmallSquareIcon =
+          Math.abs(width - height) < 5 && width < 40 && width > 0;
+
+        const hasRedFlags =
+          isLanguageWord ||
+          isCommonMenuWord ||
+          isUIIcon ||
+          isSmallSquareIcon ||
+          isExternalLink;
+
+        // Only set logo if:
+        // 1. Confidence is good (>= 0.5) OR
+        // 2. Logo has very strong indicators (inHeader + hrefMatch + reasonable size)
+        // AND no red flags
+        const area = calculateLogoArea(selectedLogo.position);
+        const hasReasonableSize = area >= 500 && area <= 100000;
+        const hasStrongIndicators =
+          selectedLogo.indicators?.inHeader &&
+          selectedLogo.indicators?.hrefMatch &&
+          hasReasonableSize;
+
+        const shouldIncludeLogo =
+          !hasRedFlags &&
+          (confidence >= 0.5 || (hasStrongIndicators && confidence >= 0.4));
+
+        if (shouldIncludeLogo) {
+          // Initialize images object if it doesn't exist
+          if (!merged.images) {
+            merged.images = {};
+          }
+          merged.images.logo = selectedLogo.src;
+          (merged as any).__llm_logo_reasoning = {
+            selectedIndex: llm.logoSelection.selectedLogoIndex,
+            reasoning: llm.logoSelection.selectedLogoReasoning,
+            confidence: llm.logoSelection.confidence,
+          };
+        } else {
+          // Log why we're not including the logo
+          let rejectionReason = "Low confidence";
+          if (hasRedFlags) {
+            const redFlagReasons: string[] = [];
+            if (isLanguageWord) redFlagReasons.push("language word");
+            if (isCommonMenuWord) redFlagReasons.push("menu word");
+            if (isUIIcon) redFlagReasons.push("UI icon");
+            if (isSmallSquareIcon) redFlagReasons.push("small square icon");
+            if (isExternalLink) redFlagReasons.push("external link");
+            rejectionReason = `Red flags detected (${redFlagReasons.join(", ")})`;
+          }
+          const selectedLogoReasoning =
+            llm.logoSelection.selectedLogoReasoning?.trim() || "";
+          (merged as any).__llm_logo_reasoning = {
+            selectedIndex: llm.logoSelection.selectedLogoIndex,
+            reasoning: selectedLogoReasoning
+              ? `Logo rejected: ${rejectionReason}. ${selectedLogoReasoning}`
+              : `Logo rejected: ${rejectionReason}.`,
+            confidence: llm.logoSelection.confidence,
+            rejected: true,
+          };
+        }
+      }
     }
   }
 
@@ -79,6 +200,7 @@ export function mergeBrandingResults(
         textColor: primaryBtn.textColor,
         borderColor: primaryBtn.borderColor || undefined,
         borderRadius: primaryBtn.borderRadius || "0px",
+        borderRadiusCorners: primaryBtn.borderRadiusCorners,
         shadow: primaryBtn.shadow || undefined,
       };
     }
@@ -94,6 +216,7 @@ export function mergeBrandingResults(
           textColor: secondaryBtn.textColor,
           borderColor: secondaryBtn.borderColor || undefined,
           borderRadius: secondaryBtn.borderRadius || "0px",
+          borderRadiusCorners: secondaryBtn.borderRadiusCorners,
           shadow: secondaryBtn.shadow || undefined,
         };
       }
