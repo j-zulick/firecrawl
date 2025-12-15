@@ -161,7 +161,7 @@ function waitForPort(
   options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const { signal, timeoutMs = 30000 } = options;
+    const { signal, timeoutMs = config.HARNESS_STARTUP_TIMEOUT_MS } = options;
 
     let settled = false;
     let retryTimer: NodeJS.Timeout | null = null;
@@ -455,7 +455,7 @@ async function startNuqPostgresContainer(
 async function waitForPostgres(
   host: string,
   port: number,
-  timeoutMs: number = 30000,
+  timeoutMs: number = config.HARNESS_STARTUP_TIMEOUT_MS,
 ): Promise<void> {
   logger.info("Waiting for PostgreSQL to be ready...");
   const start = Date.now();
