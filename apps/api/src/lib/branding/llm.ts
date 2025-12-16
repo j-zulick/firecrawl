@@ -57,6 +57,11 @@ export async function enhanceBrandingWithLLM(
     const result = await generateObject({
       model,
       schema: brandingEnhancementSchema,
+      providerOptions: {
+        openai: {
+          strictJsonSchema: true,
+        },
+      },
       messages: [
         {
           role: "system",
