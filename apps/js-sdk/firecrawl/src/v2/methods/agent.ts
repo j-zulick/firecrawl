@@ -69,3 +69,14 @@ export async function agent(
   if (!jobId) return started as unknown as AgentStatusResponse;
   return waitAgent(http, jobId, args.pollInterval ?? 2, args.timeout);
 }
+
+export async function cancelAgent(http: HttpClient, jobId: string): Promise<boolean> {
+  try {
+    const res = await http.delete<{ success: boolean }>(`/v2/agent/${jobId}`);
+    if (res.status !== 200) throwForBadResponse(res, "cancel agent");
+    return res.data?.success === true;
+  } catch (err: any) {
+    if (err?.isAxiosError) return normalizeAxiosError(err, "cancel agent");
+    throw err;
+  }
+}

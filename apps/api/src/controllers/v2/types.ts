@@ -1091,6 +1091,12 @@ export type AgentStatusResponse =
       creditsUsed?: number;
     };
 
+export type AgentCancelResponse =
+  | ErrorResponse
+  | {
+      success: boolean;
+    };
+
 export type CrawlResponse =
   | ErrorResponse
   | {

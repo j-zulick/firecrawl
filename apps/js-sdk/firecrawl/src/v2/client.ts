@@ -19,7 +19,7 @@ import {
   batchScrape as batchWaiter,
 } from "./methods/batch";
 import { startExtract, getExtractStatus, extract as extractWaiter } from "./methods/extract";
-import { startAgent, getAgentStatus, agent as agentWaiter } from "./methods/agent";
+import { startAgent, getAgentStatus, cancelAgent, agent as agentWaiter } from "./methods/agent";
 import { getConcurrency, getCreditUsage, getQueueStatus, getTokenUsage, getCreditUsageHistorical, getTokenUsageHistorical } from "./methods/usage";
 import type {
   Document,
@@ -288,6 +288,14 @@ export class FirecrawlClient {
    */
   async agent(args: Parameters<typeof startAgent>[1] & { pollInterval?: number; timeout?: number }): Promise<AgentStatusResponse> {
     return agentWaiter(this.http, args);
+  }
+  /**
+   * Cancel an agent job.
+   * @param jobId Agent job id.
+   * @returns True if cancelled.
+   */
+  async cancelAgent(jobId: string): Promise<boolean> {
+    return cancelAgent(this.http, jobId);
   }
 
   // Usage

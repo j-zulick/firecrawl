@@ -824,6 +824,17 @@ class FirecrawlClient:
         """
         return agent_module.get_agent_status(self.http_client, job_id)
 
+    def cancel_agent(self, job_id: str) -> bool:
+        """Cancel a running agent job.
+
+        Args:
+            job_id: Agent job ID
+
+        Returns:
+            True if the agent was cancelled
+        """
+        return agent_module.cancel_agent(self.http_client, job_id)
+
     def get_concurrency(self):
         """Get current concurrency and maximum allowed for this team/key (v2)."""
         return usage_methods.get_concurrency(self.http_client)

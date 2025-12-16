@@ -95,3 +95,21 @@ async def agent(
     if not job_id:
         return started
     return await wait_agent(client, job_id, poll_interval=poll_interval, timeout=timeout)
+
+
+async def cancel_agent(client: AsyncHttpClient, job_id: str) -> bool:
+    """
+    Cancel a running agent job.
+
+    Args:
+        client: Async HTTP client instance
+        job_id: ID of the agent job to cancel
+
+    Returns:
+        bool: True if the agent was cancelled, False otherwise
+
+    Raises:
+        Exception: If the cancellation fails
+    """
+    resp = await client.delete(f"/v2/agent/{job_id}")
+    return resp.json().get("success", False)

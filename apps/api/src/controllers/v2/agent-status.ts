@@ -18,7 +18,7 @@ export async function agentStatusController(
   if (!agentRequest || agentRequest.team_id !== req.auth.team_id) {
     return res.status(404).json({
       success: false,
-      error: "Extract job not found",
+      error: "Agent job not found",
     });
   }
 

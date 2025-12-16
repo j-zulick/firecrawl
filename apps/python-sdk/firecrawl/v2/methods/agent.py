@@ -100,3 +100,23 @@ def agent(
     if not job_id:
         return started
     return wait_agent(client, job_id, poll_interval=poll_interval, timeout=timeout)
+
+
+def cancel_agent(client: HttpClient, job_id: str) -> bool:
+    """
+    Cancel a running agent job.
+
+    Args:
+        client: HTTP client instance
+        job_id: ID of the agent job to cancel
+
+    Returns:
+        bool: True if the agent was cancelled, False otherwise
+
+    Raises:
+        Exception: If the cancellation fails
+    """
+    resp = client.delete(f"/v2/agent/{job_id}")
+    if not resp.ok:
+        handle_response_error(resp, "cancel agent")
+    return resp.json().get("success", False)

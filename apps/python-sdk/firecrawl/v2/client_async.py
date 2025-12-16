@@ -351,6 +351,17 @@ class AsyncFirecrawlClient:
             integration=integration,
         )
 
+    async def cancel_agent(self, job_id: str) -> bool:
+        """Cancel a running agent job.
+
+        Args:
+            job_id: Agent job ID
+
+        Returns:
+            True if the agent was cancelled
+        """
+        return await async_agent.cancel_agent(self.async_http_client, job_id)
+
     # Usage endpoints
     async def get_concurrency(self):
         from .methods.aio import usage as async_usage  # type: ignore[attr-defined]

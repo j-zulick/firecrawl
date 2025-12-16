@@ -17,6 +17,7 @@ export async function agentController(
   const agentId = uuidv7();
   const logger = _logger.child({
     agentId,
+    extractId: agentId,
     jobId: agentId,
     teamId: req.auth.team_id,
     team_id: req.auth.team_id,
