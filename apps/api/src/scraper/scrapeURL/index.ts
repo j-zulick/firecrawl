@@ -67,6 +67,7 @@ import {
   createRobotsChecker,
   isUrlAllowedByRobots,
 } from "../../lib/robots-txt";
+import { getCrawl } from "../../lib/crawl-redis";
 import {
   AbortInstance,
   AbortManager,
@@ -886,16 +887,25 @@ export async function scrapeURL(
 
         if (!isRobotsTxtPath) {
           try {
-            const { content: robotsTxt } = await fetchRobotsTxt(
-              {
-                url: urlToCheck,
-                zeroDataRetention: internalOptions.zeroDataRetention || false,
-                location: options.location,
-              },
-              id,
-              meta.logger,
-              meta.abort.asSignal(),
-            );
+            let robotsTxt: string | undefined;
+            if (internalOptions.crawlId) {
+              const crawl = await getCrawl(internalOptions.crawlId);
+              robotsTxt = crawl?.robots;
+            }
+
+            if (!robotsTxt) {
+              const { content } = await fetchRobotsTxt(
+                {
+                  url: urlToCheck,
+                  zeroDataRetention: internalOptions.zeroDataRetention || false,
+                  location: options.location,
+                },
+                id,
+                meta.logger,
+                meta.abort.asSignal(),
+              );
+              robotsTxt = content;
+            }
 
             const checker = createRobotsChecker(urlToCheck, robotsTxt);
             const isAllowed = isUrlAllowedByRobots(urlToCheck, checker.robots);

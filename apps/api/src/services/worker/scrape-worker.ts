@@ -271,19 +271,26 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     if (job.data.crawl_id) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
 
+      let crawler: WebCrawler | null = null;
+      if (job.data.crawlerOptions !== null) {
+        const teamFlags = (await getACUCTeam(job.data.team_id))?.flags ?? null;
+        crawler = crawlToCrawler(
+          job.data.crawl_id,
+          sc,
+          teamFlags,
+          sc.originUrl!,
+          job.data.crawlerOptions,
+        );
+      }
+
       if (
         doc.metadata.url !== undefined &&
         doc.metadata.sourceURL !== undefined &&
         normalizeURL(doc.metadata.url, sc) !==
           normalizeURL(doc.metadata.sourceURL, sc) &&
-        job.data.crawlerOptions !== null // only on crawls, don't care on batch scrape
+        crawler // only on crawls, don't care on batch scrape
       ) {
-        const crawler = crawlToCrawler(
-          job.data.crawl_id,
-          sc,
-          (await getACUCTeam(job.data.team_id))?.flags ?? null,
-        );
-        const filterResult = await crawler.filterURL(
+        const filterResult = await crawler!.filterURL(
           doc.metadata.url,
           doc.metadata.sourceURL,
         );
@@ -342,14 +349,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         }
       }
 
-      if (job.data.crawlerOptions !== null) {
+      if (crawler) {
         if (!sc.cancelled) {
-          const crawler = crawlToCrawler(
-            job.data.crawl_id,
-            sc,
-            (await getACUCTeam(job.data.team_id))?.flags ?? null,
+          crawler.setBaseUrl(
             doc.metadata.url ?? doc.metadata.sourceURL ?? sc.originUrl!,
-            job.data.crawlerOptions,
           );
 
           const links = await crawler.filterLinks(

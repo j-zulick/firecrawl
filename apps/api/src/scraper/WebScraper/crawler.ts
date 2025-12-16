@@ -141,6 +141,11 @@ export class WebCrawler {
     this.location = location;
   }
 
+  public setBaseUrl(newBase: string): void {
+    this.baseUrl = newBase;
+    this.robotsTxtUrl = `${this.baseUrl}${this.baseUrl.endsWith("/") ? "" : "/"}robots.txt`;
+  }
+
   public async filterLinks(
     sitemapLinks: string[],
     limit: number,
@@ -411,7 +416,7 @@ export class WebCrawler {
     this.robotsCrawlDelay = delay !== undefined ? delay : null;
 
     const sitemaps = this.robots.getSitemaps();
-    this.logger.debug("Processed robots.txt", {
+    this.logger.debug("Imported robots.txt", {
       method: "importRobotsTxt",
       robotsTxtUrl: this.robotsTxtUrl,
       robotsTxtLength: txt.length,
