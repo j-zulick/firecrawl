@@ -62,6 +62,7 @@ const redis = new IORedis(config.REDIS_URL!, {
   lazyConnect: true,
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
+  enableAutoPipelining: true,
 });
 
 let initPromise: Promise<void> | null = null;
