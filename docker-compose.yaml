@@ -25,9 +25,9 @@ x-common-env: &common-env
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
   REDIS_RATE_LIMIT_URL: ${REDIS_URL:-redis://redis:6379}
   PLAYWRIGHT_MICROSERVICE_URL: ${PLAYWRIGHT_MICROSERVICE_URL:-http://playwright-service:3000/scrape}
-  POSTGRES_USER: ${POSTGRES_USER:-firecrawl}
-  POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-firecrawl_password}"
-  POSTGRES_DB: ${POSTGRES_DB:-firecrawl}
+  POSTGRES_USER: ${POSTGRES_USER:-postgres}
+  POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+  POSTGRES_DB: ${POSTGRES_DB:-postgres}
   POSTGRES_HOST: ${POSTGRES_HOST:-nuq-postgres}
   POSTGRES_PORT: ${POSTGRES_PORT:-5432}
   USE_DB_AUTHENTICATION: ${USE_DB_AUTHENTICATION:-false}
@@ -125,9 +125,9 @@ services:
   nuq-postgres:
     build: apps/nuq-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-firecrawl}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-firecrawl_password}
-      POSTGRES_DB: ${POSTGRES_DB:-firecrawl}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
     networks:
       - backend
     logging:
