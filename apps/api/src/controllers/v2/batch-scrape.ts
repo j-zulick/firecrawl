@@ -128,7 +128,7 @@ export async function batchScrapeController(
     account: req.account,
   });
 
-  if (!req.body.appendToId) {
+  if (!req.body.appendToId && !req.body.__agentInterop) {
     await logRequest({
       id,
       kind: "batch_scrape",
