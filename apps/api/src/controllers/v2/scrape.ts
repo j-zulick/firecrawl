@@ -80,6 +80,25 @@ export async function scrapeController(
       const zeroDataRetention =
         req.acuc?.flags?.forceZDR || (req.body.zeroDataRetention ?? false);
 
+      if (
+        req.body.__agentInterop &&
+        config.AGENT_INTEROP_SECRET &&
+        req.body.__agentInterop.auth !== config.AGENT_INTEROP_SECRET
+      ) {
+        return res.status(403).json({
+          success: false,
+          error: "Invalid agent interop.",
+        });
+      } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
+        return res.status(403).json({
+          success: false,
+          error: "Agent interop is not enabled.",
+        });
+      }
+
+      const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
+      const agentRequestId = req.body.__agentInterop?.requestId ?? null;
+
       const logger = _logger.child({
         method: "scrapeController",
         jobId,
@@ -100,17 +119,19 @@ export async function scrapeController(
         account: req.account,
       });
 
-      await logRequest({
-        id: jobId,
-        kind: "scrape",
-        api_version: "v2",
-        team_id: req.auth.team_id,
-        origin: req.body.origin ?? "api",
-        integration: req.body.integration,
-        target_hint: req.body.url,
-        zeroDataRetention: zeroDataRetention || false,
-        api_key_id: req.acuc?.api_key_id ?? null,
-      });
+      if (!agentRequestId) {
+        await logRequest({
+          id: jobId,
+          kind: "scrape",
+          api_version: "v2",
+          team_id: req.auth.team_id,
+          origin: req.body.origin ?? "api",
+          integration: req.body.integration,
+          target_hint: req.body.url,
+          zeroDataRetention: zeroDataRetention || false,
+          api_key_id: req.acuc?.api_key_id ?? null,
+        });
+      }
 
       setSpanAttributes(span, {
         "scrape.zero_data_retention": zeroDataRetention,
@@ -205,7 +226,7 @@ export async function scrapeController(
                         ? true
                         : false,
                       unnormalizedSourceURL: preNormalizedBody.url,
-                      bypassBilling: isDirectToBullMQ,
+                      bypassBilling: isDirectToBullMQ || !shouldBill,
                       zeroDataRetention,
                       teamFlags: req.acuc?.flags ?? null,
                     },
@@ -216,6 +237,7 @@ export async function scrapeController(
                     zeroDataRetention,
                     apiKeyId: req.acuc?.api_key_id ?? null,
                     concurrencyLimited: limited,
+                    requestId: agentRequestId ?? undefined,
                   },
                 };
 
