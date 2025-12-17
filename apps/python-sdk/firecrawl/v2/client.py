@@ -762,6 +762,8 @@ class FirecrawlClient:
         prompt: str,
         schema: Optional[Dict[str, Any]] = None,
         integration: Optional[str] = None,
+        max_credits: Optional[int] = None,
+        strict_constrain_to_urls: Optional[bool] = None,
     ):
         """Start an agent job (non-blocking).
 
@@ -781,6 +783,7 @@ class FirecrawlClient:
             schema=schema,
             integration=integration,
             max_credits=max_credits,
+            strict_constrain_to_urls=strict_constrain_to_urls,
         )
 
     def agent(
@@ -793,6 +796,7 @@ class FirecrawlClient:
         poll_interval: int = 2,
         timeout: Optional[int] = None,
         max_credits: Optional[int] = None,
+        strict_constrain_to_urls: Optional[bool] = None,
     ):
         """Run an agent and wait until completion.
 
@@ -816,6 +820,7 @@ class FirecrawlClient:
             poll_interval=poll_interval,
             timeout=timeout,
             max_credits=max_credits,
+            strict_constrain_to_urls=strict_constrain_to_urls,
         )
 
     def get_agent_status(self, job_id: str):

@@ -10,6 +10,7 @@ function prepareAgentPayload(args: {
   schema?: Record<string, unknown> | ZodTypeAny;
   integration?: string;
   maxCredits?: number;
+  strictConstrainToURLs?: boolean;
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   if (args.urls) body.urls = args.urls;
@@ -21,6 +22,7 @@ function prepareAgentPayload(args: {
   }
   if (args.integration && args.integration.trim()) body.integration = args.integration.trim();
   if (args.maxCredits !== null && args.maxCredits !== undefined) body.maxCredits = args.maxCredits;
+  if (args.strictConstrainToURLs !== null && args.strictConstrainToURLs !== undefined) body.strictConstrainToURLs = args.strictConstrainToURLs;
   return body;
 }
 

@@ -13,6 +13,7 @@ def _prepare_agent_request(
     schema: Optional[Dict[str, Any]] = None,
     integration: Optional[str] = None,
     max_credits: Optional[int] = None,
+    strict_constrain_to_urls: Optional[bool] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
     if urls is not None:
@@ -24,6 +25,8 @@ def _prepare_agent_request(
         body["integration"] = str(integration).strip()
     if max_credits is not None and max_credits > 0:
         body["maxCredits"] = max_credits
+    if strict_constrain_to_urls is not None and strict_constrain_to_urls:
+        body["strictConstrainToURLs"] = strict_constrain_to_urls
     return body
 
 
@@ -44,6 +47,7 @@ def start_agent(
     schema: Optional[Dict[str, Any]] = None,
     integration: Optional[str] = None,
     max_credits: Optional[int] = None,
+    strict_constrain_to_urls: Optional[bool] = None,
 ) -> AgentResponse:
     body = _prepare_agent_request(
         urls,
@@ -51,6 +55,7 @@ def start_agent(
         schema=schema,
         integration=integration,
         max_credits=max_credits,
+        strict_constrain_to_urls=strict_constrain_to_urls,
     )
     resp = client.post("/v2/agent", body)
     if not resp.ok:
@@ -94,6 +99,7 @@ def agent(
     poll_interval: int = 2,
     timeout: Optional[int] = None,
     max_credits: Optional[int] = None,
+    strict_constrain_to_urls: Optional[bool] = None,
 ) -> AgentResponse:
     started = start_agent(
         client,
@@ -102,6 +108,7 @@ def agent(
         schema=schema,
         integration=integration,
         max_credits=max_credits,
+        strict_constrain_to_urls=strict_constrain_to_urls,
     )
     job_id = getattr(started, "id", None)
     if not job_id:

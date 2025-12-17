@@ -12,6 +12,7 @@ def _prepare_agent_request(
     schema: Optional[Dict[str, Any]] = None,
     integration: Optional[str] = None,
     max_credits: Optional[int] = None,
+    strict_constrain_to_urls: Optional[bool] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
     if urls is not None:
@@ -89,6 +90,7 @@ async def agent(
     poll_interval: int = 2,
     timeout: Optional[int] = None,
     max_credits: Optional[int] = None,
+    strict_constrain_to_urls: Optional[bool] = None,
 ) -> AgentResponse:
     started = await start_agent(
         client,
@@ -97,6 +99,7 @@ async def agent(
         schema=schema,
         integration=integration,
         max_credits=max_credits,
+        strict_constrain_to_urls=strict_constrain_to_urls,
     )
     job_id = getattr(started, "id", None)
     if not job_id:

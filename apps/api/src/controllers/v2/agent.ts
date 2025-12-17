@@ -118,6 +118,7 @@ export async function agentController(
         teamId: req.auth.team_id,
         isFreeRequest,
         maxCredits: req.body.maxCredits ?? undefined,
+        strictConstrainToURLs: req.body.strictConstrainToURLs ?? undefined,
       }),
     },
   );

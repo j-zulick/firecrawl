@@ -322,6 +322,7 @@ class AsyncFirecrawlClient:
         poll_interval: int = 2,
         timeout: Optional[int] = None,
         max_credits: Optional[int] = None,
+        strict_constrain_to_urls: Optional[bool] = None,
     ):
         return await async_agent.agent(
             self.async_http_client,
@@ -332,6 +333,7 @@ class AsyncFirecrawlClient:
             poll_interval=poll_interval,
             timeout=timeout,
             max_credits=max_credits,
+            strict_constrain_to_urls=strict_constrain_to_urls,
         )
 
     async def get_agent_status(self, job_id: str):
@@ -345,6 +347,7 @@ class AsyncFirecrawlClient:
         schema: Optional[Dict[str, Any]] = None,
         integration: Optional[str] = None,
         max_credits: Optional[int] = None,
+        strict_constrain_to_urls: Optional[bool] = None,
     ):
         return await async_agent.start_agent(
             self.async_http_client,
@@ -353,6 +356,7 @@ class AsyncFirecrawlClient:
             schema=schema,
             integration=integration,
             max_credits=max_credits,
+            strict_constrain_to_urls=strict_constrain_to_urls,
         )
 
     async def cancel_agent(self, job_id: str) -> bool:
