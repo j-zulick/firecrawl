@@ -250,6 +250,25 @@ export async function searchController(
   try {
     req.body = searchRequestSchema.parse(req.body);
 
+    if (
+      req.body.__agentInterop &&
+      config.AGENT_INTEROP_SECRET &&
+      req.body.__agentInterop.auth !== config.AGENT_INTEROP_SECRET
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: "Invalid agent interop.",
+      });
+    } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
+      return res.status(403).json({
+        success: false,
+        error: "Agent interop is not enabled.",
+      });
+    }
+
+    const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
+    const agentRequestId = req.body.__agentInterop?.requestId ?? null;
+
     logger = logger.child({
       version: "v2",
       query: req.body.query,
@@ -262,17 +281,19 @@ export async function searchController(
     zeroDataRetention = isZDROrAnon ?? false;
     applyZdrScope(isZDROrAnon ?? false);
 
-    await logRequest({
-      id: jobId,
-      kind: "search",
-      api_version: "v2",
-      team_id: req.auth.team_id,
-      origin: req.body.origin ?? "api",
-      integration: req.body.integration,
-      target_hint: req.body.query,
-      zeroDataRetention: isZDROrAnon ?? false, // not supported for search
-      api_key_id: req.acuc?.api_key_id ?? null,
-    });
+    if (!agentRequestId) {
+      await logRequest({
+        id: jobId,
+        kind: "search",
+        api_version: "v2",
+        team_id: req.auth.team_id,
+        origin: req.body.origin ?? "api",
+        integration: req.body.integration,
+        target_hint: req.body.query,
+        zeroDataRetention: isZDROrAnon ?? false, // not supported for search
+        api_key_id: req.acuc?.api_key_id ?? null,
+      });
+    }
 
     let limit = req.body.limit;
 
@@ -384,10 +405,10 @@ export async function searchController(
         origin: req.body.origin,
         timeout: req.body.timeout,
         scrapeOptions: bodyScrapeOptions,
-        bypassBilling: !isAsyncScraping, // Async mode bills per job, sync mode bills manually
+        bypassBilling: !isAsyncScraping || !shouldBill, // Async mode bills per job, sync mode bills manually
         apiKeyId: req.acuc?.api_key_id ?? null,
         zeroDataRetention: isZDROrAnon,
-        requestId: jobId,
+        requestId: agentRequestId ?? jobId,
       };
 
       const directToBullMQ = (req.acuc?.price_credits ?? 0) <= 3000;
@@ -707,7 +728,7 @@ export async function searchController(
     logSearch(
       {
         id: jobId,
-        request_id: jobId,
+        request_id: agentRequestId ?? jobId,
         query: req.body.query,
         is_successful: true,
         error: undefined,
@@ -716,7 +737,7 @@ export async function searchController(
         time_taken: timeTakenInSeconds,
         team_id: req.auth.team_id,
         options: req.body,
-        credits_cost: credits_billed,
+        credits_cost: shouldBill ? credits_billed : 0,
         zeroDataRetention: isZDROrAnon ?? false, // not supported
       },
       false,

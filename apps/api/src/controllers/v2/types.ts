@@ -1623,6 +1623,13 @@ export const searchRequestSchema = z
           }, "You may only specify one screenshot format"),
       })
       .optional(),
+    __agentInterop: z
+      .object({
+        auth: z.string(),
+        requestId: z.string(),
+        shouldBill: z.boolean(),
+      })
+      .optional(),
   })
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
