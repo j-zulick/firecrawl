@@ -779,6 +779,13 @@ const batchScrapeRequestSchemaBase = baseScrapeOptions.extend({
   ignoreInvalidURLs: z.boolean().prefault(true),
   maxConcurrency: z.int().positive().optional(),
   zeroDataRetention: z.boolean().optional(),
+  __agentInterop: z
+    .object({
+      auth: z.string(),
+      requestId: z.string(),
+      shouldBill: z.boolean(),
+    })
+    .optional(),
 });
 
 export const batchScrapeRequestSchema = strictWithMessage(
@@ -796,6 +803,13 @@ const batchScrapeRequestSchemaNoURLValidationBase = baseScrapeOptions.extend({
   ignoreInvalidURLs: z.boolean().prefault(true),
   maxConcurrency: z.int().positive().optional(),
   zeroDataRetention: z.boolean().optional(),
+  __agentInterop: z
+    .object({
+      auth: z.string(),
+      requestId: z.string(),
+      shouldBill: z.boolean(),
+    })
+    .optional(),
 });
 
 export const batchScrapeRequestSchemaNoURLValidation = strictWithMessage(

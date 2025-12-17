@@ -51,6 +51,22 @@ export async function batchScrapeController(
   const zeroDataRetention =
     req.acuc?.flags?.forceZDR || (req.body.zeroDataRetention ?? false);
 
+  if (
+    req.body.__agentInterop &&
+    config.AGENT_INTEROP_SECRET &&
+    req.body.__agentInterop.auth !== config.AGENT_INTEROP_SECRET
+  ) {
+    return res.status(403).json({
+      success: false,
+      error: "Invalid agent interop.",
+    });
+  } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
+    return res.status(403).json({
+      success: false,
+      error: "Agent interop is not enabled.",
+    });
+  }
+
   const id = req.body.appendToId ?? uuidv7();
   const logger = _logger.child({
     crawlId: id,
@@ -183,6 +199,8 @@ export async function batchScrapeController(
       origin: "api",
       integration: req.body.integration,
       crawl_id: id,
+      requestId: req.body.__agentInterop?.requestId ?? undefined,
+      bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
       sitemapped: true,
       v1: true,
       webhook: req.body.webhook,
