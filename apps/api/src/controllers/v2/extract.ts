@@ -89,6 +89,7 @@ export async function extractController(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${config.AGENT_INTEROP_SECRET}`,
         },
         body: JSON.stringify({
           id: extractId,

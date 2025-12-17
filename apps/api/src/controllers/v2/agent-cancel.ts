@@ -33,6 +33,9 @@ export async function agentCancelController(
     config.EXTRACT_V3_BETA_URL + "/internal/extracts/" + req.params.jobId,
     {
       method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${config.AGENT_INTEROP_SECRET}`,
+      },
     },
   );
 
