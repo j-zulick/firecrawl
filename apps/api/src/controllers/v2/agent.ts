@@ -107,6 +107,7 @@ export async function agentController(
         apiKeyId: req.acuc!.api_key_id ?? undefined,
         teamId: req.auth.team_id,
         isFreeRequest,
+        maxCredits: req.body.maxCredits ?? undefined,
       }),
     },
   );

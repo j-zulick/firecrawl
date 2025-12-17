@@ -770,6 +770,7 @@ class FirecrawlClient:
             prompt: Natural-language instruction for the agent
             schema: Target JSON schema for the output
             integration: Integration tag/name
+            max_credits: Maximum credits to use (optional)
         Returns:
             Response payload with job id/status (poll with get_agent_status)
         """
@@ -779,6 +780,7 @@ class FirecrawlClient:
             prompt=prompt,
             schema=schema,
             integration=integration,
+            max_credits=max_credits,
         )
 
     def agent(
@@ -790,6 +792,7 @@ class FirecrawlClient:
         integration: Optional[str] = None,
         poll_interval: int = 2,
         timeout: Optional[int] = None,
+        max_credits: Optional[int] = None,
     ):
         """Run an agent and wait until completion.
 
@@ -800,6 +803,7 @@ class FirecrawlClient:
             integration: Integration tag/name
             poll_interval: Seconds between status checks
             timeout: Maximum seconds to wait (None for no timeout)
+            max_credits: Maximum credits to use (optional)
         Returns:
             Final agent response when completed
         """
@@ -811,6 +815,7 @@ class FirecrawlClient:
             integration=integration,
             poll_interval=poll_interval,
             timeout=timeout,
+            max_credits=max_credits,
         )
 
     def get_agent_status(self, job_id: str):

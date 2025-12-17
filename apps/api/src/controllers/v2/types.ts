@@ -730,6 +730,7 @@ export const agentRequestSchema = z.strictObject({
     ),
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
+  maxCredits: z.number().optional(),
   overrideWhitelist: z.string().optional(),
 });
 
