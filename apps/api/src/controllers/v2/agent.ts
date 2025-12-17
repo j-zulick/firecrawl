@@ -104,6 +104,8 @@ export async function agentController(
         schema: req.body.schema,
         prompt: req.body.prompt,
         apiKey: req.acuc!.api_key,
+        apiKeyId: req.acuc!.api_key_id ?? undefined,
+        teamId: req.auth.team_id,
         isFreeRequest,
       }),
     },
