@@ -9,7 +9,10 @@ import {
 import { logger as _logger } from "../../lib/logger";
 import { logRequest } from "../../services/logging/log_job";
 import { config } from "../../config";
-import { supabase_service } from "../../services/supabase";
+import {
+  supabase_acuc_only_service,
+  supabase_service,
+} from "../../services/supabase";
 
 export async function agentController(
   req: RequestWithAuth<{}, AgentResponse, AgentRequest>,
@@ -67,10 +70,16 @@ export async function agentController(
     });
   }
 
-  const { data: freeRequest, error: freeRequestError } =
-    await supabase_service.rpc("agent_consume_free_request_if_left", {
+  const client = !!config.SUPABASE_ACUC_URL
+    ? supabase_acuc_only_service
+    : supabase_service;
+
+  const { data: freeRequest, error: freeRequestError } = await client.rpc(
+    "agent_consume_free_request_if_left",
+    {
       i_team_id: req.auth.team_id,
-    });
+    },
+  );
 
   if (freeRequestError) {
     throw freeRequestError;
