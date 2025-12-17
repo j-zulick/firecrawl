@@ -52,7 +52,14 @@ export async function agentController(
     });
   }
 
-  if (!req.acuc?.flags?.extractV3Beta && !req.acuc?.flags?.agentBeta) {
+  if (
+    !req.acuc?.flags?.extractV3Beta &&
+    !req.acuc?.flags?.agentBeta &&
+    !(
+      config.AGENT_INTEROP_SECRET &&
+      req.body.overrideWhitelist === config.AGENT_INTEROP_SECRET
+    )
+  ) {
     return res.status(400).json({
       success: false,
       error:
