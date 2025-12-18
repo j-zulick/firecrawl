@@ -46,25 +46,7 @@ export async function agentController(
   });
 
   if (!config.EXTRACT_V3_BETA_URL) {
-    return res.status(400).json({
-      success: false,
-      error: "Agent beta is not enabled.",
-    });
-  }
-
-  if (
-    !req.acuc?.flags?.extractV3Beta &&
-    !req.acuc?.flags?.agentBeta &&
-    !(
-      config.AGENT_INTEROP_SECRET &&
-      req.body.overrideWhitelist === config.AGENT_INTEROP_SECRET
-    )
-  ) {
-    return res.status(400).json({
-      success: false,
-      error:
-        "Agent beta is not enabled for your team. Please contact support@firecrawl.com to join the beta.",
-    });
+    throw new Error("Agent beta is not enabled.");
   }
 
   let freeRequest: any;
