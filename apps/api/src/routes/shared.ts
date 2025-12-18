@@ -20,12 +20,24 @@ import { isSelfHosted } from "../lib/deployment";
 import { validate as isUuid } from "uuid";
 
 import { config } from "../config";
+import { supabase_service } from "../services/supabase";
 export function checkCreditsMiddleware(
   _minimum?: number,
 ): (req: RequestWithAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
     let minimum = _minimum;
     (async () => {
+      if (
+        config.AGENT_INTEROP_SECRET &&
+        req.body &&
+        (req.body as any).__agentInterop &&
+        (req.body as any).__agentInterop.auth &&
+        (req.body as any).__agentInterop.auth === config.AGENT_INTEROP_SECRET &&
+        (req.body as any).__agentInterop.shouldBill === false
+      ) {
+        return next();
+      }
+
       if (!minimum && req.body) {
         minimum = Number(
           (req.body as any)?.limit ?? (req.body as any)?.urls?.length ?? 1,
@@ -34,6 +46,29 @@ export function checkCreditsMiddleware(
           minimum = undefined;
         }
       }
+
+      if (req.path.startsWith("/v2/agent")) {
+        if (config.USE_DB_AUTHENTICATION) {
+          const { data, error: freeRequestError } = await supabase_service.rpc(
+            "get_agent_free_requests_left",
+            {
+              i_team_id: req.auth.team_id,
+            },
+          );
+
+          if (freeRequestError) {
+            logger.warn("Failed to get agent free requests left", {
+              error: freeRequestError,
+              teamId: req.auth.team_id,
+            });
+          } else {
+            if (data?.[0]?.free_requests_left !== 0) {
+              return next();
+            }
+          }
+        }
+      }
+
       const { success, remainingCredits, chunk } = await checkTeamCredits(
         req.acuc ?? null,
         req.auth.team_id,
