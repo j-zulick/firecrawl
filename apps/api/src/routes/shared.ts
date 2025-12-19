@@ -47,7 +47,7 @@ export function checkCreditsMiddleware(
         }
       }
 
-      if (req.path.startsWith("/v2/agent")) {
+      if (req.path.startsWith("/agent")) {
         if (config.USE_DB_AUTHENTICATION) {
           const { data, error: freeRequestError } = await supabase_service.rpc(
             "get_agent_free_requests_left",
