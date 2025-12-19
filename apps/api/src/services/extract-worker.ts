@@ -184,6 +184,9 @@ const app = Express();
 app.get("/health", (req, res) => {
   res.status(200).json({ ok: true });
 });
+app.get("/liveness", (req, res) => {
+  res.status(200).json({ ok: true });
+});
 
 const workerPort = config.EXTRACT_WORKER_PORT || config.PORT;
 app.listen(workerPort, () => {
