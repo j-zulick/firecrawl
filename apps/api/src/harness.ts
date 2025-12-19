@@ -14,6 +14,10 @@ let nuqPostgresContainer: {
   containerName: string;
   containerRuntime: string;
 } | null = null;
+let nuqRabbitMQContainer: {
+  containerName: string;
+  containerRuntime: string;
+} | null = null;
 
 // Get the monorepo root (apps/api/dist/src -> ../../../..)
 // __dirname is available in CommonJS (which this compiles to)
@@ -34,6 +38,10 @@ interface Services {
   indexWorker?: ProcessResult;
   command?: ProcessResult;
   nuqPostgres?: {
+    containerName: string;
+    containerRuntime: string;
+  };
+  nuqRabbitMQ?: {
     containerName: string;
     containerRuntime: string;
   };
@@ -558,6 +566,106 @@ async function setupNuqPostgres(): Promise<Services["nuqPostgres"]> {
   return containerInfo;
 }
 
+async function startNuqRabbitMQContainer(
+  runtime: string,
+  containerName: string,
+): Promise<void> {
+  logger.info(`Starting RabbitMQ container: ${containerName}`);
+  const start = execForward(
+    `${runtime}@start`,
+    `${runtime} run -d --name ${containerName} -p 5672:5672 -p 15672:15672 rabbitmq:3-management`,
+  );
+  await start.promise;
+  logger.success(`RabbitMQ container started: ${containerName}`);
+}
+
+async function waitForRabbitMQ(
+  host: string,
+  port: number,
+  timeoutMs: number = config.HARNESS_STARTUP_TIMEOUT_MS,
+): Promise<void> {
+  logger.info("Waiting for RabbitMQ to be ready...");
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      // Try to connect to RabbitMQ using amqplib
+      const amqp = await import("amqplib");
+      const connection = await amqp.connect(`amqp://${host}:${port}`, {
+        timeout: 2000,
+      });
+      await connection.close();
+
+      logger.success("RabbitMQ is ready");
+      return;
+    } catch (e) {
+      // Not ready yet, wait and retry
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+
+  throw new Error(`RabbitMQ did not become ready within ${timeoutMs}ms`);
+}
+
+async function setupNuqRabbitMQ(): Promise<Services["nuqRabbitMQ"]> {
+  // If NUQ_RABBITMQ_URL is already set, respect it (user's explicit choice)
+  if (config.NUQ_RABBITMQ_URL) {
+    logger.info("NUQ_RABBITMQ_URL is set, skipping container management");
+    return undefined;
+  }
+
+  // Check if we're running in docker-compose (POSTGRES_HOST is set and not localhost)
+  const isDockerCompose = POSTGRES_HOST !== "localhost";
+
+  if (isDockerCompose) {
+    // Running in docker-compose: RabbitMQ should be configured externally
+    logger.info(
+      "Running in docker-compose, skipping RabbitMQ container management",
+    );
+    return undefined;
+  }
+
+  // Running locally: manage container
+  logger.section("Setting up NUQ RabbitMQ container");
+
+  const runtime = await detectContainerRuntime();
+  if (!runtime) {
+    throw new Error(
+      "Neither Docker nor Podman found. Please install Docker/Podman or set NUQ_RABBITMQ_URL manually.",
+    );
+  }
+
+  logger.success(`Using container runtime: ${runtime}`);
+
+  const containerName = "firecrawl-nuq-rabbitmq";
+
+  // Stop and remove any existing container
+  await stopAndRemoveContainer(runtime, containerName);
+
+  // Start the container (using stock image, no build needed)
+  await startNuqRabbitMQContainer(runtime, containerName);
+
+  // Wait for RabbitMQ to be ready
+  await waitForRabbitMQ("localhost", 5672);
+
+  // Set environment variables for the services
+  const rabbitUrl = "amqp://localhost:5672";
+  config.NUQ_RABBITMQ_URL = rabbitUrl;
+  process.env.NUQ_RABBITMQ_URL = rabbitUrl;
+
+  logger.success("NUQ RabbitMQ container is ready");
+
+  const containerInfo = {
+    containerName,
+    containerRuntime: runtime,
+  };
+
+  // Store globally for graceful shutdown
+  nuqRabbitMQContainer = containerInfo;
+
+  return containerInfo;
+}
+
 async function installDependencies() {
   logger.section("Installing dependencies");
 
@@ -603,6 +711,9 @@ async function installDependencies() {
 async function startServices(command?: string[]): Promise<Services> {
   // Setup NUQ PostgreSQL container if needed
   const nuqPostgres = await setupNuqPostgres();
+
+  // Setup NUQ RabbitMQ container if needed
+  const nuqRabbitMQ = await setupNuqRabbitMQ();
 
   logger.section("Starting services");
 
@@ -655,20 +766,18 @@ async function startServices(command?: string[]): Promise<Services> {
     ),
   );
 
-  const nuqPrefetchWorker = config.NUQ_RABBITMQ_URL
-    ? execForward(
-        "nuq-prefetch-worker",
-        process.argv[2] === "--start-docker"
-          ? "node dist/src/services/worker/nuq-prefetch-worker.js"
-          : "pnpm nuq-prefetch-worker:production",
-        {
-          NUQ_PREFETCH_WORKER_PORT: String(NUQ_PREFETCH_WORKER_PORT),
-          NUQ_REDUCE_NOISE: "true",
-          NUQ_POD_NAME: "nuq-prefetch-worker-0",
-          NUQ_PREFETCH_REPLICAS: String(1),
-        },
-      )
-    : undefined;
+  const nuqPrefetchWorker = execForward(
+    "nuq-prefetch-worker",
+    process.argv[2] === "--start-docker"
+      ? "node dist/src/services/worker/nuq-prefetch-worker.js"
+      : "pnpm nuq-prefetch-worker:production",
+    {
+      NUQ_PREFETCH_WORKER_PORT: String(NUQ_PREFETCH_WORKER_PORT),
+      NUQ_REDUCE_NOISE: "true",
+      NUQ_POD_NAME: "nuq-prefetch-worker-0",
+      NUQ_PREFETCH_REPLICAS: String(1),
+    },
+  );
 
   const indexWorker = config.USE_DB_AUTHENTICATION
     ? execForward(
@@ -708,6 +817,7 @@ async function startServices(command?: string[]): Promise<Services> {
     extractWorker,
     command: commandProcess,
     nuqPostgres,
+    nuqRabbitMQ,
   };
 }
 
@@ -740,6 +850,16 @@ async function stopDevelopmentServices(services: Services) {
       services.nuqPostgres.containerName,
     );
     logger.success("NUQ PostgreSQL container stopped");
+  }
+
+  // Stop and remove NUQ RabbitMQ container if it was started by harness
+  if (services.nuqRabbitMQ) {
+    logger.info("Stopping NUQ RabbitMQ container");
+    await stopAndRemoveContainer(
+      services.nuqRabbitMQ.containerRuntime,
+      services.nuqRabbitMQ.containerName,
+    );
+    logger.success("NUQ RabbitMQ container stopped");
   }
 }
 
@@ -902,6 +1022,17 @@ async function gracefulShutdown() {
     );
     logger.success("NUQ PostgreSQL container stopped");
     nuqPostgresContainer = null;
+  }
+
+  // Stop and remove NUQ RabbitMQ container if it was started by harness
+  if (nuqRabbitMQContainer) {
+    logger.info("Stopping NUQ RabbitMQ container");
+    await stopAndRemoveContainer(
+      nuqRabbitMQContainer.containerRuntime,
+      nuqRabbitMQContainer.containerName,
+    );
+    logger.success("NUQ RabbitMQ container stopped");
+    nuqRabbitMQContainer = null;
   }
 
   logger.success("All processes terminated");

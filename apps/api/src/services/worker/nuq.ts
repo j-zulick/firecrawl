@@ -264,37 +264,59 @@ class NuQ<JobData = any, JobReturnValue = any> {
     connection: amqp.ChannelModel;
     channel: amqp.Channel;
   } | null = null;
+  private senderStarting = false;
 
   private async startSender() {
-    if (this.sender || this.shuttingDown) return;
+    if (this.sender || this.shuttingDown || this.senderStarting) return;
+    this.senderStarting = true;
 
-    if (config.NUQ_RABBITMQ_URL) {
-      const connection = await amqp.connect(config.NUQ_RABBITMQ_URL);
-      const channel = await connection.createChannel();
-      await channel.assertQueue(this.queueName + ".prefetch", {
-        durable: true,
-        arguments: {
-          "x-queue-type": "quorum",
-          "x-max-length": 20000,
-        },
-      });
+    try {
+      if (config.NUQ_RABBITMQ_URL) {
+        const connection = await amqp.connect(config.NUQ_RABBITMQ_URL);
+        const channel = await connection.createChannel();
+        await channel.assertQueue(this.queueName + ".prefetch", {
+          durable: true,
+          arguments: {
+            "x-queue-type": "quorum",
+            "x-max-length": 20000,
+          },
+        });
 
-      this.sender = {
-        type: "rabbitmq",
-        connection,
-        channel,
-      };
+        this.sender = {
+          type: "rabbitmq",
+          connection,
+          channel,
+        };
 
-      channel.on("close", () => {
-        logger.info("NuQ sender channel closed", { module: "nuq/rabbitmq" });
-        connection.close().catch(() => {});
-        this.sender = null;
-      });
+        channel.on("close", () => {
+          logger.info("NuQ sender channel closed", { module: "nuq/rabbitmq" });
+          connection.close().catch(() => {});
+          this.sender = null;
+        });
 
-      connection.on("close", () => {
-        logger.info("NuQ sender connection closed", { module: "nuq/rabbitmq" });
-        this.sender = null;
-      });
+        channel.on("error", err => {
+          logger.error("NuQ sender channel error", {
+            module: "nuq/rabbitmq",
+            err,
+          });
+        });
+
+        connection.on("close", () => {
+          logger.info("NuQ sender connection closed", {
+            module: "nuq/rabbitmq",
+          });
+          this.sender = null;
+        });
+
+        connection.on("error", err => {
+          logger.error("NuQ sender connection error", {
+            module: "nuq/rabbitmq",
+            err,
+          });
+        });
+      }
+    } finally {
+      this.senderStarting = false;
     }
   }
 
@@ -1199,14 +1221,23 @@ class NuQ<JobData = any, JobReturnValue = any> {
         await this.startSender();
 
         if (this.sender) {
-          const job = await this.sender.channel.get(
-            this.queueName + ".prefetch",
-            { noAck: true },
-          );
-          if (job !== false) {
-            return this.rowToJob(JSON.parse(job.content.toString()));
-          } else {
-            return null;
+          try {
+            const job = await this.sender.channel.get(
+              this.queueName + ".prefetch",
+              { noAck: true },
+            );
+            if (job !== false) {
+              return this.rowToJob(JSON.parse(job.content.toString()));
+            } else {
+              return null;
+            }
+          } catch (err) {
+            logger.warn("NuQ sender get failed, falling back to postgres", {
+              module: "nuq/rabbitmq",
+              err,
+            });
+            // Reset sender so it can be re-established on next call
+            this.sender = null;
           }
         } else {
           logger.warn("NuQ sender not started, falling back to postgres", {

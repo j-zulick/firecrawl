@@ -3,8 +3,8 @@ import { config } from "../config";
 import { logger } from "../lib/logger";
 import IORedis from "ioredis";
 import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
+import { addExtractJob, ExtractJobData } from "./extract-queue";
 
-let extractQueue: Queue;
 let loggingQueue: Queue;
 let indexQueue: Queue;
 let deepResearchQueue: Queue;
@@ -25,27 +25,16 @@ export function getRedisConnection(): IORedis {
   return redisConnection;
 }
 
-const extractQueueName = "{extractQueue}";
 const generateLlmsTxtQueueName = "{generateLlmsTxtQueue}";
 const deepResearchQueueName = "{deepResearchQueue}";
 const billingQueueName = "{billingQueue}";
 export const precrawlQueueName = "{precrawlQueue}";
 
-export function getExtractQueue() {
-  if (!extractQueue) {
-    extractQueue = new Queue(extractQueueName, {
-      connection: getRedisConnection(),
-      defaultJobOptions: {
-        removeOnComplete: {
-          age: 90000, // 25 hours
-        },
-        removeOnFail: {
-          age: 90000, // 25 hours
-        },
-      },
-    });
-  }
-  return extractQueue;
+export async function addExtractJobToQueue(
+  extractId: string,
+  data: ExtractJobData,
+): Promise<void> {
+  await addExtractJob(extractId, data);
 }
 
 export function getGenerateLlmsTxtQueue() {

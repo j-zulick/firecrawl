@@ -6,7 +6,7 @@ import {
   extractRequestSchema,
   ExtractResponse,
 } from "./types";
-import { getExtractQueue } from "../../services/queue-service";
+import { addExtractJobToQueue } from "../../services/queue-service";
 import { saveExtract } from "../../lib/extract/extract-redis";
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
@@ -158,8 +158,9 @@ export async function extractController(
     zeroDataRetention: req.acuc?.flags?.forceZDR,
   });
 
-  await getExtractQueue().add(extractId, jobData, {
-    jobId: extractId,
+  await addExtractJobToQueue(extractId, {
+    ...jobData,
+    apiKeyId: req.acuc?.api_key_id ?? undefined,
   });
 
   return res.status(200).json({

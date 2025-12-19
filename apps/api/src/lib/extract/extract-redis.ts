@@ -144,3 +144,24 @@ export async function getExtractExpiry(id: string): Promise<Date> {
   d.setMilliseconds(0);
   return d;
 }
+
+// Result data storage (fallback when GCS is not configured)
+const EXTRACT_RESULT_TTL = 24 * 60 * 60; // 24 hours
+
+export async function saveExtractResult(
+  id: string,
+  result: any,
+): Promise<void> {
+  _logger.debug("Saving extract result " + id + " to Redis...");
+  await redisEvictConnection.set(
+    "extract_result:" + id,
+    JSON.stringify(result),
+    "EX",
+    EXTRACT_RESULT_TTL,
+  );
+}
+
+export async function getExtractResult(id: string): Promise<any | null> {
+  const x = await redisEvictConnection.get("extract_result:" + id);
+  return x ? JSON.parse(x) : null;
+}

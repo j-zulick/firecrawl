@@ -6,7 +6,7 @@ import {
   extractRequestSchema,
   ExtractResponse,
 } from "./types";
-import { getExtractQueue } from "../../services/queue-service";
+import { addExtractJobToQueue } from "../../services/queue-service";
 import { saveExtract } from "../../lib/extract/extract-redis";
 import { getTeamIdSyncB } from "../../lib/extract/team-id-sync";
 import {
@@ -209,9 +209,7 @@ export async function extractController(
     zeroDataRetention: req.acuc?.flags?.forceZDR,
   });
 
-  await getExtractQueue().add(extractId, jobData, {
-    jobId: extractId,
-  });
+  await addExtractJobToQueue(extractId, jobData);
 
   return res.status(200).json({
     success: true,
