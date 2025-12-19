@@ -71,6 +71,11 @@ class V2Proxy:
             self.start_extract = client_instance.start_extract
             self.get_extract_status = client_instance.get_extract_status
 
+            self.agent = client_instance.agent
+            self.start_agent = client_instance.start_agent
+            self.get_agent_status = client_instance.get_agent_status
+            self.cancel_agent = client_instance.cancel_agent
+
             self.start_batch_scrape = client_instance.start_batch_scrape
             self.get_batch_scrape_status = client_instance.get_batch_scrape_status
             self.cancel_batch_scrape = client_instance.cancel_batch_scrape
@@ -131,6 +136,11 @@ class AsyncV2Proxy:
             self.extract = client_instance.extract
             self.start_extract = client_instance.start_extract
             self.get_extract_status = client_instance.get_extract_status
+
+            self.agent = client_instance.agent
+            self.start_agent = client_instance.start_agent
+            self.get_agent_status = client_instance.get_agent_status
+            self.cancel_agent = client_instance.cancel_agent
 
             self.start_batch_scrape = client_instance.start_batch_scrape
             self.get_batch_scrape_status = client_instance.get_batch_scrape_status
@@ -203,6 +213,11 @@ class Firecrawl:
         self.get_extract_status = self._v2_client.get_extract_status
         self.extract = self._v2_client.extract
 
+        self.start_agent = self._v2_client.start_agent
+        self.get_agent_status = self._v2_client.get_agent_status
+        self.cancel_agent = self._v2_client.cancel_agent
+        self.agent = self._v2_client.agent
+
         self.get_concurrency = self._v2_client.get_concurrency
         self.get_credit_usage = self._v2_client.get_credit_usage
         self.get_token_usage = self._v2_client.get_token_usage
@@ -248,6 +263,11 @@ class AsyncFirecrawl:
         self.start_extract = self._v2_client.start_extract
         self.get_extract_status = self._v2_client.get_extract_status
         self.extract = self._v2_client.extract
+
+        self.start_agent = self._v2_client.start_agent
+        self.get_agent_status = self._v2_client.get_agent_status
+        self.cancel_agent = self._v2_client.cancel_agent
+        self.agent = self._v2_client.agent
 
         self.get_concurrency = self._v2_client.get_concurrency
         self.get_credit_usage = self._v2_client.get_credit_usage
