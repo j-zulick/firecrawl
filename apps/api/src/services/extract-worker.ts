@@ -5,10 +5,7 @@ import { setSentryServiceTag } from "./sentry";
 import * as Sentry from "@sentry/node";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
-import {
-  ExtractResult,
-  performExtraction,
-} from "../lib/extract/extraction-service";
+import { ExtractResult } from "../lib/extract/extraction-service";
 import { updateExtract } from "../lib/extract/extract-redis";
 import { performExtraction_F0 } from "../lib/extract/fire-0/extraction-service-f0";
 import { createWebhookSender, WebhookEvent } from "./webhook";
@@ -55,22 +52,12 @@ const processExtractJob = async (
 
     let result: ExtractResult | null = null;
 
-    const model = data.request.agent?.model;
-    if (data.request.agent && model && model.toLowerCase().includes("fire-1")) {
-      result = await performExtraction(data.extractId, {
-        request: data.request,
-        teamId: data.teamId,
-        subId: data.subId ?? undefined,
-        apiKeyId: data.apiKeyId ?? null,
-      });
-    } else {
-      result = await performExtraction_F0(data.extractId, {
-        request: data.request,
-        teamId: data.teamId,
-        subId: data.subId ?? undefined,
-        apiKeyId: data.apiKeyId ?? null,
-      });
-    }
+    result = await performExtraction_F0(data.extractId, {
+      request: data.request,
+      teamId: data.teamId,
+      subId: data.subId ?? undefined,
+      apiKeyId: data.apiKeyId ?? null,
+    });
 
     if (result && result.success) {
       await updateExtract(data.extractId, {

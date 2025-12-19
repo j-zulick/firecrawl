@@ -9,10 +9,7 @@ import {
 import { addExtractJobToQueue } from "../../services/queue-service";
 import { saveExtract } from "../../lib/extract/extract-redis";
 import { getTeamIdSyncB } from "../../lib/extract/team-id-sync";
-import {
-  ExtractResult,
-  performExtraction,
-} from "../../lib/extract/extraction-service";
+import { ExtractResult } from "../../lib/extract/extraction-service";
 import { performExtraction_F0 } from "../../lib/extract/fire-0/extraction-service-f0";
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
@@ -59,22 +56,12 @@ async function oldExtract(
     } as V2ExtractRequest;
 
     let result: ExtractResult;
-    const model = req.body.agent?.model;
-    if (req.body.agent && model && model.toLowerCase().includes("fire-1")) {
-      result = await performExtraction(extractId, {
-        request,
-        teamId: req.auth.team_id,
-        subId: req.acuc?.sub_id ?? undefined,
-        apiKeyId: req.acuc?.api_key_id ?? null,
-      });
-    } else {
-      result = await performExtraction_F0(extractId, {
-        request,
-        teamId: req.auth.team_id,
-        subId: req.acuc?.sub_id ?? undefined,
-        apiKeyId: req.acuc?.api_key_id ?? null,
-      });
-    }
+    result = await performExtraction_F0(extractId, {
+      request,
+      teamId: req.auth.team_id,
+      subId: req.acuc?.sub_id ?? undefined,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+    });
 
     if (sender) {
       if (result.success) {

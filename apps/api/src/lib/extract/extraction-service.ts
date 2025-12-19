@@ -76,7 +76,7 @@ type completions = {
   sources?: string[];
 };
 
-export async function performExtraction(
+async function performExtraction(
   extractId: string,
   options: ExtractServiceOptions,
 ): Promise<ExtractResult> {
