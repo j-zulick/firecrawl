@@ -427,7 +427,9 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
         search.team_id === "preview" || search.team_id?.startsWith("preview_")
           ? previewTeamId
           : search.team_id,
-      options: search.zeroDataRetention ? null : search.options,
+      options: search.zeroDataRetention
+        ? { enterprise: search.options?.enterprise }
+        : search.options,
       credits_cost: search.credits_cost,
       is_successful: search.is_successful,
       error: search.zeroDataRetention ? null : (search.error ?? null),

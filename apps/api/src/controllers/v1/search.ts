@@ -20,7 +20,6 @@ import { logger as _logger } from "../../lib/logger";
 import type { Logger } from "winston";
 import { getJobPriority } from "../../lib/job-priority";
 import { CostTracking } from "../../lib/cost-tracking";
-import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
 import { supabase_service } from "../../services/supabase";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { ScrapeJobTimeoutError } from "../../lib/error";
@@ -137,11 +136,10 @@ async function scrapeSearchResult(
         internalOptions: {
           ...internalOptions,
           teamId: options.teamId,
-          bypassBilling: true,
+          bypassBilling: false, // Scrape jobs always bill themselves
           zeroDataRetention,
         },
         origin: options.origin,
-        is_scrape: true,
         startTime: Date.now(),
         zeroDataRetention,
         apiKeyId: options.apiKeyId,
@@ -377,59 +375,13 @@ export async function searchController(
         responseData.data = filteredDocs;
       }
 
-      const finalDocsForBilling = responseData.data;
-
-      const creditPromises = finalDocsForBilling.map(async finalDoc => {
-        const matchingDocWithCost = docsWithCostTracking.find(
-          item =>
-            item.document.metadata &&
-            finalDoc.metadata &&
-            item.document.metadata.scrapeId === finalDoc.metadata.scrapeId,
-        );
-
-        if (matchingDocWithCost) {
-          const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(
-            req.body.scrapeOptions,
-            req.body.timeout,
-            req.auth.team_id,
-          );
-          return await calculateCreditsToBeBilled(
-            scrapeOptions,
-            {
-              ...internalOptions,
-              teamId: req.auth.team_id,
-              bypassBilling: true,
-              zeroDataRetention: false,
-            },
-            matchingDocWithCost.document,
-            matchingDocWithCost.costTracking,
-            req.acuc?.flags ?? null,
-          );
-        } else {
-          return 1;
-        }
-      });
-
-      try {
-        const individualCredits = await Promise.all(creditPromises);
-        const scrapeCredits = individualCredits.reduce(
-          (sum, credit) => sum + credit,
-          0,
-        );
-
-        // Add search credits (same as when no scrape options are specified)
-        const searchCredits = Math.ceil(responseData.data.length / 10) * 2;
-
-        credits_billed = scrapeCredits + searchCredits;
-      } catch (error) {
-        logger.error("Error calculating credits for billing", { error });
-        credits_billed = responseData.data.length;
-      }
+      // Calculate search credits only - scrape jobs bill themselves
+      credits_billed = Math.ceil(responseData.data.length / 10) * 2;
 
       allDocsWithCostTracking = docsWithCostTracking;
     }
 
-    // Bill team once for all successful results
+    // Bill team for search credits only - scrape jobs handle their own billing
     if (!isSearchPreview) {
       billTeam(
         req.auth.team_id,

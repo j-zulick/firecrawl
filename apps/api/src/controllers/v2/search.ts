@@ -19,7 +19,6 @@ import { logger as _logger } from "../../lib/logger";
 import type { Logger } from "winston";
 import { getJobPriority } from "../../lib/job-priority";
 import { CostTracking } from "../../lib/cost-tracking";
-import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
 import { supabase_service } from "../../services/supabase";
 import { SearchV2Response } from "../../lib/entities";
 import { ScrapeJobTimeoutError } from "../../lib/error";
@@ -405,7 +404,7 @@ export async function searchController(
         origin: req.body.origin,
         timeout: req.body.timeout,
         scrapeOptions: bodyScrapeOptions,
-        bypassBilling: !isAsyncScraping || !shouldBill, // Async mode bills per job, sync mode bills manually
+        bypassBilling: !shouldBill, // Scrape jobs always bill themselves
         apiKeyId: req.acuc?.api_key_id ?? null,
         zeroDataRetention: isZDROrAnon,
         requestId: agentRequestId ?? jobId,
@@ -657,50 +656,19 @@ export async function searchController(
           });
         }
 
-        // Calculate credits
-        // bodyScrapeOptions is guaranteed to exist here because we're in the shouldScrape block
-        const creditPromises = allDocsWithCostTracking.map(
-          async docWithCost => {
-            return await calculateCreditsToBeBilled(
-              bodyScrapeOptions,
-              {
-                teamId: req.auth.team_id,
-                bypassBilling: true,
-                zeroDataRetention: isZDROrAnon,
-              },
-              docWithCost.document,
-              docWithCost.costTracking,
-              req.acuc?.flags ?? null,
-            );
-          },
-        );
-
-        try {
-          const individualCredits = await Promise.all(creditPromises);
-          const scrapeCredits = individualCredits.reduce(
-            (sum, credit) => sum + credit,
-            0,
-          );
-
-          const creditsPerTenResults = isZDR ? 10 : 2;
-          const searchCredits =
-            Math.ceil(totalResultsCount / 10) * creditsPerTenResults;
-
-          credits_billed = scrapeCredits + searchCredits;
-        } catch (error) {
-          logger.error("Error calculating credits for billing", { error });
-          credits_billed = totalResultsCount;
-        }
+        // Calculate search credits only - scrape jobs bill themselves
+        const creditsPerTenResults = isZDR ? 10 : 2;
+        credits_billed =
+          Math.ceil(totalResultsCount / 10) * creditsPerTenResults;
 
         // Update response with scraped data
         Object.assign(searchResponse, scrapedResponse);
       }
     }
 
-    // Bill team once for all successful results
-    // - For sync scraping: Bill based on actual scraped content
-    // - For async scraping: Jobs handle their own billing
-    // - For no scraping: Bill based on search results count
+    // Bill team for search credits only
+    // - Scrape jobs always handle their own billing (both sync and async)
+    // - Search job only bills for search costs (credits per 10 results)
     if (
       !isSearchPreview &&
       (!shouldScrape || (shouldScrape && !isAsyncScraping))
