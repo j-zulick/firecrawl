@@ -1229,6 +1229,7 @@ export type TeamFlags = {
   allowTeammateInvites?: boolean;
   crawlTtlHours?: number;
   ipWhitelist?: boolean;
+  bypassCreditChecks?: boolean;
 } | null;
 
 interface RequestWithMaybeACUC<

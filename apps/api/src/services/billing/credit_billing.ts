@@ -78,6 +78,16 @@ async function supaCheckTeamCredits(
     throw new Error("NULL ACUC passed to supaCheckTeamCredits");
   }
 
+  // If bypassCreditChecks flag is set, return success with infinite credits (infinitely graceful)
+  if (chunk.flags?.bypassCreditChecks) {
+    return {
+      success: true,
+      message: "Credit checks bypassed",
+      remainingCredits: Infinity,
+      chunk,
+    };
+  }
+
   const remainingCredits = chunk.price_should_be_graceful
     ? chunk.remaining_credits + chunk.price_credits
     : chunk.remaining_credits;
