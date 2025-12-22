@@ -33,6 +33,7 @@ export async function getLinksFromSitemap(
     maxAge = 0,
     zeroDataRetention,
     location,
+    headers,
   }: {
     sitemapUrl: string;
     urlsHandler(urls: string[]): unknown;
@@ -40,6 +41,7 @@ export async function getLinksFromSitemap(
     maxAge?: number;
     zeroDataRetention: boolean;
     location?: ScrapeOptions["location"];
+    headers?: Record<string, string>;
   },
   logger: Logger,
   crawlId: string,
@@ -64,7 +66,9 @@ export async function getLinksFromSitemap(
     const isGzip = sitemapUrl.toLowerCase().endsWith(".gz");
     if (isGzip) {
       try {
-        const { buffer } = await fetchFileToBuffer(sitemapUrl);
+        const { buffer } = await fetchFileToBuffer(sitemapUrl, false, {
+          headers,
+        });
         const decompressed = await gunzipAsync(buffer);
         content = decompressed.toString("utf-8");
       } catch (error) {
@@ -106,6 +110,7 @@ export async function getLinksFromSitemap(
             useMock: mock,
             maxAge,
             ...(location ? { location } : {}),
+            ...(headers ? { headers } : {}),
           }),
           {
             forceEngine,
@@ -209,6 +214,7 @@ export async function getLinksFromSitemap(
               mode,
               zeroDataRetention,
               location,
+              headers,
               maxAge,
             },
             logger,
@@ -241,6 +247,7 @@ export async function getLinksFromSitemap(
                 mode,
                 zeroDataRetention,
                 location,
+                headers,
                 maxAge,
               },
               logger,
@@ -289,6 +296,7 @@ export async function getLinksFromSitemap(
                 mode,
                 zeroDataRetention,
                 location,
+                headers,
                 maxAge,
               },
               logger,

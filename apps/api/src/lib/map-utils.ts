@@ -91,6 +91,7 @@ export async function getMapResults({
   flags,
   useIndex = true,
   location,
+  headers,
   maxFireEngineResults = MAX_FIRE_ENGINE_RESULTS,
   id: providedId,
 }: {
@@ -109,6 +110,7 @@ export async function getMapResults({
   flags: TeamFlags | null;
   useIndex?: boolean;
   location?: ScrapeOptions["location"];
+  headers?: Record<string, string>;
   maxFireEngineResults?: number;
   id?: string;
 }): Promise<MapResult> {
@@ -137,6 +139,7 @@ export async function getMapResults({
     },
     scrapeOptions: scrapeOptions.parse({
       ...(location ? { location } : {}),
+      ...(headers ? { headers } : {}),
     }),
     internalOptions: { teamId },
     team_id: teamId,

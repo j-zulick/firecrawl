@@ -548,6 +548,7 @@ export function crawlToCrawler(
     currentDiscoveryDepth: crawlerOptions?.currentDiscoveryDepth ?? 0,
     zeroDataRetention: (teamFlags?.forceZDR || sc.zeroDataRetention) ?? false,
     location: sc.scrapeOptions?.location,
+    headers: sc.scrapeOptions?.headers,
   });
 
   if (sc.robots !== undefined) {

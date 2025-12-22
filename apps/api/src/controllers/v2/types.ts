@@ -924,6 +924,7 @@ const mapRequestSchemaBase = crawlerOptions
     filterByPath: z.boolean().prefault(true),
     useIndex: z.boolean().prefault(true),
     location: locationSchema,
+    headers: z.record(z.string(), z.string()).optional(),
   });
 
 export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);

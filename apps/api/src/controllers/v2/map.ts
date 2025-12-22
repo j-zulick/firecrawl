@@ -91,6 +91,7 @@ export async function mapController(
         flags: req.acuc?.flags ?? null,
         useIndex: req.body.useIndex,
         location: req.body.location,
+        headers: req.body.headers,
         id: mapId,
       }),
       ...(req.body.timeout !== undefined

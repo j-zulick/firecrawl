@@ -97,6 +97,7 @@ export async function getMapResults({
   useIndex = true,
   timeout,
   location,
+  headers,
   id: providedId,
 }: {
   url: string;
@@ -116,6 +117,7 @@ export async function getMapResults({
   useIndex?: boolean;
   timeout?: number;
   location?: ScrapeOptions["location"];
+  headers?: Record<string, string>;
   id?: string;
 }): Promise<MapResult> {
   const id = providedId ?? uuidv7();
@@ -133,6 +135,7 @@ export async function getMapResults({
     },
     scrapeOptions: scrapeOptions.parse({
       ...(location ? { location } : {}),
+      ...(headers ? { headers } : {}),
     }),
     internalOptions: { teamId },
     team_id: teamId,
@@ -422,6 +425,7 @@ export async function mapController(
         useIndex: req.body.useIndex,
         timeout: req.body.timeout,
         location: req.body.location,
+        headers: req.body.headers,
         id: mapId,
       }),
       ...(req.body.timeout !== undefined
