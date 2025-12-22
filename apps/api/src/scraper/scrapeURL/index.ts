@@ -1120,15 +1120,18 @@ export async function scrapeURL(
         meta.logger.debug("scrapeURL index metrics", {
           module: "scrapeURL/index-metrics",
           timeTaken: Date.now() - startTime,
-          changeTracking: !!hasFormatOfType(
+          changeTrackingEnabled: !!hasFormatOfType(
             meta.options.formats,
             "changeTracking",
           ),
-          summary: !!hasFormatOfType(meta.options.formats, "summary"),
-          json: !!hasFormatOfType(meta.options.formats, "json"),
-          screenshot: !!hasFormatOfType(meta.options.formats, "screenshot"),
-          images: !!hasFormatOfType(meta.options.formats, "images"),
-          branding: !!hasFormatOfType(meta.options.formats, "branding"),
+          summaryEnabled: !!hasFormatOfType(meta.options.formats, "summary"),
+          jsonEnabled: !!hasFormatOfType(meta.options.formats, "json"),
+          screenshotEnabled: !!hasFormatOfType(
+            meta.options.formats,
+            "screenshot",
+          ),
+          imagesEnabled: !!hasFormatOfType(meta.options.formats, "images"),
+          brandingEnabled: !!hasFormatOfType(meta.options.formats, "branding"),
           pdfMaxPages: getPDFMaxPages(meta.options.parsers),
           maxAge: meta.options.maxAge,
           headers: meta.options.headers
@@ -1167,15 +1170,18 @@ export async function scrapeURL(
         meta.logger.debug("scrapeURL index metrics", {
           module: "scrapeURL/index-metrics",
           timeTaken: Date.now() - startTime,
-          changeTracking: !!hasFormatOfType(
+          changeTrackingEnabled: !!hasFormatOfType(
             meta.options.formats,
             "changeTracking",
           ),
-          summary: !!hasFormatOfType(meta.options.formats, "summary"),
-          json: !!hasFormatOfType(meta.options.formats, "json"),
-          screenshot: !!hasFormatOfType(meta.options.formats, "screenshot"),
-          images: !!hasFormatOfType(meta.options.formats, "images"),
-          branding: !!hasFormatOfType(meta.options.formats, "branding"),
+          summaryEnabled: !!hasFormatOfType(meta.options.formats, "summary"),
+          jsonEnabled: !!hasFormatOfType(meta.options.formats, "json"),
+          screenshotEnabled: !!hasFormatOfType(
+            meta.options.formats,
+            "screenshot",
+          ),
+          imagesEnabled: !!hasFormatOfType(meta.options.formats, "images"),
+          brandingEnabled: !!hasFormatOfType(meta.options.formats, "branding"),
           pdfMaxPages: getPDFMaxPages(meta.options.parsers),
           maxAge: meta.options.maxAge,
           headers: meta.options.headers
