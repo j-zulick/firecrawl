@@ -49,65 +49,9 @@ export async function extractController(
   });
 
   if (req.body.agent?.model === "v3-beta") {
-    if (!config.EXTRACT_V3_BETA_URL) {
-      throw new Error("Agent beta is not enabled.");
-    }
-
-    if (!req.body.prompt) {
-      return res.status(400).json({
-        success: false,
-        error: "Prompt is required for agent beta.",
-      });
-    }
-
-    await logRequest({
-      id: extractId,
-      kind: "agent",
-      api_version: "v2",
-      team_id: req.auth.team_id,
-      origin: req.body.origin ?? "api",
-      integration: req.body.integration,
-      target_hint: req.body.urls?.[0] ?? req.body.prompt ?? "",
-      zeroDataRetention: false, // not supported for extract
-      api_key_id: req.acuc?.api_key_id ?? null,
-    });
-
-    const passthrough = await fetch(
-      config.EXTRACT_V3_BETA_URL + "/internal/extracts",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${config.AGENT_INTEROP_SECRET}`,
-        },
-        body: JSON.stringify({
-          id: extractId,
-          urls: req.body.urls,
-          schema: req.body.schema,
-          prompt: req.body.prompt,
-        }),
-      },
-    );
-
-    if (passthrough.status !== 200) {
-      const text = await passthrough.text();
-
-      _logger.error("Failed to passthrough agent beta request.", {
-        status: passthrough.status,
-        text,
-        teamId: req.auth.team_id,
-        team_id: req.auth.team_id,
-        extractId,
-      });
-      return res.status(500).json({
-        success: false,
-        error: "Failed to passthrough agent beta request.",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      id: extractId,
+    return res.status(400).json({
+      success: false,
+      error: "Use the new /agent endpoint instead of passing agent.model=v3-beta into /extract.",
     });
   }
 
@@ -169,8 +113,8 @@ export async function extractController(
     urlTrace: [],
     ...(invalidURLs.length > 0 && req.body.ignoreInvalidURLs
       ? {
-          invalidURLs,
-        }
+        invalidURLs,
+      }
       : {}),
   });
 }
