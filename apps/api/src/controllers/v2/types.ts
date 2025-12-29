@@ -19,6 +19,7 @@ import {
 import type { InternalOptions } from "../../scraper/scrapeURL";
 import { ErrorCodes } from "../../lib/error";
 import Ajv from "ajv";
+import addFormats from "ajv-formats";
 import { integrationSchema } from "../../utils/integration";
 import { webhookSchema } from "../../services/webhook/schema";
 import { BrandingProfile } from "../../types/branding";
@@ -635,6 +636,8 @@ export type BaseScrapeOptions = z.infer<typeof baseScrapeOptions>;
 export type ScrapeOptions = BaseScrapeOptions;
 
 const ajv = new Ajv();
+const agentAjv = new Ajv();
+addFormats(agentAjv);
 
 const extractOptions = z
   .strictObject({
@@ -714,20 +717,23 @@ export const agentRequestSchema = z.strictObject({
   schema: z
     .any()
     .optional()
-    .refine(
-      val => {
-        if (!val) return true; // Allow undefined schema
-        try {
-          const validate = ajv.compile(val);
-          return typeof validate === "function";
-        } catch (e) {
-          return false;
-        }
-      },
-      {
-        error: "Invalid JSON schema.",
-      },
-    ),
+    .superRefine((val, ctx) => {
+      if (!val) return; // Allow undefined schema
+      try {
+        agentAjv.compile(val);
+      } catch (e) {
+        const message =
+          e instanceof Error
+            ? e.message
+            : typeof e === "string"
+              ? e
+              : "Unknown error";
+        ctx.addIssue({
+          code: "custom",
+          message: `Invalid JSON schema: ${message}`,
+        });
+      }
+    }),
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   maxCredits: z.number().optional(),
