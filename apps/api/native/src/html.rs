@@ -1,12 +1,18 @@
 use std::collections::{HashMap, HashSet};
 
+use std::sync::LazyLock;
+
 use kuchikiki::{iter::NodeEdge, parse_html, traits::TendrilSink, NodeRef};
 use napi_derive::napi;
 use nodesig::{get_node_signature, SignatureMode};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::task;
 use url::Url;
+
+static URL_REGEX: LazyLock<Regex> =
+  LazyLock::new(|| Regex::new(r#"url\(['"]?([^'")]+)['"]?\)"#).expect("URL_REGEX is a valid static regex pattern"));
 
 use crate::utils::to_napi_err;
 
@@ -860,6 +866,24 @@ fn _extract_images(
       if let Some(poster) = video.attributes.borrow().get("poster") {
         if let Ok(resolved) = resolve_image_url(poster) {
           images.insert(resolved);
+        }
+      }
+    }
+  }
+
+  // <... style="background: url(...)"> or <... style="background-image: url(...)">
+  if let Ok(elements) = document.select("[style*=\"background\"]") {
+    for element in elements {
+      if let Some(style) = element.attributes.borrow().get("style") {
+        for cap in URL_REGEX.captures_iter(style) {
+          if let Some(url_match) = cap.get(1) {
+            let url = url_match.as_str().trim();
+            if !url.is_empty() {
+              if let Ok(resolved) = resolve_image_url(url) {
+                images.insert(resolved);
+              }
+            }
+          }
         }
       }
     }
