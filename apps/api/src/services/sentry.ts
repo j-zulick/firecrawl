@@ -4,6 +4,7 @@ import { config } from "../config";
 import {
   AddFeatureError,
   RemoveFeatureError,
+  EngineError,
 } from "../scraper/scrapeURL/error";
 import { AbortManagerThrownError } from "../scraper/scrapeURL/lib/abortManager";
 
@@ -61,7 +62,8 @@ if (config.SENTRY_DSN) {
         if (
           error instanceof AddFeatureError ||
           error instanceof RemoveFeatureError ||
-          error instanceof AbortManagerThrownError
+          error instanceof AbortManagerThrownError ||
+          error instanceof EngineError
         ) {
           return null;
         }
