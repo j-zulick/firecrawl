@@ -7,6 +7,7 @@ import {
   EngineError,
 } from "../scraper/scrapeURL/error";
 import { AbortManagerThrownError } from "../scraper/scrapeURL/lib/abortManager";
+import { JobCancelledError } from "../lib/error";
 
 type CaptureContext = {
   tags?: Record<string, string>;
@@ -63,7 +64,8 @@ if (config.SENTRY_DSN) {
           error instanceof AddFeatureError ||
           error instanceof RemoveFeatureError ||
           error instanceof AbortManagerThrownError ||
-          error instanceof EngineError
+          error instanceof EngineError ||
+          error instanceof JobCancelledError
         ) {
           return null;
         }
@@ -74,6 +76,15 @@ if (config.SENTRY_DSN) {
         const errorCodeFromField = "code" in error ? String(error.code) : "";
         const errorMessage =
           error instanceof Error ? String(error.message || "") : "";
+
+        // Ignore cancellation errors (fallback for serialized errors)
+        if (
+          errorMessage === "Parent crawl/batch scrape was cancelled" ||
+          errorMessage.includes("Parent crawl/batch scrape was cancelled")
+        ) {
+          return null;
+        }
+
         const errorCodeFromMessage =
           errorCodeFromField ||
           (errorMessage.includes("|") ? errorMessage.split("|", 1)[0] : "");

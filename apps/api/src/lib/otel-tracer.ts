@@ -92,10 +92,6 @@ export async function withSpan<T>(
           message: error instanceof Error ? error.message : String(error),
         });
 
-        if (error instanceof Error) {
-          Sentry.captureException(error);
-        }
-
         throw error;
       }
     },

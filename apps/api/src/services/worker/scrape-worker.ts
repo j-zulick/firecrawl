@@ -53,6 +53,7 @@ import { getBillingQueue } from "../queue-service";
 import type { Logger } from "winston";
 import {
   CrawlDenialError,
+  JobCancelledError,
   RacedRedirectError,
   ScrapeJobTimeoutError,
   TransportableError,
@@ -197,7 +198,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     if (job.data.crawl_id) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
       if (sc && sc.cancelled) {
-        throw new Error("Parent crawl/batch scrape was cancelled");
+        throw new JobCancelledError();
       }
     }
 
@@ -591,9 +592,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     }
 
     const isEarlyTimeout = error instanceof ScrapeJobTimeoutError;
-    const isCancelled =
-      error instanceof Error &&
-      error.message === "Parent crawl/batch scrape was cancelled";
+    const isCancelled = error instanceof JobCancelledError;
 
     if (isEarlyTimeout) {
       logger.error(`🐂 Job timed out ${job.id}`);
@@ -1198,8 +1197,15 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
   } catch (error) {
     logger.warn("Job failed", { error });
 
-    // Filter out TransportableErrors (flow control)
-    if (!(error instanceof TransportableError)) {
+    // Filter out expected errors (flow control, not real errors)
+    if (
+      error instanceof TransportableError ||
+      error instanceof JobCancelledError ||
+      error instanceof RacedRedirectError ||
+      error instanceof ScrapeJobTimeoutError
+    ) {
+      // These are expected flow control errors, don't send to Sentry
+    } else {
       captureExceptionWithZdrCheck(error, {
         extra: { zeroDataRetention: job.data.zeroDataRetention ?? false },
       });
