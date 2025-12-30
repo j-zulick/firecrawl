@@ -443,8 +443,15 @@ export async function extractData({
       // console.log("scrapedPages", scrapedPages);
       const htmls = scrapedPages.flat().map(page => page.html);
       // console.log("htmls", htmls);
+      const requestId = extractId || scrapeId;
       const markdowns = await Promise.all(
-        htmls.map(async html => await parseMarkdown(html)),
+        htmls.map(
+          async html =>
+            await parseMarkdown(html, {
+              logger,
+              requestId,
+            }),
+        ),
       );
       // console.log("markdowns", markdowns);
       extractedData = await Promise.all(

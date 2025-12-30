@@ -98,7 +98,12 @@ async function deriveMarkdownFromHTML(
     return document;
   }
 
-  document.markdown = await parseMarkdown(document.html);
+  // Use scrape ID or crawl ID as request_id for tracing
+  const requestId = meta.id || meta.internalOptions.crawlId;
+  document.markdown = await parseMarkdown(document.html, {
+    logger: meta.logger,
+    requestId,
+  });
 
   if (
     meta.options.onlyMainContent === true &&
@@ -117,7 +122,10 @@ async function deriveMarkdownFromHTML(
     };
 
     document = await deriveHTMLFromRawHTML(fallbackMeta, document);
-    document.markdown = await parseMarkdown(document.html);
+    document.markdown = await parseMarkdown(document.html, {
+      logger: meta.logger,
+      requestId,
+    });
 
     meta.logger.info("Fallback to full content extraction completed", {
       markdownLength: document.markdown?.length || 0,
