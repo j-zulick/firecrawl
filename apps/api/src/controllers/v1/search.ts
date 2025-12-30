@@ -256,6 +256,7 @@ export async function searchController(
   let responseData: SearchResponse = {
     success: true,
     data: [],
+    id: jobId,
   };
   const middlewareTime = controllerStartTime - middlewareStartTime;
   const isSearchPreview =

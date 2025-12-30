@@ -1528,6 +1528,7 @@ export type SearchResponse =
       success: true;
       warning?: string;
       data: Document[];
+      id: string;
     };
 
 export type TokenUsage = {

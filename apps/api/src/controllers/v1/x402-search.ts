@@ -199,6 +199,7 @@ export async function x402SearchController(
   let responseData: SearchResponse = {
     success: true,
     data: [],
+    id: jobId,
   };
   const startTime = new Date().getTime();
   const isSearchPreview =

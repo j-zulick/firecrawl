@@ -608,6 +608,7 @@ export async function searchController(
           data: searchResponse,
           scrapeIds,
           creditsUsed: credits_billed,
+          id: jobId,
         });
       } else {
         // Sync mode: process scraped documents
@@ -733,6 +734,7 @@ export async function searchController(
       success: true,
       data: searchResponse,
       creditsUsed: credits_billed,
+      id: jobId,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
