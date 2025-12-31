@@ -92,6 +92,7 @@ type ConvertResponse struct {
 // ErrorResponse represents an error response
 type ErrorResponse struct {
 	Error   string `json:"error"`
+	Details string `json:"details,omitempty"`
 	Success bool   `json:"success"`
 }
 
@@ -106,20 +107,20 @@ func (h *Handler) ConvertHTML(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to read request body")
-		h.sendError(w, "Failed to read request body", http.StatusBadRequest)
+		h.sendError(w, "Failed to read request body", err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	var req ConvertRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		log.Error().Err(err).Msg("Failed to parse request body")
-		h.sendError(w, "Invalid JSON in request body", http.StatusBadRequest)
+		h.sendError(w, "Invalid JSON in request body", err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Validate input
 	if req.HTML == "" {
-		h.sendError(w, "HTML field is required", http.StatusBadRequest)
+		h.sendError(w, "HTML field is required", "The 'html' field cannot be empty", http.StatusBadRequest)
 		return
 	}
 
@@ -127,7 +128,7 @@ func (h *Handler) ConvertHTML(w http.ResponseWriter, r *http.Request) {
 	markdown, err := h.converter.ConvertHTMLToMarkdown(req.HTML)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to convert HTML to Markdown")
-		h.sendError(w, "Failed to convert HTML to Markdown", http.StatusInternalServerError)
+		h.sendError(w, "Failed to convert HTML to Markdown", err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -151,9 +152,10 @@ func (h *Handler) ConvertHTML(w http.ResponseWriter, r *http.Request) {
 }
 
 // sendError sends an error response
-func (h *Handler) sendError(w http.ResponseWriter, message string, statusCode int) {
+func (h *Handler) sendError(w http.ResponseWriter, message string, details string, statusCode int) {
 	response := ErrorResponse{
 		Error:   message,
+		Details: details,
 		Success: false,
 	}
 
@@ -161,4 +163,3 @@ func (h *Handler) sendError(w http.ResponseWriter, message string, statusCode in
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(response)
 }
-

@@ -22,6 +22,7 @@ interface ConvertResponse {
 
 interface ErrorResponse {
   error: string;
+  details?: string;
   success: boolean;
 }
 
@@ -83,10 +84,12 @@ export async function convertHTMLToMarkdownWithHttpService(
 
       const errorMessage =
         axiosError.response?.data?.error || axiosError.message;
+      const errorDetails = axiosError.response?.data?.details;
       const statusCode = axiosError.response?.status;
 
       contextLogger.error("HTML to Markdown conversion failed", {
         error: errorMessage,
+        details: errorDetails,
         statusCode,
         duration_ms: duration,
         serviceUrl: url,
@@ -102,11 +105,17 @@ export async function convertHTMLToMarkdownWithHttpService(
         extra: {
           serviceUrl: url,
           errorMessage,
+          errorDetails,
           inputSize: html.length,
         },
       });
 
-      throw new Error(`HTML to Markdown conversion failed: ${errorMessage}`);
+      // Include details in error message if available
+      const fullErrorMessage = errorDetails
+        ? `HTML to Markdown conversion failed: ${errorMessage} - ${errorDetails}`
+        : `HTML to Markdown conversion failed: ${errorMessage}`;
+
+      throw new Error(fullErrorMessage);
     } else {
       contextLogger.error(
         "Unexpected error during HTML to Markdown conversion",
