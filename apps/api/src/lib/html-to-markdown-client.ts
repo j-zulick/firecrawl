@@ -52,14 +52,21 @@ export async function convertHTMLToMarkdownWithHttpService(
   try {
     const request: ConvertRequest = { html };
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    // Add request ID header if available
+    if (requestId) {
+      headers["X-Request-ID"] = requestId;
+    }
+
     const response = await axios.post<ConvertResponse>(
       `${url}/convert`,
       request,
       {
         timeout: 60_000,
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
       },
     );
 
@@ -73,6 +80,7 @@ export async function convertHTMLToMarkdownWithHttpService(
       duration_ms: duration,
       input_size: html.length,
       output_size: response.data.markdown.length,
+      ...(requestId ? { request_id: requestId } : {}),
     });
 
     return response.data.markdown;
