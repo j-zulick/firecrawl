@@ -54,6 +54,7 @@ jobs:
           push: true
           tags: ghcr.io/${{ env.REPO_OWNER }}/firecrawl:${{ env.PLATFORM_SUFFIX }}
           platforms: ${{ matrix.platform }}
+          provenance: false
           cache-from: type=registry,ref=ghcr.io/${{ env.REPO_OWNER }}/firecrawl:buildcache-${{ env.PLATFORM_SUFFIX }}
           cache-to: type=registry,ref=ghcr.io/${{ env.REPO_OWNER }}/firecrawl:buildcache-${{ env.PLATFORM_SUFFIX }},mode=max
 
