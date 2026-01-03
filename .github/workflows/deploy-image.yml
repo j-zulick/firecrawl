@@ -21,6 +21,9 @@ jobs:
           - name: 'Checkout GitHub Action'
             uses: actions/checkout@main
 
+          - name: Set up QEMU
+            uses: docker/setup-qemu-action@v3
+
           - name: 'Set up Docker Buildx'
             uses: docker/setup-buildx-action@v3
 
@@ -31,11 +34,18 @@ jobs:
               username: ${{github.actor}}
               password: ${{secrets.GITHUB_TOKEN}}
 
+          - name: Lowercase Repo Owner
+            run: |
+              echo "REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >>${GITHUB_ENV}
+            env:
+              GITHUB_REPOSITORY_OWNER: '${{ github.repository_owner }}'
+
           - name: 'Build and Push Image'
             uses: docker/build-push-action@v6
             with:
               context: ./apps/api
               push: true
-              tags: ghcr.io/firecrawl/firecrawl:latest
-              cache-from: type=registry,ref=ghcr.io/firecrawl/firecrawl:buildcache
-              cache-to: type=registry,ref=ghcr.io/firecrawl/firecrawl:buildcache,mode=max
+              tags: ghcr.io/${{ env.REPO_OWNER }}/firecrawl:latest
+              platforms: linux/amd64,linux/arm64
+              cache-from: type=registry,ref=ghcr.io/${{ env.REPO_OWNER }}/firecrawl:buildcache
+              cache-to: type=registry,ref=ghcr.io/${{ env.REPO_OWNER }}/firecrawl:buildcache,mode=max
