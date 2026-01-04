@@ -161,6 +161,15 @@ export async function batchScrapeController(
         zeroDataRetention,
       };
 
+  if (req.body.appendToId) {
+    if (!sc || sc.team_id !== req.auth.team_id) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+  }
+
   if (!req.body.appendToId) {
     await crawlGroup.addGroup(
       id,
