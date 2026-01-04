@@ -176,11 +176,9 @@ export function authMiddleware(
       req.acuc = chunk ?? undefined;
       if (chunk) {
         req.account = {
-          // Use Number() to prevent string concatenation bugs
-          // (Postgres numeric columns may be returned as strings by Supabase)
           remainingCredits: chunk.price_should_be_graceful
-            ? Number(chunk.remaining_credits) + Number(chunk.price_credits)
-            : Number(chunk.remaining_credits),
+            ? chunk.remaining_credits + chunk.price_credits
+            : chunk.remaining_credits,
         };
       }
       next();

@@ -88,26 +88,20 @@ async function supaCheckTeamCredits(
     };
   }
 
-  // Ensure numeric types to prevent string concatenation bugs
-  // (Postgres numeric columns may be returned as strings by Supabase)
-  const adjustedCreditsUsed = Number(chunk.adjusted_credits_used);
-  const totalCreditsSum = Number(chunk.total_credits_sum ?? 100000000);
-  const priceCredits = Number(chunk.price_credits);
-  const chunkRemainingCredits = Number(chunk.remaining_credits);
-
   const remainingCredits = chunk.price_should_be_graceful
-    ? chunkRemainingCredits + priceCredits
-    : chunkRemainingCredits;
+    ? chunk.remaining_credits + chunk.price_credits
+    : chunk.remaining_credits;
 
-  const creditsWillBeUsed = adjustedCreditsUsed + credits;
+  const creditsWillBeUsed = chunk.adjusted_credits_used + credits;
 
   // In case chunk.price_credits is undefined, set it to a large number to avoid mistakes
   const totalPriceCredits = chunk.price_should_be_graceful
-    ? totalCreditsSum + priceCredits
-    : totalCreditsSum;
+    ? (chunk.total_credits_sum ?? 100000000) + chunk.price_credits
+    : (chunk.total_credits_sum ?? 100000000);
 
   // Removal of + credits
-  const creditUsagePercentage = adjustedCreditsUsed / totalCreditsSum;
+  const creditUsagePercentage =
+    chunk.adjusted_credits_used / (chunk.total_credits_sum ?? 100000000);
 
   let isAutoRechargeEnabled = false,
     autoRechargeThreshold = 1000;

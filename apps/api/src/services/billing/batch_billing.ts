@@ -329,11 +329,9 @@ async function supaBillTeam(
         acuc
           ? {
               ...acuc,
-              // Use Number() to prevent string concatenation bugs
-              credits_used: Number(acuc.credits_used) + credits,
-              adjusted_credits_used:
-                Number(acuc.adjusted_credits_used) + credits,
-              remaining_credits: Number(acuc.remaining_credits) - credits,
+              credits_used: acuc.credits_used + credits,
+              adjusted_credits_used: acuc.adjusted_credits_used + credits,
+              remaining_credits: acuc.remaining_credits - credits,
             }
           : null,
       );
@@ -341,11 +339,9 @@ async function supaBillTeam(
         acuc
           ? {
               ...acuc,
-              // Use Number() to prevent string concatenation bugs
-              credits_used: Number(acuc.credits_used) + credits,
-              adjusted_credits_used:
-                Number(acuc.adjusted_credits_used) + credits,
-              remaining_credits: Number(acuc.remaining_credits) - credits,
+              credits_used: acuc.credits_used + credits,
+              adjusted_credits_used: acuc.adjusted_credits_used + credits,
+              remaining_credits: acuc.remaining_credits - credits,
             }
           : null,
       );

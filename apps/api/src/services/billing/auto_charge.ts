@@ -354,17 +354,14 @@ async function _autoChargeScale(
             return {
               success: true,
               message: "Auto-recharge successful",
-              // Use Number() to prevent string concatenation bugs
               remainingCredits:
-                Number(
-                  updatedChunk?.remaining_credits ?? chunk.remaining_credits,
-                ) + Number(price.credits),
+                (updatedChunk?.remaining_credits ?? chunk.remaining_credits) +
+                price.credits,
               chunk: {
                 ...(updatedChunk ?? chunk),
                 remaining_credits:
-                  Number(
-                    updatedChunk?.remaining_credits ?? chunk.remaining_credits,
-                  ) + Number(price.credits),
+                  (updatedChunk?.remaining_credits ?? chunk.remaining_credits) +
+                  price.credits,
               },
             };
           }
@@ -614,13 +611,12 @@ async function _autoChargeSelfServe(
                 return {
                   success: true,
                   message: "Auto-recharge successful",
-                  // Use Number() to prevent string concatenation bugs
                   remainingCredits:
-                    Number(chunk.remaining_credits) + AUTO_RECHARGE_CREDITS,
+                    chunk.remaining_credits + AUTO_RECHARGE_CREDITS,
                   chunk: {
                     ...chunk,
                     remaining_credits:
-                      Number(chunk.remaining_credits) + AUTO_RECHARGE_CREDITS,
+                      chunk.remaining_credits + AUTO_RECHARGE_CREDITS,
                   },
                 };
               } else {
