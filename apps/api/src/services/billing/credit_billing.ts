@@ -180,6 +180,29 @@ async function supaCheckTeamCredits(
 
   // Compare the adjusted total credits used with the credits allowed by the plan (and graceful)
   if (creditsWillBeUsed > totalPriceCredits) {
+    logger.warn("Credit check failed - insufficient credits", {
+      team_id,
+      teamId: team_id,
+      creditsRequested: credits,
+      is_extract: chunk.is_extract,
+      bypassCreditChecks: chunk.flags?.bypassCreditChecks,
+      price_should_be_graceful: chunk.price_should_be_graceful,
+      price_credits: chunk.price_credits,
+      coupon_credits: chunk.coupon_credits,
+      total_credits_sum: chunk.total_credits_sum,
+      credits_used: chunk.credits_used,
+      adjusted_credits_used: chunk.adjusted_credits_used,
+      remaining_credits: chunk.remaining_credits,
+      sub_current_period_start: chunk.sub_current_period_start,
+      sub_current_period_end: chunk.sub_current_period_end,
+      computed_remainingCredits: remainingCredits,
+      computed_creditsWillBeUsed: creditsWillBeUsed,
+      computed_totalPriceCredits: totalPriceCredits,
+      creditUsagePercentage,
+      sumComponents: chunk.price_credits + chunk.coupon_credits,
+      isAutoRechargeEnabled,
+      autoRechargeThreshold,
+    });
     return {
       success: false,
       message:
