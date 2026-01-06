@@ -154,6 +154,7 @@ export async function batchScrapeController(
             ? true
             : false,
           zeroDataRetention,
+          bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
         }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
         team_id: req.auth.team_id,
         createdAt: Date.now(),
