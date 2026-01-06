@@ -195,6 +195,8 @@ const configSchema = z.object({
 
   EXTRACT_V3_BETA_URL: z.string().optional(),
   AGENT_INTEROP_SECRET: z.string().optional(),
+
+  NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
 });
 
 export const config = configSchema.parse(process.env);

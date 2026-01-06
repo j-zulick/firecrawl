@@ -43,15 +43,29 @@ import { logger } from "../../lib/logger";
     process.on("SIGTERM", shutdown);
   }
 
-  (async () => {
-    while (true) {
-      await crawlFinishedQueue.prefetchJobs();
-      await new Promise(resolve => setTimeout(resolve, 250));
-    }
-  })();
-
-  while (true) {
-    await scrapeQueue.prefetchJobs();
-    await new Promise(resolve => setTimeout(resolve, 250));
+  try {
+    await Promise.all([
+      (async () => {
+        while (true) {
+          await crawlFinishedQueue.prefetchJobs();
+          await new Promise(resolve => setTimeout(resolve, 250));
+        }
+      })(),
+      (async () => {
+        while (true) {
+          if (config.NUQ_PREFETCH_WORKER_HEARTBEAT_URL) {
+            fetch(config.NUQ_PREFETCH_WORKER_HEARTBEAT_URL).catch(() => {});
+          }
+          await scrapeQueue.prefetchJobs();
+          await new Promise(resolve => setTimeout(resolve, 250));
+        }
+      })(),
+    ]);
+  } catch (error) {
+    logger.error("Error in prefetch worker", { error });
+    process.exit(1);
   }
+
+  logger.info("All prefetch workers exited. Shutting down...");
+  await shutdown();
 })();
