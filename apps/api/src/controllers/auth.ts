@@ -186,7 +186,7 @@ export async function getACUC(
           ? supabase_rr_service
           : supabase_service;
       ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_38",
+        "auth_credit_usage_chunk_39",
         {
           input_key: api_key,
           i_is_extract: isExtract,
@@ -207,7 +207,7 @@ export async function getACUC(
       if (retries === maxRetries) {
         throw new Error(
           "Failed to retrieve authentication and credit usage data after 3 attempts: " +
-          JSON.stringify(error),
+            JSON.stringify(error),
         );
       }
 
@@ -240,8 +240,8 @@ export async function setCachedACUCTeam(
     | AuthCreditUsageChunkFromTeam
     | null
     | ((
-      acuc: AuthCreditUsageChunkFromTeam,
-    ) => AuthCreditUsageChunkFromTeam | null),
+        acuc: AuthCreditUsageChunkFromTeam,
+      ) => AuthCreditUsageChunkFromTeam | null),
 ) {
   const cacheKeyACUC = `acuc_team_${team_id}_${is_extract ? "extract" : "scrape"}`;
   const redLockKey = `lock_${cacheKeyACUC}`;
@@ -316,7 +316,7 @@ export async function getACUCTeam(
           ? supabase_rr_service
           : supabase_service;
       ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_38_from_team",
+        "auth_credit_usage_chunk_39_from_team",
         {
           input_team: team_id,
           i_is_extract: isExtract,
@@ -337,7 +337,7 @@ export async function getACUCTeam(
       if (retries === maxRetries) {
         throw new Error(
           "Failed to retrieve authentication and credit usage data after 3 attempts: " +
-          JSON.stringify(error),
+            JSON.stringify(error),
         );
       }
 
