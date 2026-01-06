@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 chrono = { version = "0.4", features = ["serde"] }
 kuchikiki = "0.8.2"
 lol_html = "2.6.0"
-lopdf = "0.38.0"
+lopdf = { git = "https://github.com/J-F-Liu/lopdf", rev = "6ee84c30f9226d6752dc8e1892298c9d46ac3eb6" }
 maud = "0.27.0"
 napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }
 napi-derive = "3.0.0"
