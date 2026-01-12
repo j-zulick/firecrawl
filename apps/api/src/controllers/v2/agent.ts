@@ -102,6 +102,7 @@ export async function agentController(
         maxCredits: req.body.maxCredits ?? undefined,
         strictConstrainToURLs: req.body.strictConstrainToURLs ?? undefined,
         webhook: req.body.webhook ?? undefined,
+        model: req.body.model,
       }),
     },
   );

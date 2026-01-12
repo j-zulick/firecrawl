@@ -752,6 +752,7 @@ export const agentRequestSchema = z.strictObject({
   webhook: agentWebhookSchema.optional(),
 
   overrideWhitelist: z.string().optional(),
+  model: z.enum(["spark-1-pro", "spark-1-mini"]).default("spark-1-pro"),
 });
 
 export type AgentRequest = z.infer<typeof agentRequestSchema>;
