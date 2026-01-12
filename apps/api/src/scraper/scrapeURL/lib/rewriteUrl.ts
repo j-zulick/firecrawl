@@ -11,7 +11,7 @@ export function rewriteUrl(url: string): string | undefined {
     }
     const id = url.match(/\/document\/d\/([-\w]+)/)?.[1];
     if (id) {
-      return `https://docs.google.com/document/d/${id}/export?format=pdf`;
+      return `https://docs.google.com/document/d/${id}/export?format=html`;
     }
   } else if (
     url.startsWith("https://docs.google.com/presentation/d/") ||
@@ -23,7 +23,7 @@ export function rewriteUrl(url: string): string | undefined {
     }
     const id = url.match(/\/presentation\/d\/([-\w]+)/)?.[1];
     if (id) {
-      return `https://docs.google.com/presentation/d/${id}/export?format=pdf`;
+      return `https://docs.google.com/presentation/d/${id}/export?format=html`;
     }
   } else if (
     url.startsWith("https://drive.google.com/file/d/") ||
