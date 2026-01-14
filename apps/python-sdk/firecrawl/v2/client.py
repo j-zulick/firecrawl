@@ -764,6 +764,7 @@ class FirecrawlClient:
         integration: Optional[str] = None,
         max_credits: Optional[int] = None,
         strict_constrain_to_urls: Optional[bool] = None,
+        model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
     ):
         """Start an agent job (non-blocking).
 
@@ -773,6 +774,7 @@ class FirecrawlClient:
             schema: Target JSON schema for the output (dict or Pydantic BaseModel)
             integration: Integration tag/name
             max_credits: Maximum credits to use (optional)
+            model: Model to use for the agent ("spark-1-pro" or "spark-1-mini")
         Returns:
             Response payload with job id/status (poll with get_agent_status)
         """
@@ -784,6 +786,7 @@ class FirecrawlClient:
             integration=integration,
             max_credits=max_credits,
             strict_constrain_to_urls=strict_constrain_to_urls,
+            model=model,
         )
 
     def agent(
@@ -797,6 +800,7 @@ class FirecrawlClient:
         timeout: Optional[int] = None,
         max_credits: Optional[int] = None,
         strict_constrain_to_urls: Optional[bool] = None,
+        model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
     ):
         """Run an agent and wait until completion.
 
@@ -808,6 +812,7 @@ class FirecrawlClient:
             poll_interval: Seconds between status checks
             timeout: Maximum seconds to wait (None for no timeout)
             max_credits: Maximum credits to use (optional)
+            model: Model to use for the agent ("spark-1-pro" or "spark-1-mini")
         Returns:
             Final agent response when completed
         """
@@ -821,6 +826,7 @@ class FirecrawlClient:
             timeout=timeout,
             max_credits=max_credits,
             strict_constrain_to_urls=strict_constrain_to_urls,
+            model=model,
         )
 
     def get_agent_status(self, job_id: str):

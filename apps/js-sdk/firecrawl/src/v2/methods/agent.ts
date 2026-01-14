@@ -11,6 +11,7 @@ function prepareAgentPayload(args: {
   integration?: string;
   maxCredits?: number;
   strictConstrainToURLs?: boolean;
+  model?: "spark-1-pro" | "spark-1-mini";
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   if (args.urls) body.urls = args.urls;
@@ -23,6 +24,7 @@ function prepareAgentPayload(args: {
   if (args.integration && args.integration.trim()) body.integration = args.integration.trim();
   if (args.maxCredits !== null && args.maxCredits !== undefined) body.maxCredits = args.maxCredits;
   if (args.strictConstrainToURLs !== null && args.strictConstrainToURLs !== undefined) body.strictConstrainToURLs = args.strictConstrainToURLs;
+  if (args.model !== null && args.model !== undefined) body.model = args.model;
   return body;
 }
 

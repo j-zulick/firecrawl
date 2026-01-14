@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 import asyncio
 
 from ...types import AgentResponse
@@ -14,6 +14,7 @@ def _prepare_agent_request(
     integration: Optional[str] = None,
     max_credits: Optional[int] = None,
     strict_constrain_to_urls: Optional[bool] = None,
+    model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
     if urls is not None:
@@ -34,6 +35,8 @@ def _prepare_agent_request(
         body["maxCredits"] = max_credits
     if strict_constrain_to_urls is not None and strict_constrain_to_urls:
         body["strictConstrainToURLs"] = strict_constrain_to_urls
+    if model is not None:
+        body["model"] = model
     return body
 
 
@@ -55,6 +58,7 @@ async def start_agent(
     integration: Optional[str] = None,
     max_credits: Optional[int] = None,
     strict_constrain_to_urls: Optional[bool] = None,
+    model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
 ) -> AgentResponse:
     body = _prepare_agent_request(
         urls,
@@ -63,6 +67,7 @@ async def start_agent(
         integration=integration,
         max_credits=max_credits,
         strict_constrain_to_urls=strict_constrain_to_urls,
+        model=model,
     )
     resp = await client.post("/v2/agent", body)
     payload = _normalize_agent_response_payload(resp.json())
@@ -103,6 +108,7 @@ async def agent(
     timeout: Optional[int] = None,
     max_credits: Optional[int] = None,
     strict_constrain_to_urls: Optional[bool] = None,
+    model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
 ) -> AgentResponse:
     started = await start_agent(
         client,
@@ -112,6 +118,7 @@ async def agent(
         integration=integration,
         max_credits=max_credits,
         strict_constrain_to_urls=strict_constrain_to_urls,
+        model=model,
     )
     job_id = getattr(started, "id", None)
     if not job_id:
