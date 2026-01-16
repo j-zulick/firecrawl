@@ -83,14 +83,14 @@ export function abTestFireEngine(
   const abLogger = _logger.child({ method: "ABTestToStaging" });
   try {
     const abRateEnv = config.FIRE_ENGINE_AB_RATE;
-    const abHostEnv = config.FIRE_ENGINE_AB_HOST;
+    const abUrlEnv = config.FIRE_ENGINE_AB_URL;
     const abRate =
       abRateEnv !== undefined ? Math.max(0, Math.min(1, Number(abRateEnv))) : 0;
     const shouldABTest =
       !feRequest.zeroDataRetention &&
       abRate > 0 &&
       Math.random() <= abRate &&
-      abHostEnv;
+      abUrlEnv;
     if (shouldABTest) {
       let timeout = Math.min(60000, (feRequest.timeout ?? 30000) + 10000);
 
@@ -105,7 +105,7 @@ export function abTestFireEngine(
         try {
           abLogger.info("A/B-testing scrapeURL to staging");
           await robustFetch({
-            url: `http://${abHostEnv}/scrape`,
+            url: `${abUrlEnv}/scrape`,
             method: "POST",
             body: feRequest,
             logger: abLogger,
