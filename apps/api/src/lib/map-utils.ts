@@ -90,6 +90,7 @@ export async function getMapResults({
   filterByPath = true,
   flags,
   useIndex = true,
+  ignoreCache = false,
   location,
   headers,
   maxFireEngineResults = MAX_FIRE_ENGINE_RESULTS,
@@ -109,6 +110,7 @@ export async function getMapResults({
   filterByPath?: boolean;
   flags: TeamFlags | null;
   useIndex?: boolean;
+  ignoreCache?: boolean;
   location?: ScrapeOptions["location"];
   headers?: Record<string, string>;
   maxFireEngineResults?: number;
@@ -171,6 +173,7 @@ export async function getMapResults({
       crawlerOptions.timeout ?? 30000,
       abort,
       crawlerOptions.useMock,
+      ignoreCache ? 0 : undefined,
     );
 
     if (sitemap > 0) {
@@ -203,7 +206,9 @@ export async function getMapResults({
     );
 
     const cacheKey = `fireEngineMap:${mapUrl}`;
-    const cachedResult = await redisEvictConnection.get(cacheKey);
+    const cachedResult = ignoreCache
+      ? null
+      : await redisEvictConnection.get(cacheKey);
 
     let pagePromises: (Promise<any> | any)[];
 
@@ -258,6 +263,8 @@ export async function getMapResults({
           false,
           crawlerOptions.timeout ?? 30000,
           abort,
+          undefined,
+          ignoreCache ? 0 : undefined,
         );
       } catch (e) {
         // Silently handle sitemap errors

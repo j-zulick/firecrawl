@@ -942,6 +942,7 @@ const mapRequestSchemaBase = crawlerOptions
     useMock: z.string().optional(),
     filterByPath: z.boolean().prefault(true),
     useIndex: z.boolean().prefault(true),
+    ignoreCache: z.boolean().prefault(false),
     location: locationSchema,
     headers: z.record(z.string(), z.string()).optional(),
   });
