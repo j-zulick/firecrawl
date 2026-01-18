@@ -87,6 +87,15 @@ async function deriveMarkdownFromHTML(
     return document;
   }
 
+  // Skip markdown derivation if a postprocessor already set it
+  if (document.metadata.postprocessorsUsed?.length && document.markdown) {
+    meta.logger.debug(
+      "Skipping markdown derivation - postprocessor already set markdown",
+      { postprocessorsUsed: document.metadata.postprocessorsUsed },
+    );
+    return document;
+  }
+
   if (document.metadata.contentType?.includes("application/json")) {
     if (document.rawHtml === undefined) {
       throw new Error(
