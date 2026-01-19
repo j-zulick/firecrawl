@@ -20,6 +20,8 @@ import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { AbortManagerThrownError } from "../../scraper/scrapeURL/lib/abortManager";
 import { logRequest } from "../../services/logging/log_job";
+import { getErrorContactMessage } from "../../lib/deployment";
+import { captureExceptionWithZdrCheck } from "../../services/sentry";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -175,14 +177,13 @@ export async function scrapeController(
     const timeoutErr =
       e instanceof TransportableError && e.code === "SCRAPE_TIMEOUT";
 
-    if (!timeoutErr) {
-      logger.error(`Error in scrapeController`, {
-        version: "v1",
-        error: e,
-      });
-    }
-
     if (e instanceof TransportableError) {
+      if (!timeoutErr) {
+        logger.error(`Error in scrapeController`, {
+          version: "v1",
+          error: e,
+        });
+      }
       // DNS resolution errors should return 200 with success: false
       if (e.code === "SCRAPE_DNS_RESOLUTION_ERROR") {
         return res.status(200).json({
@@ -198,10 +199,30 @@ export async function scrapeController(
         error: e.message,
       });
     } else {
+      const id = uuidv7();
+      logger.error(`Error in scrapeController`, {
+        version: "v1",
+        error: e,
+        errorId: id,
+        path: req.path,
+        teamId: req.auth.team_id,
+      });
+      captureExceptionWithZdrCheck(e, {
+        tags: {
+          errorId: id,
+          version: "v1",
+          teamId: req.auth.team_id,
+        },
+        extra: {
+          path: req.path,
+          url: req.body.url,
+        },
+        zeroDataRetention,
+      });
       return res.status(500).json({
         success: false,
         code: "UNKNOWN_ERROR",
-        error: `(Internal server error) - ${e && e.message ? e.message : e}`,
+        error: getErrorContactMessage(id),
       });
     }
   } finally {
