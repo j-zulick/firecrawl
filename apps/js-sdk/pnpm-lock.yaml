@@ -9,14 +9,14 @@ importers:
   .:
     dependencies:
       '@mendable/firecrawl-js':
-        specifier: ^3.2.0
-        version: 3.3.0
+        specifier: ^4.3.4
+        version: 4.11.1
       axios:
         specifier: ^1.12.2
         version: 1.12.2
       firecrawl:
-        specifier: ^1.2.0
-        version: 1.29.3
+        specifier: ^4.3.4
+        version: 4.11.1
       ts-node:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@24.4.0)(typescript@5.9.2)
@@ -209,8 +209,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.9':
     resolution: {integrity: sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==}
 
-  '@mendable/firecrawl-js@3.3.0':
-    resolution: {integrity: sha512-ZpU3SllpZEvPHj8YjnGI/SnXoSRXdC3QfJkUcRlTtDPZRlc+kbq+a6HbZ2SzzjysyF3qhgGdYgx0TMnA2phS0g==}
+  '@mendable/firecrawl-js@4.11.1':
+    resolution: {integrity: sha512-GBfnP0fFw25185ZCyPNhfgmBdpWxRy2Q3cXhBWSUixmkVLCaFHnhX/vekYcrQBeWjfJbZC2dSukHtIPZGNivoA==}
     engines: {node: '>=22.0.0'}
 
   '@tsconfig/node10@1.0.11':
@@ -290,8 +290,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  firecrawl@1.29.3:
-    resolution: {integrity: sha512-jgHpC8qivZ8VOfefBBxsAsHRVunikScTgJaik0Dw8MuPbH3ETz8T9UwWWhZffDUOSpb77cScayo0UWrEbY9Jlw==}
+  firecrawl@4.11.1:
+    resolution: {integrity: sha512-Pix/drp4bvHgAtNljAgUlIUovWb14XCRNemnCeBcAYh1BQPQ3UymVKMq8/hKVJI3QLPW90As0AEM6UXrcLhNnQ==}
     engines: {node: '>=22.0.0'}
 
   follow-redirects@1.15.11:
@@ -505,7 +505,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@mendable/firecrawl-js@3.3.0':
+  '@mendable/firecrawl-js@4.11.1':
     dependencies:
       axios: 1.12.2
       typescript-event-target: 1.1.1
@@ -609,7 +609,7 @@ snapshots:
       '@esbuild/win32-ia32': 0.25.9
       '@esbuild/win32-x64': 0.25.9
 
-  firecrawl@1.29.3:
+  firecrawl@4.11.1:
     dependencies:
       axios: 1.12.2
       typescript-event-target: 1.1.1
