@@ -368,6 +368,12 @@ const actionSchema = z.union([
 
 export type Action = z.infer<typeof actionSchema>;
 
+export type InternalAction = Action & {
+  metadata?: {
+    [key: string]: unknown;
+  };
+};
+
 const actionsSchema = z
   .array(actionSchema)
   .refine(actions => actions.length <= MAX_ACTIONS, {

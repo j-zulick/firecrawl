@@ -29,7 +29,7 @@ import { fireEngineDelete } from "./delete";
 import { MockState } from "../../lib/mock";
 import { getInnerJson } from "@mendable/firecrawl-rs";
 import { hasFormatOfType } from "../../../../lib/format-utils";
-import { Action } from "../../../../controllers/v1/types";
+import { InternalAction } from "../../../../controllers/v1/types";
 import { AbortManagerThrownError } from "../../lib/abortManager";
 import { youtubePostprocessor } from "../../postprocessors/youtube";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
@@ -234,7 +234,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       "engine.url": meta.url,
       "engine.team_id": meta.internalOptions.teamId,
     });
-    const actions: Action[] = [
+    const actions: InternalAction[] = [
       // Transform waitFor option into an action (unsupported by chrome-cdp)
       ...(meta.options.waitFor !== 0
         ? [
@@ -247,7 +247,10 @@ export async function scrapeURLWithFireEngineChromeCDP(
         : []),
 
       // Include specified actions
-      ...(meta.options.actions ?? []),
+      ...(meta.options.actions ?? []).map(action => {
+        const { metadata: _, ...rest } = action as InternalAction;
+        return rest;
+      }),
 
       // Transform screenshot format into an action (unsupported by chrome-cdp)
       ...(hasFormatOfType(meta.options.formats, "screenshot")
@@ -273,6 +276,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
             {
               type: "executeJavascript" as const,
               script: getBrandingScript(),
+              metadata: { __firecrawl_internal: true },
             },
           ]
         : []),
