@@ -296,6 +296,17 @@ export async function scrapeController(
             });
           }
 
+          if (e.code === "SCRAPE_ACTIONS_NOT_SUPPORTED") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 400,
+            });
+            return res.status(400).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
           const statusCode = e.code === "SCRAPE_TIMEOUT" ? 408 : 500;
           setSpanAttributes(span, {
             "scrape.status_code": statusCode,

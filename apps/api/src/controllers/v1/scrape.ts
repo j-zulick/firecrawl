@@ -193,6 +193,14 @@ export async function scrapeController(
         });
       }
 
+      if (e.code === "SCRAPE_ACTIONS_NOT_SUPPORTED") {
+        return res.status(400).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
       return res.status(e.code === "SCRAPE_TIMEOUT" ? 408 : 500).json({
         success: false,
         code: e.code,

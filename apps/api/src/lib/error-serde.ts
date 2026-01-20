@@ -1,4 +1,5 @@
 import {
+  ActionsNotSupportedError,
   CrawlDenialError,
   ErrorCodes,
   MapTimeoutError,
@@ -44,6 +45,7 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_UNSUPPORTED_FILE_ERROR: UnsupportedFileError,
   SCRAPE_NO_CACHED_DATA: NoCachedDataError,
   SCRAPE_ACTION_ERROR: ActionError,
+  SCRAPE_ACTIONS_NOT_SUPPORTED: ActionsNotSupportedError,
   SCRAPE_RACED_REDIRECT_ERROR: RacedRedirectError,
   SCRAPE_SITEMAP_ERROR: SitemapError,
   CRAWL_DENIAL: CrawlDenialError,

@@ -73,7 +73,11 @@ import {
   AbortManager,
   AbortManagerThrownError,
 } from "./lib/abortManager";
-import { ScrapeJobTimeoutError, CrawlDenialError } from "../../lib/error";
+import {
+  ScrapeJobTimeoutError,
+  CrawlDenialError,
+  ActionsNotSupportedError,
+} from "../../lib/error";
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
 import { rewriteUrl } from "./lib/rewriteUrl";
@@ -503,6 +507,18 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     // TODO: ScrapeEvents
 
     const fallbackList = await buildFallbackList(meta);
+
+    // Check if actions are requested but no engines support them
+    if (meta.featureFlags.has("actions")) {
+      if (
+        fallbackList.length === 0 ||
+        fallbackList.every(engine => engine.unsupportedFeatures.has("actions"))
+      ) {
+        throw new ActionsNotSupportedError(
+          "Actions are not supported by any available engines. Actions require Fire Engine (fire-engine) to be enabled.",
+        );
+      }
+    }
 
     setSpanAttributes(span, {
       "engine.fallback_list": fallbackList.map(f => f.engine).join(","),
