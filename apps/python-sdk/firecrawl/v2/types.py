@@ -320,6 +320,23 @@ class WebhookConfig(BaseModel):
     events: Optional[List[Literal["completed", "failed", "page", "started"]]] = None
 
 
+class AgentWebhookConfig(BaseModel):
+    """Configuration for agent webhooks.
+
+    Agent webhooks support different events than crawl webhooks:
+    - started: When the agent job starts
+    - action: When the agent takes an action/step
+    - completed: When the job completes successfully
+    - failed: When the job fails
+    - cancelled: When the job is cancelled
+    """
+
+    url: str
+    headers: Optional[Dict[str, str]] = None
+    metadata: Optional[Dict[str, str]] = None
+    events: Optional[List[Literal["started", "action", "completed", "failed", "cancelled"]]] = None
+
+
 class WebhookData(BaseModel):
     """Data sent to webhooks."""
 

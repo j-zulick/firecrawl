@@ -10,6 +10,7 @@ from .types import (
     ScrapeOptions,
     CrawlRequest,
     WebhookConfig,
+    AgentWebhookConfig,
     SearchRequest,
     SearchData,
     SourceOption,
@@ -323,6 +324,8 @@ class AsyncFirecrawlClient:
         timeout: Optional[int] = None,
         max_credits: Optional[int] = None,
         strict_constrain_to_urls: Optional[bool] = None,
+        model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
+        webhook: Optional[Union[str, AgentWebhookConfig]] = None,
     ):
         return await async_agent.agent(
             self.async_http_client,
@@ -334,6 +337,8 @@ class AsyncFirecrawlClient:
             timeout=timeout,
             max_credits=max_credits,
             strict_constrain_to_urls=strict_constrain_to_urls,
+            model=model,
+            webhook=webhook,
         )
 
     async def get_agent_status(self, job_id: str):
@@ -348,6 +353,8 @@ class AsyncFirecrawlClient:
         integration: Optional[str] = None,
         max_credits: Optional[int] = None,
         strict_constrain_to_urls: Optional[bool] = None,
+        model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
+        webhook: Optional[Union[str, AgentWebhookConfig]] = None,
     ):
         return await async_agent.start_agent(
             self.async_http_client,
@@ -357,6 +364,8 @@ class AsyncFirecrawlClient:
             integration=integration,
             max_credits=max_credits,
             strict_constrain_to_urls=strict_constrain_to_urls,
+            model=model,
+            webhook=webhook,
         )
 
     async def cancel_agent(self, job_id: str) -> bool:

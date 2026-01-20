@@ -1,7 +1,7 @@
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 import time
 
-from ..types import AgentResponse
+from ..types import AgentResponse, AgentWebhookConfig
 from ..utils.http_client import HttpClient
 from ..utils.error_handler import handle_response_error
 from ..utils.validation import _normalize_schema
@@ -16,6 +16,7 @@ def _prepare_agent_request(
     max_credits: Optional[int] = None,
     strict_constrain_to_urls: Optional[bool] = None,
     model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
+    webhook: Optional[Union[str, AgentWebhookConfig]] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
     if urls is not None:
@@ -38,6 +39,11 @@ def _prepare_agent_request(
         body["strictConstrainToURLs"] = strict_constrain_to_urls
     if model is not None:
         body["model"] = model
+    if webhook is not None:
+        if isinstance(webhook, str):
+            body["webhook"] = webhook
+        else:
+            body["webhook"] = webhook.model_dump(exclude_none=True)
     return body
 
 
@@ -60,6 +66,7 @@ def start_agent(
     max_credits: Optional[int] = None,
     strict_constrain_to_urls: Optional[bool] = None,
     model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
+    webhook: Optional[Union[str, AgentWebhookConfig]] = None,
 ) -> AgentResponse:
     body = _prepare_agent_request(
         urls,
@@ -69,6 +76,7 @@ def start_agent(
         max_credits=max_credits,
         strict_constrain_to_urls=strict_constrain_to_urls,
         model=model,
+        webhook=webhook,
     )
     resp = client.post("/v2/agent", body)
     if not resp.ok:
@@ -114,6 +122,7 @@ def agent(
     max_credits: Optional[int] = None,
     strict_constrain_to_urls: Optional[bool] = None,
     model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
+    webhook: Optional[Union[str, AgentWebhookConfig]] = None,
 ) -> AgentResponse:
     started = start_agent(
         client,
@@ -124,6 +133,7 @@ def agent(
         max_credits=max_credits,
         strict_constrain_to_urls=strict_constrain_to_urls,
         model=model,
+        webhook=webhook,
     )
     job_id = getattr(started, "id", None)
     if not job_id:
