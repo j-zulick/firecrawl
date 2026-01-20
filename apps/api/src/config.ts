@@ -73,6 +73,7 @@ const configSchema = z.object({
   FIRE_ENGINE_STAGING_URL: z.string().optional(),
   FIRE_ENGINE_AB_URL: z.string().optional(),
   FIRE_ENGINE_AB_RATE: z.coerce.number().optional(),
+  FIRE_ENGINE_AB_COMPARE_ENABLED: z.stringbool().default(false),
 
   // ScrapeURL
   SCRAPEURL_AB_HOST: z.string().optional(),

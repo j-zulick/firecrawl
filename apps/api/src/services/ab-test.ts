@@ -8,6 +8,7 @@ import {
   FireEngineScrapeRequestPlaywright,
   FireEngineScrapeRequestTLSClient,
 } from "../scraper/scrapeURL/engines/fire-engine/scrape";
+import { MirrorResult, FireEngineResponse } from "./ab-test-comparison";
 
 export function abTestJob(webScraperOptions: ScrapeJobData) {
   // Global A/B test: mirror request to staging /v1/scrape based on SCRAPEURL_AB_RATE
@@ -78,51 +79,83 @@ export function abTestFireEngine(
       | FireEngineScrapeRequestPlaywright
       | FireEngineScrapeRequestTLSClient
     ),
-) {
-  // Global A/B test: mirror request to staging fire-engine based on SCRAPEURL_AB_RATE
+): { shouldCompare: boolean; mirrorPromise: Promise<MirrorResult> | null } {
   const abLogger = _logger.child({ method: "ABTestToStaging" });
-  try {
-    const abRateEnv = config.FIRE_ENGINE_AB_RATE;
-    const abUrlEnv = config.FIRE_ENGINE_AB_URL;
-    const abRate =
-      abRateEnv !== undefined ? Math.max(0, Math.min(1, Number(abRateEnv))) : 0;
-    const shouldABTest =
-      !feRequest.zeroDataRetention &&
-      abRate > 0 &&
-      Math.random() <= abRate &&
-      abUrlEnv;
-    if (shouldABTest) {
-      let timeout = Math.min(60000, (feRequest.timeout ?? 30000) + 10000);
 
-      (async () => {
-        const abortController = new AbortController();
-        const timeoutHandle = setTimeout(() => {
-          if (abortController) {
-            abortController.abort();
-          }
-        }, timeout);
+  const abRateEnv = config.FIRE_ENGINE_AB_RATE;
+  const abUrlEnv = config.FIRE_ENGINE_AB_URL;
+  const compareEnabled = config.FIRE_ENGINE_AB_COMPARE_ENABLED;
+  const abRate =
+    abRateEnv !== undefined ? Math.max(0, Math.min(1, Number(abRateEnv))) : 0;
 
-        try {
-          abLogger.info("A/B-testing scrapeURL to staging");
-          await robustFetch({
-            url: `${abUrlEnv}/scrape`,
-            method: "POST",
-            body: feRequest,
-            logger: abLogger,
-            tryCount: 1,
-            ignoreResponse: true,
-            mock: null,
-            abort: abortController.signal,
-          });
-          abLogger.info("A/B-testing scrapeURL (staging) request sent");
-        } catch (error) {
-          abLogger.warn("A/B-testing scrapeURL (staging) failed", { error });
-        } finally {
-          if (timeoutHandle) clearTimeout(timeoutHandle);
-        }
-      })();
-    }
-  } catch (error) {
-    abLogger.warn("Failed to initiate A/B test to staging", { error });
+  const shouldABTest =
+    !feRequest.zeroDataRetention &&
+    abRate > 0 &&
+    Math.random() <= abRate &&
+    abUrlEnv;
+
+  if (!shouldABTest) {
+    return { shouldCompare: false, mirrorPromise: null };
   }
+
+  const timeout = Math.min(60000, (feRequest.timeout ?? 30000) + 10000);
+  const startTime = Date.now();
+
+  const mirrorPromise = (async (): Promise<MirrorResult> => {
+    const abortController = new AbortController();
+    const timeoutHandle = setTimeout(() => {
+      abortController.abort();
+    }, timeout);
+
+    try {
+      abLogger.info("A/B-testing scrapeURL to staging");
+
+      const response = await robustFetch({
+        url: `${abUrlEnv}/scrape`,
+        method: "POST",
+        body: feRequest,
+        logger: abLogger,
+        tryCount: 1,
+        ignoreResponse: false,
+        ignoreFailureStatus: true,
+        mock: null,
+        abort: abortController.signal,
+      });
+
+      abLogger.info("A/B-testing scrapeURL (staging) request completed");
+
+      // Extract the fields we need for comparison
+      const feResponse: FireEngineResponse | null =
+        response &&
+        typeof response.content === "string" &&
+        typeof response.pageStatusCode === "number" &&
+        typeof response.timeTaken === "number"
+          ? {
+              content: response.content,
+              pageStatusCode: response.pageStatusCode,
+              timeTaken: response.timeTaken,
+            }
+          : null;
+
+      return {
+        response: feResponse,
+        error: feResponse ? null : new Error("Invalid response format"),
+        timeTaken: Date.now() - startTime,
+      };
+    } catch (error) {
+      abLogger.warn("A/B-testing scrapeURL (staging) failed", { error });
+      return {
+        response: null,
+        error: error as Error,
+        timeTaken: Date.now() - startTime,
+      };
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  })();
+
+  return {
+    shouldCompare: compareEnabled,
+    mirrorPromise,
+  };
 }
