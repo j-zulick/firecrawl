@@ -135,11 +135,13 @@ async function runComparison(
       `${AB_LOG_PREFIX} Content mismatch detected (${diffMessage})`,
       diffLogData,
     );
-  } else {
+  } else if (contentDiff.diffPercentage! > 0) {
     abLogger.info(
       `${AB_LOG_PREFIX} Minor content differences (${diffMessage})`,
       diffLogData,
     );
+  } else {
+    abLogger.info(`${AB_LOG_PREFIX} Content identical`, baseLogData);
   }
 }
 
