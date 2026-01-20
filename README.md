@@ -72,8 +72,8 @@ To use the API, you need to sign up on [Firecrawl](https://firecrawl.dev) and ge
 
 ### Features
 
-- [**Scrape**](#scraping): scrapes a URL and get its content in LLM-ready format (markdown, structured data via [LLM Extract](#llm-extraction-beta), screenshot, html)
-- [**Crawl**](#crawling): scrapes all the URLs of a web page and return content in LLM-ready format
+- [**Scrape**](#scraping): scrapes a URL and gets its content in LLM-ready format (markdown, structured data via [LLM Extract](#llm-extraction-beta), screenshot, html)
+- [**Crawl**](#crawling): scrapes all the URLs of a web page and returns content in LLM-ready format
 - [**Map**](#map): input a website and get all the website urls - extremely fast
 - [**Search**](#search): search the web and get full content from results
 - [**Extract**](#extract): get structured data from single page, multiple pages or entire websites with AI.
@@ -193,7 +193,7 @@ Response:
 
 ### Map
 
-Used to map a URL and get urls of the website. This returns most links present on the website.
+Used to map a URL and get URLs of the website. This returns most links present on the website.
 
 ```bash cURL
 curl -X POST https://api.firecrawl.dev/v2/map \
@@ -221,7 +221,7 @@ Response:
 
 #### Map with search
 
-Map with `search` param allows you to search for specific urls inside a website.
+Map with `search` param allows you to search for specific URLs inside a website.
 
 ```bash cURL
 curl -X POST https://api.firecrawl.dev/v2/map \
@@ -357,7 +357,7 @@ curl -X POST https://api.firecrawl.dev/v2/extract \
 }
 ```
 
-If you are using the sdks, it will auto pull the response for you:
+If you are using the SDKs, it will auto pull the response for you:
 
 ```json
 {
@@ -427,7 +427,7 @@ curl -X POST https://api.firecrawl.dev/v2/scrape \
 
 ### Extracting without a schema (New)
 
-You can now extract without a schema by just passing a `prompt` to the endpoint. The llm chooses the structure of the data.
+You can now extract without a schema by just passing a `prompt` to the endpoint. The LLM chooses the structure of the data.
 
 ```bash
 curl -X POST https://api.firecrawl.dev/v2/scrape \
@@ -522,7 +522,7 @@ print(response)
 
 ### Extracting structured data from a URL
 
-With LLM extraction, you can easily extract structured data from any URL. We support pydantic schemas to make it easier for you too. Here is how you to use it:
+With LLM extraction, you can easily extract structured data from any URL. We support pydantic schemas to make it easier for you too. Here is how to use it:
 
 ```python
 from pydantic import BaseModel, Field
