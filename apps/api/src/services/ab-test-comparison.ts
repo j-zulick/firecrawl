@@ -86,7 +86,7 @@ export function scheduleABComparison(
           },
         );
       } else {
-        abLogger.info(`${AB_LOG_PREFIX} Content mismatch (${timeDiffStr})`, {
+        abLogger.warn(`${AB_LOG_PREFIX} Content mismatch (${timeDiffStr})`, {
           ...baseLogData,
           prod_len: prodMarkdown.length,
           mirror_len: mirrorMarkdown.length,
