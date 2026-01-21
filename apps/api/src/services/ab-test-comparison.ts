@@ -1,4 +1,5 @@
 import { Logger } from "winston";
+import { parseMarkdown } from "../lib/html-to-markdown";
 
 const AB_LOG_PREFIX = "[FE_AB_COMPARE]";
 const MAX_CONTENT_SIZE = 1_000_000; // 1 MB
@@ -13,10 +14,6 @@ export interface MirrorResult {
   response: FireEngineResponse | null;
   error: Error | null;
   timeTaken: number;
-}
-
-function normalizeContent(s: string): string {
-  return s.replace(/\s+/g, " ").trim();
 }
 
 function calculateSimilarity(a: string, b: string): number {
@@ -44,7 +41,7 @@ export function scheduleABComparison(
   const abLogger = logger.child({ method: "ABTestComparison" });
 
   mirrorPromise
-    .then(mirrorResult => {
+    .then(async mirrorResult => {
       const baseLogData = {
         url,
         prod_ms: productionTimeTaken,
@@ -68,10 +65,13 @@ export function scheduleABComparison(
         return;
       }
 
-      const prodNormalized = normalizeContent(productionResponse.content);
-      const mirrorNormalized = normalizeContent(mirrorResult.response.content);
+      // Convert HTML to markdown before comparing
+      const [prodMarkdown, mirrorMarkdown] = await Promise.all([
+        parseMarkdown(productionResponse.content, { logger: abLogger }),
+        parseMarkdown(mirrorResult.response.content, { logger: abLogger }),
+      ]);
 
-      const similarity = calculateSimilarity(prodNormalized, mirrorNormalized);
+      const similarity = calculateSimilarity(prodMarkdown, mirrorMarkdown);
       const withinVariance = similarity >= 1 - VARIANCE_THRESHOLD;
 
       const timeDiff = mirrorResult.timeTaken - productionTimeTaken;
@@ -88,8 +88,8 @@ export function scheduleABComparison(
       } else {
         abLogger.info(`${AB_LOG_PREFIX} Content mismatch (${timeDiffStr})`, {
           ...baseLogData,
-          prod_len: prodNormalized.length,
-          mirror_len: mirrorNormalized.length,
+          prod_len: prodMarkdown.length,
+          mirror_len: mirrorMarkdown.length,
           similarity: `${(similarity * 100).toFixed(2)}%`,
           prod_status: productionResponse.pageStatusCode,
           mirror_status: mirrorResult.response.pageStatusCode,
