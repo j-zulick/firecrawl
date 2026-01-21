@@ -2,7 +2,6 @@ import { Logger } from "winston";
 import { parseMarkdown } from "../lib/html-to-markdown";
 
 const AB_LOG_PREFIX = "[FE_AB_COMPARE]";
-const MAX_CONTENT_SIZE = 1_000_000; // 1 MB
 const VARIANCE_THRESHOLD = 0.05; // 5% allowed variance
 
 export interface FireEngineResponse {
@@ -20,15 +19,16 @@ function calculateSimilarity(a: string, b: string): number {
   if (a === b) return 1;
   if (a.length === 0 || b.length === 0) return 0;
 
-  const maxLen = Math.max(a.length, b.length);
-  const minLen = Math.min(a.length, b.length);
+  const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(Boolean));
+  const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(Boolean));
 
-  let matches = 0;
-  for (let i = 0; i < minLen; i++) {
-    if (a[i] === b[i]) matches++;
+  let intersection = 0;
+  for (const w of wordsA) {
+    if (wordsB.has(w)) intersection++;
   }
 
-  return matches / maxLen;
+  const union = wordsA.size + wordsB.size - intersection;
+  return intersection / union;
 }
 
 export function scheduleABComparison(
@@ -54,14 +54,6 @@ export function scheduleABComparison(
           ...baseLogData,
           error: mirrorResult.error?.message ?? "unknown",
         });
-        return;
-      }
-
-      // Skip comparison if content too large
-      if (
-        productionResponse.content.length > MAX_CONTENT_SIZE ||
-        mirrorResult.response.content.length > MAX_CONTENT_SIZE
-      ) {
         return;
       }
 
