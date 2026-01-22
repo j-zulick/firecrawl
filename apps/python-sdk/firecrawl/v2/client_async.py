@@ -81,6 +81,13 @@ class AsyncFirecrawlClient:
         return await async_search.search(self.async_http_client, request)
 
     async def start_crawl(self, url: str, **kwargs) -> CrawlResponse:
+        sitemap = kwargs.pop("sitemap", None)
+        ignore_sitemap = kwargs.pop("ignore_sitemap", None)
+        if sitemap is None and ignore_sitemap is not None:
+            sitemap = "skip" if ignore_sitemap else "include"
+        if sitemap is not None:
+            kwargs["sitemap"] = sitemap
+
         request = CrawlRequest(url=url, **kwargs)
         return await async_crawl.start_crawl(self.async_http_client, request)
 
@@ -414,4 +421,3 @@ class AsyncFirecrawlClient:
         timeout: Optional[int] = None,
     ) -> AsyncWatcher:
         return AsyncWatcher(self, job_id, kind=kind, poll_interval=poll_interval, timeout=timeout)
-

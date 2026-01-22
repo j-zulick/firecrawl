@@ -229,7 +229,8 @@ class FirecrawlClient:
         exclude_paths: Optional[List[str]] = None,
         include_paths: Optional[List[str]] = None,
         max_discovery_depth: Optional[int] = None,
-        ignore_sitemap: bool = False,
+        sitemap: Optional[Literal["only", "include", "skip"]] = None,
+        ignore_sitemap: Optional[bool] = None,
         ignore_query_parameters: bool = False,
         limit: Optional[int] = None,
         crawl_entire_domain: bool = False,
@@ -254,7 +255,8 @@ class FirecrawlClient:
             exclude_paths: Patterns of URLs to exclude
             include_paths: Patterns of URLs to include
             max_discovery_depth: Maximum depth for finding new URLs
-            ignore_sitemap: Skip sitemap.xml processing
+            sitemap: Sitemap usage mode ("only" | "include" | "skip")
+            ignore_sitemap: Deprecated alias for sitemap ("skip" when true, "include" when false)
             ignore_query_parameters: Ignore URL parameters
             limit: Maximum pages to crawl
             crawl_entire_domain: Follow parent directory links
@@ -277,25 +279,32 @@ class FirecrawlClient:
             Exception: If the crawl fails to start or complete
             TimeoutError: If timeout is reached
         """
-        request = CrawlRequest(
-            url=url,
-            prompt=prompt,
-            exclude_paths=exclude_paths,
-            include_paths=include_paths,
-            max_discovery_depth=max_discovery_depth,
-            ignore_sitemap=ignore_sitemap,
-            ignore_query_parameters=ignore_query_parameters,
-            limit=limit,
-            crawl_entire_domain=crawl_entire_domain,
-            allow_external_links=allow_external_links,
-            allow_subdomains=allow_subdomains,
-            delay=delay,
-            max_concurrency=max_concurrency,
-            webhook=webhook,
-            scrape_options=scrape_options,
-            zero_data_retention=zero_data_retention,
-            integration=integration,
-        )
+        resolved_sitemap = sitemap
+        if resolved_sitemap is None and ignore_sitemap is not None:
+            resolved_sitemap = "skip" if ignore_sitemap else "include"
+
+        request_kwargs = {
+            "url": url,
+            "prompt": prompt,
+            "exclude_paths": exclude_paths,
+            "include_paths": include_paths,
+            "max_discovery_depth": max_discovery_depth,
+            "ignore_query_parameters": ignore_query_parameters,
+            "limit": limit,
+            "crawl_entire_domain": crawl_entire_domain,
+            "allow_external_links": allow_external_links,
+            "allow_subdomains": allow_subdomains,
+            "delay": delay,
+            "max_concurrency": max_concurrency,
+            "webhook": webhook,
+            "scrape_options": scrape_options,
+            "zero_data_retention": zero_data_retention,
+            "integration": integration,
+        }
+        if resolved_sitemap is not None:
+            request_kwargs["sitemap"] = resolved_sitemap
+
+        request = CrawlRequest(**request_kwargs)
         
         return crawl_module.crawl(
             self.http_client,
@@ -313,7 +322,8 @@ class FirecrawlClient:
         exclude_paths: Optional[List[str]] = None,
         include_paths: Optional[List[str]] = None,
         max_discovery_depth: Optional[int] = None,
-        ignore_sitemap: bool = False,
+        sitemap: Optional[Literal["only", "include", "skip"]] = None,
+        ignore_sitemap: Optional[bool] = None,
         ignore_query_parameters: bool = False,
         limit: Optional[int] = None,
         crawl_entire_domain: bool = False,
@@ -335,7 +345,8 @@ class FirecrawlClient:
             exclude_paths: Patterns of URLs to exclude
             include_paths: Patterns of URLs to include
             max_discovery_depth: Maximum depth for finding new URLs
-            ignore_sitemap: Skip sitemap.xml processing
+            sitemap: Sitemap usage mode ("only" | "include" | "skip")
+            ignore_sitemap: Deprecated alias for sitemap ("skip" when true, "include" when false)
             ignore_query_parameters: Ignore URL parameters
             limit: Maximum pages to crawl
             crawl_entire_domain: Follow parent directory links
@@ -354,25 +365,32 @@ class FirecrawlClient:
             ValueError: If request is invalid
             Exception: If the crawl operation fails to start
         """
-        request = CrawlRequest(
-            url=url,
-            prompt=prompt,
-            exclude_paths=exclude_paths,
-            include_paths=include_paths,
-            max_discovery_depth=max_discovery_depth,
-            ignore_sitemap=ignore_sitemap,
-            ignore_query_parameters=ignore_query_parameters,
-            limit=limit,
-            crawl_entire_domain=crawl_entire_domain,
-            allow_external_links=allow_external_links,
-            allow_subdomains=allow_subdomains,
-            delay=delay,
-            max_concurrency=max_concurrency,
-            webhook=webhook,
-            scrape_options=scrape_options,
-            zero_data_retention=zero_data_retention,
-            integration=integration,
-        )
+        resolved_sitemap = sitemap
+        if resolved_sitemap is None and ignore_sitemap is not None:
+            resolved_sitemap = "skip" if ignore_sitemap else "include"
+
+        request_kwargs = {
+            "url": url,
+            "prompt": prompt,
+            "exclude_paths": exclude_paths,
+            "include_paths": include_paths,
+            "max_discovery_depth": max_discovery_depth,
+            "ignore_query_parameters": ignore_query_parameters,
+            "limit": limit,
+            "crawl_entire_domain": crawl_entire_domain,
+            "allow_external_links": allow_external_links,
+            "allow_subdomains": allow_subdomains,
+            "delay": delay,
+            "max_concurrency": max_concurrency,
+            "webhook": webhook,
+            "scrape_options": scrape_options,
+            "zero_data_retention": zero_data_retention,
+            "integration": integration,
+        }
+        if resolved_sitemap is not None:
+            request_kwargs["sitemap"] = resolved_sitemap
+
+        request = CrawlRequest(**request_kwargs)
         
         return crawl_module.start_crawl(self.http_client, request)
     

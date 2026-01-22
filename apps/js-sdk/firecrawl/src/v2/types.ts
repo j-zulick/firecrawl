@@ -460,7 +460,7 @@ export interface CrawlOptions {
   excludePaths?: string[] | null;
   includePaths?: string[] | null;
   maxDiscoveryDepth?: number | null;
-  sitemap?: 'skip' | 'include';
+  sitemap?: 'skip' | 'include' | 'only';
   ignoreQueryParameters?: boolean;
   limit?: number | null;
   crawlEntireDomain?: boolean;

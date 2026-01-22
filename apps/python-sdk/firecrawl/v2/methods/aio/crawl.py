@@ -43,7 +43,7 @@ def _prepare_crawl_request(request: CrawlRequest) -> dict:
         "include_paths": "includePaths",
         "exclude_paths": "excludePaths",
         "max_discovery_depth": "maxDiscoveryDepth",
-        "ignore_sitemap": "ignoreSitemap",
+        "sitemap": "sitemap",
         "ignore_query_parameters": "ignoreQueryParameters",
         "crawl_entire_domain": "crawlEntireDomain",
         "allow_external_links": "allowExternalLinks",
@@ -272,7 +272,7 @@ async def crawl_params_preview(client: AsyncHttpClient, request: CrawlParamsRequ
         "includePaths": "include_paths",
         "excludePaths": "exclude_paths",
         "maxDiscoveryDepth": "max_discovery_depth",
-        "ignoreSitemap": "ignore_sitemap",
+        "sitemap": "sitemap",
         "ignoreQueryParameters": "ignore_query_parameters",
         "crawlEntireDomain": "crawl_entire_domain",
         "allowExternalLinks": "allow_external_links",
@@ -348,4 +348,3 @@ async def get_active_crawls(client: AsyncHttpClient) -> ActiveCrawlsResponse:
                 "options": c.get("options"),
             })
     return ActiveCrawlsResponse(success=True, crawls=[ActiveCrawl(**nc) for nc in normalized])
-
