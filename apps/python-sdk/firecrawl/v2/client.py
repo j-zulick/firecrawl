@@ -423,6 +423,28 @@ class FirecrawlClient:
             pagination_config=pagination_config,
             request_timeout=request_timeout,
         )
+
+    def get_crawl_status_page(
+        self,
+        next_url: str,
+        *,
+        request_timeout: Optional[float] = None,
+    ) -> CrawlJob:
+        """
+        Fetch a single page of crawl results using a next URL.
+
+        Args:
+            next_url: Opaque next URL from a prior crawl status response
+            request_timeout: Timeout (in seconds) for the HTTP request
+
+        Returns:
+            CrawlJob with the page data and next URL (if any)
+        """
+        return crawl_module.get_crawl_status_page(
+            self.http_client,
+            next_url,
+            request_timeout=request_timeout,
+        )
     
     def get_crawl_errors(self, crawl_id: str) -> CrawlErrorsResponse:
         """
@@ -739,6 +761,27 @@ class FirecrawlClient:
             self.http_client, 
             job_id,
             pagination_config=pagination_config
+        )
+
+    def get_batch_scrape_status_page(
+        self,
+        next_url: str,
+        *,
+        request_timeout: Optional[float] = None,
+    ):
+        """Fetch a single page of batch scrape results using a next URL.
+
+        Args:
+            next_url: Opaque next URL from a prior batch scrape status response
+            request_timeout: Timeout (in seconds) for the HTTP request
+
+        Returns:
+            BatchScrapeJob with the page data and next URL (if any)
+        """
+        return batch_module.get_batch_scrape_status_page(
+            self.http_client,
+            next_url,
+            request_timeout=request_timeout,
         )
 
     def cancel_batch_scrape(self, job_id: str) -> bool:

@@ -178,6 +178,28 @@ class AsyncFirecrawlClient:
             request_timeout=request_timeout,
         )
 
+    async def get_crawl_status_page(
+        self,
+        next_url: str,
+        *,
+        request_timeout: Optional[float] = None,
+    ) -> CrawlJob:
+        """
+        Fetch a single page of crawl results using a next URL.
+
+        Args:
+            next_url: Opaque next URL from a prior crawl status response
+            request_timeout: Timeout (in seconds) for the HTTP request
+
+        Returns:
+            CrawlJob with the page data and next URL (if any)
+        """
+        return await async_crawl.get_crawl_status_page(
+            self.async_http_client,
+            next_url,
+            request_timeout=request_timeout,
+        )
+
     async def cancel_crawl(self, job_id: str) -> bool:
         return await async_crawl.cancel_crawl(self.async_http_client, job_id)
 
@@ -246,6 +268,18 @@ class AsyncFirecrawlClient:
             self.async_http_client, 
             job_id,
             pagination_config=pagination_config
+        )
+
+    async def get_batch_scrape_status_page(
+        self,
+        next_url: str,
+        *,
+        request_timeout: Optional[float] = None,
+    ):
+        return await async_batch.get_batch_scrape_status_page(
+            self.async_http_client,
+            next_url,
+            request_timeout=request_timeout,
         )
 
     async def cancel_batch_scrape(self, job_id: str) -> bool:
