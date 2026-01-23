@@ -804,6 +804,7 @@ class AgentResponse(BaseModel):
     status: Optional[Literal["processing", "completed", "failed"]] = None
     data: Optional[Any] = None
     error: Optional[str] = None
+    model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None
     expires_at: Optional[datetime] = None
     credits_used: Optional[int] = None
 

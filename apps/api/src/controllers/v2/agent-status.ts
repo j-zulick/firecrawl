@@ -28,6 +28,15 @@ export async function agentStatusController(
   if (agent?.is_successful) {
     data = await getJobFromGCS(agent.id);
   }
+  const model =
+    (
+      agent?.options as
+        | { model?: "spark-1-pro" | "spark-1-mini" }
+        | null
+        | undefined
+    )?.model === "spark-1-mini"
+      ? "spark-1-mini"
+      : "spark-1-pro";
 
   return res.status(200).json({
     success: true,
@@ -38,6 +47,7 @@ export async function agentStatusController(
         : "failed",
     error: agent?.error || undefined,
     data,
+    model,
     expiresAt: new Date(
       new Date(agent?.created_at ?? agentRequest.created_at).getTime() +
         1000 * 60 * 60 * 24,

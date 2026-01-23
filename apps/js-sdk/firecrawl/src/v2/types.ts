@@ -556,6 +556,7 @@ export interface AgentStatusResponse {
   status: 'processing' | 'completed' | 'failed';
   error?: string;
   data?: unknown;
+  model?: 'spark-1-pro' | 'spark-1-mini';
   expiresAt: string;
   creditsUsed?: number;
 }
