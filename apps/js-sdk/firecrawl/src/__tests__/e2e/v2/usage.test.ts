@@ -23,16 +23,15 @@ describe("v2.usage e2e", () => {
     expect(typeof resp.maxConcurrency).toBe("number");
   }, 60_000);
 
-  // NOTE: Disabled, broken on central team due to overflow
-  // test("get_credit_usage", async () => {
-  //   const resp = await client.getCreditUsage();
-  //   expect(typeof resp.remainingCredits).toBe("number");
-  // }, 60_000);
+  test("get_credit_usage", async () => {
+    const resp = await client.getCreditUsage();
+    expect(typeof resp.remainingCredits).toBe("number");
+  }, 60_000);
 
-  // test("get_token_usage", async () => {
-  //   const resp = await client.getTokenUsage();
-  //   expect(typeof resp.remainingTokens).toBe("number");
-  // }, 60_000);
+  test("get_token_usage", async () => {
+    const resp = await client.getTokenUsage();
+    expect(typeof resp.remainingTokens).toBe("number");
+  }, 60_000);
 
   test("get_queue_status", async () => {
     const resp = await client.getQueueStatus();

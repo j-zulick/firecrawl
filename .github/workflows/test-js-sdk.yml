@@ -8,7 +8,7 @@ on:
       - apps/js-sdk/firecrawl/**
 
 env:
-  TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
+  IDMUX_URL: ${{ secrets.IDMUX_URL }}
 
 jobs:
   test:
