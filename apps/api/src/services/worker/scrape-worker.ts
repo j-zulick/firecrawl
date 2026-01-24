@@ -183,7 +183,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       ? setTimeout(
           () =>
             abortController.abort(
-              new ScrapeJobTimeoutError("Scrape timed out"),
+              new ScrapeJobTimeoutError(),
             ),
           remainingTime,
         )
@@ -192,7 +192,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
   try {
     if (remainingTime !== undefined && remainingTime < 0) {
-      throw new ScrapeJobTimeoutError("Scrape timed out");
+      throw new ScrapeJobTimeoutError();
     }
 
     if (job.data.crawl_id) {
@@ -217,7 +217,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                   timeoutHandle = setTimeout(resolve, remainingTime);
                 });
 
-                throw new ScrapeJobTimeoutError("Scrape timed out");
+                throw new ScrapeJobTimeoutError();
               })(),
             ]
           : []),
@@ -231,7 +231,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     try {
       signal?.throwIfAborted();
     } catch (e) {
-      throw new ScrapeJobTimeoutError("Scrape timed out");
+      throw new ScrapeJobTimeoutError();
     }
 
     if (!pipeline.success) {
@@ -298,7 +298,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         if (!filterResult.allowed && !job.data.isCrawlSourceScrape) {
           const reason =
             filterResult.denialReason ||
-            "Redirected target URL is not allowed by crawlOptions";
+            `The URL you requested redirected to a different URL ("${doc.metadata.url}"), but that redirected URL is not allowed by your crawl configuration (includePaths, excludePaths, allowBackwardCrawling, or other filters). The original URL was "${doc.metadata.sourceURL}". To include this redirected URL, adjust your crawl options to allow it.`;
           throw new CrawlDenialError(reason);
         }
 
@@ -445,7 +445,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               const url = doc.metadata.url ?? doc.metadata.sourceURL!;
               const reason =
                 filterResult.denialReasons.get(url) ||
-                "Source URL is not allowed by crawl configuration";
+                `The source URL ("${url}") you provided as the starting point for this crawl is not allowed by your own crawl configuration. This can happen if your includePaths, excludePaths, maxDepth, or other filters exclude the starting URL itself. Please check your crawl configuration to ensure the starting URL is allowed.`;
               throw new CrawlDenialError(reason);
             }
           }
@@ -455,7 +455,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       try {
         signal?.throwIfAborted();
       } catch (e) {
-        throw new ScrapeJobTimeoutError("Scrape timed out");
+        throw new ScrapeJobTimeoutError();
       }
 
       const credits_billed = await billScrapeJob(
@@ -526,7 +526,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       try {
         signal?.throwIfAborted();
       } catch (e) {
-        throw new ScrapeJobTimeoutError("Scrape timed out");
+        throw new ScrapeJobTimeoutError();
       }
 
       const credits_billed = await billScrapeJob(
