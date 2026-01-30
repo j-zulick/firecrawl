@@ -23,6 +23,8 @@ import { logRequest } from "../../services/logging/log_job";
 import { getErrorContactMessage } from "../../lib/deployment";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
 
+const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
+
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse>,
@@ -100,6 +102,8 @@ export async function scrapeController(
 
       const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
       const agentRequestId = req.body.__agentInterop?.requestId ?? null;
+      const boostConcurrency =
+        req.body.__agentInterop?.boostConcurrency ?? false;
 
       const logger = _logger.child({
         method: "scrapeController",
@@ -172,10 +176,15 @@ export async function scrapeController(
         }
         req.on("close", () => aborter.abort());
 
+        const baseConcurrency = req.acuc?.concurrency || 1;
+        const concurrency = boostConcurrency
+          ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
+          : baseConcurrency;
+
         doc = await teamConcurrencySemaphore.withSemaphore(
           req.auth.team_id,
           jobId,
-          req.acuc?.concurrency || 1,
+          concurrency,
           aborter.signal,
           timeout ?? 60_000,
           async limited => {

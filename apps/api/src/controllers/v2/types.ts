@@ -771,6 +771,7 @@ const scrapeRequestSchemaBase = baseScrapeOptions.extend({
       auth: z.string(),
       requestId: z.string(),
       shouldBill: z.boolean(),
+      boostConcurrency: z.boolean().optional()
     })
     .optional(),
 });
