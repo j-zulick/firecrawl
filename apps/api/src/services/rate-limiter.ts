@@ -40,8 +40,5 @@ export function getRateLimiter(
     rateLimit = Math.max(rateLimit, 100);
   }
 
-  return createRateLimiter(
-    `${mode}`,
-    rate_limits?.[mode] ?? fallbackRateLimits?.[mode] ?? 500,
-  );
+  return createRateLimiter(`${mode}`, rateLimit);
 }
