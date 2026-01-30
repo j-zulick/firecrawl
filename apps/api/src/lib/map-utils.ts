@@ -210,30 +210,35 @@ export async function getMapResults({
       ? null
       : await redisEvictConnection.get(cacheKey);
 
-    let pagePromises: (Promise<any> | any)[];
-
-    if (cachedResult) {
-      pagePromises = JSON.parse(cachedResult);
-    } else {
-      const fetchPage = async (page: number) => {
-        return await fireEngineMap(
-          mapUrl,
-          {
-            numResults: resultsPerPage,
-            page: page,
-          },
-          abort,
-        );
-      };
-
-      pagePromises = Array.from({ length: maxPages }, (_, i) =>
-        fetchPage(i + 1),
+    const fetchPage = async (page: number) => {
+      return await fireEngineMap(
+        mapUrl,
+        {
+          numResults: resultsPerPage,
+          page,
+        },
+        abort,
       );
-    }
+    };
+
+    const fetchAllPages = async (): Promise<any[]> => {
+      if (cachedResult) {
+        return JSON.parse(cachedResult);
+      }
+      // if page 1 has no results, don't fetch remaining pages
+      const page1Result = await fetchPage(1);
+      if (!page1Result || page1Result.length === 0 || maxPages === 1) {
+        return [page1Result];
+      }
+      const remainingPages = await Promise.all(
+        Array.from({ length: maxPages - 1 }, (_, i) => fetchPage(i + 2)),
+      );
+      return [page1Result, ...remainingPages];
+    };
 
     const [indexResults, searchResults] = await Promise.all([
       queryIndex(url, limit, useIndex, includeSubdomains),
-      Promise.all(pagePromises),
+      fetchAllPages(),
     ]);
 
     if (!zeroDataRetention) {
