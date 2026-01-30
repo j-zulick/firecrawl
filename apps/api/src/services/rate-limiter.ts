@@ -35,7 +35,7 @@ export function getRateLimiter(
 ): RateLimiterRedis {
   let rateLimit = rate_limits?.[mode] ?? fallbackRateLimits?.[mode] ?? 500;
 
-  if (mode === RateLimiterMode.Search) {
+  if (mode === RateLimiterMode.Search || mode === RateLimiterMode.Scrape) {
     // TEMP: Mogery
     rateLimit = Math.max(rateLimit, 100);
   }
