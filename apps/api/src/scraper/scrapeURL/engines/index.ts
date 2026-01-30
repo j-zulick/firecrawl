@@ -609,9 +609,16 @@ export async function buildFallbackList(meta: Meta): Promise<
       f => !f.unsupportedFeatures.has("branding"),
     );
     if (!hasCDPEngine) {
-      throw new Error(
-        "Branding extraction requires Chrome CDP (fire-engine). ",
-      );
+      if (meta.featureFlags.has("pdf")) {
+        throw new Error(
+          "Branding extraction is only supported for HTML web pages. PDFs are not supported.",
+        );
+      } else if (meta.featureFlags.has("document")) {
+        throw new Error(
+          "Branding extraction is only supported for HTML web pages. Documents (docx, xlsx, etc.) are not supported.",
+        );
+      }
+      throw new Error("Branding extraction requires Chrome CDP (fire-engine).");
     }
   }
 
