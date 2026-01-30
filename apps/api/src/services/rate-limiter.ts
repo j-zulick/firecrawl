@@ -33,6 +33,13 @@ export function getRateLimiter(
   mode: RateLimiterMode,
   rate_limits: AuthCreditUsageChunk["rate_limits"] | null,
 ): RateLimiterRedis {
+  let rateLimit = rate_limits?.[mode] ?? fallbackRateLimits?.[mode] ?? 500;
+
+  if (mode === RateLimiterMode.Search) {
+    // TEMP: Mogery
+    rateLimit = Math.max(rateLimit, 100);
+  }
+
   return createRateLimiter(
     `${mode}`,
     rate_limits?.[mode] ?? fallbackRateLimits?.[mode] ?? 500,
