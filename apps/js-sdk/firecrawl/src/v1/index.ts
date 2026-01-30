@@ -131,7 +131,7 @@ export interface CrawlScrapeOptions {
   skipTlsVerification?: boolean;
   removeBase64Images?: boolean;
   blockAds?: boolean;
-  proxy?: "basic" | "stealth" | "auto";
+  proxy?: "basic" | "stealth" | "enhanced" | "auto";
   storeInCache?: boolean;
   maxAge?: number;
   parsePDF?: boolean;

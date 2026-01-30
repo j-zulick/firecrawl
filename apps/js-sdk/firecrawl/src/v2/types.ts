@@ -153,7 +153,7 @@ export interface ScrapeOptions {
   fastMode?: boolean;
   useMock?: string;
   blockAds?: boolean;
-  proxy?: 'basic' | 'stealth' | 'auto' | string;
+  proxy?: 'basic' | 'stealth' | 'enhanced' | 'auto' | string;
   maxAge?: number;
   minAge?: number;
   storeInCache?: boolean;

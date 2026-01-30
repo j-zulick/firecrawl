@@ -523,7 +523,7 @@ class ScrapeOptions(BaseModel):
     fast_mode: Optional[bool] = None
     use_mock: Optional[str] = None
     block_ads: Optional[bool] = None
-    proxy: Optional[Literal["basic", "stealth", "auto"]] = None
+    proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None
     max_age: Optional[int] = None
     min_age: Optional[int] = None
     store_in_cache: Optional[bool] = None

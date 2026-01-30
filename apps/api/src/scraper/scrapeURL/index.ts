@@ -175,7 +175,7 @@ function buildFeatureFlags(
     flags.add("useFastMode");
   }
 
-  if (options.proxy === "stealth") {
+  if (options.proxy === "stealth" || options.proxy === "enhanced") {
     flags.add("stealthProxy");
   }
 
@@ -254,10 +254,7 @@ async function buildMetaObject(
   const abortHandle =
     options.timeout !== undefined
       ? setTimeout(
-          () =>
-            abortController.abort(
-              new ScrapeJobTimeoutError(),
-            ),
+          () => abortController.abort(new ScrapeJobTimeoutError()),
           options.timeout,
         )
       : undefined;

@@ -541,7 +541,7 @@ const baseScrapeOptions = z.strictObject({
   fastMode: z.boolean().prefault(false),
   useMock: z.string().optional(),
   blockAds: z.boolean().prefault(true),
-  proxy: z.enum(["basic", "stealth", "auto"]).prefault("auto"),
+  proxy: z.enum(["basic", "stealth", "enhanced", "auto"]).prefault("auto"),
   maxAge: z.int().gte(0).optional(),
   minAge: z.int().gte(0).optional(),
   storeInCache: z.boolean().prefault(true),
@@ -596,7 +596,9 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
   }
 
   if (
-    (obj.proxy === "stealth" || obj.proxy === "auto") &&
+    (obj.proxy === "stealth" ||
+      obj.proxy === "enhanced" ||
+      obj.proxy === "auto") &&
     obj.timeout === 30000
   ) {
     result = { ...result, timeout: 120000 };
