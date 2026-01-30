@@ -114,7 +114,7 @@
 
 # Branding
 **/branding*                                    @abimaelmartell
-**/brandingScript*                              @abimaelmartell
+**/branding-script*                             @abimaelmartell
 
 # Examples
 /examples/*                                     @ericciarla @nickscamara

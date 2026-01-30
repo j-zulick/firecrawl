@@ -1256,6 +1256,7 @@ export type TeamFlags = {
   crawlTtlHours?: number;
   ipWhitelist?: boolean;
   bypassCreditChecks?: boolean;
+  debugBranding?: boolean;
 } | null;
 
 interface RequestWithMaybeACUC<

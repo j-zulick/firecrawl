@@ -35,6 +35,9 @@ import { youtubePostprocessor } from "../../postprocessors/youtube";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { getBrandingScript } from "./brandingScript";
 
+/** Default wait (ms) before running the branding script when user did not set waitFor. Lets the page settle so DOM/images are ready and reduces JS errors. */
+const BRANDING_DEFAULT_WAIT_MS = 2000;
+
 // This function does not take `Meta` on purpose. It may not access any
 // meta values to construct the request -- that must be done by the
 // `scrapeURLWithFireEngine*` functions.
@@ -234,14 +237,21 @@ export async function scrapeURLWithFireEngineChromeCDP(
       "engine.url": meta.url,
       "engine.team_id": meta.internalOptions.teamId,
     });
+    const hasBranding = hasFormatOfType(meta.options.formats, "branding");
+    const defaultWait = hasBranding ? BRANDING_DEFAULT_WAIT_MS : 0;
+    const effectiveWait =
+      meta.options.waitFor != null && meta.options.waitFor !== 0
+        ? meta.options.waitFor
+        : defaultWait;
+
     const actions: InternalAction[] = [
-      // Transform waitFor option into an action (unsupported by chrome-cdp)
-      ...(meta.options.waitFor !== 0
+      // Transform waitFor option into an action (unsupported by chrome-cdp).
+      // When branding is requested and user didn't set waitFor, use a default wait so the page is ready and we avoid JS errors.
+      ...(effectiveWait > 0
         ? [
             {
               type: "wait" as const,
-              milliseconds:
-                meta.options.waitFor > 30000 ? 30000 : meta.options.waitFor,
+              milliseconds: effectiveWait > 30000 ? 30000 : effectiveWait,
             },
           ]
         : []),
@@ -567,13 +577,20 @@ export function fireEngineMaxReasonableTime(
   meta: Meta,
   engine: "chrome-cdp" | "playwright" | "tlsclient",
 ): number {
+  const hasBranding = hasFormatOfType(meta.options.formats, "branding");
+  const defaultWait = hasBranding ? BRANDING_DEFAULT_WAIT_MS : 0;
+  const effectiveWait =
+    meta.options.waitFor != null && meta.options.waitFor !== 0
+      ? meta.options.waitFor
+      : defaultWait;
+
   if (engine === "tlsclient") {
     return 15000;
   } else if (engine === "playwright") {
     return (meta.options.waitFor ?? 0) + 30000;
   } else {
     return (
-      (meta.options.waitFor ?? 0) +
+      effectiveWait +
       (meta.options.actions?.reduce(
         (a, x) => (x.type === "wait" ? (x.milliseconds ?? 2500) + a : 250 + a),
         0,
