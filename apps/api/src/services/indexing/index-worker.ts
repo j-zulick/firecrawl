@@ -668,7 +668,7 @@ async function tallyBilling() {
   for (const teamId of billedTeams) {
     logger.info("Updating tally for team", { teamId });
 
-    const { error } = await supabase_service.rpc("update_tally_7_team", {
+    const { error } = await supabase_service.rpc("update_tally_8_team", {
       i_team_id: teamId,
     });
 
