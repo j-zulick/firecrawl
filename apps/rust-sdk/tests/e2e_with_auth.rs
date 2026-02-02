@@ -1,5 +1,5 @@
 use dotenvy::dotenv;
-use firecrawl::scrape::{ExtractOptions, ScrapeFormats, ScrapeOptions};
+use firecrawl::scrape::{JsonOptions, ScrapeFormats, ScrapeOptions};
 use firecrawl::{FirecrawlApp, FirecrawlError};
 use serde_json::json;
 use std::env;
@@ -123,8 +123,8 @@ async fn test_llm_extraction() {
     let api_key = env::var("TEST_API_KEY").ok();
     let app = FirecrawlApp::new_selfhosted(api_url, api_key).unwrap();
     let options = ScrapeOptions {
-        formats: vec! [ ScrapeFormats::Extract ].into(),
-        extract: ExtractOptions {
+        formats: vec![ScrapeFormats::Json].into(),
+        json_options: JsonOptions {
             prompt: "Based on the information on the page, find what the company's mission is and whether it supports SSO, and whether it is open source".to_string().into(),
             schema: json!({
                 "type": "object",
