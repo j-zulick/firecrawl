@@ -80,7 +80,7 @@
     "@apidevtools/json-schema-ref-parser": "^15.1.2",
     "@bull-board/api": "^6.14.0",
     "@bull-board/express": "^6.14.0",
-    "@coinbase/x402": "^0.6.6",
+    "@x402/evm": "^2.2.0",
     "@dqbd/tiktoken": "^1.0.22",
     "@google-cloud/storage": "^7.16.0",
     "@mendable/firecrawl-rs": "workspace:*",
@@ -138,7 +138,7 @@
     "uuid": "^13.0.0",
     "winston": "^3.14.2",
     "ws": "^8.18.0",
-    "x402-express": "^0.6.5",
+    "@x402/express": "^2.2.0",
     "xml2js": "^0.6.2",
     "zod": "4.1.12"
   },
@@ -151,16 +151,15 @@
   },
   "pnpm": {
     "allowScripts": {
-      "@coinbase/x402": true,
       "oxc-resolver": true
     },
     "onlyBuiltDependencies": [
-      "@coinbase/x402",
       "@mendable/firecrawl-rs",
       "@sentry-internal/node-cpu-profiler",
       "@sentry/cli",
       "bigint-buffer",
       "bufferutil",
+      "four-flap-bigint-buffer",
       "esbuild",
       "keccak",
       "koffi",
@@ -173,6 +172,7 @@
       "wordpos"
     ],
     "overrides": {
+      "bigint-buffer": "npm:four-flap-bigint-buffer@1.1.6",
       "brace-expansion@>=2.0.0 <=2.0.1": "2.0.2",
       "debug": ">=4.4.3",
       "express@>=4.0.0 <4.22.0": "4.22.0",
