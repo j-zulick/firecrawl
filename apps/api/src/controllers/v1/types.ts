@@ -74,7 +74,7 @@ export const url = z.preprocess(
         return false;
       }
     }, "Invalid URL"),
-  // .refine((x) => !isUrlBlocked(x as string), BLOCKLISTED_URL_MESSAGE),
+  // .refine((x) => !isUrlBlocked(x as string), UNSUPPORTED_SITE_MESSAGE),
 );
 
 const agentExtractModelValue = "fire-1";

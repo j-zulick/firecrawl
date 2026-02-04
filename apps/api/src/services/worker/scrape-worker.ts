@@ -45,7 +45,7 @@ import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { CostTracking } from "../../lib/cost-tracking";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
-import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
+import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
 import { WebCrawler } from "../../scraper/WebScraper/crawler";
 import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
@@ -181,10 +181,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
   const abortTimeoutHandle =
     remainingTime !== undefined
       ? setTimeout(
-          () =>
-            abortController.abort(
-              new ScrapeJobTimeoutError(),
-            ),
+          () => abortController.abort(new ScrapeJobTimeoutError()),
           remainingTime,
         )
       : undefined;
@@ -322,7 +319,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             (await getACUCTeam(job.data.team_id))?.flags ?? null,
           )
         ) {
-          throw new CrawlDenialError(BLOCKLISTED_URL_MESSAGE); // TODO: make this its own error type that is ignored by error tracking
+          throw new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE); // TODO: make this its own error type that is ignored by error tracking
         }
 
         const p1 = generateURLPermutations(normalizeURL(doc.metadata.url, sc));

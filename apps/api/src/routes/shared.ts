@@ -13,7 +13,7 @@ import { validateIdempotencyKey } from "../services/idempotency/validate";
 import { checkTeamCredits } from "../services/billing/credit_billing";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { logger } from "../lib/logger";
-import { BLOCKLISTED_URL_MESSAGE } from "../lib/strings";
+import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import { addDomainFrequencyJob } from "../services";
 import * as geoip from "geoip-country";
 import { isSelfHosted } from "../lib/deployment";
@@ -218,7 +218,7 @@ export function blocklistMiddleware(
     if (!res.headersSent) {
       return res.status(403).json({
         success: false,
-        error: BLOCKLISTED_URL_MESSAGE,
+        error: UNSUPPORTED_SITE_MESSAGE,
       });
     }
   }
