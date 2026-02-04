@@ -22,7 +22,6 @@ import {
   index_supabase_service,
   processIndexInsertJobs,
   processOMCEJobs,
-  processDomainFrequencyJobs,
   queryDomainsForPrecrawl,
 } from "..";
 import { getSearchIndexClient } from "../../lib/search-index-client";
@@ -684,7 +683,6 @@ async function tallyBilling() {
 const INDEX_INSERT_INTERVAL = 3000;
 const WEBHOOK_INSERT_INTERVAL = 15000;
 const OMCE_INSERT_INTERVAL = 5000;
-const DOMAIN_FREQUENCY_INTERVAL = 10000;
 // Search indexing is now handled by separate search service, not this worker
 // const SEARCH_INDEX_INTERVAL = 10000;
 
@@ -738,22 +736,6 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
       await processOMCEJobs();
     });
   }, OMCE_INSERT_INTERVAL);
-
-  const domainFrequencyInterval = setInterval(async () => {
-    if (isShuttingDown) {
-      return;
-    }
-    await withSpan(
-      "firecrawl-index-worker-process-domain-frequency-jobs",
-      async span => {
-        setSpanAttributes(span, {
-          "index.worker.operation": "process_domain_frequency_jobs",
-          "index.worker.type": "scheduled",
-        });
-        await processDomainFrequencyJobs();
-      },
-    );
-  }, DOMAIN_FREQUENCY_INTERVAL);
 
   const billingTallyInterval = setInterval(
     async () => {
@@ -812,7 +794,6 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
   clearInterval(indexInserterInterval);
   clearInterval(webhookInserterInterval);
   clearInterval(omceInserterInterval);
-  clearInterval(domainFrequencyInterval);
   clearInterval(billingTallyInterval);
 
   logger.info("All workers shut down, exiting process");

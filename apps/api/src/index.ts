@@ -30,7 +30,6 @@ import { v7 as uuidv7 } from "uuid";
 import { attachWsProxy } from "./services/agentLivecastWS";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
-import domainFrequencyRouter from "./routes/domain-frequency";
 import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
@@ -106,7 +105,6 @@ app.use(v0Router);
 app.use("/v1", v1Router);
 app.use("/v2", v2Router);
 app.use(adminRouter);
-app.use(domainFrequencyRouter);
 
 const DEFAULT_PORT = config.PORT;
 const HOST = config.HOST;
