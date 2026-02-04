@@ -362,56 +362,6 @@ export async function getIndexInsertQueueLength(): Promise<number> {
   return (await redisEvictConnection.llen(INDEX_INSERT_QUEUE_KEY)) ?? 0;
 }
 
-const INDEX_RF_INSERT_QUEUE_KEY = "index-rf-insert-queue";
-const INDEX_RF_INSERT_BATCH_SIZE = 100;
-
-export async function addIndexRFInsertJob(data: any) {
-  await redisEvictConnection.rpush(
-    INDEX_RF_INSERT_QUEUE_KEY,
-    JSON.stringify(data),
-  );
-}
-
-async function getIndexRFInsertJobs(): Promise<any[]> {
-  const jobs =
-    (await redisEvictConnection.lpop(
-      INDEX_RF_INSERT_QUEUE_KEY,
-      INDEX_RF_INSERT_BATCH_SIZE,
-    )) ?? [];
-  return jobs.map(x => JSON.parse(x));
-}
-
-export async function processIndexRFInsertJobs() {
-  const jobs = await getIndexRFInsertJobs();
-  if (jobs.length === 0) {
-    return;
-  }
-  _logger.info(`Index RF inserter found jobs to insert`, {
-    jobCount: jobs.length,
-  });
-  try {
-    const { error } = await index_supabase_service
-      .from("request_frequency")
-      .insert(jobs);
-    if (error) {
-      _logger.error(`Index RF inserter failed to insert jobs`, {
-        error,
-        jobCount: jobs.length,
-      });
-    }
-    _logger.info(`Index RF inserter inserted jobs`, { jobCount: jobs.length });
-  } catch (error) {
-    _logger.error(`Index RF inserter failed to insert jobs`, {
-      error,
-      jobCount: jobs.length,
-    });
-  }
-}
-
-export async function getIndexRFInsertQueueLength(): Promise<number> {
-  return (await redisEvictConnection.llen(INDEX_RF_INSERT_QUEUE_KEY)) ?? 0;
-}
-
 const OMCE_JOB_QUEUE_KEY = "omce-job-queue";
 const OMCE_JOB_QUEUE_BATCH_SIZE = 100;
 

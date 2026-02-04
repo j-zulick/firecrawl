@@ -21,7 +21,6 @@ import { v7 as uuidv7 } from "uuid";
 import {
   index_supabase_service,
   processIndexInsertJobs,
-  processIndexRFInsertJobs,
   processOMCEJobs,
   processDomainFrequencyJobs,
   queryDomainsForPrecrawl,
@@ -727,22 +726,6 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
     await processWebhookInsertJobs();
   }, WEBHOOK_INSERT_INTERVAL);
 
-  const indexRFInserterInterval = setInterval(async () => {
-    if (isShuttingDown) {
-      return;
-    }
-    await withSpan(
-      "firecrawl-index-worker-process-rf-insert-jobs",
-      async span => {
-        setSpanAttributes(span, {
-          "index.worker.operation": "process_rf_insert_jobs",
-          "index.worker.type": "scheduled",
-        });
-        await processIndexRFInsertJobs();
-      },
-    );
-  }, INDEX_INSERT_INTERVAL);
-
   const omceInserterInterval = setInterval(async () => {
     if (isShuttingDown) {
       return;
@@ -828,7 +811,6 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
 
   clearInterval(indexInserterInterval);
   clearInterval(webhookInserterInterval);
-  clearInterval(indexRFInserterInterval);
   clearInterval(omceInserterInterval);
   clearInterval(domainFrequencyInterval);
   clearInterval(billingTallyInterval);
