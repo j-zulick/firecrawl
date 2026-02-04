@@ -26,6 +26,13 @@ jobs:
           node-version: "20"
           cache: "pnpm"
           cache-dependency-path: './apps/js-sdk/firecrawl/pnpm-lock.yaml'
+      - name: Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          use-cache: 'true'
       - name: Install dependencies
         run: pnpm install
         working-directory: ./apps/js-sdk/firecrawl
