@@ -39,7 +39,9 @@
 
 # **🔥 Firecrawl**
 
-**Turn websites into LLM-ready data.** [**Firecrawl**](https://firecrawl.dev/?ref=github) is an API that crawls, scrapes, and extracts structured data from any website. Our Agent finds and gathers data from anywhere on the web, just describe what you need.
+**Turn websites into LLM-ready data.** 
+
+[**Firecrawl**](https://firecrawl.dev/?ref=github) is an API that scrapes, crawls, and extracts structured data from any website, powering AI agents and apps with real-time context from the web.
 
 Looking for our MCP? Check out the repo [here](https://github.com/firecrawl/firecrawl-mcp-server).
 
@@ -55,10 +57,9 @@ _Pst. Hey, you, join our stargazers :)_
 
 ## Why Firecrawl?
 
-- **Agent**: Just describe the data you want, no URLs required
 - **LLM-ready output**: Clean markdown, structured JSON, screenshots, HTML, and more
 - **Industry-leading reliability**: >80% coverage on [benchmark evaluations](https://www.firecrawl.dev/blog/the-worlds-best-web-data-api-v25), outperforming every other provider tested
-- **Handles the hard stuff**: Proxies, anti-bot, JavaScript rendering, authentication flows, and dynamic content that breaks other scrapers
+- **Handles the hard stuff**: Proxies, JavaScript rendering, authentication flows, and dynamic content that breaks other scrapers
 - **Customization**: Exclude tags, crawl behind auth walls, max depth, and more
 - **Media parsing**: Automatic text extraction from PDFs, DOCX, and images
 - **Actions**: Click, scroll, input, wait, and more before extracting
@@ -67,41 +68,11 @@ _Pst. Hey, you, join our stargazers :)_
 
 ---
 
-## Using Firecrawl
-
-**Quick Start**: Use our hosted API at [firecrawl.dev](https://firecrawl.dev) - sign up and get your API key to start scraping in seconds. Try the [playground](https://firecrawl.dev/playground) to test it out.
-
-**Integrate Directly**: Firecrawl works seamlessly with popular tools.
-- **SDKs**: [Python](https://docs.firecrawl.dev/sdks/python), [Node](https://docs.firecrawl.dev/sdks/node)
-- **Community SDKs**: [Go](https://github.com/mendableai/firecrawl-go), [Rust](https://docs.firecrawl.dev/sdks/rust)
-- **LLM Frameworks**: [Langchain (python)](https://python.langchain.com/docs/integrations/document_loaders/firecrawl/), [Langchain (js)](https://js.langchain.com/docs/integrations/document_loaders/web_loaders/firecrawl), [Llama Index](https://docs.firecrawl.dev/integrations/llamaindex), [Crew.ai](https://docs.firecrawl.dev/integrations/crewai), [Composio](https://composio.dev/toolkits/firecrawl), [PraisonAI](https://docs.praison.ai/docs/firecrawl), [Superinterface](https://superinterface.ai/docs/assistants/functions/firecrawl), [Vectorize](https://docs.vectorize.io/integrations/source-connectors/firecrawl)
-- **Low-Code**: [Dify](https://docs.dify.ai/en/use-dify/knowledge/knowledge-pipeline/knowledge-pipeline-orchestration#firecrawl), [Langflow](https://docs.firecrawl.dev/integrations/langflow), [Flowise AI](https://docs.flowiseai.com/integrations/langchain/document-loaders/firecrawl), [Cargo](https://docs.getcargo.ai/integration/firecrawl#firecrawl), [Pipedream](https://pipedream.com/apps/firecrawl)
-- **Automation**: [Zapier](https://zapier.com/apps/firecrawl/integrations), [n8n](https://n8n.io/integrations/firecrawl/), [Pabbly Connect](https://www.pabbly.com/connect/integrations/firecrawl/)
-
-**Self-Host**: Want to run it yourself? Check out our [self-hosting guide](https://docs.firecrawl.dev/contributing/self-host).
-
-**Missing your favorite tool?** Open an issue and let us know!
-
----
-
 ## Quick Start
 
-Sign up at [firecrawl.dev](https://firecrawl.dev) to get your API key and start extracting data in seconds.
+Sign up at [firecrawl.dev](https://firecrawl.dev) to get your API key and start extracting data in seconds. Try the [playground](https://firecrawl.dev/playground) to test it out.
 
----
-
-### Using with AI Agents (Recommended)
-
-Install the Firecrawl skill to let AI agents like Claude Code, Codex, and OpenCode use Firecrawl automatically:
-```bash
-npx skills add firecrawl/cli
-```
-
-Restart your agent after installing. See the [Skill + CLI docs](https://docs.firecrawl.dev/sdks/cli) for full setup.
-
----
-
-### Make Your First Request
+### Make Your First API Request
 ```bash
 curl -X POST 'https://api.firecrawl.dev/v2/scrape' \
   -H 'Authorization: Bearer fc-YOUR_API_KEY' \
@@ -129,115 +100,15 @@ Response:
 
 | Feature | Description |
 |---------|-------------|
-| [**Agent**](#agent) | Automated data gathering, just describe what you need |
 | [**Scrape**](#scraping) | Convert any URL to markdown, HTML, screenshots, or structured JSON |
 | [**Search**](#search) | Search the web and get full page content from results |
+| [**Agent**](#agent) | Automated data gathering, just describe what you need |
 | [**Crawl**](#crawling) | Scrape all URLs of a website with a single request |
 | [**Map**](#map) | Discover all URLs on a website instantly |
 
 ---
 
-## Agent
-
-**The easiest way to get data from the web.** Describe what you need, and our AI agent searches, navigates, and extracts it. No URLs required.
-
-Agent is the evolution of our `/extract` endpoint: faster, more reliable, and doesn't require you to know the URLs upfront.
-```bash
-curl -X POST 'https://api.firecrawl.dev/v2/agent' \
-  -H 'Authorization: Bearer fc-YOUR_API_KEY' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "prompt": "Find the pricing plans for Notion"
-  }'
-```
-
-Response:
-```json
-{
-  "success": true,
-  "data": {
-    "result": "Notion offers the following pricing plans:\n\n1. Free - $0/month...\n2. Plus - $10/seat/month...\n3. Business - $18/seat/month...",
-    "sources": ["https://www.notion.so/pricing"]
-  }
-}
-```
-
----
-
-### Agent with Structured Output
-
-Use a schema to get structured data:
-```python
-from firecrawl import Firecrawl
-from pydantic import BaseModel, Field
-from typing import List, Optional
-
-app = Firecrawl(api_key="fc-YOUR_API_KEY")
-
-class Founder(BaseModel):
-    name: str = Field(description="Full name of the founder")
-    role: Optional[str] = Field(None, description="Role or position")
-
-class FoundersSchema(BaseModel):
-    founders: List[Founder] = Field(description="List of founders")
-
-result = app.agent(
-    prompt="Find the founders of Firecrawl",
-    schema=FoundersSchema
-)
-
-print(result.data)
-```
-```json
-{
-  "founders": [
-    {"name": "Eric Ciarla", "role": "Co-founder"},
-    {"name": "Nicolas Camara", "role": "Co-founder"},
-    {"name": "Caleb Peffer", "role": "Co-founder"}
-  ]
-}
-```
-
----
-
-### Agent with URLs (Optional)
-
-Focus the agent on specific pages:
-```python
-result = app.agent(
-    urls=["https://docs.firecrawl.dev", "https://firecrawl.dev/pricing"],
-    prompt="Compare the features and pricing information"
-)
-```
-
----
-
-### Model Selection
-
-Choose between two models based on your needs:
-
-| Model | Cost | Best For |
-|-------|------|----------|
-| `spark-1-mini` (default) | 60% cheaper | Most tasks |
-| `spark-1-pro` | Standard | Complex research, critical extraction |
-```python
-result = app.agent(
-    prompt="Compare enterprise features across Firecrawl, Apify, and ScrapingBee",
-    model="spark-1-pro"
-)
-```
-
-**When to use Pro:**
-- Comparing data across multiple websites
-- Extracting from sites with complex navigation or auth
-- Research tasks where the agent needs to explore multiple paths
-- Critical data where accuracy is paramount
-
-Learn more about Spark models in our [Agent documentation](https://docs.firecrawl.dev/features/agent).
-
----
-
-## Scraping
+## Scrape
 
 Convert any URL to clean markdown, HTML, or structured data.
 ```bash
@@ -266,8 +137,6 @@ Response:
   }
 }
 ```
-
----
 
 ### Extract Structured Data (JSON Mode)
 
@@ -302,8 +171,6 @@ result = app.scrape(
 )
 ```
 
----
-
 ### Scrape Formats
 
 Available formats: `markdown`, `html`, `rawHtml`, `screenshot`, `links`, `json`, `branding`
@@ -319,8 +186,6 @@ print(doc.screenshot)  # Base64 encoded image
 doc = app.scrape("https://firecrawl.dev", formats=["branding"])
 print(doc.branding)  # {"colors": {...}, "fonts": [...], "typography": {...}}
 ```
-
----
 
 ### Actions (Interact Before Scraping)
 
@@ -374,8 +239,6 @@ Response:
 }
 ```
 
----
-
 ### Search with Content Scraping
 
 Get the full content of search results:
@@ -392,6 +255,109 @@ results = firecrawl.search(
     }
 )
 ```
+
+---
+
+## Agent
+
+**The easiest way to get data from the web.** Describe what you need, and our AI agent searches, navigates, and extracts it. No URLs required.
+
+Agent is the evolution of our `/extract` endpoint: faster, more reliable, and doesn't require you to know the URLs upfront.
+```bash
+curl -X POST 'https://api.firecrawl.dev/v2/agent' \
+  -H 'Authorization: Bearer fc-YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "prompt": "Find the pricing plans for Notion"
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "result": "Notion offers the following pricing plans:\n\n1. Free - $0/month...\n2. Plus - $10/seat/month...\n3. Business - $18/seat/month...",
+    "sources": ["https://www.notion.so/pricing"]
+  }
+}
+```
+
+### Agent with Structured Output
+
+Use a schema to get structured data:
+```python
+from firecrawl import Firecrawl
+from pydantic import BaseModel, Field
+from typing import List, Optional
+
+app = Firecrawl(api_key="fc-YOUR_API_KEY")
+
+class Founder(BaseModel):
+    name: str = Field(description="Full name of the founder")
+    role: Optional[str] = Field(None, description="Role or position")
+
+class FoundersSchema(BaseModel):
+    founders: List[Founder] = Field(description="List of founders")
+
+result = app.agent(
+    prompt="Find the founders of Firecrawl",
+    schema=FoundersSchema
+)
+
+print(result.data)
+```
+```json
+{
+  "founders": [
+    {"name": "Eric Ciarla", "role": "Co-founder"},
+    {"name": "Nicolas Camara", "role": "Co-founder"},
+    {"name": "Caleb Peffer", "role": "Co-founder"}
+  ]
+}
+```
+
+### Agent with URLs (Optional)
+
+Focus the agent on specific pages:
+```python
+result = app.agent(
+    urls=["https://docs.firecrawl.dev", "https://firecrawl.dev/pricing"],
+    prompt="Compare the features and pricing information"
+)
+```
+
+### Model Selection
+
+Choose between two models based on your needs:
+
+| Model | Cost | Best For |
+|-------|------|----------|
+| `spark-1-mini` (default) | 60% cheaper | Most tasks |
+| `spark-1-pro` | Standard | Complex research, critical extraction |
+```python
+result = app.agent(
+    prompt="Compare enterprise features across Firecrawl, Apify, and ScrapingBee",
+    model="spark-1-pro"
+)
+```
+
+**When to use Pro:**
+- Comparing data across multiple websites
+- Extracting from sites with complex navigation or auth
+- Research tasks where the agent needs to explore multiple paths
+- Critical data where accuracy is paramount
+
+Learn more about Spark models in our [Agent documentation](https://docs.firecrawl.dev/features/agent).
+
+### Using Firecrawl with AI agents
+
+Install the Firecrawl skill to let AI agents like Claude Code, Codex, and OpenCode use Firecrawl automatically:
+```bash
+npx skills add firecrawl/cli
+```
+
+Restart your agent after installing. See the [Skill + CLI docs](https://docs.firecrawl.dev/sdks/cli) for full setup.
 
 ---
 
@@ -419,8 +385,6 @@ Returns a job ID:
   "url": "https://api.firecrawl.dev/v2/crawl/123-456-789"
 }
 ```
-
----
 
 ### Check Crawl Status
 ```bash
@@ -467,8 +431,6 @@ Response:
   ]
 }
 ```
-
----
 
 ### Map with Search
 
@@ -537,8 +499,6 @@ results = app.search("best web scraping tools 2024", limit=10)
 print(results)
 ```
 
----
-
 ### Node.js
 
 Install the SDK:
@@ -571,8 +531,6 @@ results.data.web.forEach(result => {
 });
 ```
 
----
-
 ### Community SDKs
 
 - [Go SDK](https://github.com/mendableai/firecrawl-go)
@@ -582,10 +540,18 @@ results.data.web.forEach(result => {
 
 ## Integrations
 
-- **LLM Frameworks**: [Langchain (python)](https://python.langchain.com/docs/integrations/document_loaders/firecrawl/), [Langchain (js)](https://js.langchain.com/docs/integrations/document_loaders/web_loaders/firecrawl), [Llama Index](https://docs.firecrawl.dev/integrations/llamaindex), [Crew.ai](https://docs.firecrawl.dev/integrations/crewai), [Composio](https://composio.dev/toolkits/firecrawl), [PraisonAI](https://docs.praison.ai/docs/firecrawl), [Superinterface](https://superinterface.ai/docs/assistants/functions/firecrawl), [Vectorize](https://docs.vectorize.io/integrations/source-connectors/firecrawl)
-- **Low-Code**: [Dify](https://docs.dify.ai/en/use-dify/knowledge/knowledge-pipeline/knowledge-pipeline-orchestration#firecrawl), [Langflow](https://docs.firecrawl.dev/integrations/langflow), [Flowise AI](https://docs.flowiseai.com/integrations/langchain/document-loaders/firecrawl), [Cargo](https://docs.getcargo.ai/integration/firecrawl#firecrawl), [Pipedream](https://pipedream.com/apps/firecrawl)
-- **Automation**: [Zapier](https://zapier.com/apps/firecrawl/integrations), [n8n](https://n8n.io/integrations/firecrawl/), [Pabbly Connect](https://www.pabbly.com/connect/integrations/firecrawl/)
-- **MCP Server**: [firecrawl-mcp-server](https://github.com/mendableai/firecrawl-mcp-server)
+**Agents & AI Tools**
+- [Firecrawl Skill](https://docs.firecrawl.dev/sdks/cli)
+- [Firecrawl MCP](https://github.com/mendableai/firecrawl-mcp-server)
+
+**Platforms**
+- [Lovable](https://docs.lovable.dev/integrations/firecrawl)
+- [Zapier](https://zapier.com/apps/firecrawl/integrations)
+- [n8n](https://n8n.io/integrations/firecrawl/)
+
+[View all integrations →](https://www.firecrawl.dev/integrations)
+
+**Missing your favorite tool?** [Open an issue](https://github.com/mendableai/firecrawl/issues) and let us know!
 
 ---
 
@@ -602,7 +568,7 @@ results.data.web.forEach(result => {
 
 Firecrawl is open source under the AGPL-3.0 license. The cloud version at [firecrawl.dev](https://firecrawl.dev) includes additional features:
 
-![Open Source vs Cloud Offering](https://raw.githubusercontent.com/firecrawl/firecrawl/main/img/open-source-cloud.png)
+![Open Source vs Cloud](https://raw.githubusercontent.com/firecrawl/firecrawl/main/img/open-source-cloud-comparison.png)
 
 To run locally, see the [Contributing Guide](https://github.com/firecrawl/firecrawl/blob/main/CONTRIBUTING.md). To self-host, see [Self-Hosting Guide](https://docs.firecrawl.dev/contributing/self-host).
 
