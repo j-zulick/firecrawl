@@ -59,7 +59,7 @@ _Pst. Hey, you, join our stargazers :)_
 
 - **LLM-ready output**: Clean markdown, structured JSON, screenshots, HTML, and more
 - **Industry-leading reliability**: >80% coverage on [benchmark evaluations](https://www.firecrawl.dev/blog/the-worlds-best-web-data-api-v25), outperforming every other provider tested
-- **Handles the hard stuff**: Proxies, JavaScript rendering, authentication flows, and dynamic content that breaks other scrapers
+- **Handles the hard stuff**: Proxies, JavaScript rendering, and dynamic content that breaks other scrapers
 - **Customization**: Exclude tags, crawl behind auth walls, max depth, and more
 - **Media parsing**: Automatic text extraction from PDFs, DOCX, and images
 - **Actions**: Click, scroll, input, wait, and more before extracting
