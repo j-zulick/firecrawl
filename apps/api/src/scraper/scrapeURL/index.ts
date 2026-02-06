@@ -47,7 +47,9 @@ import {
   WaterfallNextEngineSignal,
   EngineUnsuccessfulError,
   ProxySelectionError,
+  ScrapeRetryLimitError,
 } from "./error";
+import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
 import { urlSpecificParams } from "./lib/urlSpecificParams";
@@ -971,11 +973,19 @@ export async function scrapeURL(
       });
     }
 
-    try {
-      // temporary fix until new scrapeURL system
-      let documentReattempted = false;
-      let pdfReattempted = false;
+    // Initialize retry tracker with configured limits
+    const retryTracker = new ScrapeRetryTracker(
+      {
+        maxAttempts: config.SCRAPE_MAX_ATTEMPTS,
+        maxFeatureToggles: config.SCRAPE_MAX_FEATURE_TOGGLES,
+        maxFeatureRemovals: config.SCRAPE_MAX_FEATURE_REMOVALS,
+        maxPdfPrefetches: config.SCRAPE_MAX_PDF_PREFETCHES,
+        maxDocumentPrefetches: config.SCRAPE_MAX_DOCUMENT_PREFETCHES,
+      },
+      meta.logger,
+    );
 
+    try {
       let result: ScrapeUrlResponse;
       while (true) {
         try {
@@ -987,7 +997,7 @@ export async function scrapeURL(
             (meta.internalOptions.forceEngine === undefined ||
               Array.isArray(meta.internalOptions.forceEngine))
           ) {
-            // note: we might want to reattempt check here too
+            retryTracker.record("feature_toggle", error);
             meta.logger.debug(
               "More feature flags requested by scraper: adding " +
                 error.featureFlags.join(", "),
@@ -1007,6 +1017,7 @@ export async function scrapeURL(
             (meta.internalOptions.forceEngine === undefined ||
               Array.isArray(meta.internalOptions.forceEngine))
           ) {
+            retryTracker.record("feature_removal", error);
             meta.logger.debug(
               "Incorrect feature flags reported by scraper: removing " +
                 error.featureFlags.join(","),
@@ -1027,21 +1038,13 @@ export async function scrapeURL(
               );
               throw error;
             } else {
-              if (!pdfReattempted) {
-                meta.logger.debug(
-                  "PDF was blocked by anti-bot, prefetching with chrome-cdp",
-                );
-
-                pdfReattempted = true;
-                meta.featureFlags = new Set(
-                  [...meta.featureFlags].filter(x => x !== "pdf"),
-                );
-              } else {
-                meta.logger.debug(
-                  "PDF was blocked by anti-bot, skipping as it was already attempted",
-                );
-                throw error;
-              }
+              retryTracker.record("pdf_antibot", error);
+              meta.logger.debug(
+                "PDF was blocked by anti-bot, prefetching with chrome-cdp",
+              );
+              meta.featureFlags = new Set(
+                [...meta.featureFlags].filter(x => x !== "pdf"),
+              );
             }
           } else if (
             error instanceof DocumentAntibotError &&
@@ -1053,21 +1056,13 @@ export async function scrapeURL(
               );
               throw error;
             } else {
-              if (!documentReattempted) {
-                meta.logger.debug(
-                  "Document was blocked by anti-bot, prefetching with chrome-cdp",
-                );
-
-                documentReattempted = true;
-                meta.featureFlags = new Set(
-                  [...meta.featureFlags].filter(x => x !== "document"),
-                );
-              } else {
-                meta.logger.debug(
-                  "Document was blocked by anti-bot, skipping as it was already attempted",
-                );
-                throw error;
-              }
+              retryTracker.record("document_antibot", error);
+              meta.logger.debug(
+                "Document was blocked by anti-bot, prefetching with chrome-cdp",
+              );
+              meta.featureFlags = new Set(
+                [...meta.featureFlags].filter(x => x !== "document"),
+              );
             }
           } else {
             throw error;
@@ -1220,6 +1215,12 @@ export async function scrapeURL(
       } else if (error instanceof DNSResolutionError) {
         errorType = "DNSResolutionError";
         meta.logger.warn("scrapeURL: DNS resolution error", { error });
+      } else if (error instanceof ScrapeRetryLimitError) {
+        errorType = "ScrapeRetryLimitError";
+        meta.logger.warn("scrapeURL: Retry limit reached", {
+          error,
+          retryStats: error.stats,
+        });
       } else if (error instanceof AbortManagerThrownError) {
         errorType = "AbortManagerThrownError";
         throw error.inner;
