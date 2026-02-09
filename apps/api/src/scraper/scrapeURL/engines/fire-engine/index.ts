@@ -2,6 +2,8 @@ import { Logger } from "winston";
 import { Meta } from "../..";
 import {
   fireEngineScrape,
+  fireEngineURL,
+  fireEngineStagingURL,
   FireEngineScrapeRequestChromeCDP,
   FireEngineScrapeRequestCommon,
   FireEngineScrapeRequestPlaywright,
@@ -34,6 +36,8 @@ import { AbortManagerThrownError } from "../../lib/abortManager";
 import { youtubePostprocessor } from "../../postprocessors/youtube";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { getBrandingScript } from "./brandingScript";
+import { abTestFireEngine } from "../../../../services/ab-test";
+import { scheduleABComparison } from "../../../../services/ab-test-comparison";
 
 /** Default wait (ms) before running the branding script when user did not set waitFor. Lets the page settle so DOM/images are ready and reduces JS errors. */
 const BRANDING_DEFAULT_WAIT_MS = 2000;
@@ -58,6 +62,13 @@ async function performFireEngineScrape<
     const startTime = Date.now();
     let pollCount = 0;
 
+    let baseUrl = production ? fireEngineURL : fireEngineStagingURL;
+
+    const abTest = abTestFireEngine(request);
+    if (abTest.mode === "split") {
+      baseUrl = abTest.baseUrl;
+    }
+
     setSpanAttributes(span, {
       "fire-engine.url": request.url,
       "fire-engine.priority": request.priority,
@@ -68,6 +79,7 @@ async function performFireEngineScrape<
       "fire-engine.mobile": (request as any).mobile,
       "fire-engine.skip_tls": (request as any).skipTlsVerification,
       "fire-engine.production": production,
+      "fire-engine.ab_mode": abTest.mode,
     });
     const scrape = await fireEngineScrape(
       meta,
@@ -75,7 +87,7 @@ async function performFireEngineScrape<
       request,
       mock,
       abort,
-      production,
+      baseUrl,
     );
 
     let status: FireEngineCheckStatusSuccess | undefined = undefined;
@@ -94,7 +106,7 @@ async function performFireEngineScrape<
             (scrape as any).jobId,
             mock,
             undefined,
-            production,
+            baseUrl,
           ).catch(e => {
             logger.error("Failed to delete job from Fire Engine", { error: e });
           });
@@ -113,7 +125,7 @@ async function performFireEngineScrape<
             (scrape as any).jobId,
             mock,
             abort,
-            production,
+            baseUrl,
           );
         } catch (error) {
           if (error instanceof StillProcessingError) {
@@ -136,7 +148,7 @@ async function performFireEngineScrape<
               (scrape as any).jobId,
               mock,
               undefined,
-              production,
+              baseUrl,
             ).catch(e => {
               logger.error("Failed to delete job from Fire Engine", {
                 error: e,
@@ -156,7 +168,7 @@ async function performFireEngineScrape<
               (scrape as any).jobId,
               mock,
               undefined,
-              production,
+              baseUrl,
             ).catch(e => {
               logger.error("Failed to delete job from Fire Engine", {
                 error: e,
@@ -209,10 +221,23 @@ async function performFireEngineScrape<
       (scrape as any).jobId,
       mock,
       undefined,
-      production,
+      baseUrl,
     ).catch(e => {
       logger.error("Failed to delete job from Fire Engine", { error: e });
     });
+
+    if (abTest.mode === "mirror") {
+      scheduleABComparison(
+        meta.url,
+        {
+          content: status.content,
+          pageStatusCode: status.pageStatusCode,
+        },
+        Date.now() - startTime,
+        abTest.mirrorPromise,
+        logger,
+      );
+    }
 
     setSpanAttributes(span, {
       "fire-engine.poll_count": pollCount,
