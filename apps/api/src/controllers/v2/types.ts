@@ -1252,7 +1252,6 @@ export type TeamFlags = {
   allowZDR?: boolean;
   zdrCost?: number;
   checkRobotsOnScrape?: boolean;
-  allowTeammateInvites?: boolean;
   crawlTtlHours?: number;
   ipWhitelist?: boolean;
   bypassCreditChecks?: boolean;

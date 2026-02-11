@@ -1262,12 +1262,9 @@ export type TeamFlags = {
   allowZDR?: boolean;
   zdrCost?: number;
   checkRobotsOnScrape?: boolean;
-  allowTeammateInvites?: boolean;
   crawlTtlHours?: number;
   ipWhitelist?: boolean;
   skipCountryCheck?: boolean;
-  extractV3Beta?: boolean;
-  agentBeta?: boolean;
   browserBeta?: boolean;
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
