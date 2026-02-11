@@ -78,42 +78,42 @@ async function supaCheckTeamCredits(
     throw new Error("NULL ACUC passed to supaCheckTeamCredits");
   }
 
-  // If team is part of an organization, skip credit checks
+  // Check org-level flags for bypassCreditChecks
   try {
-    const orgCacheKey = `team_org_${team_id}`;
-    let isPartOfOrganization = false;
-    const cachedOrgData = await getValue(orgCacheKey);
-    if (cachedOrgData !== null) {
-      isPartOfOrganization = cachedOrgData === "true";
+    const orgFlagsCacheKey = `org_flags_team_${team_id}`;
+    let orgFlags: Record<string, unknown> | null = null;
+    const cachedOrgFlags = await getValue(orgFlagsCacheKey);
+    if (cachedOrgFlags !== null) {
+      orgFlags = JSON.parse(cachedOrgFlags);
     } else {
       const { data: orgData } = await supabase_rr_service
-        .from("organizations")
-        .select("id")
+        .from("organization_teams")
+        .select("org_id, organizations(flags)")
         .eq("team_id", team_id)
         .limit(1)
         .single();
 
-      isPartOfOrganization = !!orgData;
-      await setValue(orgCacheKey, isPartOfOrganization ? "true" : "false", 300); // Cache for 5 minutes
+      orgFlags = (orgData?.organizations as any)?.flags ?? null;
+      await setValue(orgFlagsCacheKey, JSON.stringify(orgFlags), 300); // Cache for 5 minutes
     }
 
-    if (isPartOfOrganization) {
+    if (orgFlags && (orgFlags as any).bypassCreditChecks) {
       return {
         success: true,
-        message: "Credit checks skipped for organization team",
+        message: "Credit checks bypassed by organization flags",
         remainingCredits: Infinity,
         chunk,
       };
     }
   } catch (error) {
-    // If organization check fails, continue with normal credit checks
+    // If organization flags check fails, continue with normal credit checks
     logger.warn(
-      "Organization check failed, continuing with normal credit checks",
+      "Organization flags check failed, continuing with normal credit checks",
       { team_id, error },
     );
   }
 
-  // If bypassCreditChecks flag is set, return success with infinite credits (infinitely graceful)
+  // If bypassCreditChecks flag is set on the team, return success with infinite credits (infinitely graceful)
   if (chunk.flags?.bypassCreditChecks) {
     return {
       success: true,
