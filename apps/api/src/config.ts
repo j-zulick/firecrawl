@@ -222,6 +222,7 @@ const configSchema = z.object({
   // Browser / Sandbox
   SANDBOX_API_URL: z.string().default("http://localhost:3002"),
   SANDBOX_POD_URL_TEMPLATE: z.string().optional(),
+  SANDBOX_HEADLESS_SERVICE: z.string().optional(),
   CDP_PROXY_URL: z.string().default("ws://localhost:9222"),
 
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),

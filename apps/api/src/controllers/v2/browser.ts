@@ -102,6 +102,7 @@ function getSandboxClient() {
   return createSandboxClient({
     baseUrl: config.SANDBOX_API_URL!,
     podUrlTemplate: config.SANDBOX_POD_URL_TEMPLATE,
+    headlessService: config.SANDBOX_HEADLESS_SERVICE,
   });
 }
 
