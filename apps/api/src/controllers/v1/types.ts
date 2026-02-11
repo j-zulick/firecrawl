@@ -1246,6 +1246,7 @@ export type AuthCreditUsageChunk = {
     extractStatus: number;
     extractAgentPreview?: number;
     scrapeAgentPreview?: number;
+    browser?: number;
   };
   concurrency: number;
   flags: TeamFlags;
@@ -1267,6 +1268,7 @@ export type TeamFlags = {
   skipCountryCheck?: boolean;
   extractV3Beta?: boolean;
   agentBeta?: boolean;
+  browserBeta?: boolean;
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
 } | null;

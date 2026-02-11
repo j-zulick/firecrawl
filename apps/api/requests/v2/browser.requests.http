@@ -1,0 +1,67 @@
+s# Pick your baseUrl here:
+@baseUrl = http://localhost:3002
+# @baseUrl = https://api.firecrawl.dev
+
+### Create Browser Session (defaults)
+POST {{baseUrl}}/v2/browser HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{}
+
+### Create Browser Session (with options)
+POST {{baseUrl}}/v2/browser HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "ttlTotal": 600,
+  "ttlWithoutActivity": 120,
+  "streamWebView": false
+}
+
+### Create Browser Session (with webview streaming)
+POST {{baseUrl}}/v2/browser HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "ttlTotal": 300,
+  "streamWebView": true
+}
+
+### Execute Code (Python) — replace BROWSER_ID with actual browserId
+@browserId = REPLACE_WITH_BROWSER_ID
+
+POST {{baseUrl}}/v2/browser/execute HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "browserId": "{{browserId}}",
+  "code": "await page.goto(\"https://docs.firecrawl.dev\")\nprint(await page.title())",
+  "language": "python"
+}
+
+### Execute Code (JS) — replace BROWSER_ID with actual browserId
+POST {{baseUrl}}/v2/browser/execute HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "browserId": "{{browserId}}",
+  "code": "await page.goto('https://example.com');\nconst title = await page.title();\nconsole.log(title);",
+  "language": "js"
+}
+
+### Delete Browser Session — replace BROWSER_ID with actual browserId
+DELETE {{baseUrl}}/v2/browser HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "browserId": "{{browserId}}"
+}
+
+### WebSocket — webview stream (use a WS client, e.g. wscat)
+# wscat -c "ws://localhost:3002/v2/browser/{{browserId}}" -H "Authorization: Bearer YOUR_API_KEY"

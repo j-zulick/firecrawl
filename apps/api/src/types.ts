@@ -141,6 +141,7 @@ export enum RateLimiterMode {
   Extract = "extract",
   ExtractStatus = "extractStatus",
   ExtractAgentPreview = "extractAgentPreview",
+  Browser = "browser",
 }
 
 export type AuthResponse =

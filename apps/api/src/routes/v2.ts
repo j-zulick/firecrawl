@@ -43,6 +43,11 @@ import {
 import { agentController } from "../controllers/v2/agent";
 import { agentStatusController } from "../controllers/v2/agent-status";
 import { agentCancelController } from "../controllers/v2/agent-cancel";
+import {
+  browserCreateController,
+  browserExecuteController,
+  browserDeleteController,
+} from "../controllers/v2/browser";
 
 expressWs(express());
 
@@ -363,6 +368,26 @@ v2Router.get(
   "/team/queue-status",
   authMiddleware(RateLimiterMode.CrawlStatus),
   wrap(queueStatusController),
+);
+
+v2Router.post(
+  "/browser",
+  authMiddleware(RateLimiterMode.Browser),
+  countryCheck,
+  checkCreditsMiddleware(5),
+  wrap(browserCreateController),
+);
+
+v2Router.post(
+  "/browser/execute",
+  authMiddleware(RateLimiterMode.Browser),
+  wrap(browserExecuteController),
+);
+
+v2Router.delete(
+  "/browser",
+  authMiddleware(RateLimiterMode.Browser),
+  wrap(browserDeleteController),
 );
 
 // Only register x402 routes if X402_PAY_TO_ADDRESS is configured
