@@ -47,6 +47,7 @@ import {
   browserCreateController,
   browserExecuteController,
   browserDeleteController,
+  browserListController,
 } from "../controllers/v2/browser";
 
 expressWs(express());
@@ -374,8 +375,14 @@ v2Router.post(
   "/browser",
   authMiddleware(RateLimiterMode.Browser),
   countryCheck,
-  checkCreditsMiddleware(5),
+  checkCreditsMiddleware(15),
   wrap(browserCreateController),
+);
+
+v2Router.get(
+  "/browser",
+  authMiddleware(RateLimiterMode.Browser),
+  wrap(browserListController),
 );
 
 v2Router.post(

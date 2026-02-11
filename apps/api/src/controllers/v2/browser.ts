@@ -8,7 +8,16 @@ import {
   Workspace,
   CodeContext,
   Execution,
+  SandboxClient,
 } from "../../lib/sandbox-client";
+import {
+  insertBrowserSession,
+  getBrowserSession,
+  listBrowserSessions,
+  updateBrowserSessionActivity,
+  updateBrowserSessionStatus,
+  BrowserSessionRow,
+} from "../../lib/browser-sessions";
 import { RequestWithAuth } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -21,84 +30,58 @@ const browserCreateRequestSchema = z.object({
   streamWebView: z.boolean().default(false),
 });
 
-export type BrowserCreateRequest = z.infer<typeof browserCreateRequestSchema>;
+type BrowserCreateRequest = z.infer<typeof browserCreateRequestSchema>;
 
-export interface BrowserCreateResponse {
+interface BrowserCreateResponse {
   success: boolean;
-  browserId?: string;
+  id?: string;
   cdpUrl?: string;
   error?: string;
 }
 
 const browserExecuteRequestSchema = z.object({
-  browserId: z.string(),
+  id: z.string(),
   code: z.string().min(1).max(100_000),
   language: z.enum(["python", "js"]).default("python"),
 });
 
-export type BrowserExecuteRequest = z.infer<typeof browserExecuteRequestSchema>;
+type BrowserExecuteRequest = z.infer<typeof browserExecuteRequestSchema>;
 
-export interface BrowserExecuteResponse {
+interface BrowserExecuteResponse {
   success: boolean;
   result?: string;
   error?: string;
 }
 
 const browserDeleteRequestSchema = z.object({
-  browserId: z.string(),
+  id: z.string(),
 });
 
-export type BrowserDeleteRequest = z.infer<typeof browserDeleteRequestSchema>;
+type BrowserDeleteRequest = z.infer<typeof browserDeleteRequestSchema>;
 
-export interface BrowserDeleteResponse {
+interface BrowserDeleteResponse {
   success: boolean;
   error?: string;
 }
 
-// ---------------------------------------------------------------------------
-// In-memory session store
-// ---------------------------------------------------------------------------
-
-interface BrowserSession {
-  browserId: string;
-  teamId: string;
-  workspace: Workspace;
-  context: CodeContext;
-  cdpUrl: string;
-  cdpPath: string;
-  streamWebView: boolean;
-  createdAt: number;
-  lastActivity: number;
-  ttlTotal: number;
-  ttlWithoutActivity?: number;
-  destroyed: boolean;
+interface BrowserListResponse {
+  success: boolean;
+  sessions?: Array<{
+    id: string;
+    status: string;
+    cdpUrl: string;
+    streamWebView: boolean;
+    createdAt: string;
+    lastActivity: string;
+  }>;
+  error?: string;
 }
-
-const sessions = new Map<string, BrowserSession>();
-
-/** Periodic cleanup of expired sessions */
-// setInterval(() => {
-//   const now = Date.now();
-//   for (const [id, session] of sessions) {
-//     if (session.destroyed) {
-//       sessions.delete(id);
-//       continue;
-//     }
-//     const totalExpired = now - session.createdAt > session.ttlTotal * 1000;
-//     const activityExpired =
-//       session.ttlWithoutActivity !== undefined &&
-//       now - session.lastActivity > session.ttlWithoutActivity * 1000;
-//     if (totalExpired || activityExpired) {
-//       destroySession(session).catch(() => {});
-//     }
-//   }
-// }, 15_000);
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getSandboxClient() {
+function getSandboxClient(): SandboxClient {
   return createSandboxClient({
     baseUrl: config.SANDBOX_API_URL!,
     podUrlTemplate: config.SANDBOX_POD_URL_TEMPLATE,
@@ -110,74 +93,66 @@ function getSandboxClient() {
  * Extract the printable output from a sandbox Execution result.
  */
 function executionToString(exec: Execution): string {
-  const parts: string[] = [];
   return exec.text ?? "";
-
-  // // Collect stdout log lines
-  // if (exec.logs.stdout.length > 0) {
-  //   parts.push(exec.logs.stdout.join("\n"));
-  // }
-
-  // // Collect stderr log lines
-  // if (exec.logs.stderr.length > 0) {
-  //   parts.push(exec.logs.stderr.join("\n"));
-  // }
-
-  // // Collect result text
-  // if (exec.text) {
-  //   parts.push(exec.text);
-  // }
-
-  // for (const r of exec.results) {
-  //   if (r.text) {
-  //     parts.push(r.text);
-  //   }
-  // }
-
-  // // Collect error info
-  // if (exec.error) {
-  //   parts.push(
-  //     `${exec.error.name}: ${exec.error.value}${exec.error.traceback ? "\n" + exec.error.traceback : ""}`,
-  //   );
-  // }
-
-  // return parts.join("\n");
 }
 
-async function destroySession(session: BrowserSession) {
-  if (session.destroyed) return;
-  session.destroyed = true;
+/**
+ * Reconstruct a CodeContext from stored IDs so we can run code against
+ * a session that was persisted in Supabase (not held in memory).
+ */
+function reconstructContext(
+  client: SandboxClient,
+  row: BrowserSessionRow,
+): CodeContext {
+  return new CodeContext(client, row.workspace_id, row.context_id);
+}
 
+/**
+ * Reconstruct a Workspace from stored IDs.
+ */
+function reconstructWorkspace(
+  client: SandboxClient,
+  row: BrowserSessionRow,
+): Workspace {
+  return new Workspace(client, row.workspace_id);
+}
+
+/**
+ * Destroy the underlying browser resources (CDP, sandbox workspace) for a
+ * session row and mark it as destroyed in Supabase.
+ */
+async function destroySession(row: BrowserSessionRow): Promise<void> {
   const logger = _logger.child({
-    browserId: session.browserId,
+    sessionId: row.id,
+    browserId: row.browser_id,
     module: "browser",
   });
 
   try {
-    // Tell the sandbox to close the browser
-    await session.context.runCode("await browser.close()").catch(() => {}); // best-effort
+    const client = getSandboxClient();
+    const ctx = reconstructContext(client, row);
+    const workspace = reconstructWorkspace(client, row);
+
+    // Best-effort: tell the sandbox to close the browser
+    await ctx.runCode("await browser.close()").catch(() => {});
 
     // Tear down the CDP session on fire-engine
     if (config.FIRE_ENGINE_BETA_URL) {
       await fetch(
-        `${config.FIRE_ENGINE_BETA_URL}/cdp-session/${session.browserId}`,
+        `${config.FIRE_ENGINE_BETA_URL}/cdp-session/${row.browser_id}`,
         { method: "DELETE" },
       ).catch(() => {});
     }
 
     // Destroy the sandbox workspace
-    await session.workspace.destroy().catch(() => {});
+    await workspace.destroy().catch(() => {});
 
     logger.info("Browser session destroyed");
   } catch (err) {
     logger.warn("Error while destroying browser session", { error: err });
   } finally {
-    sessions.delete(session.browserId);
+    await updateBrowserSessionStatus(row.id, "destroyed");
   }
-}
-
-function getSession(browserId: string): BrowserSession | undefined {
-  return sessions.get(browserId);
 }
 
 // ---------------------------------------------------------------------------
@@ -196,9 +171,9 @@ export async function browserCreateController(
     });
   }
 
-  const browserId = uuidv7();
+  const sessionId = uuidv7();
   const logger = _logger.child({
-    browserId,
+    sessionId,
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "browserCreateController",
@@ -266,7 +241,6 @@ export async function browserCreateController(
   await ctx.enableBrowser(cdpPath);
 
   // 4. Initialize Playwright inside the sandbox
-  // TODO: fix - setup session reuse for context and page
   const initExec = await ctx.runCode(`
 from playwright.async_api import async_playwright
 
@@ -294,32 +268,47 @@ page = await context.new_page()
   // Build the user-facing CDP URL
   const cdpUrl = `${config.CDP_PROXY_URL}${cdpPath}`;
 
-  // 5. Store the session
-  const session: BrowserSession = {
-    browserId: feBrowserId,
-    teamId: req.auth.team_id,
-    workspace,
-    context: ctx,
-    cdpUrl,
-    cdpPath,
-    streamWebView,
-    createdAt: Date.now(),
-    lastActivity: Date.now(),
-    ttlTotal,
-    ttlWithoutActivity,
-    destroyed: false,
-  };
-
-  sessions.set(feBrowserId, session);
+  // 5. Persist session in Supabase
+  try {
+    await insertBrowserSession({
+      id: sessionId,
+      team_id: req.auth.team_id,
+      browser_id: feBrowserId,
+      workspace_id: workspace.id,
+      context_id: ctx.id,
+      cdp_url: cdpUrl,
+      cdp_path: cdpPath,
+      stream_web_view: streamWebView,
+      status: "active",
+      ttl_total: ttlTotal,
+      ttl_without_activity: ttlWithoutActivity ?? null,
+    });
+  } catch (err) {
+    // If we can't persist, tear everything down
+    logger.error("Failed to persist browser session, cleaning up", {
+      error: err,
+    });
+    await workspace.destroy().catch(() => {});
+    if (config.FIRE_ENGINE_BETA_URL) {
+      await fetch(`${config.FIRE_ENGINE_BETA_URL}/cdp-session/${feBrowserId}`, {
+        method: "DELETE",
+      }).catch(() => {});
+    }
+    return res.status(500).json({
+      success: false,
+      error: "Failed to persist browser session.",
+    });
+  }
 
   logger.info("Browser session created", {
+    sessionId,
     browserId: feBrowserId,
     cdpUrl,
   });
 
   return res.status(200).json({
     success: true,
-    browserId: feBrowserId,
+    id: sessionId,
     cdpUrl,
   });
 }
@@ -338,16 +327,17 @@ export async function browserExecuteController(
 
   req.body = browserExecuteRequestSchema.parse(req.body);
 
-  const { browserId, code, language } = req.body;
+  const { id, code, language } = req.body;
 
   const logger = _logger.child({
-    browserId,
+    sessionId: id,
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "browserExecuteController",
   });
 
-  const session = sessions.get(browserId);
+  // Look up session from Supabase
+  const session = await getBrowserSession(id);
 
   if (!session) {
     return res.status(404).json({
@@ -356,45 +346,38 @@ export async function browserExecuteController(
     });
   }
 
-  if (session.teamId !== req.auth.team_id) {
+  if (session.team_id !== req.auth.team_id) {
     return res.status(403).json({
       success: false,
       error: "Forbidden.",
     });
   }
 
-  if (session.destroyed) {
+  if (session.status === "destroyed") {
     return res.status(410).json({
       success: false,
       error: "Browser session has been destroyed.",
     });
   }
 
-  session.lastActivity = Date.now();
+  // Update activity timestamp (fire-and-forget)
+  updateBrowserSessionActivity(id).catch(() => {});
 
   logger.info("Executing code in browser session", { language });
 
-  // The sandbox currently only accepts Python via runCode.
-  // For JS, we could wrap it differently in the future.
-  console.log(`[browser-execute] Running code for session ${browserId}:`, code);
-  const exec = await session.context.runCode(code);
+  // Reconstruct the code context from stored IDs
+  const client = getSandboxClient();
+  const ctx = reconstructContext(client, session);
+
+  const exec = await ctx.runCode(code);
 
   const output = executionToString(exec);
 
-  console.log(
-    `[browser-execute] Execution result for session ${browserId}:`,
-    JSON.stringify(
-      {
-        text: exec.text,
-        results: exec.results,
-        logs: exec.logs,
-        error: exec.error,
-        outputLength: output.length,
-      },
-      null,
-      2,
-    ),
-  );
+  logger.debug("Execution result", {
+    text: exec.text,
+    hasError: !!exec.error,
+    outputLength: output.length,
+  });
 
   if (exec.error) {
     return res.status(200).json({
@@ -424,16 +407,16 @@ export async function browserDeleteController(
 
   req.body = browserDeleteRequestSchema.parse(req.body);
 
-  const { browserId } = req.body;
+  const { id } = req.body;
 
   const logger = _logger.child({
-    browserId,
+    sessionId: id,
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "browserDeleteController",
   });
 
-  const session = sessions.get(browserId);
+  const session = await getBrowserSession(id);
 
   if (!session) {
     return res.status(404).json({
@@ -442,7 +425,7 @@ export async function browserDeleteController(
     });
   }
 
-  if (session.teamId !== req.auth.team_id) {
+  if (session.team_id !== req.auth.team_id) {
     return res.status(403).json({
       success: false,
       error: "Forbidden.",
@@ -455,5 +438,47 @@ export async function browserDeleteController(
 
   return res.status(200).json({
     success: true,
+  });
+}
+
+export async function browserListController(
+  req: RequestWithAuth<{}, BrowserListResponse>,
+  res: Response<BrowserListResponse>,
+) {
+  if (!req.acuc?.flags?.browserBeta) {
+    return res.status(403).json({
+      success: false,
+      error:
+        "Browser is currently in beta. Please contact support@firecrawl.com to request access.",
+    });
+  }
+
+  const logger = _logger.child({
+    teamId: req.auth.team_id,
+    module: "api/v2",
+    method: "browserListController",
+  });
+
+  logger.info("Listing browser sessions");
+
+  const statusFilter = (req.query as Record<string, string>).status as
+    | "active"
+    | "destroyed"
+    | undefined;
+
+  const rows = await listBrowserSessions(req.auth.team_id, {
+    status: statusFilter,
+  });
+
+  return res.status(200).json({
+    success: true,
+    sessions: rows.map(r => ({
+      id: r.id,
+      status: r.status,
+      cdpUrl: r.cdp_url,
+      streamWebView: r.stream_web_view,
+      createdAt: r.created_at,
+      lastActivity: r.updated_at,
+    })),
   });
 }
