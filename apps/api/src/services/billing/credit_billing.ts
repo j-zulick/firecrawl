@@ -78,42 +78,7 @@ async function supaCheckTeamCredits(
     throw new Error("NULL ACUC passed to supaCheckTeamCredits");
   }
 
-  // Check org-level flags for bypassCreditChecks
-  try {
-    const orgFlagsCacheKey = `org_flags_team_${team_id}`;
-    let orgFlags: Record<string, unknown> | null = null;
-    const cachedOrgFlags = await getValue(orgFlagsCacheKey);
-    if (cachedOrgFlags !== null) {
-      orgFlags = JSON.parse(cachedOrgFlags);
-    } else {
-      const { data: orgData } = await supabase_rr_service
-        .from("organization_teams")
-        .select("org_id, organizations(flags)")
-        .eq("team_id", team_id)
-        .limit(1)
-        .single();
-
-      orgFlags = (orgData?.organizations as any)?.flags ?? null;
-      await setValue(orgFlagsCacheKey, JSON.stringify(orgFlags), 300); // Cache for 5 minutes
-    }
-
-    if (orgFlags && (orgFlags as any).bypassCreditChecks) {
-      return {
-        success: true,
-        message: "Credit checks bypassed by organization flags",
-        remainingCredits: Infinity,
-        chunk,
-      };
-    }
-  } catch (error) {
-    // If organization flags check fails, continue with normal credit checks
-    logger.warn(
-      "Organization flags check failed, continuing with normal credit checks",
-      { team_id, error },
-    );
-  }
-
-  // If bypassCreditChecks flag is set on the team, return success with infinite credits (infinitely graceful)
+  // If bypassCreditChecks flag is set, return success with infinite credits (infinitely graceful)
   if (chunk.flags?.bypassCreditChecks) {
     return {
       success: true,
