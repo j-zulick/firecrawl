@@ -582,6 +582,7 @@ class CrawlRequest(BaseModel):
     max_concurrency: Optional[int] = None
     webhook: Optional[Union[str, WebhookConfig]] = None
     scrape_options: Optional[ScrapeOptions] = None
+    regex_on_full_url: bool = False
     zero_data_retention: bool = False
     integration: Optional[str] = None
 
