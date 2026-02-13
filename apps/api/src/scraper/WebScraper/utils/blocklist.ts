@@ -92,8 +92,10 @@ export function isUrlBlocked(url: string, flags: TeamFlags): boolean {
 
   // Block different TLDs of the same base domain
   const baseDomain = domain.split(".")[0]; // Extract the base domain (e.g., "facebook" from "facebook.com")
+  // Only apply TLD-variant blocking for base domains longer than 2 characters
   if (
     publicSuffix &&
+    baseDomain.length > 2 &&
     blockedlist.some(
       blocked => blocked.startsWith(baseDomain + ".") && blocked !== domain,
     )
