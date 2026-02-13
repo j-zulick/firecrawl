@@ -1,5 +1,5 @@
 import { v7 as uuidv7 } from "uuid";
-import { Response } from "express";
+import { Request, Response } from "express";
 import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
@@ -13,6 +13,7 @@ import {
 import {
   insertBrowserSession,
   getBrowserSession,
+  getBrowserSessionByBrowserId,
   listBrowserSessions,
   updateBrowserSessionActivity,
   updateBrowserSessionStatus,
@@ -374,7 +375,23 @@ export async function browserExecuteController(
   const client = getSandboxClient();
   const ctx = reconstructContext(client, session);
 
-  const exec = await ctx.runCode(code);
+  let exec: Execution;
+  try {
+    exec = await ctx.runCode(code);
+  } catch (err) {
+    logger.warn("Failed to execute code — sandbox may have expired", {
+      error: err,
+    });
+
+    // Mark session as destroyed since the sandbox is gone
+    await updateBrowserSessionStatus(id, "destroyed").catch(() => {});
+
+    return res.status(410).json({
+      success: false,
+      error:
+        "Browser session has expired. The sandbox was destroyed (likely due to TTL). Please create a new session.",
+    });
+  }
 
   const output = executionToString(exec);
 
@@ -485,4 +502,53 @@ export async function browserListController(
       lastActivity: r.updated_at,
     })),
   });
+}
+
+export async function browserWebhookDestroyedController(
+  req: Request,
+  res: Response,
+) {
+  const logger = _logger.child({
+    module: "api/v2",
+    method: "browserWebhookDestroyedController",
+  });
+
+  // Validate fire-engine secret
+  const secret = req.headers["x-fire-engine-secret"];
+  if (!secret || secret !== process.env.FIRE_ENGINE_WEBHOOK_SECRET) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const { browserId } = req.body as { browserId?: string };
+  if (!browserId) {
+    return res.status(400).json({ error: "Missing browserId" });
+  }
+
+  logger.info("Received destroyed webhook from fire-engine", { browserId });
+
+  const session = await getBrowserSessionByBrowserId(browserId);
+  if (!session) {
+    logger.warn("No session found for destroyed webhook", { browserId });
+    return res.status(200).json({ ok: true });
+  }
+
+  if (session.status === "destroyed") {
+    logger.info("Session already destroyed", { sessionId: session.id, browserId });
+    return res.status(200).json({ ok: true });
+  }
+
+  // Destroy sandbox workspace if still active
+  try {
+    const client = getSandboxClient();
+    const workspace = reconstructWorkspace(client, session);
+    await workspace.destroy().catch(() => {});
+  } catch (err) {
+    logger.warn("Error destroying sandbox for webhook", { error: err, sessionId: session.id });
+  }
+
+  await updateBrowserSessionStatus(session.id, "destroyed");
+
+  logger.info("Session marked as destroyed via webhook", { sessionId: session.id, browserId });
+
+  return res.status(200).json({ ok: true });
 }
