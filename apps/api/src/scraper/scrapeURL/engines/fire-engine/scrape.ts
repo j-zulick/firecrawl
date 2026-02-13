@@ -20,6 +20,7 @@ import { Meta } from "../..";
 import { config } from "../../../../config";
 export type FireEngineScrapeRequestCommon = {
   url: string;
+  scrapeId?: string;
 
   headers?: { [K: string]: string };
 

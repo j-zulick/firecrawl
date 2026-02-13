@@ -332,6 +332,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestChromeCDP = {
       url: meta.rewrittenUrl ?? meta.url,
+      scrapeId: meta.id,
       engine: "chrome-cdp",
       instantReturn: false,
       skipTlsVerification: meta.options.skipTlsVerification,
@@ -469,6 +470,7 @@ export async function scrapeURLWithFireEnginePlaywright(
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestPlaywright = {
       url: meta.rewrittenUrl ?? meta.url,
+      scrapeId: meta.id,
       engine: "playwright",
       instantReturn: false,
 
@@ -544,6 +546,7 @@ export async function scrapeURLWithFireEngineTLSClient(
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestTLSClient = {
       url: meta.rewrittenUrl ?? meta.url,
+      scrapeId: meta.id,
       engine: "tlsclient",
       instantReturn: false,
 
