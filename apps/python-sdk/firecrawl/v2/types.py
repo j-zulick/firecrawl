@@ -817,6 +817,7 @@ class BrowserCreateResponse(BaseModel):
     success: bool
     id: Optional[str] = None
     cdp_url: Optional[str] = None
+    live_view_url: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -841,6 +842,7 @@ class BrowserSession(BaseModel):
     id: str
     status: str
     cdp_url: str
+    live_view_url: str
     stream_web_view: bool
     created_at: str
     last_activity: str

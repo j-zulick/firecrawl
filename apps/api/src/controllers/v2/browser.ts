@@ -27,7 +27,7 @@ import { RequestWithAuth } from "./types";
 const browserCreateRequestSchema = z.object({
   ttlTotal: z.number().min(30).max(3600).default(300),
   ttlWithoutActivity: z.number().min(10).max(3600).optional(),
-  streamWebView: z.boolean().default(false),
+  streamWebView: z.boolean().default(true),
 });
 
 type BrowserCreateRequest = z.infer<typeof browserCreateRequestSchema>;
@@ -36,6 +36,7 @@ interface BrowserCreateResponse {
   success: boolean;
   id?: string;
   cdpUrl?: string;
+  liveViewUrl?: string;
   error?: string;
 }
 
@@ -63,6 +64,7 @@ interface BrowserListResponse {
     id: string;
     status: string;
     cdpUrl: string;
+    liveViewUrl: string;
     streamWebView: boolean;
     createdAt: string;
     lastActivity: string;
@@ -293,16 +295,21 @@ page = await context.new_page()
     });
   }
 
+  // Build the live view URL
+  const liveViewUrl = `${config.LIVE_VIEW_BASE_URL}/${feBrowserId}`;
+
   logger.info("Browser session created", {
     sessionId,
     browserId: feBrowserId,
     cdpUrl,
+    liveViewUrl,
   });
 
   return res.status(200).json({
     success: true,
     id: sessionId,
     cdpUrl,
+    liveViewUrl,
   });
 }
 
@@ -472,6 +479,7 @@ export async function browserListController(
       id: r.id,
       status: r.status,
       cdpUrl: r.cdp_url,
+      liveViewUrl: `${config.LIVE_VIEW_BASE_URL}/${r.browser_id}`,
       streamWebView: r.stream_web_view,
       createdAt: r.created_at,
       lastActivity: r.updated_at,

@@ -689,6 +689,7 @@ export interface BrowserCreateResponse {
   success: boolean;
   id?: string;
   cdpUrl?: string;
+  liveViewUrl?: string;
   error?: string;
 }
 
@@ -707,6 +708,7 @@ export interface BrowserSession {
   id: string;
   status: string;
   cdpUrl: string;
+  liveViewUrl: string;
   streamWebView: boolean;
   createdAt: string;
   lastActivity: string;

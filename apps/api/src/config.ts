@@ -224,6 +224,7 @@ const configSchema = z.object({
   SANDBOX_POD_URL_TEMPLATE: z.string().optional(),
   SANDBOX_HEADLESS_SERVICE: z.string().optional(),
   CDP_PROXY_URL: z.string().default("ws://localhost:9222"),
+  LIVE_VIEW_BASE_URL: z.string().optional(),
 
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
 });
