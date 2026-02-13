@@ -40,7 +40,6 @@ interface BrowserCreateResponse {
 }
 
 const browserExecuteRequestSchema = z.object({
-  id: z.string(),
   code: z.string().min(1).max(100_000),
   language: z.enum(["python", "js"]).default("python"),
 });
@@ -52,12 +51,6 @@ interface BrowserExecuteResponse {
   result?: string;
   error?: string;
 }
-
-const browserDeleteRequestSchema = z.object({
-  id: z.string(),
-});
-
-type BrowserDeleteRequest = z.infer<typeof browserDeleteRequestSchema>;
 
 interface BrowserDeleteResponse {
   success: boolean;
@@ -314,7 +307,11 @@ page = await context.new_page()
 }
 
 export async function browserExecuteController(
-  req: RequestWithAuth<{}, BrowserExecuteResponse, BrowserExecuteRequest>,
+  req: RequestWithAuth<
+    { sessionId: string },
+    BrowserExecuteResponse,
+    BrowserExecuteRequest
+  >,
   res: Response<BrowserExecuteResponse>,
 ) {
   if (!req.acuc?.flags?.browserBeta) {
@@ -327,7 +324,8 @@ export async function browserExecuteController(
 
   req.body = browserExecuteRequestSchema.parse(req.body);
 
-  const { id, code, language } = req.body;
+  const id = req.params.sessionId;
+  const { code, language } = req.body;
 
   const logger = _logger.child({
     sessionId: id,
@@ -394,7 +392,7 @@ export async function browserExecuteController(
 }
 
 export async function browserDeleteController(
-  req: RequestWithAuth<{}, BrowserDeleteResponse, BrowserDeleteRequest>,
+  req: RequestWithAuth<{ sessionId: string }, BrowserDeleteResponse>,
   res: Response<BrowserDeleteResponse>,
 ) {
   if (!req.acuc?.flags?.browserBeta) {
@@ -405,9 +403,7 @@ export async function browserDeleteController(
     });
   }
 
-  req.body = browserDeleteRequestSchema.parse(req.body);
-
-  const { id } = req.body;
+  const id = req.params.sessionId;
 
   const logger = _logger.child({
     sessionId: id,

@@ -46,6 +46,7 @@ from .methods.aio import map as async_map # type: ignore[attr-defined]
 from .methods.aio import usage as async_usage # type: ignore[attr-defined]
 from .methods.aio import extract as async_extract  # type: ignore[attr-defined]
 from .methods.aio import agent as async_agent  # type: ignore[attr-defined]
+from .methods.aio import browser as async_browser  # type: ignore[attr-defined]
 
 from .watcher_async import AsyncWatcher
 
@@ -419,6 +420,86 @@ class AsyncFirecrawlClient:
             True if the agent was cancelled
         """
         return await async_agent.cancel_agent(self.async_http_client, job_id)
+
+    # Browser
+    async def browser(
+        self,
+        *,
+        ttl_total: Optional[int] = None,
+        ttl_without_activity: Optional[int] = None,
+        stream_web_view: Optional[bool] = None,
+    ):
+        """Create a new browser session.
+
+        Args:
+            ttl_total: Total time-to-live in seconds (30-3600, default 300)
+            ttl_without_activity: TTL without activity in seconds (10-3600)
+            stream_web_view: Whether to enable webview streaming
+
+        Returns:
+            BrowserCreateResponse with session id and CDP URL
+        """
+        return await async_browser.browser(
+            self.async_http_client,
+            ttl_total=ttl_total,
+            ttl_without_activity=ttl_without_activity,
+            stream_web_view=stream_web_view,
+        )
+
+    async def browser_execute(
+        self,
+        session_id: str,
+        code: str,
+        *,
+        language: Literal["python", "js"] = "python",
+    ):
+        """Execute code in a browser session.
+
+        Args:
+            session_id: Browser session ID
+            code: Code to execute
+            language: Programming language ("python" or "js")
+
+        Returns:
+            BrowserExecuteResponse with execution result
+        """
+        return await async_browser.browser_execute(
+            self.async_http_client,
+            session_id,
+            code,
+            language=language,
+        )
+
+    async def delete_browser(self, session_id: str):
+        """Delete a browser session.
+
+        Args:
+            session_id: Browser session ID
+
+        Returns:
+            BrowserDeleteResponse
+        """
+        return await async_browser.delete_browser(
+            self.async_http_client, session_id
+        )
+
+    async def list_browsers(
+        self,
+        *,
+        status: Optional[Literal["active", "destroyed"]] = None,
+    ):
+        """List browser sessions.
+
+        Args:
+            status: Filter by session status ("active" or "destroyed")
+
+        Returns:
+            BrowserListResponse with list of sessions
+        """
+        return await async_browser.list_browsers(
+            self.async_http_client,
+            status=status,
+        )
 
     # Usage endpoints
     async def get_concurrency(self):

@@ -386,13 +386,13 @@ v2Router.get(
 );
 
 v2Router.post(
-  "/browser/execute",
+  "/browser/:sessionId/execute",
   authMiddleware(RateLimiterMode.Browser),
   wrap(browserExecuteController),
 );
 
 v2Router.delete(
-  "/browser",
+  "/browser/:sessionId",
   authMiddleware(RateLimiterMode.Browser),
   wrap(browserDeleteController),
 );
