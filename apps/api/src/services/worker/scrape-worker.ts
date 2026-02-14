@@ -538,7 +538,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
-      logScrape(
+      await logScrape(
         {
           id: job.id,
           request_id: job.data.requestId ?? job.data.crawl_id ?? job.id,
@@ -555,11 +555,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           skipNuq: job.data.skipNuq ?? false,
         },
         false,
-      ).catch(err =>
-        logger.warn("Background scrape log failed", {
-          error: err,
-          jobId: job.id,
-        }),
       );
     }
 
