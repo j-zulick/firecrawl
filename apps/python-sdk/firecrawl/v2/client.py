@@ -136,7 +136,7 @@ class FirecrawlClient:
             include_tags: List of tags to include
             exclude_tags: List of tags to exclude
             only_main_content: Whether to only scrape the main content
-            timeout: Timeout in seconds
+            timeout: Timeout in milliseconds
             wait_for: Wait for a specific element to be present
             mobile: Whether to use mobile mode
             parsers: List of parsers to use
