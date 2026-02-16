@@ -8,11 +8,11 @@ type BrowserSessionStatus = "active" | "destroyed" | "error";
 export interface BrowserSessionRow {
   id: string;
   team_id: string;
-  browser_id: string;
-  workspace_id: string;
-  context_id: string;
-  cdp_url: string;
-  cdp_path: string;
+  browser_id: string; // browser service sessionId
+  workspace_id: string; // unused (legacy), stored as ""
+  context_id: string; // unused (legacy), stored as ""
+  cdp_url: string; // full CDP WebSocket URL from browser service
+  cdp_path: string; // repurposed: stores the view WebSocket URL
   stream_web_view: boolean;
   status: BrowserSessionStatus;
   ttl_total: number;
@@ -97,7 +97,7 @@ export async function listBrowserSessions(
 export async function updateBrowserSessionActivity(id: string): Promise<void> {
   const { error } = await supabase_service
     .from(TABLE)
-    .update({ last_activity: new Date().toISOString() })
+    .update({ updated_at: new Date().toISOString() })
     .eq("id", id);
 
   if (error) {
@@ -111,7 +111,7 @@ export async function updateBrowserSessionStatus(
 ): Promise<void> {
   const { error } = await supabase_service
     .from(TABLE)
-    .update({ status })
+    .update({ status, updated_at: new Date().toISOString() })
     .eq("id", id);
 
   if (error) {
