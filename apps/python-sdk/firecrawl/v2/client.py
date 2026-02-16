@@ -954,15 +954,15 @@ class FirecrawlClient:
     def browser(
         self,
         *,
-        ttl_total: Optional[int] = None,
-        ttl_without_activity: Optional[int] = None,
+        ttl: Optional[int] = None,
+        activity_ttl: Optional[int] = None,
         stream_web_view: Optional[bool] = None,
     ):
         """Create a new browser session.
 
         Args:
-            ttl_total: Total time-to-live in seconds (30-3600, default 300)
-            ttl_without_activity: TTL without activity in seconds (10-3600)
+            ttl: Total time-to-live in seconds (30-3600, default 300)
+            activity_ttl: Inactivity TTL in seconds (10-3600)
             stream_web_view: Whether to enable webview streaming
 
         Returns:
@@ -970,8 +970,8 @@ class FirecrawlClient:
         """
         return browser_module.browser(
             self.http_client,
-            ttl_total=ttl_total,
-            ttl_without_activity=ttl_without_activity,
+            ttl=ttl,
+            activity_ttl=activity_ttl,
             stream_web_view=stream_web_view,
         )
 
@@ -980,14 +980,16 @@ class FirecrawlClient:
         session_id: str,
         code: str,
         *,
-        language: Literal["python", "js"] = "python",
+        language: Literal["python", "node", "bash"] = "bash",
+        timeout: Optional[int] = None,
     ):
         """Execute code in a browser session.
 
         Args:
             session_id: Browser session ID
             code: Code to execute
-            language: Programming language ("python" or "js")
+            language: Programming language ("python", "node", or "bash")
+            timeout: Execution timeout in seconds (1-300, default 30)
 
         Returns:
             BrowserExecuteResponse with execution result
@@ -997,6 +999,7 @@ class FirecrawlClient:
             session_id,
             code,
             language=language,
+            timeout=timeout,
         )
 
     def delete_browser(self, session_id: str):

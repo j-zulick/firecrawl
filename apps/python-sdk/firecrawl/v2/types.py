@@ -818,6 +818,7 @@ class BrowserCreateResponse(BaseModel):
     id: Optional[str] = None
     cdp_url: Optional[str] = None
     live_view_url: Optional[str] = None
+    expires_at: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -825,7 +826,11 @@ class BrowserExecuteResponse(BaseModel):
     """Response from executing code in a browser session."""
 
     success: bool
+    stdout: Optional[str] = None
     result: Optional[str] = None
+    stderr: Optional[str] = None
+    exit_code: Optional[int] = None
+    killed: Optional[bool] = None
     error: Optional[str] = None
 
 
@@ -833,6 +838,8 @@ class BrowserDeleteResponse(BaseModel):
     """Response from deleting a browser session."""
 
     success: bool
+    session_duration_ms: Optional[int] = None
+    credits_billed: Optional[int] = None
     error: Optional[str] = None
 
 

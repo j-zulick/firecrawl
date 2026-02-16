@@ -690,17 +690,24 @@ export interface BrowserCreateResponse {
   id?: string;
   cdpUrl?: string;
   liveViewUrl?: string;
+  expiresAt?: string;
   error?: string;
 }
 
 export interface BrowserExecuteResponse {
   success: boolean;
+  stdout?: string;
   result?: string;
+  stderr?: string;
+  exitCode?: number;
+  killed?: boolean;
   error?: string;
 }
 
 export interface BrowserDeleteResponse {
   success: boolean;
+  sessionDurationMs?: number;
+  creditsBilled?: number;
   error?: string;
 }
 
