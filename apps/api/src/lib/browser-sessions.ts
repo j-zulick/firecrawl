@@ -129,7 +129,7 @@ export async function updateBrowserSessionStatus(
 ): Promise<void> {
   const { error } = await supabase_service
     .from(TABLE)
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({ status, updated_at: new Date().toISOString(), deleted_at: status === "destroyed" ? new Date().toISOString() : null })
     .eq("id", id);
 
   if (error) {

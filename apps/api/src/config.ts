@@ -226,6 +226,7 @@ const configSchema = z.object({
   // Browser Service
   BROWSER_SERVICE_URL: z.string().optional(),
   BROWSER_SERVICE_API_KEY: z.string().optional(),
+  BROWSER_SERVICE_WEBHOOK_SECRET: z.string().optional(),
 
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
 });

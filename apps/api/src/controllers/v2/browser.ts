@@ -458,9 +458,13 @@ export async function browserWebhookDestroyedController(
     method: "browserWebhookDestroyedController",
   });
 
-  // Validate fire-engine secret
-  const secret = req.headers["x-fire-engine-secret"];
-  if (!secret || secret !== process.env.FIRE_ENGINE_WEBHOOK_SECRET) {
+  // Validate browser service secret
+  const secret = req.headers["x-browser-service-secret"];
+  if (
+    !config.BROWSER_SERVICE_WEBHOOK_SECRET ||
+    !secret ||
+    secret !== config.BROWSER_SERVICE_WEBHOOK_SECRET
+  ) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
@@ -469,7 +473,7 @@ export async function browserWebhookDestroyedController(
     return res.status(400).json({ error: "Missing browserId" });
   }
 
-  logger.info("Received destroyed webhook from fire-engine", { browserId });
+  logger.info("Received destroyed webhook from browser service", { browserId });
 
   const session = await getBrowserSessionByBrowserId(browserId);
   if (!session) {
