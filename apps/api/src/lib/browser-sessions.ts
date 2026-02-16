@@ -1,7 +1,15 @@
 import { supabase_service } from "../services/supabase";
+import { getValue, setValue, deleteKey } from "../services/redis";
 import { logger as _logger } from "./logger";
 
 const logger = _logger.child({ module: "browser-sessions" });
+
+export const MAX_ACTIVE_BROWSER_SESSIONS_PER_TEAM = 20;
+const ACTIVE_COUNT_CACHE_TTL_SECONDS = 300;
+
+function activeBrowserCountKey(teamId: string): string {
+  return `browser_sessions:active_count:${teamId}`;
+}
 
 type BrowserSessionStatus = "active" | "destroyed" | "error";
 
@@ -134,5 +142,63 @@ export async function updateBrowserSessionStatus(
 
   if (error) {
     logger.warn("Failed to update browser session status", { error, id });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Active session count (cached)
+// ---------------------------------------------------------------------------
+
+async function countActiveBrowserSessionsFromDb(teamId: string): Promise<number> {
+  const { count, error } = await supabase_service
+    .from(TABLE)
+    .select("*", { count: "exact", head: true })
+    .eq("team_id", teamId)
+    .eq("status", "active");
+
+  if (error) {
+    logger.error("Failed to count active browser sessions", { error, teamId });
+    throw new Error(`Failed to count active browser sessions: ${error.message}`);
+  }
+
+  return count ?? 0;
+}
+
+/**
+ * Returns the number of active browser sessions for a team.
+ * Uses a Redis cache with a short TTL to avoid hitting the DB on every request.
+ */
+export async function getActiveBrowserSessionCount(teamId: string): Promise<number> {
+  const cacheKey = activeBrowserCountKey(teamId);
+
+  try {
+    const cached = await getValue(cacheKey);
+    if (cached !== null) {
+      return parseInt(cached, 10);
+    }
+  } catch {
+    // Redis down — fall through to DB
+  }
+
+  const count = await countActiveBrowserSessionsFromDb(teamId);
+
+  try {
+    await setValue(cacheKey, String(count), ACTIVE_COUNT_CACHE_TTL_SECONDS);
+  } catch {
+    // Redis down — non-fatal
+  }
+
+  return count;
+}
+
+/**
+ * Invalidate the cached active session count for a team.
+ * Call after creating or destroying a session.
+ */
+export async function invalidateActiveBrowserSessionCount(teamId: string): Promise<void> {
+  try {
+    await deleteKey(activeBrowserCountKey(teamId));
+  } catch {
+    // Redis down — non-fatal
   }
 }

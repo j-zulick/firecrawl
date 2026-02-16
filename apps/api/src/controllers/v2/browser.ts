@@ -10,6 +10,9 @@ import {
   listBrowserSessions,
   updateBrowserSessionActivity,
   updateBrowserSessionStatus,
+  getActiveBrowserSessionCount,
+  invalidateActiveBrowserSessionCount,
+  MAX_ACTIVE_BROWSER_SESSIONS_PER_TEAM,
 } from "../../lib/browser-sessions";
 import { RequestWithAuth } from "./types";
 
@@ -181,6 +184,19 @@ export async function browserCreateController(
 
   logger.info("Creating browser session", { ttl, activityTtl });
 
+  // 0. Enforce per-team active session limit
+  const activeCount = await getActiveBrowserSessionCount(req.auth.team_id);
+  if (activeCount >= MAX_ACTIVE_BROWSER_SESSIONS_PER_TEAM) {
+    logger.warn("Active browser session limit reached", {
+      activeCount,
+      limit: MAX_ACTIVE_BROWSER_SESSIONS_PER_TEAM,
+    });
+    return res.status(429).json({
+      success: false,
+      error: `You have reached the maximum number of active browser sessions (${MAX_ACTIVE_BROWSER_SESSIONS_PER_TEAM}). Please destroy existing sessions before creating new ones.`,
+    });
+  }
+
   // 1. Create a browser session via the browser service
   let svcResponse: BrowserServiceCreateResponse;
   try {
@@ -231,6 +247,9 @@ export async function browserCreateController(
       error: "Failed to persist browser session.",
     });
   }
+
+  // Invalidate cached count so next check reflects the new session
+  invalidateActiveBrowserSessionCount(req.auth.team_id).catch(() => {});
 
   logger.info("Browser session created", {
     sessionId,
@@ -398,6 +417,9 @@ export async function browserDeleteController(
   // Mark destroyed in Supabase
   await updateBrowserSessionStatus(session.id, "destroyed");
 
+  // Invalidate cached count so next check reflects the destroyed session
+  invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
+
   logger.info("Browser session destroyed", { sessionDurationMs });
 
   return res.status(200).json({
@@ -488,6 +510,9 @@ export async function browserWebhookDestroyedController(
   }
 
   await updateBrowserSessionStatus(session.id, "destroyed");
+
+  // Invalidate cached count so the team can create new sessions immediately
+  invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
 
   logger.info("Session marked as destroyed via webhook", { sessionId: session.id, browserId });
 
