@@ -105,13 +105,31 @@ export async function updateBrowserSessionActivity(id: string): Promise<void> {
   }
 }
 
+export async function getBrowserSessionByBrowserId(
+  browserId: string,
+): Promise<BrowserSessionRow | null> {
+  const { data, error } = await supabase_service
+    .from(TABLE)
+    .select("*")
+    .eq("browser_id", browserId)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    logger.error("Failed to get browser session by browser_id", { error, browserId });
+    throw new Error(`Failed to get browser session by browser_id: ${error.message}`);
+  }
+
+  return data as BrowserSessionRow;
+}
+
 export async function updateBrowserSessionStatus(
   id: string,
   status: BrowserSessionStatus,
 ): Promise<void> {
   const { error } = await supabase_service
     .from(TABLE)
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({ status, updated_at: new Date().toISOString(), deleted_at: status === "destroyed" ? new Date().toISOString() : null })
     .eq("id", id);
 
   if (error) {

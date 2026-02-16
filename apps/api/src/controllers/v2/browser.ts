@@ -1,11 +1,12 @@
 import { v7 as uuidv7 } from "uuid";
-import { Response } from "express";
+import { Request, Response } from "express";
 import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
 import {
   insertBrowserSession,
   getBrowserSession,
+  getBrowserSessionByBrowserId,
   listBrowserSessions,
   updateBrowserSessionActivity,
   updateBrowserSessionStatus,
@@ -446,4 +447,49 @@ export async function browserListController(
       lastActivity: r.updated_at,
     })),
   });
+}
+
+export async function browserWebhookDestroyedController(
+  req: Request,
+  res: Response,
+) {
+  const logger = _logger.child({
+    module: "api/v2",
+    method: "browserWebhookDestroyedController",
+  });
+
+  // Validate browser service secret
+  const secret = req.headers["x-browser-service-secret"];
+  if (
+    !config.BROWSER_SERVICE_WEBHOOK_SECRET ||
+    !secret ||
+    secret !== config.BROWSER_SERVICE_WEBHOOK_SECRET
+  ) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const { sessionId } = req.body as { sessionId?: string };
+  if (!sessionId) {
+    return res.status(400).json({ error: "Missing browserId" });
+  }
+  let browserId = sessionId;
+
+  logger.info("Received destroyed webhook from browser service", { browserId });
+
+  const session = await getBrowserSessionByBrowserId(browserId);
+  if (!session) {
+    logger.warn("No session found for destroyed webhook", { browserId });
+    return res.status(200).json({ ok: true });
+  }
+
+  if (session.status === "destroyed") {
+    logger.info("Session already destroyed", { sessionId: session.id, browserId });
+    return res.status(200).json({ ok: true });
+  }
+
+  await updateBrowserSessionStatus(session.id, "destroyed");
+
+  logger.info("Session marked as destroyed via webhook", { sessionId: session.id, browserId });
+
+  return res.status(200).json({ ok: true });
 }

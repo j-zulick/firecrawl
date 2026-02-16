@@ -48,6 +48,7 @@ import {
   browserExecuteController,
   browserDeleteController,
   browserListController,
+  browserWebhookDestroyedController,
 } from "../controllers/v2/browser";
 
 expressWs(express());
@@ -395,6 +396,11 @@ v2Router.delete(
   "/browser/:sessionId",
   authMiddleware(RateLimiterMode.Browser),
   wrap(browserDeleteController),
+);
+
+v2Router.post(
+  "/browser/webhook/destroyed",
+  wrap(browserWebhookDestroyedController),
 );
 
 // Only register x402 routes if X402_PAY_TO_ADDRESS is configured
