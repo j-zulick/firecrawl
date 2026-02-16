@@ -468,10 +468,11 @@ export async function browserWebhookDestroyedController(
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const { browserId } = req.body as { browserId?: string };
-  if (!browserId) {
+  const { sessionId } = req.body as { sessionId?: string };
+  if (!sessionId) {
     return res.status(400).json({ error: "Missing browserId" });
   }
+  let browserId = sessionId;
 
   logger.info("Received destroyed webhook from browser service", { browserId });
 
