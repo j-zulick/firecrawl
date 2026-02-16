@@ -145,6 +145,25 @@ export async function updateBrowserSessionStatus(
   }
 }
 
+export async function claimBrowserSessionDestroyed(
+  id: string,
+): Promise<boolean> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase_service
+    .from(TABLE)
+    .update({ status: "destroyed" as BrowserSessionStatus, updated_at: now, deleted_at: now })
+    .eq("id", id)
+    .eq("status", "active")
+    .select("id");
+
+  if (error) {
+    logger.warn("Failed to claim browser session destroyed", { error, id });
+    return false;
+  }
+
+  return (data?.length ?? 0) > 0;
+}
+
 // ---------------------------------------------------------------------------
 // Active session count (cached)
 // ---------------------------------------------------------------------------

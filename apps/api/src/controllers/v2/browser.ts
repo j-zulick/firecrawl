@@ -10,11 +10,24 @@ import {
   listBrowserSessions,
   updateBrowserSessionActivity,
   updateBrowserSessionStatus,
+  claimBrowserSessionDestroyed,
   getActiveBrowserSessionCount,
   invalidateActiveBrowserSessionCount,
   MAX_ACTIVE_BROWSER_SESSIONS_PER_TEAM,
 } from "../../lib/browser-sessions";
 import { RequestWithAuth } from "./types";
+import { billTeam } from "../../services/billing/credit_billing";
+
+const BROWSER_CREDITS_PER_HOUR = 100;
+
+/**
+ * Calculate credits to bill for a browser session based on its duration.
+ * Prorates to the millisecond. Minimum charge is 1 credit.
+ */
+function calculateBrowserSessionCredits(durationMs: number): number {
+  const hours = durationMs / 3_600_000;
+  return Math.max(1, Math.ceil(hours * BROWSER_CREDITS_PER_HOUR));
+}
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -58,6 +71,7 @@ interface BrowserExecuteResponse {
 interface BrowserDeleteResponse {
   success: boolean;
   sessionDurationMs?: number;
+  creditsBilled?: number;
   error?: string;
 }
 
@@ -184,7 +198,21 @@ export async function browserCreateController(
 
   logger.info("Creating browser session", { ttl, activityTtl });
 
-  // 0. Enforce per-team active session limit
+  // 0a. Check if team has enough credits for the full TTL
+  const estimatedCredits = calculateBrowserSessionCredits(ttl * 1000);
+  if (req.acuc && req.acuc.remaining_credits < estimatedCredits) {
+    logger.warn("Insufficient credits for browser session TTL", {
+      estimatedCredits,
+      remainingCredits: req.acuc.remaining_credits,
+      ttl,
+    });
+    return res.status(402).json({
+      success: false,
+      error: `Insufficient credits for a ${ttl}s browser session (requires ~${estimatedCredits} credits). For more credits, you can upgrade your plan at https://firecrawl.dev/pricing.`,
+    });
+  }
+
+  // 0b. Enforce per-team active session limit
   const activeCount = await getActiveBrowserSessionCount(req.auth.team_id);
   if (activeCount >= MAX_ACTIVE_BROWSER_SESSIONS_PER_TEAM) {
     logger.warn("Active browser session limit reached", {
@@ -414,17 +442,46 @@ export async function browserDeleteController(
     });
   }
 
-  // Mark destroyed in Supabase
-  await updateBrowserSessionStatus(session.id, "destroyed");
+  const claimed = await claimBrowserSessionDestroyed(session.id);
 
   // Invalidate cached count so next check reflects the destroyed session
   invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
 
-  logger.info("Browser session destroyed", { sessionDurationMs });
+  if (!claimed) {
+    // The webhook (or another DELETE call) already transitioned and billed.
+    logger.info("Session already destroyed by another path, skipping billing", {
+      sessionId: session.id,
+    });
+    return res.status(200).json({
+      success: true,
+    });
+  }
+
+  const durationMs =
+    sessionDurationMs ??
+    Date.now() - new Date(session.created_at).getTime();
+  const creditsBilled = calculateBrowserSessionCredits(durationMs);
+
+  billTeam(
+    req.auth.team_id,
+    req.acuc?.sub_id ?? undefined,
+    creditsBilled,
+    req.acuc?.api_key_id ?? null,
+  ).catch((error) => {
+    logger.error("Failed to bill team for browser session", {
+      error,
+      creditsBilled,
+      durationMs,
+    });
+  });
+
+  logger.info("Browser session destroyed", {
+    sessionDurationMs: durationMs,
+    creditsBilled,
+  });
 
   return res.status(200).json({
     success: true,
-    sessionDurationMs,
   });
 }
 
@@ -504,17 +561,42 @@ export async function browserWebhookDestroyedController(
     return res.status(200).json({ ok: true });
   }
 
-  if (session.status === "destroyed") {
-    logger.info("Session already destroyed", { sessionId: session.id, browserId });
+  const claimed = await claimBrowserSessionDestroyed(session.id);
+
+  invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
+
+  if (!claimed) {
+    logger.info("Session already destroyed by another path, skipping billing", {
+      sessionId: session.id,
+      browserId,
+    });
     return res.status(200).json({ ok: true });
   }
 
-  await updateBrowserSessionStatus(session.id, "destroyed");
+  const durationMs = Date.now() - new Date(session.created_at).getTime();
+  const creditsBilled = calculateBrowserSessionCredits(durationMs);
 
-  // Invalidate cached count so the team can create new sessions immediately
-  invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
+  billTeam(
+    session.team_id,
+    undefined, // subscription_id — billTeam will look it up
+    creditsBilled,
+    null, // api_key_id not available in webhook context
+  ).catch((error) => {
+    logger.error("Failed to bill team for browser session via webhook", {
+      error,
+      teamId: session.team_id,
+      sessionId: session.id,
+      creditsBilled,
+      durationMs,
+    });
+  });
 
-  logger.info("Session marked as destroyed via webhook", { sessionId: session.id, browserId });
+  logger.info("Session marked as destroyed via webhook", {
+    sessionId: session.id,
+    browserId,
+    durationMs,
+    creditsBilled,
+  });
 
   return res.status(200).json({ ok: true });
 }
