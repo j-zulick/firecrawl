@@ -4,20 +4,12 @@ import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
 import {
-  createSandboxClient,
-  Workspace,
-  CodeContext,
-  Execution,
-  SandboxClient,
-} from "../../lib/sandbox-client";
-import {
   insertBrowserSession,
   getBrowserSession,
   getBrowserSessionByBrowserId,
   listBrowserSessions,
   updateBrowserSessionActivity,
   updateBrowserSessionStatus,
-  BrowserSessionRow,
 } from "../../lib/browser-sessions";
 import { RequestWithAuth } from "./types";
 
@@ -26,8 +18,8 @@ import { RequestWithAuth } from "./types";
 // ---------------------------------------------------------------------------
 
 const browserCreateRequestSchema = z.object({
-  ttlTotal: z.number().min(30).max(3600).default(300),
-  ttlWithoutActivity: z.number().min(10).max(3600).optional(),
+  ttl: z.number().min(30).max(3600).default(300),
+  activityTtl: z.number().min(10).max(3600).optional(),
   streamWebView: z.boolean().default(true),
 });
 
@@ -38,24 +30,31 @@ interface BrowserCreateResponse {
   id?: string;
   cdpUrl?: string;
   liveViewUrl?: string;
+  expiresAt?: string;
   error?: string;
 }
 
 const browserExecuteRequestSchema = z.object({
   code: z.string().min(1).max(100_000),
-  language: z.enum(["python", "js"]).default("python"),
+  language: z.enum(["python", "node", "bash"]).default("node"),
+  timeout: z.number().min(1).max(300).default(30),
 });
 
 type BrowserExecuteRequest = z.infer<typeof browserExecuteRequestSchema>;
 
 interface BrowserExecuteResponse {
   success: boolean;
+  stdout?: string;
   result?: string;
+  stderr?: string;
+  exitCode?: number;
+  killed?: boolean;
   error?: string;
 }
 
 interface BrowserDeleteResponse {
   success: boolean;
+  sessionDurationMs?: number;
   error?: string;
 }
 
@@ -77,78 +76,71 @@ interface BrowserListResponse {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getSandboxClient(): SandboxClient {
-  return createSandboxClient({
-    baseUrl: config.SANDBOX_API_URL!,
-    podUrlTemplate: config.SANDBOX_POD_URL_TEMPLATE,
-    headlessService: config.SANDBOX_HEADLESS_SERVICE,
-  });
-}
-
 /**
- * Extract the printable output from a sandbox Execution result.
+ * Build headers for authenticating against the browser service.
  */
-function executionToString(exec: Execution): string {
-  return exec.text ?? "";
-}
-
-/**
- * Reconstruct a CodeContext from stored IDs so we can run code against
- * a session that was persisted in Supabase (not held in memory).
- */
-function reconstructContext(
-  client: SandboxClient,
-  row: BrowserSessionRow,
-): CodeContext {
-  return new CodeContext(client, row.workspace_id, row.context_id);
-}
-
-/**
- * Reconstruct a Workspace from stored IDs.
- */
-function reconstructWorkspace(
-  client: SandboxClient,
-  row: BrowserSessionRow,
-): Workspace {
-  return new Workspace(client, row.workspace_id);
-}
-
-/**
- * Destroy the underlying browser resources (CDP, sandbox workspace) for a
- * session row and mark it as destroyed in Supabase.
- */
-async function destroySession(row: BrowserSessionRow): Promise<void> {
-  const logger = _logger.child({
-    sessionId: row.id,
-    browserId: row.browser_id,
-    module: "browser",
-  });
-
-  try {
-    const client = getSandboxClient();
-    const ctx = reconstructContext(client, row);
-    const workspace = reconstructWorkspace(client, row);
-
-    // Best-effort: tell the sandbox to close the browser
-    await ctx.runCode("await browser.close()").catch(() => {});
-
-    // Tear down the CDP session on fire-engine
-    if (config.FIRE_ENGINE_BETA_URL) {
-      await fetch(
-        `${config.FIRE_ENGINE_BETA_URL}/cdp-session/${row.browser_id}`,
-        { method: "DELETE" },
-      ).catch(() => {});
-    }
-
-    // Destroy the sandbox workspace
-    await workspace.destroy().catch(() => {});
-
-    logger.info("Browser session destroyed");
-  } catch (err) {
-    logger.warn("Error while destroying browser session", { error: err });
-  } finally {
-    await updateBrowserSessionStatus(row.id, "destroyed");
+function browserServiceHeaders(
+  extra?: Record<string, string>,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(extra ?? {}),
+  };
+  if (config.BROWSER_SERVICE_API_KEY) {
+    headers["Authorization"] = `Bearer ${config.BROWSER_SERVICE_API_KEY}`;
   }
+  return headers;
+}
+
+/**
+ * Call the browser service and return parsed JSON.
+ * Throws on non-2xx responses.
+ */
+async function browserServiceRequest<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const url = `${config.BROWSER_SERVICE_URL}${path}`;
+  const res = await fetch(url, {
+    method,
+    headers: browserServiceHeaders(),
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(
+      `Browser service ${method} ${path} failed (${res.status}): ${text}`,
+    );
+  }
+
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+// ---------------------------------------------------------------------------
+// Browser service response types
+// ---------------------------------------------------------------------------
+
+interface BrowserServiceCreateResponse {
+  sessionId: string;
+  cdpUrl: string;
+  viewUrl: string;
+  expiresAt: string;
+}
+
+interface BrowserServiceExecResponse {
+  stdout: string;
+  result: string;
+  stderr: string;
+  exitCode: number;
+  killed: boolean;
+}
+
+interface BrowserServiceDeleteResponse {
+  ok: boolean;
+  sessionDurationMs: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -177,140 +169,80 @@ export async function browserCreateController(
 
   req.body = browserCreateRequestSchema.parse(req.body);
 
-  const { ttlTotal, ttlWithoutActivity, streamWebView } = req.body;
+  const { ttl, activityTtl, streamWebView } = req.body;
 
-  if (!config.FIRE_ENGINE_BETA_URL) {
+  if (!config.BROWSER_SERVICE_URL) {
     return res.status(503).json({
       success: false,
       error:
-        "Browser feature is not configured (FIRE_ENGINE_BETA_URL is missing).",
+        "Browser feature is not configured (BROWSER_SERVICE_URL is missing).",
     });
   }
 
-  if (!config.SANDBOX_API_URL) {
-    return res.status(503).json({
-      success: false,
-      error: "Browser feature is not configured (SANDBOX_API_URL is missing).",
-    });
-  }
+  logger.info("Creating browser session", { ttl, activityTtl });
 
-  logger.info("Creating browser session", {
-    ttlTotal,
-    ttlWithoutActivity,
-    streamWebView,
-  });
-
-  // 1. Acquire a CDP session from fire-engine
-  const cdpRes = await fetch(`${config.FIRE_ENGINE_BETA_URL}/cdp-session`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      country: "us",
-      mobileProxy: false,
-      useProxy: true,
-    }),
-  });
-
-  if (!cdpRes.ok) {
-    const text = await cdpRes.text();
-    logger.error("Failed to create CDP session", {
-      status: cdpRes.status,
-      text,
+  // 1. Create a browser session via the browser service
+  let svcResponse: BrowserServiceCreateResponse;
+  try {
+    svcResponse = await browserServiceRequest<BrowserServiceCreateResponse>(
+      "POST",
+      "/browsers",
+      {
+        ttl,
+        ...(activityTtl !== undefined ? { activityTtl } : {}),
+      },
+    );
+  } catch (err) {
+    logger.error("Failed to create browser session via browser service", {
+      error: err,
     });
     return res.status(502).json({
       success: false,
-      error: "Failed to create browser CDP session.",
+      error: "Failed to create browser session.",
     });
   }
 
-  const { browserId: feBrowserId, cdpPath } = (await cdpRes.json()) as {
-    browserId: string;
-    cdpPath: string;
-  };
-
-  // 2. Create a sandbox workspace and context
-  const client = getSandboxClient();
-  const workspace = await client.createWorkspace({ ttlSeconds: ttlTotal });
-  const ctx = await workspace.createContext();
-
-  // 3. Bridge CDP into the sandbox
-  await ctx.enableBrowser(cdpPath);
-
-  // 4. Initialize Playwright inside the sandbox
-  const initExec = await ctx.runCode(`
-from playwright.async_api import async_playwright
-
-__pw__ = await async_playwright().start()
-browser = await __pw__.chromium.connect_over_cdp("ws://127.0.0.1:9222")
-context = await browser.new_context()
-page = await context.new_page()
-`);
-
-  if (initExec.error) {
-    // Cleanup on failure
-    await workspace.destroy().catch(() => {});
-    if (config.FIRE_ENGINE_BETA_URL) {
-      await fetch(`${config.FIRE_ENGINE_BETA_URL}/cdp-session/${feBrowserId}`, {
-        method: "DELETE",
-      }).catch(() => {});
-    }
-
-    return res.status(502).json({
-      success: false,
-      error: `Failed to initialize browser: ${initExec.error.name}: ${initExec.error.value}`,
-    });
-  }
-
-  // Build the user-facing CDP URL
-  const cdpUrl = `${config.CDP_PROXY_URL}${cdpPath}`;
-
-  // 5. Persist session in Supabase
+  // 2. Persist session in Supabase
   try {
     await insertBrowserSession({
       id: sessionId,
       team_id: req.auth.team_id,
-      browser_id: feBrowserId,
-      workspace_id: workspace.id,
-      context_id: ctx.id,
-      cdp_url: cdpUrl,
-      cdp_path: cdpPath,
+      browser_id: svcResponse.sessionId,
+      workspace_id: "",
+      context_id: "",
+      cdp_url: svcResponse.cdpUrl,
+      cdp_path: svcResponse.viewUrl, // repurposed: stores view URL
       stream_web_view: streamWebView,
       status: "active",
-      ttl_total: ttlTotal,
-      ttl_without_activity: ttlWithoutActivity ?? null,
+      ttl_total: ttl,
+      ttl_without_activity: activityTtl ?? null,
     });
   } catch (err) {
-    // If we can't persist, tear everything down
+    // If we can't persist, tear down the browser session
     logger.error("Failed to persist browser session, cleaning up", {
       error: err,
     });
-    await workspace.destroy().catch(() => {});
-    if (config.FIRE_ENGINE_BETA_URL) {
-      await fetch(`${config.FIRE_ENGINE_BETA_URL}/cdp-session/${feBrowserId}`, {
-        method: "DELETE",
-      }).catch(() => {});
-    }
+    await browserServiceRequest(
+      "DELETE",
+      `/browsers/${svcResponse.sessionId}`,
+    ).catch(() => {});
     return res.status(500).json({
       success: false,
       error: "Failed to persist browser session.",
     });
   }
 
-  // Build the live view URL
-  const liveViewUrl = `${config.LIVE_VIEW_BASE_URL}/${feBrowserId}`;
-
   logger.info("Browser session created", {
     sessionId,
-    browserId: feBrowserId,
-    cdpUrl,
-    liveViewUrl,
+    browserId: svcResponse.sessionId,
   });
 
   return res.status(200).json({
     success: true,
     id: sessionId,
-    cdpUrl,
-    liveViewUrl,
+    cdpUrl: svcResponse.cdpUrl,
+    liveViewUrl: svcResponse.viewUrl,
+    expiresAt: svcResponse.expiresAt,
   });
 }
 
@@ -333,7 +265,7 @@ export async function browserExecuteController(
   req.body = browserExecuteRequestSchema.parse(req.body);
 
   const id = req.params.sessionId;
-  const { code, language } = req.body;
+  const { code, language, timeout } = req.body;
 
   const logger = _logger.child({
     sessionId: id,
@@ -369,49 +301,43 @@ export async function browserExecuteController(
   // Update activity timestamp (fire-and-forget)
   updateBrowserSessionActivity(id).catch(() => {});
 
-  logger.info("Executing code in browser session", { language });
+  logger.info("Executing code in browser session", { language, timeout });
 
-  // Reconstruct the code context from stored IDs
-  const client = getSandboxClient();
-  const ctx = reconstructContext(client, session);
-
-  let exec: Execution;
+  // Execute code via the browser service
+  let execResult: BrowserServiceExecResponse;
   try {
-    exec = await ctx.runCode(code);
+    execResult = await browserServiceRequest<BrowserServiceExecResponse>(
+      "POST",
+      `/browsers/${session.browser_id}/exec`,
+      { code, language, timeout },
+    );
   } catch (err) {
-    logger.warn("Failed to execute code — sandbox may have expired", {
-      error: err,
-    });
-
-    // Mark session as destroyed since the sandbox is gone
-    await updateBrowserSessionStatus(id, "destroyed").catch(() => {});
-
-    return res.status(410).json({
+    logger.error("Failed to execute code via browser service", { error: err });
+    return res.status(502).json({
       success: false,
-      error:
-        "Browser session has expired. The sandbox was destroyed (likely due to TTL). Please create a new session.",
+      error: "Failed to execute code in browser session.",
     });
   }
-
-  const output = executionToString(exec);
 
   logger.debug("Execution result", {
-    text: exec.text,
-    hasError: !!exec.error,
-    outputLength: output.length,
+    exitCode: execResult.exitCode,
+    killed: execResult.killed,
+    stdoutLength: execResult.stdout?.length,
+    stderrLength: execResult.stderr?.length,
   });
 
-  if (exec.error) {
-    return res.status(200).json({
-      success: true,
-      result: output,
-      error: `${exec.error.name}: ${exec.error.value}`,
-    });
-  }
+  const hasError = execResult.exitCode !== 0 || execResult.killed;
 
   return res.status(200).json({
     success: true,
-    result: output,
+    stdout: execResult.stdout,
+    result: execResult.result,
+    stderr: execResult.stderr,
+    exitCode: execResult.exitCode,
+    killed: execResult.killed,
+    ...(hasError
+      ? { error: execResult.stderr || "Execution failed" }
+      : {}),
   });
 }
 
@@ -454,10 +380,29 @@ export async function browserDeleteController(
 
   logger.info("Deleting browser session");
 
-  await destroySession(session);
+  // Release the browser session via the browser service
+  let sessionDurationMs: number | undefined;
+  try {
+    const deleteResult =
+      await browserServiceRequest<BrowserServiceDeleteResponse>(
+        "DELETE",
+        `/browsers/${session.browser_id}`,
+      );
+    sessionDurationMs = deleteResult?.sessionDurationMs;
+  } catch (err) {
+    logger.warn("Failed to delete browser session via browser service", {
+      error: err,
+    });
+  }
+
+  // Mark destroyed in Supabase
+  await updateBrowserSessionStatus(session.id, "destroyed");
+
+  logger.info("Browser session destroyed", { sessionDurationMs });
 
   return res.status(200).json({
     success: true,
+    sessionDurationMs,
   });
 }
 
@@ -492,11 +437,11 @@ export async function browserListController(
 
   return res.status(200).json({
     success: true,
-    sessions: rows.map(r => ({
+    sessions: rows.map((r) => ({
       id: r.id,
       status: r.status,
       cdpUrl: r.cdp_url,
-      liveViewUrl: `${config.LIVE_VIEW_BASE_URL}/${r.browser_id}`,
+      liveViewUrl: r.cdp_path, // cdp_path stores the view URL
       streamWebView: r.stream_web_view,
       createdAt: r.created_at,
       lastActivity: r.updated_at,
@@ -535,15 +480,6 @@ export async function browserWebhookDestroyedController(
   if (session.status === "destroyed") {
     logger.info("Session already destroyed", { sessionId: session.id, browserId });
     return res.status(200).json({ ok: true });
-  }
-
-  // Destroy sandbox workspace if still active
-  try {
-    const client = getSandboxClient();
-    const workspace = reconstructWorkspace(client, session);
-    await workspace.destroy().catch(() => {});
-  } catch (err) {
-    logger.warn("Error destroying sandbox for webhook", { error: err, sessionId: session.id });
   }
 
   await updateBrowserSessionStatus(session.id, "destroyed");

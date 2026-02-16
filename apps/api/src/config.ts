@@ -223,12 +223,9 @@ const configSchema = z.object({
   EXTRACT_V3_BETA_URL: z.string().optional(),
   AGENT_INTEROP_SECRET: z.string().optional(),
 
-  // Browser / Sandbox
-  SANDBOX_API_URL: z.string().default("http://localhost:3002"),
-  SANDBOX_POD_URL_TEMPLATE: z.string().optional(),
-  SANDBOX_HEADLESS_SERVICE: z.string().optional(),
-  CDP_PROXY_URL: z.string().default("ws://localhost:9222"),
-  LIVE_VIEW_BASE_URL: z.string().optional(),
+  // Browser Service
+  BROWSER_SERVICE_URL: z.string().optional(),
+  BROWSER_SERVICE_API_KEY: z.string().optional(),
 
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
 });
