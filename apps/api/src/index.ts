@@ -36,6 +36,7 @@ import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
 import responseTime from "response-time";
 import { shutdownWebhookQueue } from "./services/webhook";
+import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -138,8 +139,10 @@ async function startServer(port = DEFAULT_PORT) {
       logger.info("Server closed.");
       nuqShutdown().finally(() => {
         shutdownWebhookQueue().finally(() => {
-          logger.info("NUQ shutdown complete");
-          process.exit(0);
+          shutdownIndexerQueue().finally(() => {
+            logger.info("NUQ shutdown complete");
+            process.exit(0);
+          });
         });
       });
     });
