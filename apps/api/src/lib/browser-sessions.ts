@@ -25,6 +25,7 @@ export interface BrowserSessionRow {
   status: BrowserSessionStatus;
   ttl_total: number;
   ttl_without_activity: number | null;
+  credits_used: number | null;
   created_at: string; // ISO timestamp
   updated_at: string; // ISO timestamp
 }
@@ -162,6 +163,20 @@ export async function claimBrowserSessionDestroyed(
   }
 
   return (data?.length ?? 0) > 0;
+}
+
+export async function updateBrowserSessionCreditsUsed(
+  id: string,
+  creditsUsed: number,
+): Promise<void> {
+  const { error } = await supabase_service
+    .from(TABLE)
+    .update({ credits_used: creditsUsed, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) {
+    logger.warn("Failed to update browser session credits_used", { error, id, creditsUsed });
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import {
   listBrowserSessions,
   updateBrowserSessionActivity,
   updateBrowserSessionStatus,
+  updateBrowserSessionCreditsUsed,
   claimBrowserSessionDestroyed,
   getActiveBrowserSessionCount,
   invalidateActiveBrowserSessionCount,
@@ -260,6 +261,7 @@ export async function browserCreateController(
       status: "active",
       ttl_total: ttl,
       ttl_without_activity: activityTtl ?? null,
+      credits_used: null,
     });
   } catch (err) {
     // If we can't persist, tear down the browser session
@@ -462,6 +464,14 @@ export async function browserDeleteController(
     Date.now() - new Date(session.created_at).getTime();
   const creditsBilled = calculateBrowserSessionCredits(durationMs);
 
+  updateBrowserSessionCreditsUsed(session.id, creditsBilled).catch((error) => {
+    logger.error("Failed to update credits_used on browser session", {
+      error,
+      sessionId: session.id,
+      creditsBilled,
+    });
+  });
+
   billTeam(
     req.auth.team_id,
     req.acuc?.sub_id ?? undefined,
@@ -575,6 +585,14 @@ export async function browserWebhookDestroyedController(
 
   const durationMs = Date.now() - new Date(session.created_at).getTime();
   const creditsBilled = calculateBrowserSessionCredits(durationMs);
+
+  updateBrowserSessionCreditsUsed(session.id, creditsBilled).catch((error) => {
+    logger.error("Failed to update credits_used on browser session via webhook", {
+      error,
+      sessionId: session.id,
+      creditsBilled,
+    });
+  });
 
   billTeam(
     session.team_id,
