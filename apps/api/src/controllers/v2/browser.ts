@@ -19,6 +19,7 @@ import {
 import { RequestWithAuth } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
+import { logRequest } from "../../services/logging/log_job";
 
 const BROWSER_CREDITS_PER_HOUR = 100;
 
@@ -270,6 +271,15 @@ export async function browserCreateController(
 
   // 2. Persist session in Supabase
   try {
+    await logRequest({
+      id: sessionId,
+      kind: "browser",
+      api_version: "v2",
+      team_id: req.auth.team_id,
+      target_hint: "Browser session",
+      zeroDataRetention: false,
+      api_key_id: req.acuc!.api_key_id,
+    });
     await insertBrowserSession({
       id: sessionId,
       team_id: req.auth.team_id,

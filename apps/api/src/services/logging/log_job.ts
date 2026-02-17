@@ -154,7 +154,8 @@ type LoggedRequest = {
     | "llmstxt"
     | "deep_research"
     | "map"
-    | "agent";
+    | "agent"
+    | "browser";
   api_version: string;
   team_id: string;
   origin?: string;
