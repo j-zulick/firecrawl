@@ -334,13 +334,13 @@ export async function browserExecuteController(
   >,
   res: Response<BrowserExecuteResponse>,
 ) {
-  if (!req.acuc?.flags?.browserBeta) {
-    return res.status(403).json({
-      success: false,
-      error:
-        "Browser is currently in beta. Please contact support@firecrawl.com to request access.",
-    });
-  }
+  // if (!req.acuc?.flags?.browserBeta) {
+  //   return res.status(403).json({
+  //     success: false,
+  //     error:
+  //       "Browser is currently in beta. Please contact support@firecrawl.com to request access.",
+  //   });
+  // }
 
   req.body = browserExecuteRequestSchema.parse(req.body);
 
@@ -435,13 +435,13 @@ export async function browserDeleteController(
   req: RequestWithAuth<{ sessionId: string }, BrowserDeleteResponse>,
   res: Response<BrowserDeleteResponse>,
 ) {
-  if (!req.acuc?.flags?.browserBeta) {
-    return res.status(403).json({
-      success: false,
-      error:
-        "Browser is currently in beta. Please contact support@firecrawl.com to request access.",
-    });
-  }
+  // if (!req.acuc?.flags?.browserBeta) {
+  //   return res.status(403).json({
+  //     success: false,
+  //     error:
+  //       "Browser is currently in beta. Please contact support@firecrawl.com to request access.",
+  //   });
+  // }
 
   const id = req.params.sessionId;
 
@@ -540,13 +540,13 @@ export async function browserListController(
   req: RequestWithAuth<{}, BrowserListResponse>,
   res: Response<BrowserListResponse>,
 ) {
-  if (!req.acuc?.flags?.browserBeta) {
-    return res.status(403).json({
-      success: false,
-      error:
-        "Browser is currently in beta. Please contact support@firecrawl.com to request access.",
-    });
-  }
+  // if (!req.acuc?.flags?.browserBeta) {
+  //   return res.status(403).json({
+  //     success: false,
+  //     error:
+  //       "Browser is currently in beta. Please contact support@firecrawl.com to request access.",
+  //   });
+  // }
 
   const logger = _logger.child({
     teamId: req.auth.team_id,
