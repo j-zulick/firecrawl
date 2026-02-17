@@ -146,6 +146,7 @@ interface BrowserServiceCreateResponse {
   sessionId: string;
   cdpUrl: string;
   viewUrl: string;
+  iframeUrl: string;
   expiresAt: string;
 }
 
@@ -170,13 +171,13 @@ export async function browserCreateController(
   req: RequestWithAuth<{}, BrowserCreateResponse, BrowserCreateRequest>,
   res: Response<BrowserCreateResponse>,
 ) {
-  if (!req.acuc?.flags?.browserBeta) {
-    return res.status(403).json({
-      success: false,
-      error:
-        "Browser is currently in beta. Please contact support@firecrawl.com to request access.",
-    });
-  }
+  // if (!req.acuc?.flags?.browserBeta) {
+  //   return res.status(403).json({
+  //     success: false,
+  //     error:
+  //       "Browser is currently in beta. Please contact support@firecrawl.com to request access.",
+  //   });
+  // }
 
   const sessionId = uuidv7();
   const logger = _logger.child({
@@ -257,7 +258,7 @@ export async function browserCreateController(
       workspace_id: "",
       context_id: "",
       cdp_url: svcResponse.cdpUrl,
-      cdp_path: svcResponse.viewUrl, // repurposed: stores view URL
+      cdp_path: svcResponse.iframeUrl, // repurposed: stores view URL
       stream_web_view: streamWebView,
       status: "active",
       ttl_total: ttl,
@@ -291,7 +292,7 @@ export async function browserCreateController(
     success: true,
     id: sessionId,
     cdpUrl: svcResponse.cdpUrl,
-    liveViewUrl: svcResponse.viewUrl,
+    liveViewUrl: svcResponse.iframeUrl,
     expiresAt: svcResponse.expiresAt,
   });
 }
