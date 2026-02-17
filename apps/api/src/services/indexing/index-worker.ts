@@ -28,6 +28,7 @@ import { getSearchIndexClient } from "../../lib/search-index-client";
 // Search indexing is now handled by the separate search service
 // import { processSearchIndexJobs } from "../../lib/search-index/queue";
 import { processWebhookInsertJobs } from "../webhook";
+import { processBrowserSessionActivityJobs } from "../../lib/browser-session-activity";
 import {
   scrapeOptions as scrapeOptionsSchema,
   crawlRequestSchema,
@@ -683,6 +684,7 @@ async function tallyBilling() {
 const INDEX_INSERT_INTERVAL = 3000;
 const WEBHOOK_INSERT_INTERVAL = 15000;
 const OMCE_INSERT_INTERVAL = 5000;
+const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
 // Search indexing is now handled by separate search service, not this worker
 // const SEARCH_INDEX_INTERVAL = 10000;
 
@@ -723,6 +725,11 @@ const OMCE_INSERT_INTERVAL = 5000;
     }
     await processWebhookInsertJobs();
   }, WEBHOOK_INSERT_INTERVAL);
+
+  const browserActivityInterval = setInterval(async () => {
+    if (isShuttingDown) return;
+    await processBrowserSessionActivityJobs();
+  }, BROWSER_ACTIVITY_INSERT_INTERVAL);
 
   const omceInserterInterval = setInterval(async () => {
     if (isShuttingDown) {
@@ -793,6 +800,7 @@ const OMCE_INSERT_INTERVAL = 5000;
 
   clearInterval(indexInserterInterval);
   clearInterval(webhookInserterInterval);
+  clearInterval(browserActivityInterval);
   clearInterval(omceInserterInterval);
   clearInterval(billingTallyInterval);
 

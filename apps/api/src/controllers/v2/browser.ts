@@ -18,6 +18,7 @@ import {
 } from "../../lib/browser-sessions";
 import { RequestWithAuth } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
+import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 
 const BROWSER_CREDITS_PER_HOUR = 100;
 
@@ -352,6 +353,7 @@ export async function browserExecuteController(
 
   logger.info("Executing code in browser session", { language, timeout });
 
+
   // Execute code via the browser service
   let execResult: BrowserServiceExecResponse;
   try {
@@ -373,6 +375,15 @@ export async function browserExecuteController(
     killed: execResult.killed,
     stdoutLength: execResult.stdout?.length,
     stderrLength: execResult.stderr?.length,
+  });
+
+  enqueueBrowserSessionActivity({
+    team_id: req.auth.team_id,
+    session_id: id,
+    language,
+    timeout,
+    exit_code: execResult.exitCode ?? null,
+    killed: execResult.killed ?? false,
   });
 
   const hasError = execResult.exitCode !== 0 || execResult.killed;
