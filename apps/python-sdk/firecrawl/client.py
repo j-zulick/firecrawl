@@ -90,6 +90,11 @@ class V2Proxy:
             self.get_token_usage = client_instance.get_token_usage
             self.get_queue_status = client_instance.get_queue_status
 
+            self.browser = client_instance.browser
+            self.browser_execute = client_instance.browser_execute
+            self.delete_browser = client_instance.delete_browser
+            self.list_browsers = client_instance.list_browsers
+
             self.watcher = client_instance.watcher
     
     def __getattr__(self, name):
@@ -158,6 +163,11 @@ class AsyncV2Proxy:
             self.get_credit_usage = client_instance.get_credit_usage
             self.get_token_usage = client_instance.get_token_usage
             self.get_queue_status = client_instance.get_queue_status
+
+            self.browser = client_instance.browser
+            self.browser_execute = client_instance.browser_execute
+            self.delete_browser = client_instance.delete_browser
+            self.list_browsers = client_instance.list_browsers
 
             self.watcher = client_instance.watcher
 
@@ -228,6 +238,11 @@ class Firecrawl:
         self.get_credit_usage = self._v2_client.get_credit_usage
         self.get_token_usage = self._v2_client.get_token_usage
         self.get_queue_status = self._v2_client.get_queue_status
+
+        self.browser = self._v2_client.browser
+        self.browser_execute = self._v2_client.browser_execute
+        self.delete_browser = self._v2_client.delete_browser
+        self.list_browsers = self._v2_client.list_browsers
         
         self.watcher = self._v2_client.watcher
         
@@ -281,6 +296,11 @@ class AsyncFirecrawl:
         self.get_credit_usage = self._v2_client.get_credit_usage
         self.get_token_usage = self._v2_client.get_token_usage
         self.get_queue_status = self._v2_client.get_queue_status
+
+        self.browser = self._v2_client.browser
+        self.browser_execute = self._v2_client.browser_execute
+        self.delete_browser = self._v2_client.delete_browser
+        self.list_browsers = self._v2_client.list_browsers
 
         self.watcher = self._v2_client.watcher
 
