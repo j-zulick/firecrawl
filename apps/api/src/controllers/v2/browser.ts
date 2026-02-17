@@ -228,20 +228,39 @@ export async function browserCreateController(
     });
   }
 
-  // 1. Create a browser session via the browser service
-  let svcResponse: BrowserServiceCreateResponse;
-  try {
-    svcResponse = await browserServiceRequest<BrowserServiceCreateResponse>(
-      "POST",
-      "/browsers",
-      {
-        ttl,
-        ...(activityTtl !== undefined ? { activityTtl } : {}),
-      },
-    );
-  } catch (err) {
-    logger.error("Failed to create browser session via browser service", {
-      error: err,
+  // 1. Create a browser session via the browser service (retry up to 3 times)
+  const MAX_CREATE_RETRIES = 3;
+  let svcResponse: BrowserServiceCreateResponse | undefined;
+  let lastCreateError: unknown;
+
+  for (let attempt = 1; attempt <= MAX_CREATE_RETRIES; attempt++) {
+    try {
+      svcResponse = await browserServiceRequest<BrowserServiceCreateResponse>(
+        "POST",
+        "/browsers",
+        {
+          ttl,
+          ...(activityTtl !== undefined ? { activityTtl } : {}),
+        },
+      );
+      break;
+    } catch (err) {
+      lastCreateError = err;
+      logger.warn("Browser session creation attempt failed", {
+        attempt,
+        maxRetries: MAX_CREATE_RETRIES,
+        error: err,
+      });
+      if (attempt < MAX_CREATE_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+      }
+    }
+  }
+
+  if (!svcResponse) {
+    logger.error("Failed to create browser session after all retries", {
+      error: lastCreateError,
+      attempts: MAX_CREATE_RETRIES,
     });
     return res.status(502).json({
       success: false,
