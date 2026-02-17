@@ -46,19 +46,17 @@ async function addCoupon(teamId: string, integration: any) {
 
   if (integration.coupon_concurrency) {
     // Look up the org for this team (created by handle_new_user trigger)
-    const { data: orgLink } = await supabase_service
-      .from("organization_teams")
+    const { data: teamWithOrg } = await supabase_service
+      .from("teams")
       .select("org_id")
-      .eq("team_id", teamId)
-      .eq("is_active", true)
-      .limit(1)
+      .eq("id", teamId)
       .single();
 
-    if (orgLink) {
+    if (teamWithOrg?.org_id) {
       const { error: orgOverrideError } = await (supabase_service as any)
         .from("organization_overrides")
         .insert({
-          org_id: orgLink.org_id,
+          org_id: teamWithOrg.org_id,
           concurrent_browsers: integration.coupon_concurrency,
           expires_at: expiresAt,
           internal_comment: `Integration coupon (${integration.display_name || integration.slug || "unknown"})`,
@@ -223,13 +221,25 @@ export async function integCreateUserController(req: Request, res: Response) {
           teamId,
         });
       } else {
-        // create a new team with this referrer
+        // Create an org first (mirrors handle_new_user trigger)
+        const { data: newOrg, error: newOrgError } = await supabase_service
+          .from("organizations")
+          .insert({ name: "pending" })
+          .select()
+          .single();
+        if (newOrgError) {
+          logger.error("Failed to create organization", { error: newOrgError });
+          return res.status(500).json({ error: "Failed to create organization" });
+        }
+
+        // create a new team with this referrer, linked to the org
         const { data: newTeam, error: newTeamError } = await supabase_service
           .from("teams")
           .insert({
             name: "via " + (integration.display_name ?? integration.slug),
             referrer_integration: integration.slug,
-          })
+            org_id: newOrg.id,
+          } as any)
           .select()
           .single();
         if (newTeamError) {
@@ -238,23 +248,21 @@ export async function integCreateUserController(req: Request, res: Response) {
         }
         teamId = newTeam.id;
 
-        // Create an org and link the team (mirrors handle_new_user trigger)
-        const { data: newOrg, error: newOrgError } = await supabase_service
+        // Update org name to match team ID (convention)
+        const { error: orgNameError } = await supabase_service
           .from("organizations")
-          .insert({ name: teamId })
-          .select()
-          .single();
-        if (newOrgError) {
-          logger.error("Failed to create organization", { error: newOrgError });
-          return res.status(500).json({ error: "Failed to create organization" });
+          .update({ name: teamId })
+          .eq("id", newOrg.id);
+        if (orgNameError) {
+          logger.warn("Failed to update org name to team ID", { error: orgNameError, orgId: newOrg.id, teamId });
         }
 
+        // Link team to org in join table
         const { error: orgLinkError } = await supabase_service
           .from("organization_teams")
           .insert({
             org_id: newOrg.id,
             team_id: teamId,
-            is_active: true,
           });
         if (orgLinkError) {
           logger.error("Failed to link team to organization", { error: orgLinkError });
