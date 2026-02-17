@@ -37,7 +37,7 @@ function calculateBrowserSessionCredits(durationMs: number): number {
 
 const browserCreateRequestSchema = z.object({
   ttl: z.number().min(30).max(3600).default(300),
-  activityTtl: z.number().min(10).max(3600).optional(),
+  activityTtl: z.number().min(10).max(3600).default(120),
   streamWebView: z.boolean().default(true),
 });
 
