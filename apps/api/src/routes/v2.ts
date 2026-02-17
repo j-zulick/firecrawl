@@ -376,7 +376,7 @@ v2Router.post(
   "/browser",
   authMiddleware(RateLimiterMode.Browser),
   countryCheck,
-  checkCreditsMiddleware(15),
+  checkCreditsMiddleware(2),
   wrap(browserCreateController),
 );
 
