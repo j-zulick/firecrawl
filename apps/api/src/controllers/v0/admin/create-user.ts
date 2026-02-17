@@ -29,19 +29,44 @@ async function addCoupon(teamId: string, integration: any) {
     throw error;
   }
 
-  if (integration.coupon_rate_limits || integration.coupon_concurrency) {
+  if (integration.coupon_rate_limits) {
     const { error: overrideError } = await (supabase_service as any)
       .from("team_overrides")
       .insert({
         team_id: teamId,
-        rate_limits: integration.coupon_rate_limits || null,
-        concurrency: integration.coupon_concurrency || null,
+        rate_limits: integration.coupon_rate_limits,
         expires_at: expiresAt,
         internal_comment: `Integration coupon (${integration.display_name || integration.slug || "unknown"})`,
       });
 
     if (overrideError) {
       throw overrideError;
+    }
+  }
+
+  if (integration.coupon_concurrency) {
+    // Look up the org for this team (created by handle_new_user trigger)
+    const { data: orgLink } = await supabase_service
+      .from("organization_teams")
+      .select("org_id")
+      .eq("team_id", teamId)
+      .eq("is_active", true)
+      .limit(1)
+      .single();
+
+    if (orgLink) {
+      const { error: orgOverrideError } = await (supabase_service as any)
+        .from("organization_overrides")
+        .insert({
+          org_id: orgLink.org_id,
+          concurrent_browsers: integration.coupon_concurrency,
+          expires_at: expiresAt,
+          internal_comment: `Integration coupon (${integration.display_name || integration.slug || "unknown"})`,
+        });
+
+      if (orgOverrideError) {
+        throw orgOverrideError;
+      }
     }
   }
 }
@@ -212,6 +237,29 @@ export async function integCreateUserController(req: Request, res: Response) {
           return res.status(500).json({ error: "Failed to create new team" });
         }
         teamId = newTeam.id;
+
+        // Create an org and link the team (mirrors handle_new_user trigger)
+        const { data: newOrg, error: newOrgError } = await supabase_service
+          .from("organizations")
+          .insert({ name: teamId })
+          .select()
+          .single();
+        if (newOrgError) {
+          logger.error("Failed to create organization", { error: newOrgError });
+          return res.status(500).json({ error: "Failed to create organization" });
+        }
+
+        const { error: orgLinkError } = await supabase_service
+          .from("organization_teams")
+          .insert({
+            org_id: newOrg.id,
+            team_id: teamId,
+            is_active: true,
+          });
+        if (orgLinkError) {
+          logger.error("Failed to link team to organization", { error: orgLinkError });
+          return res.status(500).json({ error: "Failed to link team to organization" });
+        }
 
         const { error: newUserTeamError } = await supabase_service
           .from("user_teams")
