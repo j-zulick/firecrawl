@@ -382,19 +382,19 @@ v2Router.post(
 
 v2Router.get(
   "/browser",
-  authMiddleware(RateLimiterMode.Browser),
+  authMiddleware(RateLimiterMode.BrowserExecute),
   wrap(browserListController),
 );
 
 v2Router.post(
   "/browser/:sessionId/execute",
-  authMiddleware(RateLimiterMode.Browser),
+  authMiddleware(RateLimiterMode.BrowserExecute),
   wrap(browserExecuteController),
 );
 
 v2Router.delete(
   "/browser/:sessionId",
-  authMiddleware(RateLimiterMode.Browser),
+  authMiddleware(RateLimiterMode.BrowserExecute),
   wrap(browserDeleteController),
 );
 
