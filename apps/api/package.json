@@ -89,7 +89,7 @@
     "@x402/evm": "^2.2.0",
     "@x402/express": "^2.2.0",
     "ai": "5.0.89",
-    "ajv": "^8.16.0",
+    "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
     "amqplib": "^0.10.9",
     "async-mutex": "^0.5.0",
@@ -172,7 +172,8 @@
     "overrides": {
       "bigint-buffer": "npm:four-flap-bigint-buffer@1.1.6",
       "diff": "^8.0.3",
-      "fast-xml-parser": "^5.3.4",
+      "ajv": "^8.18.0",
+      "fast-xml-parser": "^5.3.6",
       "glob@>=10.2.0 <10.5.0": ">=10.5.0",
       "js-yaml@<3.14.2": ">=3.14.2",
       "qs@<6.14.2": ">=6.14.2"
