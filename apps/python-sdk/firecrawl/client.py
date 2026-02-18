@@ -185,20 +185,36 @@ class Firecrawl:
     Provides a single entrypoint that exposes the latest API directly while
     keeping a feature-frozen v1 available for incremental migration.
     """
-    
-    def __init__(self, api_key: str = None, api_url: str = "https://api.firecrawl.dev"):
+
+    def __init__(
+        self,
+        api_key: str = None,
+        api_url: str = "https://api.firecrawl.dev",
+        timeout: float = None,
+        max_retries: int = 3,
+        backoff_factor: float = 0.5,
+    ):
         """Initialize the unified client.
 
         Args:
             api_key: Firecrawl API key (or set ``FIRECRAWL_API_KEY``)
             api_url: Base API URL (defaults to production)
+            timeout: Default request timeout in seconds for all HTTP requests
+            max_retries: Maximum number of retries for failed requests (default: 3)
+            backoff_factor: Exponential backoff factor for retries (default: 0.5)
         """
         self.api_key = api_key
         self.api_url = api_url
-        
+
         # Initialize version-specific clients
         self._v1_client = V1FirecrawlApp(api_key=api_key, api_url=api_url) if V1FirecrawlApp else None
-        self._v2_client = V2FirecrawlClient(api_key=api_key, api_url=api_url) if V2FirecrawlClient else None
+        self._v2_client = V2FirecrawlClient(
+            api_key=api_key,
+            api_url=api_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            backoff_factor=backoff_factor,
+        ) if V2FirecrawlClient else None
         
         # Create version-specific proxies
         self.v1 = V1Proxy(self._v1_client) if self._v1_client else None
@@ -249,13 +265,26 @@ class Firecrawl:
 class AsyncFirecrawl:
     """Async unified Firecrawl client (v2 by default, v1 under ``.v1``)."""
 
-    def __init__(self, api_key: str = None, api_url: str = "https://api.firecrawl.dev"):
+    def __init__(
+        self,
+        api_key: str = None,
+        api_url: str = "https://api.firecrawl.dev",
+        timeout: float = None,
+        max_retries: int = 3,
+        backoff_factor: float = 0.5,
+    ):
         self.api_key = api_key
         self.api_url = api_url
-        
+
         # Initialize version-specific clients
         self._v1_client = AsyncV1FirecrawlApp(api_key=api_key, api_url=api_url) if AsyncV1FirecrawlApp else None
-        self._v2_client = AsyncFirecrawlClient(api_key=api_key, api_url=api_url) if AsyncFirecrawlClient else None
+        self._v2_client = AsyncFirecrawlClient(
+            api_key=api_key,
+            api_url=api_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            backoff_factor=backoff_factor,
+        ) if AsyncFirecrawlClient else None
         
         # Create version-specific proxies
         self.v1 = AsyncV1Proxy(self._v1_client) if self._v1_client else None

@@ -100,7 +100,13 @@ class FirecrawlClient:
             backoff_factor=backoff_factor
         )
 
-        self.http_client = HttpClient(api_key, api_url)
+        self.http_client = HttpClient(
+            api_key,
+            api_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            backoff_factor=backoff_factor,
+        )
     
     def scrape(
         self,
