@@ -100,7 +100,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
       try {
         const connection = await amqp.connect(config.NUQ_RABBITMQ_URL);
         const channel = await connection.createChannel();
-        await channel.prefetch(1);
+        await channel.prefetch(5);
         const queue = await channel.assertQueue(
           this.queueName + ".listen." + this.listenChannelId,
           {
