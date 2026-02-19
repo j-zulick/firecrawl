@@ -47,7 +47,7 @@ export async function concurrencyQueueBackfillController(
       // zscan returns [member1, score1, member2, score2, ...]
       // Only parse members (even indices), skip scores (odd indices)
       for (let i = 0; i < results.length; i += 2) {
-        queuedJobIDs.add(JSON.parse(results[i]).id);
+        queuedJobIDs.add(results[i]);
       }
     } while (cursor !== "0");
 

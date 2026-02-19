@@ -10,6 +10,8 @@ const constructKey = (team_id: string) => "concurrency-limiter:" + team_id;
 const constructQueueKey = (team_id: string) =>
   "concurrency-limit-queue:" + team_id;
 
+const constructJobKey = (jobId: string) => "cq-job:" + jobId;
+
 const constructCrawlKey = (crawl_id: string) =>
   "crawl-concurrency-limiter:" + crawl_id;
 
@@ -86,15 +88,22 @@ export async function pushConcurrencyLimitedJob(
   now: number = Date.now(),
 ) {
   const queueKey = constructQueueKey(team_id);
-  await getRedisConnection().zadd(queueKey, now + timeout, JSON.stringify(job));
-  await getRedisConnection().sadd("concurrency-limit-queues", queueKey);
+  const jobKey = constructJobKey(job.id);
+  const redis = getRedisConnection();
+
+  if (timeout === Infinity) {
+    await redis.set(jobKey, JSON.stringify(job), "EX", 172800); // 48h
+  } else {
+    await redis.set(jobKey, JSON.stringify(job), "PX", timeout);
+  }
+
+  await redis.zadd(queueKey, now + timeout, job.id);
+  await redis.sadd("concurrency-limit-queues", queueKey);
 }
 
 export async function getConcurrencyLimitedJobs(team_id: string) {
   return new Set(
-    (await getRedisConnection().zrange(constructQueueKey(team_id), 0, -1)).map(
-      x => JSON.parse(x).id,
-    ),
+    await getRedisConnection().zrange(constructQueueKey(team_id), 0, -1),
   );
 }
 
@@ -172,24 +181,37 @@ async function getNextConcurrentJob(
   }[] = [];
 
   const crawlCache = new Map<string, StoredCrawl>();
-  let cursor: string = "0";
+  const queueKey = constructQueueKey(teamId);
+  const redis = getRedisConnection();
+  let offset = 0;
 
   do {
-    const scanResult = await getRedisConnection().zscan(
-      constructQueueKey(teamId),
-      cursor,
-      "COUNT",
+    const members = await redis.zrangebyscore(
+      queueKey,
+      Date.now(),
+      "+inf",
+      "LIMIT",
+      offset,
       20,
     );
-    cursor = scanResult[0];
-    const results = scanResult[1];
 
-    for (let i = 0; i < results.length; i += 2) {
+    if (members.length === 0) break;
+    offset += members.length;
+
+    for (const member of members) {
+      const jobData = await redis.get(constructJobKey(member));
+      if (jobData === null) {
+        // TTL expired - remove orphaned sorted set entry
+        await redis.zrem(queueKey, member);
+        offset--;
+        continue;
+      }
+      const job: ConcurrencyLimitedJob = JSON.parse(jobData);
+
       const res = {
-        job: JSON.parse(results[i]),
-        _member: results[i],
-        timeout:
-          results[i + 1] === "inf" ? Infinity : parseFloat(results[i + 1]),
+        job,
+        _member: member,
+        timeout: Infinity,
       };
 
       // If the job is associated with a crawl ID, we need to check if the crawl has a max concurrency limit
@@ -227,7 +249,7 @@ async function getNextConcurrentJob(
         finalJobs.push(res);
       }
     }
-  } while (finalJobs.length === 0 && cursor !== "0");
+  } while (finalJobs.length === 0);
 
   let finalJob: (typeof finalJobs)[number] | null = null;
   if (finalJobs.length > 0) {
@@ -237,6 +259,7 @@ async function getNextConcurrentJob(
         job._member,
       );
       if (res !== 0) {
+        await getRedisConnection().del(constructJobKey(job._member));
         finalJob = job;
         break;
       }
@@ -298,6 +321,7 @@ export async function concurrentJobDone(job: NuQJob<any>) {
   if (job.id && job.data && job.data.team_id) {
     await removeConcurrencyLimitActiveJob(job.data.team_id, job.id);
     await cleanOldConcurrencyLimitEntries(job.data.team_id);
+    await cleanOldConcurrencyLimitedJobs(job.data.team_id);
 
     if (job.data.crawl_id) {
       await removeCrawlConcurrencyLimitActiveJob(job.data.crawl_id, job.id);
