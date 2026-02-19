@@ -5,7 +5,7 @@ import { htmlTransform } from "../lib/removeUnwantedElements";
 import { extractLinks } from "../lib/extractLinks";
 import { extractImages } from "../lib/extractImages";
 import { extractMetadata } from "../lib/extractMetadata";
-import { performLLMExtract, performSummary } from "./llmExtract";
+import { performLLMExtract, performSummary, performCleanContent } from "./llmExtract";
 import { uploadScreenshot } from "./uploadScreenshot";
 import { removeBase64Images } from "./removeBase64Images";
 import { performAgent } from "./agent";
@@ -85,7 +85,7 @@ async function deriveMarkdownFromHTML(
   const hasJson = hasFormatOfType(meta.options.formats, "json");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
 
-  if (!hasMarkdown && !hasChangeTracking && !hasJson && !hasSummary) {
+  if (!hasMarkdown && !hasChangeTracking && !hasJson && !hasSummary && !meta.options.onlyCleanContent) {
     return document;
   }
 
@@ -483,6 +483,7 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
 const transformerStack: Transformer[] = [
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
+  performCleanContent,
   deriveLinksFromHTML,
   deriveImagesFromHTML,
   deriveBrandingFromActions,

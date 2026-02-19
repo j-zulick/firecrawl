@@ -267,6 +267,7 @@ describe("V1 Types Validation", () => {
       expect(result.timeout).toBe(30000);
       expect(result.formats).toEqual(["markdown"]);
       expect(result.onlyMainContent).toBe(true);
+      expect(result.onlyCleanContent).toBe(false);
       expect(result.waitFor).toBe(0);
       expect(result.mobile).toBe(false);
       expect(result.parsePDF).toBe(true);
@@ -275,6 +276,16 @@ describe("V1 Types Validation", () => {
       expect(result.blockAds).toBe(true);
       expect(result.proxy).toBe("basic");
       expect(result.storeInCache).toBe(true);
+    });
+
+    it("should accept scrape request with onlyCleanContent=true", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        onlyCleanContent: true,
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.onlyCleanContent).toBe(true);
     });
 
     it("should accept valid integration value", () => {
