@@ -39,6 +39,7 @@ async function scrapePDFWithRunPodMU(
   tempFilePath: string,
   base64Content: string,
   maxPages?: number,
+  pagesProcessed?: number,
 ): Promise<PDFProcessorResult> {
   meta.logger.debug("Processing PDF document with RunPod MU", {
     tempFilePath,
@@ -194,6 +195,7 @@ async function scrapePDFWithRunPodMU(
     meta.logger.child({ method: "scrapePDF/MUv1" }).warn("MU v1 failed", {
       durationMs,
       url: meta.rewrittenUrl ?? meta.url,
+      ...(pagesProcessed !== undefined && { pagesProcessed }),
     });
     throw new Error("RunPod MU failed to parse PDF");
   }
@@ -203,6 +205,7 @@ async function scrapePDFWithRunPodMU(
     meta.logger.child({ method: "scrapePDF/MUv1" }).warn("MU v1 failed", {
       durationMs,
       url: meta.rewrittenUrl ?? meta.url,
+      ...(pagesProcessed !== undefined && { pagesProcessed }),
     });
     throw new Error("RunPod MU returned no result");
   }
@@ -228,6 +231,7 @@ async function scrapePDFWithRunPodMU(
     meta.logger.child({ method: "scrapePDF/MUv1" }).info("MU v1 completed", {
       durationMs,
       url: meta.rewrittenUrl ?? meta.url,
+      ...(pagesProcessed !== undefined && { pagesProcessed }),
     });
   }
 
@@ -375,6 +379,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           tempFilePath,
           base64Content,
           maxPages,
+          effectivePageCount,
         );
         const muV1DurationMs = Date.now() - muV1StartedAt;
         meta.logger
