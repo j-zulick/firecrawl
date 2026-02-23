@@ -23,7 +23,7 @@ const semaphoreHoldDuration = new Histogram({
   name: "noq_semaphore_hold_duration_seconds",
   help: "Semaphore hold time",
   buckets: [
-    0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 180, 240, 300, 600,
+    0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 10, 15, 20, 30, 60, 120, 300,
   ],
 });
 
