@@ -28,6 +28,7 @@ import {
   getPDFMaxPages,
 } from "../../../../controllers/v2/types";
 import { getPdfMetadata } from "@mendable/firecrawl-rs";
+import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 
 type PDFProcessorResult = { html: string; markdown?: string };
 
@@ -147,9 +148,11 @@ async function scrapePDFWithRunPodMU(
     schema: z.object({
       id: z.string(),
       status: z.string(),
+      error: z.string().optional(),
       output: z
         .object({
-          markdown: z.string(),
+          markdown: z.string().optional(),
+          status: z.string().optional(),
         })
         .optional(),
     }),
@@ -158,7 +161,11 @@ async function scrapePDFWithRunPodMU(
   });
 
   let status: string = podStart.status;
-  let result: { markdown: string } | undefined = podStart.output;
+  let result: { markdown?: string } | undefined =
+    podStart.output?.markdown !== undefined
+      ? { markdown: podStart.output.markdown }
+      : undefined;
+  let lastRunPodError: string | undefined = podStart.error;
 
   if (status === "IN_QUEUE" || status === "IN_PROGRESS") {
     do {
@@ -176,9 +183,11 @@ async function scrapePDFWithRunPodMU(
         }),
         schema: z.object({
           status: z.string(),
+          error: z.string().optional(),
           output: z
             .object({
-              markdown: z.string(),
+              markdown: z.string().optional(),
+              status: z.string().optional(),
             })
             .optional(),
         }),
@@ -186,22 +195,43 @@ async function scrapePDFWithRunPodMU(
         abort: meta.abort.asSignal(),
       });
       status = podStatus.status;
-      result = podStatus.output;
+      result =
+        podStatus.output?.markdown !== undefined
+          ? { markdown: podStatus.output.markdown }
+          : undefined;
+      if (podStatus.error !== undefined) {
+        lastRunPodError = podStatus.error;
+      }
     } while (status !== "COMPLETED" && status !== "FAILED");
   }
 
   if (status === "FAILED") {
     const durationMs = Date.now() - muV1StartedAt;
+    const errorMessage =
+      lastRunPodError ?? "RunPod MU failed to parse PDF (no error message)";
+    const err = new Error(`RunPod MU failed to parse PDF: ${errorMessage}`);
     meta.logger.child({ method: "scrapePDF/MUv1" }).warn("MU v1 failed", {
       durationMs,
       url: meta.rewrittenUrl ?? meta.url,
       mu_id: podStart.id,
+      runpodError: lastRunPodError,
       ...(pagesProcessed !== undefined && { pagesProcessed }),
     });
-    throw new Error("RunPod MU failed to parse PDF");
+    captureExceptionWithZdrCheck(err, {
+      extra: {
+        zeroDataRetention: meta.internalOptions.zeroDataRetention ?? false,
+        scrapeId: meta.id,
+        teamId: meta.internalOptions.teamId,
+        url: meta.rewrittenUrl ?? meta.url,
+        runpodId: podStart.id,
+        runpodError: lastRunPodError,
+        durationMs,
+      },
+    });
+    throw err;
   }
 
-  if (!result) {
+  if (!result?.markdown) {
     const durationMs = Date.now() - muV1StartedAt;
     meta.logger.child({ method: "scrapePDF/MUv1" }).warn("MU v1 failed", {
       durationMs,
@@ -215,7 +245,7 @@ async function scrapePDFWithRunPodMU(
   const processorResult = {
     markdown: result.markdown,
     html: await marked.parse(result.markdown, { async: true }),
-  };
+  } satisfies PDFProcessorResult;
 
   if (!meta.internalOptions.zeroDataRetention) {
     try {
