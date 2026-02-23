@@ -195,6 +195,7 @@ async function scrapePDFWithRunPodMU(
     meta.logger.child({ method: "scrapePDF/MUv1" }).warn("MU v1 failed", {
       durationMs,
       url: meta.rewrittenUrl ?? meta.url,
+      mu_id: podStart.id,
       ...(pagesProcessed !== undefined && { pagesProcessed }),
     });
     throw new Error("RunPod MU failed to parse PDF");
@@ -205,6 +206,7 @@ async function scrapePDFWithRunPodMU(
     meta.logger.child({ method: "scrapePDF/MUv1" }).warn("MU v1 failed", {
       durationMs,
       url: meta.rewrittenUrl ?? meta.url,
+      mu_id: podStart.id,
       ...(pagesProcessed !== undefined && { pagesProcessed }),
     });
     throw new Error("RunPod MU returned no result");
@@ -231,6 +233,7 @@ async function scrapePDFWithRunPodMU(
     meta.logger.child({ method: "scrapePDF/MUv1" }).info("MU v1 completed", {
       durationMs,
       url: meta.rewrittenUrl ?? meta.url,
+      mu_id: podStart.id,
       ...(pagesProcessed !== undefined && { pagesProcessed }),
     });
   }
