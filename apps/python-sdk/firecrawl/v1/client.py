@@ -1952,6 +1952,11 @@ class V1FirecrawlApp:
         """
         Extract structured information from URLs.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             urls (Optional[List[str]]): URLs to extract from
             prompt (Optional[str]): Custom extraction prompt
@@ -1972,6 +1977,14 @@ class V1FirecrawlApp:
         Raises:
             ValueError: If prompt/schema missing or extraction fails
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # Validate any additional kwargs
         self._validate_kwargs(kwargs, "extract")
         
@@ -2056,6 +2069,11 @@ class V1FirecrawlApp:
         """
         Retrieve the status of an extract job.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             job_id (str): The ID of the extract job.
 
@@ -2065,6 +2083,14 @@ class V1FirecrawlApp:
         Raises:
             ValueError: If there is an error retrieving the status.
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
         try:
             response = self._get_request(f'{self.api_url}/v1/extract/{job_id}', headers)
@@ -2092,6 +2118,11 @@ class V1FirecrawlApp:
         """
         Initiate an asynchronous extract job.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             urls (List[str]): URLs to extract information from
             prompt (Optional[str]): Custom extraction prompt
@@ -2112,6 +2143,14 @@ class V1FirecrawlApp:
         Raises:
             ValueError: If job initiation fails
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
         
         schema = schema
@@ -4358,6 +4397,11 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         Asynchronously extract structured information from URLs.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             urls (Optional[List[str]]): URLs to extract from
             prompt (Optional[str]): Custom extraction prompt
@@ -4377,6 +4421,14 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Raises:
           ValueError: If prompt/schema missing or extraction fails
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
 
         if not prompt and not schema:

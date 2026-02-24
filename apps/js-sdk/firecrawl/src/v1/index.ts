@@ -1278,10 +1278,11 @@ export default class FirecrawlApp {
 
   /**
    * Extracts information from URLs using the Firecrawl API.
-   * Currently in Beta. Expect breaking changes on future minor versions.
    * @param urls - The URLs to extract information from. Optional if using other methods for data extraction.
    * @param params - Additional parameters for the extract request.
    * @returns The response from the extract operation.
+   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
   async extract<T extends zt.ZodSchema = any>(urls?: string[], params?: ExtractParams<T>): Promise<ExtractResponse<zt.infer<T>> | ErrorResponse> {
     const headers = this.prepareHeaders();
@@ -1337,6 +1338,8 @@ export default class FirecrawlApp {
    * @param params - Additional parameters for the extract request.
    * @param idempotencyKey - Optional idempotency key for the request.
    * @returns The response from the extract operation.
+   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
   async asyncExtract(
     urls: string[],
@@ -1369,6 +1372,8 @@ export default class FirecrawlApp {
    * Retrieves the status of an extract job.
    * @param jobId - The ID of the extract job.
    * @returns The status of the extract job.
+   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
   async getExtractStatus(jobId: string): Promise<any> {
     try {

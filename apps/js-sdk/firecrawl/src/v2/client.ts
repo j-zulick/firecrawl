@@ -255,6 +255,8 @@ export class FirecrawlClient {
    * Start an extract job (async).
    * @param args Extraction request (urls, schema or prompt, flags).
    * @returns Job id or processing state.
+   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
   async startExtract(args: Parameters<typeof startExtract>[1]): Promise<ExtractResponse> {
     return startExtract(this.http, args);
@@ -262,6 +264,8 @@ export class FirecrawlClient {
   /**
    * Get extract job status/data.
    * @param jobId Extract job id.
+   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
   async getExtractStatus(jobId: string): Promise<ExtractResponse> {
     return getExtractStatus(this.http, jobId);
@@ -270,6 +274,8 @@ export class FirecrawlClient {
    * Convenience waiter: start an extract and poll until it finishes.
    * @param args Extraction request plus waiter controls (pollInterval, timeout seconds).
    * @returns Final extract response.
+   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
   async extract(args: Parameters<typeof startExtract>[1] & { pollInterval?: number; timeout?: number }): Promise<ExtractResponse> {
     return extractWaiter(this.http, args);

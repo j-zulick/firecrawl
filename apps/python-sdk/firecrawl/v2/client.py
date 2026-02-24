@@ -571,6 +571,11 @@ class FirecrawlClient:
     ):
         """Start an extract job (non-blocking).
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             urls: URLs to extract from (optional)
             prompt: Natural-language instruction for extraction
@@ -619,6 +624,11 @@ class FirecrawlClient:
         agent: Optional[AgentOptions] = None,
     ):
         """Extract structured data and wait until completion.
+
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
 
         Args:
             urls: URLs to extract from (optional)
@@ -821,6 +831,11 @@ class FirecrawlClient:
 
     def get_extract_status(self, job_id: str):
         """Get the current status (and data if completed) of an extract job.
+
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
 
         Args:
             job_id: Extract job ID

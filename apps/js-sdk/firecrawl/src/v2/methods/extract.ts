@@ -38,6 +38,10 @@ function prepareExtractPayload(args: {
   return body;
 }
 
+/**
+ * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+ * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
+ */
 export async function startExtract(http: HttpClient, args: Parameters<typeof prepareExtractPayload>[0]): Promise<ExtractResponse> {
   const payload = prepareExtractPayload(args);
   try {
@@ -50,6 +54,10 @@ export async function startExtract(http: HttpClient, args: Parameters<typeof pre
   }
 }
 
+/**
+ * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+ * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
+ */
 export async function getExtractStatus(http: HttpClient, jobId: string): Promise<ExtractResponse> {
   try {
     const res = await http.get<ExtractResponse>(`/v2/extract/${jobId}`);
@@ -61,6 +69,10 @@ export async function getExtractStatus(http: HttpClient, jobId: string): Promise
   }
 }
 
+/**
+ * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+ * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
+ */
 export async function waitExtract(
   http: HttpClient,
   jobId: string,
@@ -76,6 +88,10 @@ export async function waitExtract(
   }
 }
 
+/**
+ * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+ * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
+ */
 export async function extract(
   http: HttpClient,
   args: Parameters<typeof prepareExtractPayload>[0] & { pollInterval?: number; timeout?: number }

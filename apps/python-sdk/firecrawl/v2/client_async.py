@@ -309,7 +309,7 @@ class AsyncFirecrawlClient:
         # Returns v2 errors structure; typed as CrawlErrorsResponse for parity
         return await async_batch.get_batch_scrape_errors(self.async_http_client, job_id)  # type: ignore[return-value]
 
-    # Extract (proxy to v1 async)
+    # Extract (proxy to v1 async) — deprecated
     async def extract(
         self,
         urls: Optional[List[str]] = None,
@@ -326,6 +326,13 @@ class AsyncFirecrawlClient:
         timeout: Optional[int] = None,
         integration: Optional[str] = None,
     ):
+        """Extract structured data and wait until completion (async).
+
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+        """
         return await async_extract.extract(
             self.async_http_client,
             urls,
@@ -343,6 +350,13 @@ class AsyncFirecrawlClient:
         )
 
     async def get_extract_status(self, job_id: str):
+        """Get the current status (and data if completed) of an extract job (async).
+
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+        """
         return await async_extract.get_extract_status(self.async_http_client, job_id)
 
     async def start_extract(
@@ -359,6 +373,13 @@ class AsyncFirecrawlClient:
         ignore_invalid_urls: Optional[bool] = None,
         integration: Optional[str] = None,
     ):
+        """Start an extract job (non-blocking, async).
+
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+        """
         return await async_extract.start_extract(
             self.async_http_client,
             urls,
