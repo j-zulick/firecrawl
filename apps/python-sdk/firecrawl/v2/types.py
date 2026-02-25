@@ -574,6 +574,7 @@ class CrawlRequest(BaseModel):
     max_discovery_depth: Optional[int] = None
     sitemap: Literal["skip", "include", "only"] = "include"
     ignore_query_parameters: bool = False
+    deduplicate_similar_urls: bool = True
     limit: Optional[int] = None
     crawl_entire_domain: bool = False
     allow_external_links: bool = False
@@ -667,6 +668,7 @@ class CrawlParamsData(BaseModel):
     max_discovery_depth: Optional[int] = None
     sitemap: Optional[Literal["skip", "include", "only"]] = None
     ignore_query_parameters: bool = False
+    deduplicate_similar_urls: bool = True
     limit: Optional[int] = None
     crawl_entire_domain: bool = False
     allow_external_links: bool = False

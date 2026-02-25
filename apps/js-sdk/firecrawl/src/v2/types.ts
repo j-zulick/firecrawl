@@ -462,6 +462,7 @@ export interface CrawlOptions {
   maxDiscoveryDepth?: number | null;
   sitemap?: 'skip' | 'include' | 'only';
   ignoreQueryParameters?: boolean;
+  deduplicateSimilarURLs?: boolean;
   limit?: number | null;
   crawlEntireDomain?: boolean;
   allowExternalLinks?: boolean;
@@ -470,6 +471,7 @@ export interface CrawlOptions {
   maxConcurrency?: number | null;
   webhook?: string | WebhookConfig | null;
   scrapeOptions?: ScrapeOptions | null;
+  regexOnFullURL?: boolean;
   zeroDataRetention?: boolean;
   integration?: string;
 }

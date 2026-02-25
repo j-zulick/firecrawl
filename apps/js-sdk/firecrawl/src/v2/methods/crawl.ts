@@ -28,12 +28,14 @@ function prepareCrawlPayload(request: CrawlRequest): Record<string, unknown> {
   if (request.maxDiscoveryDepth != null) data.maxDiscoveryDepth = request.maxDiscoveryDepth;
   if (request.sitemap != null) data.sitemap = request.sitemap;
   if (request.ignoreQueryParameters != null) data.ignoreQueryParameters = request.ignoreQueryParameters;
+  if (request.deduplicateSimilarURLs != null) data.deduplicateSimilarURLs = request.deduplicateSimilarURLs;
   if (request.limit != null) data.limit = request.limit;
   if (request.crawlEntireDomain != null) data.crawlEntireDomain = request.crawlEntireDomain;
   if (request.allowExternalLinks != null) data.allowExternalLinks = request.allowExternalLinks;
   if (request.allowSubdomains != null) data.allowSubdomains = request.allowSubdomains;
   if (request.delay != null) data.delay = request.delay;
   if (request.maxConcurrency != null) data.maxConcurrency = request.maxConcurrency;
+  if (request.regexOnFullURL != null) data.regexOnFullURL = request.regexOnFullURL;
   if (request.webhook != null) data.webhook = request.webhook;
   if (request.integration != null && request.integration.trim()) data.integration = request.integration.trim();
   if (request.scrapeOptions) {

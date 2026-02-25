@@ -45,11 +45,13 @@ def _prepare_crawl_request(request: CrawlRequest) -> dict:
         "max_discovery_depth": "maxDiscoveryDepth",
         "sitemap": "sitemap",
         "ignore_query_parameters": "ignoreQueryParameters",
+        "deduplicate_similar_urls": "deduplicateSimilarURLs",
         "crawl_entire_domain": "crawlEntireDomain",
         "allow_external_links": "allowExternalLinks",
         "allow_subdomains": "allowSubdomains",
         "delay": "delay",
         "max_concurrency": "maxConcurrency",
+        "regex_on_full_url": "regexOnFullURL",
         "zero_data_retention": "zeroDataRetention",
     }
     for snake, camel in field_mappings.items():
@@ -329,6 +331,7 @@ async def crawl_params_preview(client: AsyncHttpClient, request: CrawlParamsRequ
         "maxDiscoveryDepth": "max_discovery_depth",
         "sitemap": "sitemap",
         "ignoreQueryParameters": "ignore_query_parameters",
+        "deduplicateSimilarURLs": "deduplicate_similar_urls",
         "crawlEntireDomain": "crawl_entire_domain",
         "allowExternalLinks": "allow_external_links",
         "allowSubdomains": "allow_subdomains",
