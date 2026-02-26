@@ -248,6 +248,7 @@ class FirecrawlClient:
         webhook: Optional[Union[str, WebhookConfig]] = None,
         scrape_options: Optional[ScrapeOptions] = None,
         regex_on_full_url: bool = False,
+        deduplicate_similar_urls: bool = True,
         zero_data_retention: bool = False,
         poll_interval: int = 2,
         timeout: Optional[int] = None,
@@ -275,6 +276,7 @@ class FirecrawlClient:
             webhook: Webhook configuration for notifications
             scrape_options: Page scraping configuration
             regex_on_full_url: Apply includePaths/excludePaths regex to the full URL (including query parameters) instead of just the pathname
+            deduplicate_similar_urls: Whether to deduplicate similar URLs during crawl (default: True)
             zero_data_retention: Whether to delete data after 24 hours
             poll_interval: Seconds between status checks
             timeout: Maximum seconds to wait for the entire crawl job to complete (None for no timeout)
@@ -308,6 +310,7 @@ class FirecrawlClient:
             "webhook": webhook,
             "scrape_options": scrape_options,
             "regex_on_full_url": regex_on_full_url,
+            "deduplicate_similar_urls": deduplicate_similar_urls,
             "zero_data_retention": zero_data_retention,
             "integration": integration,
         }
@@ -344,6 +347,7 @@ class FirecrawlClient:
         webhook: Optional[Union[str, WebhookConfig]] = None,
         scrape_options: Optional[ScrapeOptions] = None,
         regex_on_full_url: bool = False,
+        deduplicate_similar_urls: bool = True,
         zero_data_retention: bool = False,
         integration: Optional[str] = None,
     ) -> CrawlResponse:
@@ -368,6 +372,7 @@ class FirecrawlClient:
             webhook: Webhook configuration for notifications
             scrape_options: Page scraping configuration
             regex_on_full_url: Apply includePaths/excludePaths regex to the full URL (including query parameters) instead of just the pathname
+            deduplicate_similar_urls: Whether to deduplicate similar URLs during crawl (default: True)
             zero_data_retention: Whether to delete data after 24 hours
             
         Returns:
@@ -397,6 +402,7 @@ class FirecrawlClient:
             "webhook": webhook,
             "scrape_options": scrape_options,
             "regex_on_full_url": regex_on_full_url,
+            "deduplicate_similar_urls": deduplicate_similar_urls,
             "zero_data_retention": zero_data_retention,
             "integration": integration,
         }
