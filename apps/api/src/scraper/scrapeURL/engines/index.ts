@@ -20,6 +20,7 @@ import { hasFormatOfType } from "../../../lib/format-utils";
 import { getPDFMaxPages } from "../../../controllers/v2/types";
 import type { PdfMetadata } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
+import { BrandingNotSupportedError } from "../error";
 
 export type Engine =
   | "fire-engine;chrome-cdp"
@@ -610,15 +611,17 @@ export async function buildFallbackList(meta: Meta): Promise<
     );
     if (!hasCDPEngine) {
       if (meta.featureFlags.has("pdf")) {
-        throw new Error(
+        throw new BrandingNotSupportedError(
           "Branding extraction is only supported for HTML web pages. PDFs are not supported.",
         );
       } else if (meta.featureFlags.has("document")) {
-        throw new Error(
+        throw new BrandingNotSupportedError(
           "Branding extraction is only supported for HTML web pages. Documents (docx, xlsx, etc.) are not supported.",
         );
       }
-      throw new Error("Branding extraction requires Chrome CDP (fire-engine).");
+      throw new BrandingNotSupportedError(
+        "Branding extraction requires Chrome CDP (fire-engine).",
+      );
     }
   }
 

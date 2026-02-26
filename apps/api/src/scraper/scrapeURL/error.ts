@@ -447,6 +447,25 @@ export class DocumentPrefetchFailed extends TransportableError {
   }
 }
 
+export class BrandingNotSupportedError extends TransportableError {
+  constructor(message: string) {
+    super("SCRAPE_BRANDING_NOT_SUPPORTED", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new BrandingNotSupportedError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class FEPageLoadFailed extends Error {
   constructor() {
     super(

@@ -49,6 +49,7 @@ import {
   EngineUnsuccessfulError,
   ProxySelectionError,
   ScrapeRetryLimitError,
+  BrandingNotSupportedError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
@@ -1219,6 +1220,11 @@ export async function scrapeURL(
           "scrapeURL: Failed to prefetch document that is protected by anti-bot",
           { error },
         );
+      } else if (error instanceof BrandingNotSupportedError) {
+        errorType = "BrandingNotSupportedError";
+        meta.logger.warn("scrapeURL: Branding not supported for this content", {
+          error,
+        });
       } else if (error instanceof ProxySelectionError) {
         errorType = "ProxySelectionError";
         meta.logger.warn("scrapeURL: Proxy selection error", { error });

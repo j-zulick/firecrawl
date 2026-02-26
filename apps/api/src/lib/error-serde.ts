@@ -27,6 +27,7 @@ import {
   NoCachedDataError,
   ScrapeJobCancelledError,
   ScrapeRetryLimitError,
+  BrandingNotSupportedError,
 } from "../scraper/scrapeURL/error";
 
 // TODO: figure out correct typing for this
@@ -52,6 +53,7 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_NO_CACHED_DATA: NoCachedDataError,
   SCRAPE_ACTION_ERROR: ActionError,
   SCRAPE_ACTIONS_NOT_SUPPORTED: ActionsNotSupportedError,
+  SCRAPE_BRANDING_NOT_SUPPORTED: BrandingNotSupportedError,
   SCRAPE_RACED_REDIRECT_ERROR: RacedRedirectError,
   SCRAPE_SITEMAP_ERROR: SitemapError,
   CRAWL_DENIAL: CrawlDenialError,
