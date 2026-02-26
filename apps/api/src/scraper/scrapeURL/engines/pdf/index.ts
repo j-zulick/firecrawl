@@ -11,7 +11,7 @@ import {
   RemoveFeatureError,
   EngineUnsuccessfulError,
 } from "../../error";
-import { readFile, unlink } from "node:fs/promises";
+import { open, readFile, unlink } from "node:fs/promises";
 import type { Response } from "undici";
 import { AbortManagerThrownError } from "../../lib/abortManager";
 import {
@@ -26,6 +26,7 @@ import type { PDFProcessorResult } from "./types";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
+import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 
 /** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
 function getIneligibleReason(
@@ -68,9 +69,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         },
       );
 
-      const ct = file.response.headers.get("Content-Type");
-      if (ct && !ct.includes("application/pdf")) {
-        // if downloaded file wasn't a PDF
+      if (!isPdfBuffer(file.buffer)) {
+        // downloaded content isn't a valid PDF
         if (meta.pdfPrefetch === undefined) {
           // for non-PDF URLs, this is expected, not anti-bot
           if (!meta.featureFlags.has("pdf")) {
@@ -110,22 +110,30 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         );
 
   try {
-    if ((response as any).headers) {
-      // if downloadFile was used
-      const r: Response = response as any;
-      const ct = r.headers.get("Content-Type");
-      if (ct && !ct.includes("application/pdf")) {
-        // if downloaded file wasn't a PDF
-        if (meta.pdfPrefetch === undefined) {
-          // for non-PDF URLs, this is expected, not anti-bot
-          if (!meta.featureFlags.has("pdf")) {
-            throw new EngineUnsuccessfulError("pdf");
-          } else {
-            throw new PDFAntibotError();
-          }
+    // Validate the downloaded file is actually a PDF by checking magic bytes
+    const header = Buffer.alloc(PDF_SNIFF_WINDOW);
+    const fh = await open(tempFilePath, "r");
+    let headerBytesRead: number;
+    try {
+      ({ bytesRead: headerBytesRead } = await fh.read(
+        header,
+        0,
+        PDF_SNIFF_WINDOW,
+        0,
+      ));
+    } finally {
+      await fh.close();
+    }
+
+    if (!isPdfBuffer(header.subarray(0, headerBytesRead))) {
+      if (meta.pdfPrefetch === undefined) {
+        if (!meta.featureFlags.has("pdf")) {
+          throw new EngineUnsuccessfulError("pdf");
         } else {
-          throw new PDFPrefetchFailed();
+          throw new PDFAntibotError();
         }
+      } else {
+        throw new PDFPrefetchFailed();
       }
     }
 
