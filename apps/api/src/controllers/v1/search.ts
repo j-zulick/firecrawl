@@ -15,6 +15,7 @@ import { logger as _logger } from "../../lib/logger";
 import type { Logger } from "winston";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
+import { z } from "zod";
 import { executeSearch } from "../../search/execute";
 import {
   DocumentWithCostTracking,
@@ -252,6 +253,15 @@ export async function searchController(
 
     return res.status(200).json(responseData);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      logger.warn("Invalid request body", { error: error.issues });
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request body",
+        details: error.issues,
+      });
+    }
+
     if (error instanceof ScrapeJobTimeoutError) {
       return res.status(408).json({
         success: false,

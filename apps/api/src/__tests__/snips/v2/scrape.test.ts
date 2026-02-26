@@ -139,6 +139,22 @@ describe("Scrape tests", () => {
     );
   });
 
+  it.concurrent(
+    "returns 400 for invalid URL",
+    async () => {
+      const raw = await scrapeRaw(
+        {
+          url: "not-a-valid-url",
+        } as any,
+        identity,
+      );
+
+      expect(raw.statusCode).toBe(400);
+      expect(raw.body.success).toBe(false);
+    },
+    scrapeTimeout,
+  );
+
   // TEMP: domain broken
   // it.concurrent("works with Punycode domains", async () => {
   //   await scrape({

@@ -410,7 +410,7 @@ export async function extract(
 // Search API
 // =========================================
 
-async function searchRaw(body: SearchRequestInput, identity: Identity) {
+export async function searchRaw(body: SearchRequestInput, identity: Identity) {
   return await request(TEST_API_URL)
     .post("/v1/search")
     .set("Authorization", `Bearer ${identity.apiKey}`)
