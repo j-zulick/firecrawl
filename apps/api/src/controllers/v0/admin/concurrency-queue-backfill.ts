@@ -3,7 +3,7 @@ import { Request, Response } from "express";
 import { getRedisConnection } from "../../../services/queue-service";
 import { scrapeQueue } from "../../../services/worker/nuq";
 import {
-  pushConcurrencyLimitedJob,
+  pushConcurrencyLimitedJobs,
   pushConcurrencyLimitActiveJob,
   getConcurrencyLimitActiveJobs,
 } from "../../../lib/concurrency-limit";
@@ -95,16 +95,18 @@ export async function concurrencyQueueBackfillController(
       }
     }
 
-    for (const job of jobsToQueue) {
-      await pushConcurrencyLimitedJob(
+    if (jobsToQueue.length > 0) {
+      await pushConcurrencyLimitedJobs(
         ownerId,
-        {
-          id: job.id,
-          data: job.data,
-          priority: job.priority,
-          listenable: job.listenChannelId !== undefined,
-        },
-        Infinity,
+        jobsToQueue.map(job => ({
+          job: {
+            id: job.id,
+            data: job.data,
+            priority: job.priority,
+            listenable: job.listenChannelId !== undefined,
+          },
+          timeout: Infinity,
+        })),
       );
     }
 

@@ -7,6 +7,7 @@ import {
   getCrawlConcurrencyLimitActiveJobs,
   pushConcurrencyLimitActiveJob,
   pushConcurrencyLimitedJob,
+  pushConcurrencyLimitedJobs,
   pushCrawlConcurrencyLimitActiveJob,
 } from "../lib/concurrency-limit";
 import { logger as _logger } from "../lib/logger";
@@ -106,19 +107,34 @@ async function _addScrapeJobsToConcurrencyQueue(
     })),
   );
 
+  const jobsByTeam = new Map<
+    string,
+    {
+      job: { id: string; data: any; priority: number; listenable: boolean };
+      timeout: number;
+    }[]
+  >();
+
   for (const job of jobs) {
-    await pushConcurrencyLimitedJob(
-      job.data.team_id,
-      {
+    const teamId = job.data.team_id as string;
+    if (!jobsByTeam.has(teamId)) {
+      jobsByTeam.set(teamId, []);
+    }
+    jobsByTeam.get(teamId)!.push({
+      job: {
         id: job.jobId,
         data: job.data,
         priority: job.priority,
         listenable: job.listenable ?? false,
       },
-      job.data.crawl_id
+      timeout: job.data.crawl_id
         ? Infinity
         : (job.data.scrapeOptions?.timeout ?? 60 * 1000),
-    );
+    });
+  }
+
+  for (const [teamId, teamJobs] of jobsByTeam) {
+    await pushConcurrencyLimitedJobs(teamId, teamJobs);
   }
 }
 
