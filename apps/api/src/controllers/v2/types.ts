@@ -413,8 +413,13 @@ export type FormatObject =
   | AttributesFormatWithOptions
   | { type: "branding" };
 
+const pdfModeSchema = z.enum(["fast", "auto", "ocr"]);
+
+export type PDFMode = z.infer<typeof pdfModeSchema>;
+
 const pdfParserWithOptions = z.strictObject({
   type: z.literal("pdf"),
+  mode: pdfModeSchema.optional(),
   maxPages: z.int().positive().finite().max(10000).optional(),
 });
 
@@ -447,6 +452,17 @@ export function getPDFMaxPages(parsers?: Parsers): number | undefined {
     return (pdfParser as any).maxPages;
   }
   return undefined;
+}
+
+export function getPDFMode(parsers?: Parsers): PDFMode {
+  if (!parsers) return "auto";
+  for (const parser of parsers) {
+    if (parser === "pdf") return "auto";
+    if (typeof parser === "object" && parser.type === "pdf") {
+      return parser.mode ?? "auto";
+    }
+  }
+  return "auto";
 }
 
 function transformIframeSelector(selector: string): string {

@@ -18,7 +18,7 @@ import { indexMaxReasonableTime, scrapeURLWithIndex } from "./index/index";
 import { queryEngpickerVerdict, useIndex } from "../../../services";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { getPDFMaxPages } from "../../../controllers/v2/types";
-import { PdfMetadata } from "@mendable/firecrawl-rs";
+import type { PdfMetadata } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
 
 export type Engine =

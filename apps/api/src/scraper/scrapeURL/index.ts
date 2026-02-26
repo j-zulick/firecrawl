@@ -36,6 +36,7 @@ import {
   UnsupportedFileError,
   SSLError,
   PDFInsufficientTimeError,
+  PDFOCRRequiredError,
   IndexMissError,
   NoCachedDataError,
   DNSResolutionError,
@@ -646,6 +647,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof ActionError ||
               error.error instanceof UnsupportedFileError ||
               error.error instanceof PDFAntibotError ||
+              error.error instanceof PDFOCRRequiredError ||
               error.error instanceof DocumentAntibotError ||
               error.error instanceof PDFInsufficientTimeError ||
               error.error instanceof ProxySelectionError ||
@@ -1197,6 +1199,14 @@ export async function scrapeURL(
         meta.logger.warn("scrapeURL: Insufficient time to process PDF", {
           error,
         });
+      } else if (error instanceof PDFOCRRequiredError) {
+        errorType = "PDFOCRRequiredError";
+        meta.logger.warn(
+          "scrapeURL: PDF requires OCR but fast mode was requested",
+          {
+            error,
+          },
+        );
       } else if (error instanceof PDFPrefetchFailed) {
         errorType = "PDFPrefetchFailed";
         meta.logger.warn(
