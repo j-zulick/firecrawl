@@ -13,12 +13,17 @@ export async function browser(
     ttl?: number;
     activityTtl?: number;
     streamWebView?: boolean;
+    persistentSession?: {
+      name: string;
+      writeMode?: "readonly" | "readwrite";
+    };
   } = {}
 ): Promise<BrowserCreateResponse> {
   const body: Record<string, unknown> = {};
   if (args.ttl != null) body.ttl = args.ttl;
   if (args.activityTtl != null) body.activityTtl = args.activityTtl;
   if (args.streamWebView != null) body.streamWebView = args.streamWebView;
+  if (args.persistentSession != null) body.persistentSession = args.persistentSession;
 
   try {
     const res = await http.post<BrowserCreateResponse>("/v2/browser", body);

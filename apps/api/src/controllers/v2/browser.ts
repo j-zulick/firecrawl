@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { v7 as uuidv7 } from "uuid";
 import { Request, Response } from "express";
 import { z } from "zod";
@@ -40,6 +41,10 @@ const browserCreateRequestSchema = z.object({
   ttl: z.number().min(30).max(3600).default(300),
   activityTtl: z.number().min(10).max(3600).default(120),
   streamWebView: z.boolean().default(true),
+  persistentSession: z.object({
+    name: z.string().min(1).max(128),
+    writeMode: z.enum(["readonly", "readwrite"]).default("readwrite"),
+  }).optional(),
 });
 
 type BrowserCreateRequest = z.infer<typeof browserCreateRequestSchema>;
@@ -114,6 +119,14 @@ function browserServiceHeaders(
   return headers;
 }
 
+class BrowserServiceError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
 /**
  * Call the browser service and return parsed JSON.
  * Throws on non-2xx responses.
@@ -132,7 +145,8 @@ async function browserServiceRequest<T>(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(
+    throw new BrowserServiceError(
+      res.status,
       `Browser service ${method} ${path} failed (${res.status}): ${text}`,
     );
   }
@@ -193,7 +207,7 @@ export async function browserCreateController(
 
   req.body = browserCreateRequestSchema.parse(req.body);
 
-  const { ttl, activityTtl, streamWebView } = req.body;
+  const { ttl, activityTtl, streamWebView, persistentSession } = req.body;
 
   if (!config.BROWSER_SERVICE_URL) {
     return res.status(503).json({
@@ -237,6 +251,19 @@ export async function browserCreateController(
   let svcResponse: BrowserServiceCreateResponse | undefined;
   let lastCreateError: unknown;
 
+  // Build persistentStorage from persistentSession if provided
+  let persistentStorage: { uniqueId: string; write: boolean } | undefined;
+  if (persistentSession) {
+    const teamHash = createHash("sha256")
+      .update(req.auth.team_id)
+      .digest("hex")
+      .slice(0, 16);
+    persistentStorage = {
+      uniqueId: `${teamHash}_${persistentSession.name}`,
+      write: persistentSession.writeMode === "readwrite",
+    };
+  }
+
   for (let attempt = 1; attempt <= MAX_CREATE_RETRIES; attempt++) {
     try {
       svcResponse = await browserServiceRequest<BrowserServiceCreateResponse>(
@@ -245,10 +272,23 @@ export async function browserCreateController(
         {
           ttl,
           ...(activityTtl !== undefined ? { activityTtl } : {}),
+          ...(persistentStorage !== undefined ? { persistentStorage } : {}),
         },
       );
       break;
     } catch (err) {
+      // 409 means the persistent session profile is locked by another writer — don't retry
+      if (err instanceof BrowserServiceError && err.status === 409) {
+        logger.warn("Persistent session profile is locked", {
+          persistentSessionName: persistentSession?.name,
+          error: err,
+        });
+        return res.status(409).json({
+          success: false,
+          error: "Another session is currently writing to this persistent session profile. Only one writer is allowed at a time. You can still access it with writeMode \"readonly\", or try again later.",
+        });
+      }
+
       lastCreateError = err;
       logger.warn("Browser session creation attempt failed", {
         attempt,
