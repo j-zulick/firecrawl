@@ -145,7 +145,7 @@ export interface ScrapeOptions {
   timeout?: number;
   waitFor?: number;
   mobile?: boolean;
-  parsers?: Array<string | { type: 'pdf'; maxPages?: number }>;
+  parsers?: Array<string | { type: 'pdf'; mode?: 'fast' | 'auto' | 'ocr'; maxPages?: number }>;
   actions?: ActionOption[];
   location?: LocationConfig;
   skipTlsVerification?: boolean;

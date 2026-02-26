@@ -1015,9 +1015,10 @@ class PDFAction(BaseModel):
 
 
 class PDFParser(BaseModel):
-    """PDF parser configuration with optional page limit."""
+    """PDF parser configuration with optional page limit and processing mode."""
 
     type: Literal["pdf"] = "pdf"
+    mode: Optional[Literal["fast", "auto", "ocr"]] = None
     max_pages: Optional[int] = None
 
 
