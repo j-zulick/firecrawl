@@ -15,7 +15,7 @@ export async function browser(
     streamWebView?: boolean;
     profile?: {
       name: string;
-      writeMode?: "readonly" | "readwrite";
+      saveChanges?: boolean;
     };
   } = {}
 ): Promise<BrowserCreateResponse> {

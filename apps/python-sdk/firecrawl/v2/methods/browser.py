@@ -64,7 +64,7 @@ def browser(
         activity_ttl: Inactivity TTL in seconds (10-3600)
         stream_web_view: Whether to enable webview streaming
         profile: Profile config with ``name`` (str) and
-            optional ``write_mode`` (``"readonly"`` | ``"readwrite"``, default ``"readwrite"``)
+            optional ``save_changes`` (bool, default ``True``)
 
     Returns:
         BrowserCreateResponse with session id and CDP URL
@@ -79,7 +79,7 @@ def browser(
     if profile is not None:
         body["profile"] = {
             "name": profile["name"],
-            "writeMode": profile.get("write_mode", "readwrite"),
+            "saveChanges": profile.get("save_changes", True),
         }
 
     resp = client.post("/v2/browser", body)
