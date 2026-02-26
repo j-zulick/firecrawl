@@ -21,6 +21,7 @@ interface BrowserSessionRow {
   context_id: string; // unused (legacy), stored as ""
   cdp_url: string; // full CDP WebSocket URL from browser service
   cdp_path: string; // repurposed: stores the view WebSocket URL
+  cdp_interactive_path: string; // repurposed: stores the interactive view WebSocket URL
   stream_web_view: boolean;
   status: BrowserSessionStatus;
   ttl_total: number;

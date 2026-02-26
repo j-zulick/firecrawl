@@ -86,6 +86,7 @@ interface BrowserListResponse {
     status: string;
     cdpUrl: string;
     liveViewUrl: string;
+    interactiveLiveViewUrl: string;
     streamWebView: boolean;
     createdAt: string;
     lastActivity: string;
@@ -290,7 +291,8 @@ export async function browserCreateController(
       workspace_id: "",
       context_id: "",
       cdp_url: svcResponse.cdpUrl,
-      cdp_path: svcResponse.interactiveIframeUrl, // repurposed: stores view URL
+      cdp_path: svcResponse.iframeUrl, // repurposed: stores view URL
+      cdp_interactive_path: svcResponse.interactiveIframeUrl, // repurposed: stores interactive view URL
       stream_web_view: streamWebView,
       status: "active",
       ttl_total: ttl,
@@ -572,6 +574,7 @@ export async function browserListController(
       status: r.status,
       cdpUrl: r.cdp_url,
       liveViewUrl: r.cdp_path, // cdp_path stores the view URL
+      interactiveLiveViewUrl: r.cdp_interactive_path, // cdp_interactive_path stores the interactive view URL
       streamWebView: r.stream_web_view,
       createdAt: r.created_at,
       lastActivity: r.updated_at,
