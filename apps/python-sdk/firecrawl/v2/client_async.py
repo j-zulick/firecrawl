@@ -468,7 +468,7 @@ class AsyncFirecrawlClient:
         ttl: Optional[int] = None,
         activity_ttl: Optional[int] = None,
         stream_web_view: Optional[bool] = None,
-        persistent_session: Optional[Dict[str, Any]] = None,
+        profile: Optional[Dict[str, Any]] = None,
     ):
         """Create a new browser session.
 
@@ -476,7 +476,7 @@ class AsyncFirecrawlClient:
             ttl: Total time-to-live in seconds (30-3600, default 300)
             activity_ttl: Inactivity TTL in seconds (10-3600)
             stream_web_view: Whether to enable webview streaming
-            persistent_session: Persistent session config with ``name`` (str) and
+            profile: Profile config with ``name`` (str) and
                 optional ``write_mode`` (``"readonly"`` | ``"readwrite"``, default ``"readwrite"``)
 
         Returns:
@@ -487,7 +487,7 @@ class AsyncFirecrawlClient:
             ttl=ttl,
             activity_ttl=activity_ttl,
             stream_web_view=stream_web_view,
-            persistent_session=persistent_session,
+            profile=profile,
         )
 
     async def browser_execute(
