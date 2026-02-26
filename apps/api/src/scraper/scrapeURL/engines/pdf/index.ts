@@ -1,7 +1,6 @@
 import { Meta } from "../..";
 import { config } from "../../../../config";
 import { EngineScrapeResult } from "..";
-import * as Sentry from "@sentry/node";
 import * as marked from "marked";
 import { downloadFile, fetchFileToBuffer } from "../utils/downloadFile";
 import {
@@ -26,6 +25,7 @@ import { MAX_FILE_SIZE, MILLISECONDS_PER_PAGE } from "./types";
 import type { PDFProcessorResult } from "./types";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { scrapePDFWithParsePDF } from "./pdfParse";
+import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 
 /** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
 function getIneligibleReason(
@@ -163,7 +163,14 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           error,
           url: meta.rewrittenUrl ?? meta.url,
         });
-        Sentry.captureException(error);
+        captureExceptionWithZdrCheck(error, {
+          extra: {
+            zeroDataRetention: meta.internalOptions.zeroDataRetention ?? false,
+            scrapeId: meta.id,
+            teamId: meta.internalOptions.teamId,
+            url: meta.rewrittenUrl ?? meta.url,
+          },
+        });
       }
     } else {
       // Rust extraction enabled (fast / auto modes).
@@ -224,7 +231,14 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           error,
           url: meta.rewrittenUrl ?? meta.url,
         });
-        Sentry.captureException(error);
+        captureExceptionWithZdrCheck(error, {
+          extra: {
+            zeroDataRetention: meta.internalOptions.zeroDataRetention ?? false,
+            scrapeId: meta.id,
+            teamId: meta.internalOptions.teamId,
+            url: meta.rewrittenUrl ?? meta.url,
+          },
+        });
         // effectivePageCount stays 0 — skip time budget check
       }
     }
@@ -287,7 +301,15 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             "RunPod MU failed to parse PDF (could be due to timeout) -- falling back to parse-pdf",
             { error },
           );
-          Sentry.captureException(error);
+          captureExceptionWithZdrCheck(error, {
+            extra: {
+              zeroDataRetention:
+                meta.internalOptions.zeroDataRetention ?? false,
+              scrapeId: meta.id,
+              teamId: meta.internalOptions.teamId,
+              url: meta.rewrittenUrl ?? meta.url,
+            },
+          });
           const muV1DurationMs = Date.now() - muV1StartedAt;
           meta.logger
             .child({ method: "scrapePDF/MUv1Experiment" })
