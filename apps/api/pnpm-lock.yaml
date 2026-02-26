@@ -74,6 +74,9 @@ importers:
       '@types/ws':
         specifier: ^8.5.12
         version: 8.5.12
+      '@x402/core':
+        specifier: ^2.4.0
+        version: 2.4.0
       '@x402/evm':
         specifier: ^2.4.0
         version: 2.4.0(bufferutil@4.0.9)(ethers@6.16.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))(typescript@5.8.3)(utf-8-validate@5.0.10)

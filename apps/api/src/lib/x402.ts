@@ -4,6 +4,7 @@ import {
   x402ResourceServer as X402ResourceServer,
   type Network,
 } from "@x402/express";
+import { HTTPFacilitatorClient } from "@x402/core/server";
 import { registerExactEvmScheme } from "@x402/evm/exact/server";
 
 // Network name to CAIP-2 chain ID mapping
@@ -27,7 +28,12 @@ let _resourceServer: X402ResourceServer | null = null;
 
 export function getX402ResourceServer(): X402ResourceServer {
   if (!_resourceServer) {
-    _resourceServer = new X402ResourceServer();
+    const facilitatorUrl =
+      config.X402_FACILITATOR_URL || "https://x402.org/facilitator";
+    const facilitatorClient = new HTTPFacilitatorClient({
+      url: facilitatorUrl,
+    });
+    _resourceServer = new X402ResourceServer(facilitatorClient);
     registerExactEvmScheme(_resourceServer, {
       networks: [getX402Network()],
     });
