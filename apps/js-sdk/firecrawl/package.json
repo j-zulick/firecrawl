@@ -64,7 +64,8 @@
   "pnpm": {
     "overrides": {
       "@isaacs/brace-expansion@<=5.0.0": ">=5.0.1",
-      "minimatch@<10.2.1": ">=10.2.1"
+      "minimatch@<10.2.1": ">=10.2.1",
+      "rollup@<4.59.0": ">=4.59.0"
     }
   }
 }
