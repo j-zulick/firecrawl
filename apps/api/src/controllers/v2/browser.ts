@@ -49,6 +49,7 @@ interface BrowserCreateResponse {
   id?: string;
   cdpUrl?: string;
   liveViewUrl?: string;
+  interactiveLiveViewUrl?: string;
   expiresAt?: string;
   error?: string;
 }
@@ -148,6 +149,7 @@ interface BrowserServiceCreateResponse {
   cdpUrl: string;
   viewUrl: string;
   iframeUrl: string;
+  interactiveIframeUrl: string;
   expiresAt: string;
 }
 
@@ -253,7 +255,7 @@ export async function browserCreateController(
         error: err,
       });
       if (attempt < MAX_CREATE_RETRIES) {
-        await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+        await new Promise(resolve => setTimeout(resolve, 200 * attempt));
       }
     }
   }
@@ -288,7 +290,7 @@ export async function browserCreateController(
       workspace_id: "",
       context_id: "",
       cdp_url: svcResponse.cdpUrl,
-      cdp_path: svcResponse.iframeUrl, // repurposed: stores view URL
+      cdp_path: svcResponse.interactiveIframeUrl, // repurposed: stores view URL
       stream_web_view: streamWebView,
       status: "active",
       ttl_total: ttl,
@@ -323,6 +325,7 @@ export async function browserCreateController(
     id: sessionId,
     cdpUrl: svcResponse.cdpUrl,
     liveViewUrl: svcResponse.iframeUrl,
+    interactiveLiveViewUrl: svcResponse.interactiveIframeUrl,
     expiresAt: svcResponse.expiresAt,
   });
 }
@@ -384,7 +387,6 @@ export async function browserExecuteController(
 
   logger.info("Executing code in browser session", { language, timeout });
 
-
   // Execute code via the browser service
   let execResult: BrowserServiceExecResponse;
   try {
@@ -426,9 +428,7 @@ export async function browserExecuteController(
     stderr: execResult.stderr,
     exitCode: execResult.exitCode,
     killed: execResult.killed,
-    ...(hasError
-      ? { error: execResult.stderr || "Execution failed" }
-      : {}),
+    ...(hasError ? { error: execResult.stderr || "Execution failed" } : {}),
   });
 }
 
@@ -502,11 +502,10 @@ export async function browserDeleteController(
   }
 
   const durationMs =
-    sessionDurationMs ??
-    Date.now() - new Date(session.created_at).getTime();
+    sessionDurationMs ?? Date.now() - new Date(session.created_at).getTime();
   const creditsBilled = calculateBrowserSessionCredits(durationMs);
 
-  updateBrowserSessionCreditsUsed(session.id, creditsBilled).catch((error) => {
+  updateBrowserSessionCreditsUsed(session.id, creditsBilled).catch(error => {
     logger.error("Failed to update credits_used on browser session", {
       error,
       sessionId: session.id,
@@ -519,7 +518,7 @@ export async function browserDeleteController(
     req.acuc?.sub_id ?? undefined,
     creditsBilled,
     req.acuc?.api_key_id ?? null,
-  ).catch((error) => {
+  ).catch(error => {
     logger.error("Failed to bill team for browser session", {
       error,
       creditsBilled,
@@ -568,7 +567,7 @@ export async function browserListController(
 
   return res.status(200).json({
     success: true,
-    sessions: rows.map((r) => ({
+    sessions: rows.map(r => ({
       id: r.id,
       status: r.status,
       cdpUrl: r.cdp_url,
@@ -628,12 +627,15 @@ export async function browserWebhookDestroyedController(
   const durationMs = Date.now() - new Date(session.created_at).getTime();
   const creditsBilled = calculateBrowserSessionCredits(durationMs);
 
-  updateBrowserSessionCreditsUsed(session.id, creditsBilled).catch((error) => {
-    logger.error("Failed to update credits_used on browser session via webhook", {
-      error,
-      sessionId: session.id,
-      creditsBilled,
-    });
+  updateBrowserSessionCreditsUsed(session.id, creditsBilled).catch(error => {
+    logger.error(
+      "Failed to update credits_used on browser session via webhook",
+      {
+        error,
+        sessionId: session.id,
+        creditsBilled,
+      },
+    );
   });
 
   billTeam(
@@ -641,7 +643,7 @@ export async function browserWebhookDestroyedController(
     undefined, // subscription_id — billTeam will look it up
     creditsBilled,
     null, // api_key_id not available in webhook context
-  ).catch((error) => {
+  ).catch(error => {
     logger.error("Failed to bill team for browser session via webhook", {
       error,
       teamId: session.team_id,
