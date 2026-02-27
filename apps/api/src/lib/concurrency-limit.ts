@@ -105,13 +105,14 @@ export async function pushConcurrencyLimitedJobs(
   const zaddArgs: (string | number)[] = [];
 
   for (const { job, timeout } of jobs) {
-    const jobKey = constructJobKey(job.id);
-    if (timeout === Infinity) {
-      pipeline.set(jobKey, JSON.stringify(job), "EX", 172800); // 48h
-    } else {
-      pipeline.set(jobKey, JSON.stringify(job), "PX", timeout);
-    }
-    zaddArgs.push(now + timeout, job.id);
+    const cappedTimeout = Math.min(timeout, 172800000); // cap at 48h
+    pipeline.set(
+      constructJobKey(job.id),
+      JSON.stringify(job),
+      "PX",
+      cappedTimeout,
+    );
+    zaddArgs.push(now + cappedTimeout, job.id);
   }
 
   pipeline.zadd(queueKey, ...zaddArgs);
