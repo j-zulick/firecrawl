@@ -22,7 +22,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { logRequest } from "../../services/logging/log_job";
 
-const BROWSER_CREDITS_PER_HOUR = 100;
+const BROWSER_CREDITS_PER_HOUR = 120;
 
 /**
  * Calculate credits to bill for a browser session based on its duration.
