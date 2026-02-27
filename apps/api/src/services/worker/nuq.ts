@@ -1659,65 +1659,10 @@ class NuQJobGroup {
   }
 }
 
-const JOB_DURATION_BUCKETS = [0.1, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300];
-
-type HistogramData = {
-  buckets: Map<number, number>;
-  sum: number;
-  count: number;
-};
-
-const jobDurationData = new Map<string, HistogramData>();
-
-export function recordJobDuration(
-  type: string,
-  status: string,
-  durationSeconds: number,
-) {
-  const key = `${type}__${status}`;
-  if (!jobDurationData.has(key)) {
-    jobDurationData.set(key, {
-      buckets: new Map(JOB_DURATION_BUCKETS.map(b => [b, 0])),
-      sum: 0,
-      count: 0,
-    });
-  }
-  const data = jobDurationData.get(key)!;
-  for (const bucket of JOB_DURATION_BUCKETS) {
-    if (durationSeconds <= bucket) {
-      data.buckets.set(bucket, data.buckets.get(bucket)! + 1);
-    }
-  }
-  data.sum += durationSeconds;
-  data.count++;
-}
-
-function formatJobDurationMetrics(): string {
-  if (jobDurationData.size === 0) return "";
-  const lines: string[] = [
-    "# HELP job_duration_seconds Duration of background jobs in seconds",
-    "# TYPE job_duration_seconds histogram",
-  ];
-  for (const [key, data] of jobDurationData) {
-    const [type, status] = key.split("__");
-    const labels = `type="${type}",status="${status}"`;
-    for (const [le, count] of data.buckets) {
-      lines.push(`job_duration_seconds_bucket{${labels},le="${le}"} ${count}`);
-    }
-    lines.push(
-      `job_duration_seconds_bucket{${labels},le="+Inf"} ${data.count}`,
-    );
-    lines.push(`job_duration_seconds_sum{${labels}} ${data.sum}`);
-    lines.push(`job_duration_seconds_count{${labels}} ${data.count}`);
-  }
-  return lines.join("\n");
-}
-
 export function nuqGetLocalMetrics(): string {
   return `# HELP nuq_pool_waiting_count Number of requests waiting in the pool\n# TYPE nuq_pool_waiting_count gauge\nnuq_pool_waiting_count ${nuqPool.waitingCount}\n
 # HELP nuq_pool_idle_count Number of connections idle in the pool\n# TYPE nuq_pool_idle_count gauge\nnuq_pool_idle_count ${nuqPool.idleCount}\n
-# HELP nuq_pool_total_count Number of connections in the pool\n# TYPE nuq_pool_total_count gauge\nnuq_pool_total_count ${nuqPool.totalCount}\n
-${formatJobDurationMetrics()}`;
+# HELP nuq_pool_total_count Number of connections in the pool\n# TYPE nuq_pool_total_count gauge\nnuq_pool_total_count ${nuqPool.totalCount}\n`;
 }
 
 export async function nuqHealthCheck(): Promise<boolean> {
