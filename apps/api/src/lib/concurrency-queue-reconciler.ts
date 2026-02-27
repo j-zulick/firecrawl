@@ -1,4 +1,5 @@
 import { Logger } from "winston";
+import { validate as isUUID } from "uuid";
 import { getACUCTeam } from "../controllers/auth";
 import { getRedisConnection } from "../services/queue-service";
 import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
@@ -314,7 +315,7 @@ export async function reconcileConcurrencyQueue(
     );
     const queueOwners = queueKeys
       .map(k => k.replace("concurrency-limit-queue:", ""))
-      .filter(id => id.length > 0);
+      .filter(id => id.length > 0 && isUUID(id));
     ownerIds = [...new Set([...backlogOwners, ...queueOwners])];
   }
 
