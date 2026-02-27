@@ -99,6 +99,9 @@ CREATE TABLE IF NOT EXISTS nuq.queue_scrape_backlog (
   CONSTRAINT queue_scrape_backlog_pkey PRIMARY KEY (id)
 );
 
+-- For getBackloggedJobIDsOfOwner: query backlog by owner_id
+CREATE INDEX IF NOT EXISTS nuq_queue_scrape_backlog_owner_id_idx ON nuq.queue_scrape_backlog (owner_id);
+
 -- For getGroupNumericStats backlog query: query by group_id and data->>'mode' on backlog table
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_backlog_group_mode_idx ON nuq.queue_scrape_backlog (group_id) WHERE ((data->>'mode') = 'single_urls');
 
