@@ -13,6 +13,10 @@ import { validateIdempotencyKey } from "../services/idempotency/validate";
 import { checkTeamCredits } from "../services/billing/credit_billing";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { logger } from "../lib/logger";
+import {
+  httpRequestDurationSeconds,
+  getRoutePattern,
+} from "../lib/http-metrics";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import * as geoip from "geoip-country";
 import { isSelfHosted } from "../lib/deployment";
@@ -304,6 +308,14 @@ export function requestTimingMiddleware(version: string) {
     const originalJson = res.json.bind(res);
     res.json = function (body: any) {
       const requestTime = new Date().getTime() - startTime;
+
+      const durationSeconds = requestTime / 1000;
+      const route = getRoutePattern(req);
+      const status = String(res.statusCode);
+
+      httpRequestDurationSeconds
+        .labels(version, req.method, route, status)
+        .observe(durationSeconds);
 
       // Only log for successful responses to avoid duplicate error logs
       if (body?.success !== false) {
