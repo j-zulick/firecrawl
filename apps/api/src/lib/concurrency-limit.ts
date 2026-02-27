@@ -105,7 +105,9 @@ export async function pushConcurrencyLimitedJobs(
   const zaddArgs: (string | number)[] = [];
 
   for (const { job, timeout } of jobs) {
-    const cappedTimeout = Math.min(timeout, 172800000); // cap at 48h
+    const cappedTimeout = Number.isFinite(timeout)
+      ? Math.min(timeout, 172800000)
+      : 172800000; // cap at 48h, fallback for NaN/Infinity
     pipeline.set(
       constructJobKey(job.id),
       JSON.stringify(job),
