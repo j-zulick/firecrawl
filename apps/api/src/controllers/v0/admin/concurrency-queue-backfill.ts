@@ -5,7 +5,7 @@ import { scrapeQueue } from "../../../services/worker/nuq";
 import {
   pushConcurrencyLimitedJobs,
   pushConcurrencyLimitActiveJob,
-  getConcurrencyLimitActiveJobs,
+  getConcurrencyLimitActiveJobsCount,
 } from "../../../lib/concurrency-limit";
 import { RateLimiterMode } from "../../../types";
 import { getACUCTeam } from "../../auth";
@@ -24,6 +24,14 @@ export async function concurrencyQueueBackfillController(
     ? [req.query.teamId as string]
     : await scrapeQueue.getBackloggedOwnerIDs(logger);
 
+  const teamResults: {
+    teamId: string;
+    backloggedJobs: number;
+    alreadyQueued: number;
+    queued: number;
+    started: number;
+  }[] = [];
+
   for (const ownerId of backloggedOwnerIDs) {
     logger.info("Backfilling concurrency queue for team", { teamId: ownerId });
 
@@ -39,7 +47,7 @@ export async function concurrencyQueueBackfillController(
         `concurrency-limit-queue:${ownerId}`,
         cursor,
         "COUNT",
-        20,
+        1000,
       );
       cursor = result[0];
       const results = result[1];
@@ -68,16 +76,15 @@ export async function concurrencyQueueBackfillController(
     );
 
     // Get concurrency limits for both job types
-    const maxCrawlConcurrency =
-      (await getACUCTeam(ownerId, false, true, RateLimiterMode.Crawl))
-        ?.concurrency ?? 2;
-    const maxExtractConcurrency =
-      (await getACUCTeam(ownerId, false, true, RateLimiterMode.Extract))
-        ?.concurrency ?? 2;
+    const [crawlACUC, extractACUC] = await Promise.all([
+      getACUCTeam(ownerId, false, true, RateLimiterMode.Crawl),
+      getACUCTeam(ownerId, false, true, RateLimiterMode.Extract),
+    ]);
+    const maxCrawlConcurrency = crawlACUC?.concurrency ?? 2;
+    const maxExtractConcurrency = extractACUC?.concurrency ?? 2;
 
-    const currentActiveConcurrency = (
-      await getConcurrencyLimitActiveJobs(ownerId)
-    ).length;
+    const currentActiveConcurrency =
+      await getConcurrencyLimitActiveJobsCount(ownerId);
 
     const jobsToStart: typeof jobsToAdd = [];
     const jobsToQueue: typeof jobsToAdd = [];
@@ -110,6 +117,8 @@ export async function concurrencyQueueBackfillController(
       );
     }
 
+    // Promote jobs that can start immediately
+    // These involve DB transactions per job so they remain sequential
     for (const job of jobsToStart) {
       await scrapeQueue.promoteJobFromBacklogOrAdd(job.id, job.data, {
         priority: job.priority,
@@ -121,17 +130,30 @@ export async function concurrencyQueueBackfillController(
       await pushConcurrencyLimitActiveJob(ownerId, job.id, 60 * 1000);
     }
 
-    logger.info("Started jobs for team", {
-      teamId: ownerId,
-      startedCount: jobsToStart.length,
-    });
-
     logger.info("Finished backfilling concurrency queue for team", {
       teamId: ownerId,
+      startedCount: jobsToStart.length,
+      queuedCount: jobsToQueue.length,
+    });
+
+    teamResults.push({
+      teamId: ownerId,
+      backloggedJobs: backloggedJobIDs.size,
+      alreadyQueued: queuedJobIDs.size,
+      queued: jobsToQueue.length,
+      started: jobsToStart.length,
     });
   }
 
-  logger.info("Finished backfilling all teams");
+  logger.info("Finished backfilling all teams", {
+    teamsProcessed: teamResults.length,
+  });
 
-  res.json({ ok: true });
+  res.json({
+    ok: true,
+    teamsProcessed: teamResults.length,
+    totalJobsQueued: teamResults.reduce((sum, t) => sum + t.queued, 0),
+    totalJobsStarted: teamResults.reduce((sum, t) => sum + t.started, 0),
+    teams: teamResults,
+  });
 }
