@@ -80,7 +80,7 @@ async function reconcileTeam(
   teamLogger: Logger,
 ): Promise<{ jobsStarted: number; jobsRequeued: number } | null> {
   const backloggedJobIDs = new Set(
-    await scrapeQueue.getBackloggedJobIDsOfOnwer(ownerId, teamLogger),
+    await scrapeQueue.getBackloggedJobIDsOfOwner(ownerId, teamLogger),
   );
   if (backloggedJobIDs.size === 0) {
     return null;

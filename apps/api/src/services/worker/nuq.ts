@@ -657,7 +657,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
     }
   }
 
-  public async getBackloggedJobIDsOfOnwer(
+  public async getBackloggedJobIDsOfOwner(
     ownerId: string,
     _logger: Logger = logger,
   ): Promise<string[]> {
@@ -670,9 +670,9 @@ class NuQ<JobData = any, JobReturnValue = any> {
         )
       ).rows.map(row => row.id);
     } finally {
-      _logger.info("nuqGetBackloggedJobIDsOfOnwer metrics", {
+      _logger.info("nuqGetBackloggedJobIDsOfOwner metrics", {
         module: "nuq/metrics",
-        method: "nuqGetBackloggedJobIDsOfOnwer",
+        method: "nuqGetBackloggedJobIDsOfOwner",
         duration: Date.now() - start,
         ownerId,
       });
