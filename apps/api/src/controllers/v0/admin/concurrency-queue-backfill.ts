@@ -20,9 +20,17 @@ export async function concurrencyQueueBackfillController(
 
   logger.info("Starting concurrency queue backfill");
 
-  const backloggedOwnerIDs = req.query.teamId
-    ? [req.query.teamId as string]
-    : await scrapeQueue.getBackloggedOwnerIDs(logger);
+  // Skip the precrawl team — it has millions of backlogged jobs that cause
+  // this endpoint to time out before it can process any other teams.
+  const IGNORED_TEAM_IDS = new Set([
+    "86100d9a-54ec-43ab-8f90-ba5852aede34", // Precrawl team
+  ]);
+
+  const backloggedOwnerIDs = (
+    req.query.teamId
+      ? [req.query.teamId as string]
+      : await scrapeQueue.getBackloggedOwnerIDs(logger)
+  ).filter(id => !IGNORED_TEAM_IDS.has(id));
 
   const teamResults: {
     teamId: string;
