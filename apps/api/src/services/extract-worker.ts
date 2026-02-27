@@ -21,6 +21,7 @@ import {
   ExtractJobData,
 } from "./extract-queue";
 import { logExtract } from "./logging/log_job";
+import { jobDurationSeconds } from "../lib/job-metrics";
 
 configDotenv();
 
@@ -42,6 +43,8 @@ const processExtractJob = async (
     webhook: data.request.webhook,
     v0: false,
   });
+
+  const endJobTimer = jobDurationSeconds.startTimer({ type: "extract" });
 
   try {
     if (sender) {
@@ -75,6 +78,7 @@ const processExtractJob = async (
         });
       }
 
+      endJobTimer({ status: "success" });
       ack();
       return;
     } else {
@@ -90,10 +94,12 @@ const processExtractJob = async (
         });
       }
 
+      endJobTimer({ status: "failed" });
       ack();
       return;
     }
   } catch (error) {
+    endJobTimer({ status: "failed" });
     logger.error(`🚫 Extract job errored ${data.extractId} - ${error}`, {
       error,
     });
