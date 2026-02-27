@@ -22,6 +22,7 @@ import {
 } from "./extract-queue";
 import { logExtract } from "./logging/log_job";
 import { jobDurationSeconds } from "../lib/job-metrics";
+import { register } from "prom-client";
 
 configDotenv();
 
@@ -192,6 +193,9 @@ app.get("/health", (req, res) => {
 });
 app.get("/liveness", (req, res) => {
   res.status(200).json({ ok: true });
+});
+app.get("/metrics", async (_, res) => {
+  res.contentType("text/plain").send(await register.metrics());
 });
 
 const workerPort = config.EXTRACT_WORKER_PORT || config.PORT;

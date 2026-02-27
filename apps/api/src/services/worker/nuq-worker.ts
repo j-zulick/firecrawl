@@ -4,8 +4,12 @@ import "../sentry";
 import { setSentryServiceTag } from "../sentry";
 import { logger as _logger } from "../../lib/logger";
 import { processJobInternal } from "./scrape-worker";
-import { scrapeQueue, nuqGetLocalMetrics, nuqHealthCheck } from "./nuq";
-import { jobDurationSeconds } from "../../lib/job-metrics";
+import {
+  scrapeQueue,
+  nuqGetLocalMetrics,
+  nuqHealthCheck,
+  recordJobDuration,
+} from "./nuq";
 import Express from "express";
 import { _ } from "ajv";
 import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
@@ -90,7 +94,7 @@ import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-f
       | { ok: true; data: Awaited<ReturnType<typeof processJobInternal>> }
       | { ok: false; error: any };
 
-    const endJobTimer = jobDurationSeconds.startTimer({ type: job.data.mode });
+    const jobStartTime = Date.now();
 
     try {
       processResult = { ok: true, data: await processJobInternal(job) };
@@ -100,8 +104,10 @@ import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-f
 
     clearInterval(lockRenewInterval);
 
+    const jobDurationSeconds = (Date.now() - jobStartTime) / 1000;
+
     if (processResult.ok) {
-      endJobTimer({ status: "success" });
+      recordJobDuration(job.data.mode, "success", jobDurationSeconds);
       if (
         !(await scrapeQueue.jobFinish(
           job.id,
@@ -113,7 +119,7 @@ import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-f
         logger.warn("Could not update job status");
       }
     } else {
-      endJobTimer({ status: "failed" });
+      recordJobDuration(job.data.mode, "failed", jobDurationSeconds);
       if (
         !(await scrapeQueue.jobFail(
           job.id,
