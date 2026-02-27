@@ -27,9 +27,9 @@ import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-f
 
   const app = Express();
 
-  app.get("/metrics", (_, res) =>
-    res.contentType("text/plain").send(nuqGetLocalMetrics()),
-  );
+  app.get("/metrics", (_, res) => {
+    res.contentType("text/plain").send(nuqGetLocalMetrics());
+  });
   app.get("/health", async (_, res) => {
     if (await nuqHealthCheck()) {
       res.status(200).send("OK");

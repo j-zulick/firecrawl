@@ -34,6 +34,7 @@ interface Services {
   worker?: ProcessResult;
   nuqWorkers: ProcessResult[];
   nuqPrefetchWorker?: ProcessResult;
+  nuqReconcilerWorker?: ProcessResult;
   extractWorker?: ProcessResult;
   indexWorker?: ProcessResult;
   command?: ProcessResult;
@@ -101,6 +102,7 @@ const EXTRACT_WORKER_PORT = config.EXTRACT_WORKER_PORT;
 const NUQ_WORKER_START_PORT = config.NUQ_WORKER_START_PORT;
 const NUQ_WORKER_COUNT = config.NUQ_WORKER_COUNT;
 const NUQ_PREFETCH_WORKER_PORT = NUQ_WORKER_START_PORT + NUQ_WORKER_COUNT;
+const NUQ_RECONCILER_WORKER_PORT = NUQ_PREFETCH_WORKER_PORT + 1;
 
 // PostgreSQL credentials (with defaults for backward compatibility)
 const POSTGRES_USER = config.POSTGRES_USER;
@@ -779,6 +781,18 @@ async function startServices(command?: string[]): Promise<Services> {
     },
   );
 
+  const nuqReconcilerWorker = execForward(
+    "nuq-reconciler",
+    process.argv[2] === "--start-docker"
+      ? "node dist/src/services/worker/nuq-reconciler-worker.js"
+      : "pnpm nuq-reconciler-worker:production",
+    {
+      NUQ_RECONCILER_WORKER_PORT: String(NUQ_RECONCILER_WORKER_PORT),
+      NUQ_REDUCE_NOISE: "true",
+      NUQ_POD_NAME: "nuq-reconciler-worker-0",
+    },
+  );
+
   const indexWorker = config.USE_DB_AUTHENTICATION
     ? execForward(
         "index-worker",
@@ -813,6 +827,7 @@ async function startServices(command?: string[]): Promise<Services> {
     worker,
     nuqWorkers,
     nuqPrefetchWorker,
+    nuqReconcilerWorker,
     indexWorker,
     extractWorker,
     command: commandProcess,
@@ -829,6 +844,7 @@ async function stopDevelopmentServices(services: Services) {
     services.worker?.process,
     ...services.nuqWorkers.map(w => w.process),
     services.nuqPrefetchWorker?.process,
+    services.nuqReconcilerWorker?.process,
     services.indexWorker?.process,
     services.extractWorker?.process,
     services.command?.process,
@@ -992,6 +1008,8 @@ async function waitForTermination(services: Services): Promise<void> {
   if (services.extractWorker) promises.push(services.extractWorker.promise);
   if (services.nuqPrefetchWorker)
     promises.push(services.nuqPrefetchWorker.promise);
+  if (services.nuqReconcilerWorker)
+    promises.push(services.nuqReconcilerWorker.promise);
 
   promises.push(...services.nuqWorkers.map(w => w.promise));
 
