@@ -339,7 +339,7 @@ FirecrawlClient client = FirecrawlClient.builder()
 
 ```bash
 # Clone the repository (if you haven't already)
-git clone https://github.com/mendableai/firecrawl.git
+git clone https://github.com/firecrawl/firecrawl.git
 cd firecrawl/apps/java-sdk
 
 # Build the project

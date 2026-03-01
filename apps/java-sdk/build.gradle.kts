@@ -1,6 +1,6 @@
 plugins {
     `java-library`
-    `maven-publish`
+    id("com.vanniktech.maven.publish") version "0.30.0"
 }
 
 group = "com.firecrawl"
@@ -9,8 +9,6 @@ version = "1.0.0"
 java {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
-    withSourcesJar()
-    withJavadocJar()
 }
 
 repositories {
@@ -39,29 +37,35 @@ tasks.withType<Javadoc> {
     }
 }
 
-publishing {
-    publications {
-        create<MavenPublication>("mavenJava") {
-            from(components["java"])
+mavenPublishing {
+    publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
+    signAllPublications()
 
-            pom {
-                name.set("Firecrawl Java SDK")
-                description.set("Java SDK for the Firecrawl web scraping API")
-                url.set("https://github.com/mendableai/firecrawl")
+    coordinates("com.firecrawl", "firecrawl-java", version.toString())
 
-                licenses {
-                    license {
-                        name.set("MIT License")
-                        url.set("https://opensource.org/licenses/MIT")
-                    }
-                }
+    pom {
+        name.set("Firecrawl Java SDK")
+        description.set("Java SDK for the Firecrawl web scraping API")
+        url.set("https://github.com/firecrawl/firecrawl")
 
-                scm {
-                    url.set("https://github.com/mendableai/firecrawl")
-                    connection.set("scm:git:git://github.com/mendableai/firecrawl.git")
-                    developerConnection.set("scm:git:ssh://github.com/mendableai/firecrawl.git")
-                }
+        licenses {
+            license {
+                name.set("MIT License")
+                url.set("https://opensource.org/licenses/MIT")
             }
+        }
+
+        developers {
+            developer {
+                name.set("Firecrawl")
+                url.set("https://firecrawl.dev")
+            }
+        }
+
+        scm {
+            url.set("https://github.com/firecrawl/firecrawl")
+            connection.set("scm:git:git://github.com/firecrawl/firecrawl.git")
+            developerConnection.set("scm:git:ssh://github.com/firecrawl/firecrawl.git")
         }
     }
 }
