@@ -18,6 +18,7 @@ import { getRedisConnection } from "../services/queue-service";
 import { validate } from "uuid";
 import * as Sentry from "@sentry/node";
 import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
+import { getAgentSponsorStatus } from "../services/agent-sponsor";
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
@@ -541,6 +542,25 @@ async function supaAuthenticateUser(
     // }
 
     // return { success: false, error: "Unauthorized: Invalid token", status: 401 };
+  }
+
+  // Check if this is an agent-provisioned key and attach sponsor status
+  if (chunk && chunk.api_key_id) {
+    try {
+      const sponsorStatus = await getAgentSponsorStatus(chunk.api_key_id);
+      if (sponsorStatus) {
+        chunk._agentSponsor = {
+          status: sponsorStatus.status,
+          verification_deadline: sponsorStatus.verification_deadline,
+          email: sponsorStatus.email,
+        };
+      }
+    } catch (err) {
+      logger.warn("Failed to check agent sponsor status", {
+        error: err,
+        api_key_id: chunk.api_key_id,
+      });
+    }
   }
 
   return {
