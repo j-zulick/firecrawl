@@ -27,6 +27,7 @@ import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
+import { comparePdfOutputs } from "./shadowComparison";
 
 /** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
 function getIneligibleReason(
@@ -140,6 +141,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     let result: PDFProcessorResult | null = null;
     let effectivePageCount: number = 0;
     let metadataTitle: string | undefined;
+    let rustMarkdownForShadow: string | undefined;
 
     const rustEnabled = !!config.PDF_RUST_EXTRACT_ENABLE;
     const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
@@ -216,6 +218,11 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           confidence: pdfResult.confidence,
           mode,
         });
+
+        rustMarkdownForShadow =
+          !eligible && pdfResult.markdown && config.PDF_SHADOW_COMPARISON_ENABLE
+            ? pdfResult.markdown
+            : undefined;
 
         // In fast mode, if the PDF requires OCR, fail immediately with a
         // clear error instead of returning empty content.
@@ -299,6 +306,27 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               pages: effectivePageCount,
               success: true,
             });
+
+          if (rustMarkdownForShadow && result?.markdown && config.PDF_SHADOW_COMPARISON_ENABLE) {
+            const shadowRust = rustMarkdownForShadow;
+            const shadowMu = result.markdown;
+            const shadowLogger = meta.logger.child({ method: "scrapePDF/shadowComparison" });
+            const isZdr = !!meta.internalOptions.zeroDataRetention;
+
+            (async () => {
+              try {
+                const metrics = comparePdfOutputs(shadowRust, shadowMu);
+                shadowLogger.info("shadow comparison complete", {
+                  scrapeId: meta.id,
+                  url: isZdr ? undefined : (meta.rewrittenUrl ?? meta.url),
+                  pageCount: effectivePageCount,
+                  ...metrics.overall,
+                });
+              } catch (error) {
+                shadowLogger.warn("shadow comparison failed", { error });
+              }
+            })();
+          }
         } catch (error) {
           if (
             error instanceof RemoveFeatureError ||
