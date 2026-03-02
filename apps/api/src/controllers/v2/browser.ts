@@ -21,6 +21,7 @@ import { RequestWithAuth } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { logRequest } from "../../services/logging/log_job";
+import { integrationSchema } from "../../utils/integration";
 
 const BROWSER_CREDITS_PER_HOUR = 120;
 
@@ -41,7 +42,7 @@ const browserCreateRequestSchema = z.object({
   ttl: z.number().min(30).max(3600).default(300),
   activityTtl: z.number().min(10).max(3600).default(120),
   streamWebView: z.boolean().default(true),
-  origin: z.string().optional(),
+  integration: integrationSchema.optional().transform(val => val || null),
   profile: z
     .object({
       name: z.string().min(1).max(128),
@@ -211,7 +212,7 @@ export async function browserCreateController(
 
   req.body = browserCreateRequestSchema.parse(req.body);
 
-  const { ttl, activityTtl, streamWebView, profile, origin } = req.body;
+  const { ttl, activityTtl, streamWebView, profile, integration } = req.body;
 
   if (!config.BROWSER_SERVICE_URL) {
     return res.status(503).json({
@@ -325,7 +326,7 @@ export async function browserCreateController(
       api_version: "v2",
       team_id: req.auth.team_id,
       target_hint: "Browser session",
-      origin: origin ?? "api",
+      integration: integration ?? null,
       zeroDataRetention: false,
       api_key_id: req.acuc!.api_key_id,
     });
