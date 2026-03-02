@@ -41,6 +41,7 @@ const browserCreateRequestSchema = z.object({
   ttl: z.number().min(30).max(3600).default(300),
   activityTtl: z.number().min(10).max(3600).default(120),
   streamWebView: z.boolean().default(true),
+  origin: z.string().optional(),
   profile: z
     .object({
       name: z.string().min(1).max(128),
@@ -65,6 +66,7 @@ const browserExecuteRequestSchema = z.object({
   code: z.string().min(1).max(100_000),
   language: z.enum(["python", "node", "bash"]).default("node"),
   timeout: z.number().min(1).max(300).default(30),
+  origin: z.string().optional(),
 });
 
 type BrowserExecuteRequest = z.infer<typeof browserExecuteRequestSchema>;
@@ -209,7 +211,7 @@ export async function browserCreateController(
 
   req.body = browserCreateRequestSchema.parse(req.body);
 
-  const { ttl, activityTtl, streamWebView, profile } = req.body;
+  const { ttl, activityTtl, streamWebView, profile, origin } = req.body;
 
   if (!config.BROWSER_SERVICE_URL) {
     return res.status(503).json({
@@ -323,7 +325,7 @@ export async function browserCreateController(
       api_version: "v2",
       team_id: req.auth.team_id,
       target_hint: "Browser session",
-      origin: "api",
+      origin: origin ?? "api",
       zeroDataRetention: false,
       api_key_id: req.acuc!.api_key_id,
     });
@@ -394,7 +396,7 @@ export async function browserExecuteController(
   req.body = browserExecuteRequestSchema.parse(req.body);
 
   const id = req.params.sessionId;
-  const { code, language, timeout } = req.body;
+  const { code, language, timeout, origin } = req.body;
 
   const logger = _logger.child({
     sessionId: id,
@@ -438,7 +440,7 @@ export async function browserExecuteController(
     execResult = await browserServiceRequest<BrowserServiceExecResponse>(
       "POST",
       `/browsers/${session.browser_id}/exec`,
-      { code, language, timeout },
+      { code, language, timeout, origin },
     );
   } catch (err) {
     logger.error("Failed to execute code via browser service", { error: err });

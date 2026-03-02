@@ -1,4 +1,4 @@
-export interface ComparisonResult {
+interface ComparisonResult {
   overall: {
     rustLen: number;
     muLen: number;
