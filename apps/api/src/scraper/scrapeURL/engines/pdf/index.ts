@@ -288,6 +288,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             tempFilePath,
             base64Content,
             maxPages,
+            effectivePageCount,
           );
           const muV1DurationMs = Date.now() - muV1StartedAt;
           meta.logger
