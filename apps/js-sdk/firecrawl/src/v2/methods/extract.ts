@@ -16,6 +16,7 @@ function prepareExtractPayload(args: {
   scrapeOptions?: ScrapeOptions;
   ignoreInvalidURLs?: boolean;
   integration?: string;
+  origin?: string;
   agent?: AgentOptions;
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {};
@@ -30,6 +31,7 @@ function prepareExtractPayload(args: {
   if (args.showSources != null) body.showSources = args.showSources;
   if (args.ignoreInvalidURLs != null) body.ignoreInvalidURLs = args.ignoreInvalidURLs;
   if (args.integration && args.integration.trim()) body.integration = args.integration.trim();
+  if (args.origin) body.origin = args.origin;
   if (args.agent) body.agent = args.agent;
   if (args.scrapeOptions) {
     ensureValidScrapeOptions(args.scrapeOptions);
