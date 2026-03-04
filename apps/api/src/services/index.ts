@@ -58,10 +58,6 @@ export const index_supabase_service: SupabaseClient = new Proxy(serv, {
   },
 }) as unknown as SupabaseClient;
 
-const credentials = config.GCS_CREDENTIALS
-  ? JSON.parse(atob(config.GCS_CREDENTIALS))
-  : undefined;
-
 export async function getIndexFromGCS(
   url: string,
   logger?: Logger,
@@ -83,8 +79,8 @@ export async function getIndexFromGCS(
       const [blobContent] = await blob.download();
       const parsed = JSON.parse(blobContent.toString());
 
-      try {
-        if (typeof parsed.screenshot === "string") {
+      if (typeof parsed.screenshot === "string") {
+        try {
           const screenshotUrl = new URL(parsed.screenshot);
           let expiresAt =
             parseInt(screenshotUrl.searchParams.get("Expires") ?? "0", 10) *
@@ -106,26 +102,36 @@ export async function getIndexFromGCS(
             expiresAt < Date.now()
           ) {
             logger?.info("Re-signing screenshot URL");
-            const [url] = await storage
+            const filePath = decodeURIComponent(
+              screenshotUrl.pathname.split("/")[2],
+            );
+            const [newUrl] = await storage
               .bucket(config.GCS_MEDIA_BUCKET_NAME!)
-              .file(decodeURIComponent(screenshotUrl.pathname.split("/")[2]))
+              .file(filePath)
               .getSignedUrl({
                 action: "read",
-                expires: Date.now() + 1000 * 60 * 60 * 24 * 7, // 7 days
+                expires: Date.now() + 1000 * 60 * 60 * 24 * 7,
               });
-            parsed.screenshot = url;
+            parsed.screenshot = newUrl;
 
-            // Update the blob
-            await blob.save(JSON.stringify(parsed), {
-              contentType: "application/json",
-            });
+            // Persist the re-signed URL back to GCS in the background
+            blob
+              .save(JSON.stringify(parsed), {
+                contentType: "application/json",
+              })
+              .catch(error => {
+                logger?.warn("Error persisting re-signed screenshot URL", {
+                  error,
+                  url,
+                });
+              });
           }
+        } catch (error) {
+          logger?.warn("Error parsing screenshot URL for re-signing", {
+            error,
+            url,
+          });
         }
-      } catch (error) {
-        logger?.warn("Error re-signing screenshot URL", {
-          error,
-          url,
-        });
       }
 
       setSpanAttributes(span, { "index.document_found": true });

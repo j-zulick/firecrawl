@@ -1,11 +1,9 @@
+import { ApiError } from "@google-cloud/storage";
 import { logger } from "./logger";
 import { config } from "../config";
 import crypto from "crypto";
 import { storage } from "./gcs-jobs";
 
-const credentials = config.GCS_CREDENTIALS
-  ? JSON.parse(atob(config.GCS_CREDENTIALS))
-  : undefined;
 const PDF_CACHE_PREFIX = "pdf-cache-v2/";
 
 /**
@@ -88,14 +86,6 @@ export async function getPdfResultFromCache(
     const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${PDF_CACHE_PREFIX}${cacheKey}.json`);
 
-    const [exists] = await blob.exists();
-    if (!exists) {
-      logger.debug(`PDF RunPod result not found in GCS cache`, {
-        cacheKey,
-      });
-      return null;
-    }
-
     const [content] = await blob.download();
     const result = JSON.parse(content.toString());
 
@@ -107,6 +97,14 @@ export async function getPdfResultFromCache(
       ...result,
     };
   } catch (error) {
+    if (
+      error instanceof ApiError &&
+      error.code === 404 &&
+      error.message.includes("No such object:")
+    ) {
+      return null;
+    }
+
     logger.error(`Error retrieving PDF RunPod result from GCS cache`, {
       error,
     });
