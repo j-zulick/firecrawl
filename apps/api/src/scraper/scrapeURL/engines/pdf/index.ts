@@ -224,14 +224,13 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         });
 
         // Only shadow-compare when Rust had a real chance at extraction.
-        // Scanned/ImageBased PDFs are expected to fail — comparing them
-        // just adds noise to the metrics.
+        // Scanned/ImageBased/Mixed PDFs are expected to produce near-zero
+        // Rust output — comparing them just adds noise to the metrics.
         const shadowEligible =
           !eligible &&
           pdfResult.markdown &&
           config.PDF_SHADOW_COMPARISON_ENABLE &&
-          pdfResult.pdfType !== "Scanned" &&
-          pdfResult.pdfType !== "ImageBased";
+          pdfResult.pdfType === "TextBased";
 
         rustMarkdownForShadow = shadowEligible ? pdfResult.markdown : undefined;
         if (shadowEligible) {
