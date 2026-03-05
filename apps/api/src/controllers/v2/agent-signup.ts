@@ -317,7 +317,7 @@ export async function agentSignupController(req: Request, res: Response) {
       credit_limit: 50,
       credits_remaining: 50,
       verification_deadline_at: deadline.toISOString(),
-      tos_url: "https://firecrawl.dev/terms",
+      tos_url: "https://firecrawl.dev/terms-of-service",
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
