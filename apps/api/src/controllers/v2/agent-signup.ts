@@ -265,9 +265,14 @@ export async function agentSignupController(req: Request, res: Response) {
     }
 
     // Send confirmation email
-    const baseUrl = "https://firecrawl.dev/agent-confirm";
-    const confirmUrl = `${baseUrl}?${qs.stringify({ token: verificationToken, action: "confirm" })}`;
-    const blockUrl = `${baseUrl}?${qs.stringify({ token: verificationToken, action: "block" })}`;
+    const confirmUrl = `https://firecrawl.dev/agent-confirm?${qs.stringify({
+      agent_signup_token: verificationToken,
+      agent_signup_action: "confirm",
+    })}`;
+    const blockUrl = `https://firecrawl.dev/agent-confirm?${qs.stringify({
+      agent_signup_token: verificationToken,
+      agent_signup_action: "block",
+    })}`;
 
     if (config.RESEND_API_KEY) {
       const resend = new Resend(config.RESEND_API_KEY);
