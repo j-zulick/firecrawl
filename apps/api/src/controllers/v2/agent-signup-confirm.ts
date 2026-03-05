@@ -1,17 +1,17 @@
 import { Request, Response } from "express";
 import { z } from "zod";
-import { supabase_service, supabase_rr_service } from "../../services/supabase";
 import { logger as _logger } from "../../lib/logger";
 import {
-  getAgentSponsorByToken,
-  markSponsorVerified,
-  markSponsorBlocked,
   clearAgentSponsorCache,
+  getAgentSponsorByToken,
+  markSponsorBlocked,
+  markSponsorVerified,
 } from "../../services/agent-sponsor";
+import { supabase_rr_service, supabase_service } from "../../services/supabase";
 import { clearACUC } from "../auth";
 
-const tokenSchema = z.object({
-  token: z.string().min(1),
+const agentSignupTokenSchema = z.object({
+  agent_signup_token: z.string().min(1),
 });
 
 /**
@@ -28,9 +28,9 @@ export async function agentSignupConfirmController(
   });
 
   try {
-    const { token } = tokenSchema.parse(req.body);
+    const { agent_signup_token } = agentSignupTokenSchema.parse(req.body);
 
-    const sponsor = await getAgentSponsorByToken(token);
+    const sponsor = await getAgentSponsorByToken({ agent_signup_token });
     if (!sponsor) {
       return res.status(404).json({
         success: false,
@@ -180,8 +180,8 @@ export async function agentSignupConfirmController(
     }
 
     // Mark sponsor as verified
-    await markSponsorVerified(sponsor.id);
-    await clearAgentSponsorCache(sponsor.api_key_id);
+    await markSponsorVerified({ sponsorId: sponsor.id });
+    await clearAgentSponsorCache({ apiKeyId: sponsor.api_key_id });
 
     return res.status(200).json({
       success: true,
@@ -191,7 +191,7 @@ export async function agentSignupConfirmController(
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
-        error: "Invalid request: token is required.",
+        error: "Invalid request: agent_signup_token is required.",
       });
     }
     logger.error("Unexpected error in agent signup confirm", { error });
@@ -212,9 +212,9 @@ export async function agentSignupBlockController(req: Request, res: Response) {
   });
 
   try {
-    const { token } = tokenSchema.parse(req.body);
+    const { agent_signup_token } = agentSignupTokenSchema.parse(req.body);
 
-    const sponsor = await getAgentSponsorByToken(token);
+    const sponsor = await getAgentSponsorByToken({ agent_signup_token });
     if (!sponsor) {
       return res.status(404).json({
         success: false,
@@ -258,8 +258,8 @@ export async function agentSignupBlockController(req: Request, res: Response) {
     }
 
     // Mark sponsor as blocked
-    await markSponsorBlocked(sponsor.id);
-    await clearAgentSponsorCache(sponsor.api_key_id);
+    await markSponsorBlocked({ sponsorId: sponsor.id });
+    await clearAgentSponsorCache({ apiKeyId: sponsor.api_key_id });
 
     logger.info("Agent signup blocked", {
       email: sponsor.email,
@@ -275,7 +275,7 @@ export async function agentSignupBlockController(req: Request, res: Response) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
-        error: "Invalid request: token is required.",
+        error: "Invalid request: agent_signup_token is required.",
       });
     }
     logger.error("Unexpected error in agent signup block", { error });

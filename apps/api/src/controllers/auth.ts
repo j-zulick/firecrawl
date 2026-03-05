@@ -1,24 +1,21 @@
-import { parseApi } from "../lib/parseApi";
+import { RateLimiterRedis } from "rate-limiter-flexible";
+import { validate } from "uuid";
 import { config } from "../config";
+import { logger } from "../lib/logger";
+import { parseApi } from "../lib/parseApi";
+import { withAuth } from "../lib/withAuth";
+import { getAgentSponsorStatus } from "../services/agent-sponsor";
+import { getRedisConnection } from "../services/queue-service";
 import { getRateLimiter } from "../services/rate-limiter";
-import { AuthResponse, NotificationType, RateLimiterMode } from "../types";
+import { deleteKey, getValue, setValue } from "../services/redis";
+import { redlock } from "../services/redlock";
 import {
   supabase_acuc_only_service,
   supabase_rr_service,
   supabase_service,
 } from "../services/supabase";
-import { withAuth } from "../lib/withAuth";
-import { RateLimiterRedis } from "rate-limiter-flexible";
-import { sendNotification } from "../services/notification/email_notification";
-import { logger } from "../lib/logger";
-import { redlock } from "../services/redlock";
-import { deleteKey, getValue } from "../services/redis";
-import { setValue } from "../services/redis";
-import { getRedisConnection } from "../services/queue-service";
-import { validate } from "uuid";
-import * as Sentry from "@sentry/node";
+import { AuthResponse, RateLimiterMode } from "../types";
 import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
-import { getAgentSponsorStatus } from "../services/agent-sponsor";
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
@@ -547,7 +544,9 @@ async function supaAuthenticateUser(
   // Check if this is an agent-provisioned key and attach sponsor status
   if (chunk && chunk.api_key_id) {
     try {
-      const sponsorStatus = await getAgentSponsorStatus(chunk.api_key_id);
+      const sponsorStatus = await getAgentSponsorStatus({
+        apiKeyId: chunk.api_key_id,
+      });
       if (sponsorStatus) {
         chunk._agentSponsor = {
           status: sponsorStatus.status,

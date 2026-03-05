@@ -18,10 +18,12 @@ const CACHE_MISS_SENTINEL: AgentSponsorCacheValue = { _none: true };
 /**
  * Look up agent sponsor status by api_key_id with Redis caching.
  */
-export async function getAgentSponsorStatus(
-  api_key_id: number,
-): Promise<AgentSponsorStatus | null> {
-  const cacheKey = `agent_sponsor_${api_key_id}`;
+export async function getAgentSponsorStatus({
+  apiKeyId,
+}: {
+  apiKeyId: number;
+}): Promise<AgentSponsorStatus | null> {
+  const cacheKey = `agent_sponsor_${apiKeyId}`;
 
   const cached: string | null = await getValue(cacheKey);
   if (cached !== null) {
@@ -39,7 +41,7 @@ export async function getAgentSponsorStatus(
     const { data, error } = await supabase_rr_service
       .from("agent_sponsors")
       .select("status, verification_deadline, email")
-      .eq("api_key_id", api_key_id)
+      .eq("api_key_id", apiKeyId)
       .single();
 
     if (error || !data) {
@@ -62,7 +64,7 @@ export async function getAgentSponsorStatus(
     return result;
   } catch (err) {
     logger.error("Failed to look up agent sponsor status", {
-      api_key_id,
+      apiKeyId,
       error: err,
     });
     return null;
@@ -72,16 +74,22 @@ export async function getAgentSponsorStatus(
 /**
  * Clear cached agent sponsor status for a given api_key_id.
  */
-export async function clearAgentSponsorCache(
-  api_key_id: number,
-): Promise<void> {
-  await deleteKey(`agent_sponsor_${api_key_id}`);
+export async function clearAgentSponsorCache({
+  apiKeyId,
+}: {
+  apiKeyId: number;
+}): Promise<void> {
+  await deleteKey(`agent_sponsor_${apiKeyId}`);
 }
 
 /**
  * Look up agent sponsor record by verification token.
  */
-export async function getAgentSponsorByToken(token: string): Promise<{
+export async function getAgentSponsorByToken({
+  agent_signup_token,
+}: {
+  agent_signup_token: string;
+}): Promise<{
   id: number;
   email: string;
   status: string;
@@ -95,7 +103,7 @@ export async function getAgentSponsorByToken(token: string): Promise<{
     .select(
       "id, email, status, verification_deadline, agent_name, sandboxed_team_id, api_key_id",
     )
-    .eq("verification_token", token)
+    .eq("verification_token", agent_signup_token)
     .single();
 
   if (error || !data) {
@@ -108,7 +116,11 @@ export async function getAgentSponsorByToken(token: string): Promise<{
 /**
  * Mark sponsor as verified and set verified_at timestamp.
  */
-export async function markSponsorVerified(sponsorId: number): Promise<void> {
+export async function markSponsorVerified({
+  sponsorId,
+}: {
+  sponsorId: number;
+}): Promise<void> {
   const { error } = await supabase_service
     .from("agent_sponsors")
     .update({ status: "verified", verified_at: new Date().toISOString() })
@@ -123,7 +135,11 @@ export async function markSponsorVerified(sponsorId: number): Promise<void> {
 /**
  * Mark sponsor as blocked.
  */
-export async function markSponsorBlocked(sponsorId: number): Promise<void> {
+export async function markSponsorBlocked({
+  sponsorId,
+}: {
+  sponsorId: number;
+}): Promise<void> {
   const { error } = await supabase_service
     .from("agent_sponsors")
     .update({ status: "blocked" })
