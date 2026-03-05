@@ -233,9 +233,9 @@ export async function agentSignupController(req: Request, res: Response) {
     // Generate verification token
     const verificationToken = crypto.randomBytes(32).toString("hex");
 
-    // Compute deadline (3 days from now)
+    // Compute deadline (5 days from now)
     const deadline = new Date();
-    deadline.setDate(deadline.getDate() + 3);
+    deadline.setDate(deadline.getDate() + 5);
 
     // Create sponsor record
     const sponsorRow: AgentSponsorInsert = {
