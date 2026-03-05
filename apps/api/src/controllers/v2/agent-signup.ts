@@ -108,8 +108,8 @@ export async function agentSignupController(req: Request, res: Response) {
       });
     }
 
-    // Check for existing blocked sponsor record
-    const { data: blockedSponsor } = await supabase_rr_service
+    // Check for existing blocked sponsor record (use primary for strong consistency)
+    const { data: blockedSponsor } = await supabase_service
       .from("agent_sponsors")
       .select("id")
       .eq("email", email.toLowerCase())
@@ -123,8 +123,8 @@ export async function agentSignupController(req: Request, res: Response) {
       });
     }
 
-    // Check for existing pending sponsor record
-    const { data: pendingSponsor } = await supabase_rr_service
+    // Check for existing pending sponsor record (use primary for strong consistency)
+    const { data: pendingSponsor } = await supabase_service
       .from("agent_sponsors")
       .select("id, verification_deadline")
       .eq("email", email.toLowerCase())
