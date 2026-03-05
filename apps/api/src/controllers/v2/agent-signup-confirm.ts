@@ -172,6 +172,17 @@ export async function agentSignupConfirmController(
         }
       }
 
+      // Clear ACUC cache so the key picks up verified status (no more sandbox cap)
+      const { data: apiKeyData } = await supabase_service
+        .from("api_keys")
+        .select("key")
+        .eq("id", sponsor.api_key_id)
+        .single();
+
+      if (apiKeyData) {
+        await clearACUC(apiKeyData.key);
+      }
+
       logger.info("Sandboxed account promoted to real account", {
         email: sponsor.email,
         sandboxedTeamId: sponsor.sandboxed_team_id,
