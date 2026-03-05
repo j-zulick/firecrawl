@@ -1,13 +1,13 @@
-import { Request, Response } from "express";
-import { z } from "zod";
 import crypto from "crypto";
-import { supabase_service, supabase_rr_service } from "../../services/supabase";
-import { apiKeyToFcApiKey } from "../../lib/parseApi";
-import { logger as _logger } from "../../lib/logger";
-import { Resend } from "resend";
-import { config } from "../../config";
+import { Request, Response } from "express";
 import { RateLimiterRedis } from "rate-limiter-flexible";
+import { Resend } from "resend";
+import { z } from "zod";
+import { config } from "../../config";
+import { logger as _logger } from "../../lib/logger";
+import { apiKeyToFcApiKey } from "../../lib/parseApi";
 import { redisRateLimitClient } from "../../services/rate-limiter";
+import { supabase_rr_service, supabase_service } from "../../services/supabase";
 
 const PUBLIC_EMAIL_DOMAINS = new Set([
   "gmail.com",
@@ -64,10 +64,9 @@ export async function agentSignupController(req: Request, res: Response) {
     const body = agentSignupSchema.parse(req.body);
     const { email, agent_name } = body;
 
-    // Rate limit by IP
-    const incomingIP = (req.headers["x-forwarded-for"] ||
-      req.socket.remoteAddress ||
-      "unknown") as string;
+    // Rate limit by IP (use req.ip so we respect Express trust proxy and don't
+    // trust client-controlled X-Forwarded-For; req.ip parses the forwarded chain correctly)
+    const incomingIP = req.ip || req.socket.remoteAddress || "unknown";
     try {
       await ipRateLimiter.consume(incomingIP);
     } catch {
