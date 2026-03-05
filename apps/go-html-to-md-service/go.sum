@@ -6,6 +6,8 @@ github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSV
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/firecrawl/html-to-markdown v0.0.0-20260203173849-25e9840a0878 h1:PsxFhBLrH0KKkYz5FXzUZefuxUQoodu5ZgDyAaDA6p8=
 github.com/firecrawl/html-to-markdown v0.0.0-20260203173849-25e9840a0878/go.mod h1:jngam+MdNp7FZkhSTlFsuA5hXY21X0+vuiGlpgo2n5o=
+github.com/firecrawl/html-to-markdown v0.0.0-20260305014106-d5b7c1a14bb9 h1:+riTLXKteNT9WJR9sJKh3EL3BwroJxdVAEEl0JZzUTY=
+github.com/firecrawl/html-to-markdown v0.0.0-20260305014106-d5b7c1a14bb9/go.mod h1:jngam+MdNp7FZkhSTlFsuA5hXY21X0+vuiGlpgo2n5o=
 github.com/godbus/dbus/v5 v5.0.4/go.mod h1:xhWf0FNVPg57R7Z0UbKHbJfkEywrmjJnf7w5xrFpKfA=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/gorilla/mux v1.8.1 h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=
