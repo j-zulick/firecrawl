@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { Request, Response } from "express";
+import qs from "qs";
 import { RateLimiterRedis } from "rate-limiter-flexible";
 import { Resend } from "resend";
 import { z } from "zod";
@@ -52,6 +53,21 @@ const agentSignupSchema = z.object({
   agent_name: z.string().min(1).max(100),
   accept_terms: z.literal(true),
 });
+
+/** Insert payload for agent_sponsors (nullable cols in DB are optional here). */
+type AgentSponsorInsert = {
+  email: string;
+  status: "pending" | "blocked" | "verified";
+  verification_deadline: string;
+  agent_name: string;
+  sandboxed_team_id: string;
+  api_key_id: number;
+  verification_token: string;
+
+  requesting_ip?: string;
+  tos_version?: string;
+  tos_hash?: string;
+};
 
 export async function agentSignupController(req: Request, res: Response) {
   const logger = _logger.child({
@@ -196,6 +212,12 @@ export async function agentSignupController(req: Request, res: Response) {
 
     apiKeyRecord = apiKeyData;
 
+    if (!teamId) {
+      return res
+        .status(500)
+        .json({ success: false, error: "Failed to create agent account." });
+    }
+
     // Mark the API key as agent_provisioned
     const { error: updateKeyError } = await supabase_service
       .from("api_keys")
@@ -216,23 +238,24 @@ export async function agentSignupController(req: Request, res: Response) {
     deadline.setDate(deadline.getDate() + 3);
 
     // Create sponsor record
+    const sponsorRow: AgentSponsorInsert = {
+      email: email.toLowerCase(),
+      status: "pending",
+      verification_deadline: deadline.toISOString(),
+      agent_name,
+      sandboxed_team_id: teamId,
+      api_key_id: apiKeyRecord.id,
+      requesting_ip: incomingIP,
+      tos_version: "2025-01-01",
+      tos_hash: crypto
+        .createHash("sha256")
+        .update("accept_terms:true")
+        .digest("hex"),
+      verification_token: verificationToken,
+    };
     const { error: sponsorError } = await supabase_service
       .from("agent_sponsors")
-      .insert({
-        email: email.toLowerCase(),
-        status: "pending",
-        verification_deadline: deadline.toISOString(),
-        agent_name,
-        sandboxed_team_id: teamId,
-        api_key_id: apiKeyRecord.id,
-        requesting_ip: incomingIP,
-        tos_version: "2025-01-01",
-        tos_hash: crypto
-          .createHash("sha256")
-          .update("accept_terms:true")
-          .digest("hex"),
-        verification_token: verificationToken,
-      } as any);
+      .insert(sponsorRow);
 
     if (sponsorError) {
       logger.error("Failed to create sponsor record", { error: sponsorError });
@@ -242,8 +265,9 @@ export async function agentSignupController(req: Request, res: Response) {
     }
 
     // Send confirmation email
-    const confirmUrl = `https://firecrawl.dev/agent-confirm?token=${verificationToken}&action=confirm`;
-    const blockUrl = `https://firecrawl.dev/agent-confirm?token=${verificationToken}&action=block`;
+    const baseUrl = "https://firecrawl.dev/agent-confirm";
+    const confirmUrl = `${baseUrl}?${qs.stringify({ token: verificationToken, action: "confirm" })}`;
+    const blockUrl = `${baseUrl}?${qs.stringify({ token: verificationToken, action: "block" })}`;
 
     if (config.RESEND_API_KEY) {
       const resend = new Resend(config.RESEND_API_KEY);

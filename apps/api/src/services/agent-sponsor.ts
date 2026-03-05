@@ -1,6 +1,6 @@
-import { supabase_service, supabase_rr_service } from "./supabase";
-import { getValue, setValue, deleteKey } from "./redis";
 import { logger } from "../lib/logger";
+import { deleteKey, getValue, setValue } from "./redis";
+import { supabase_rr_service, supabase_service } from "./supabase";
 
 type AgentSponsorStatus = {
   status: "pending" | "verified" | "blocked";
@@ -11,7 +11,12 @@ type AgentSponsorStatus = {
   verification_token: string;
 };
 
+/** Value stored in Redis: either sponsor data or a sentinel for "no sponsor". */
+type AgentSponsorCacheValue = AgentSponsorStatus | { _none: true };
+
 const AGENT_SPONSOR_CACHE_TTL = 300; // 5 minutes
+
+const CACHE_MISS_SENTINEL: AgentSponsorCacheValue = { _none: true };
 
 /**
  * Look up agent sponsor status by api_key_id with Redis caching.
@@ -21,12 +26,16 @@ export async function getAgentSponsorStatus(
 ): Promise<AgentSponsorStatus | null> {
   const cacheKey = `agent_sponsor_${api_key_id}`;
 
-  const cached = await getValue(cacheKey);
+  const cached: string | null = await getValue(cacheKey);
   if (cached !== null) {
-    const parsed = JSON.parse(cached);
-    // Cache "no sponsor" as empty object
-    if (parsed && parsed._none) return null;
-    return parsed;
+    try {
+      const parsed = JSON.parse(cached) as AgentSponsorCacheValue;
+      // Cache "no sponsor" as empty object
+      if (parsed && "_none" in parsed && parsed._none) return null;
+      return parsed as AgentSponsorStatus;
+    } catch {
+      // Corrupt cache: fall through to DB lookup
+    }
   }
 
   try {
@@ -42,7 +51,7 @@ export async function getAgentSponsorStatus(
       // Cache the miss to avoid repeated queries
       await setValue(
         cacheKey,
-        JSON.stringify({ _none: true }),
+        JSON.stringify(CACHE_MISS_SENTINEL),
         AGENT_SPONSOR_CACHE_TTL,
       );
       return null;
