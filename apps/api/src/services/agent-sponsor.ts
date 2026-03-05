@@ -1,6 +1,10 @@
 import { logger } from "../lib/logger";
 import { deleteKey, getValue, setValue } from "./redis";
-import { supabase_rr_service, supabase_service } from "./supabase";
+import {
+  isPostgrestNoRowsError,
+  supabase_rr_service,
+  supabase_service,
+} from "./supabase";
 
 type AgentSponsorStatus = {
   status: "pending" | "verified" | "blocked";
@@ -44,13 +48,24 @@ export async function getAgentSponsorStatus({
       .eq("api_key_id", apiKeyId)
       .single();
 
-    if (error || !data) {
-      // Cache the miss to avoid repeated queries
-      await setValue(
-        cacheKey,
-        JSON.stringify(CACHE_MISS_SENTINEL),
-        AGENT_SPONSOR_CACHE_TTL,
-      );
+    if (error) {
+      // Only cache "no sponsor" when it's a confirmed no-rows result.
+      // Do not cache on other errors (e.g. connection/timeout) so we retry on next request.
+      if (isPostgrestNoRowsError(error)) {
+        await setValue(
+          cacheKey,
+          JSON.stringify(CACHE_MISS_SENTINEL),
+          AGENT_SPONSOR_CACHE_TTL,
+        );
+      } else {
+        logger.error("Failed to look up agent sponsor status", {
+          apiKeyId,
+          error,
+        });
+      }
+      return null;
+    }
+    if (!data) {
       return null;
     }
 
