@@ -3,13 +3,13 @@ module github.com/firecrawl/go-html-to-md-service
 go 1.23.0
 
 require (
-	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/firecrawl/html-to-markdown v0.0.0-20260305014655-0ec744e89d3c
 	github.com/gorilla/mux v1.8.1
 	github.com/rs/zerolog v1.33.0
 )
 
 require (
+	github.com/PuerkitoBio/goquery v1.10.3 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
