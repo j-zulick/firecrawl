@@ -228,6 +228,9 @@ export async function agentSignupController(req: Request, res: Response) {
       logger.error("Failed to mark API key as agent_provisioned", {
         error: updateKeyError,
       });
+      return res
+        .status(500)
+        .json({ success: false, error: "Failed to create agent account." });
     }
 
     // Generate verification token
