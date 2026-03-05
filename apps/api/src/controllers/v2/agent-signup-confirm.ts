@@ -115,17 +115,6 @@ export async function agentSignupConfirmController(
         logger.warn("Failed to ban sandboxed team", { error: banError });
       }
 
-      // Clear ACUC caches so the key picks up the real account's plan
-      const { data: apiKeyData } = await supabase_service
-        .from("api_keys")
-        .select("key")
-        .eq("id", sponsor.api_key_id)
-        .single();
-
-      if (apiKeyData) {
-        await clearACUC(apiKeyData.key);
-      }
-
       logger.info("Agent key merged into existing account", {
         email: sponsor.email,
         realTeamId,
@@ -172,17 +161,6 @@ export async function agentSignupConfirmController(
         }
       }
 
-      // Clear ACUC cache so the key picks up verified status (no more sandbox cap)
-      const { data: apiKeyData } = await supabase_service
-        .from("api_keys")
-        .select("key")
-        .eq("id", sponsor.api_key_id)
-        .single();
-
-      if (apiKeyData) {
-        await clearACUC(apiKeyData.key);
-      }
-
       logger.info("Sandboxed account promoted to real account", {
         email: sponsor.email,
         sandboxedTeamId: sponsor.sandboxed_team_id,
@@ -190,9 +168,21 @@ export async function agentSignupConfirmController(
       });
     }
 
-    // Mark sponsor as verified
+    // Mark sponsor as verified and clear sponsor cache before clearing ACUC,
+    // so that when ACUC is rebuilt it sees verified status (no sandbox cap).
     await markSponsorVerified({ sponsorId: sponsor.id });
     await clearAgentSponsorCache({ apiKeyId: sponsor.api_key_id });
+
+    // Clear ACUC so the key picks up the new plan / verified status
+    const { data: apiKeyData } = await supabase_service
+      .from("api_keys")
+      .select("key")
+      .eq("id", sponsor.api_key_id)
+      .single();
+
+    if (apiKeyData) {
+      await clearACUC(apiKeyData.key);
+    }
 
     return res.status(200).json({
       success: true,
