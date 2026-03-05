@@ -6,9 +6,6 @@ type AgentSponsorStatus = {
   status: "pending" | "verified" | "blocked";
   verification_deadline: string;
   email: string;
-  agent_name: string;
-  sandboxed_team_id: string;
-  verification_token: string;
 };
 
 /** Value stored in Redis: either sponsor data or a sentinel for "no sponsor". */
@@ -41,9 +38,7 @@ export async function getAgentSponsorStatus(
   try {
     const { data, error } = await supabase_rr_service
       .from("agent_sponsors")
-      .select(
-        "status, verification_deadline, email, agent_name, sandboxed_team_id, verification_token",
-      )
+      .select("status, verification_deadline, email")
       .eq("api_key_id", api_key_id)
       .single();
 
@@ -61,9 +56,6 @@ export async function getAgentSponsorStatus(
       status: data.status,
       verification_deadline: data.verification_deadline,
       email: data.email,
-      agent_name: data.agent_name,
-      sandboxed_team_id: data.sandboxed_team_id,
-      verification_token: data.verification_token,
     };
 
     await setValue(cacheKey, JSON.stringify(result), AGENT_SPONSOR_CACHE_TTL);
