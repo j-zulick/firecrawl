@@ -41,6 +41,8 @@ const ipRateLimiter = new RateLimiterRedis({
   duration: 3600, // 1 hour
 });
 
+// Per-domain (or per-email for public providers) limit to curb abuse while allowing
+// legitimate multi-agent signups. Tune points if product requirements change.
 const domainRateLimiter = new RateLimiterRedis({
   storeClient: redisRateLimitClient,
   keyPrefix: "agent_signup_domain",
@@ -249,7 +251,7 @@ export async function agentSignupController(req: Request, res: Response) {
       sandboxed_team_id: teamId,
       api_key_id: apiKeyRecord.id,
       requesting_ip: incomingIP,
-      tos_version: "2025-01-01",
+      tos_version: "2024-11-05", // Date of last revision in ToS at https://firecrawl.dev/terms-of-service
       tos_hash: crypto
         .createHash("sha256")
         .update("accept_terms:true")
