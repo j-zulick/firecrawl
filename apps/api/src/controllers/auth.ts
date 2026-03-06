@@ -10,7 +10,6 @@ import { getRateLimiter } from "../services/rate-limiter";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redlock } from "../services/redlock";
 import {
-  supabase_acuc_only_service,
   supabase_rr_service,
   supabase_service,
 } from "../services/supabase";
@@ -157,7 +156,7 @@ export async function getACUC(
     return acuc;
   }
 
-  if (config.USE_DB_AUTHENTICATION !== true && !config.SUPABASE_ACUC_URL) {
+  if (config.USE_DB_AUTHENTICATION !== true) {
     const acuc = mockACUC();
     acuc.is_extract = isExtract;
     return acuc;
@@ -178,11 +177,9 @@ export async function getACUC(
     let retries = 0;
     const maxRetries = 5;
     while (retries < maxRetries) {
-      const client = !!config.SUPABASE_ACUC_URL
-        ? supabase_acuc_only_service
-        : Math.random() > 2 / 3
-          ? supabase_rr_service
-          : supabase_service;
+      const client = Math.random() > 2 / 3
+        ? supabase_rr_service
+        : supabase_service;
       ({ data, error } = await client.rpc(
         "auth_credit_usage_chunk_45",
         {
@@ -286,7 +283,7 @@ export async function getACUCTeam(
     return acuc;
   }
 
-  if (config.USE_DB_AUTHENTICATION !== true && !config.SUPABASE_ACUC_URL) {
+  if (config.USE_DB_AUTHENTICATION !== true) {
     const acuc = mockACUC();
     acuc.is_extract = isExtract;
     return acuc;
@@ -308,11 +305,9 @@ export async function getACUCTeam(
     const maxRetries = 5;
 
     while (retries < maxRetries) {
-      const client = !!config.SUPABASE_ACUC_URL
-        ? supabase_acuc_only_service
-        : Math.random() > 2 / 3
-          ? supabase_rr_service
-          : supabase_service;
+      const client = Math.random() > 2 / 3
+        ? supabase_rr_service
+        : supabase_service;
       ({ data, error } = await client.rpc(
         "auth_credit_usage_chunk_45_from_team",
         {
@@ -393,10 +388,6 @@ export async function authenticateUser(
   res,
   mode?: RateLimiterMode,
 ): Promise<AuthResponse> {
-  if (!!config.SUPABASE_ACUC_URL) {
-    return supaAuthenticateUser(req, res, mode);
-  }
-
   return withAuth(supaAuthenticateUser, {
     success: true,
     chunk: null,

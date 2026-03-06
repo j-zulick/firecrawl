@@ -70,8 +70,6 @@ const configSchema = z.object({
   SUPABASE_ANON_TOKEN: z.string().optional(),
   SUPABASE_SERVICE_TOKEN: z.string().optional(),
   SUPABASE_REPLICA_URL: z.string().optional(),
-  SUPABASE_ACUC_URL: z.string().optional(),
-  SUPABASE_ACUC_SERVICE_TOKEN: z.string().optional(),
   INDEX_SUPABASE_URL: z.string().optional(),
   INDEX_SUPABASE_SERVICE_TOKEN: z.string().optional(),
   SEARCH_INDEX_SUPABASE_URL: z.string().optional(),
