@@ -280,9 +280,13 @@ export async function agentSignupController(req: Request, res: Response) {
     })}`;
 
     if (config.RESEND_API_KEY) {
-      const resend = new Resend(config.RESEND_API_KEY);
-      await resend.emails
-        .send({
+      logger.info("Sending agent sponsor confirmation email", {
+        to: email.toLowerCase(),
+        agent_name,
+      });
+      try {
+        const resend = new Resend(config.RESEND_API_KEY);
+        const sendResult = await resend.emails.send({
           from: "Firecrawl <notifications@notifications.firecrawl.dev>",
           to: [email],
           reply_to: "help@firecrawl.com",
@@ -299,12 +303,35 @@ export async function agentSignupController(req: Request, res: Response) {
           <br/>
           <p>Thanks,<br/>Firecrawl Team</p>
         `,
-        })
-        .catch(err => {
-          logger.error("Failed to send agent sponsor confirmation email", {
-            error: err,
-          });
         });
+        if (sendResult.data?.id) {
+          logger.info("Agent sponsor confirmation email sent", {
+            to: email.toLowerCase(),
+            resendId: sendResult.data.id,
+          });
+        } else {
+          logger.warn(
+            "Agent sponsor confirmation email failed or returned no id",
+            {
+              to: email.toLowerCase(),
+              error: sendResult.error,
+            },
+          );
+        }
+      } catch (err) {
+        logger.error("Failed to send agent sponsor confirmation email", {
+          to: email.toLowerCase(),
+          error: err,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    } else {
+      logger.warn(
+        "RESEND_API_KEY not set; skipping agent sponsor confirmation email",
+        {
+          to: email.toLowerCase(),
+        },
+      );
     }
 
     // If sponsor email matches an existing user, queue in-app notification
