@@ -5,7 +5,7 @@ import { logger } from "../lib/logger";
 configDotenv();
 
 /** PostgREST code when .single() returns 0 or >1 rows. Use to distinguish "no row" from real DB errors. */
-export const POSTGREST_NO_ROWS_CODE = "PGRST116";
+const POSTGREST_NO_ROWS_CODE = "PGRST116";
 
 export function isPostgrestNoRowsError(
   error: { code?: string } | null | undefined,
