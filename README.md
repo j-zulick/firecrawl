@@ -23,7 +23,7 @@
 
 <div>
   <p align="center">
-    <a href="https://twitter.com/firecrawl_dev">
+    <a href="https://twitter.com/firecrawl">
       <img src="https://img.shields.io/badge/Follow%20on%20X-000000?style=for-the-badge&logo=x&logoColor=white" alt="Follow on X" />
     </a>
     <a href="https://www.linkedin.com/company/104100957">
