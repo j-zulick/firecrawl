@@ -53,7 +53,7 @@ Ready to discover and extract web data with one API call?
 - Read the [/search documentation](https://docs.firecrawl.dev/features/search)
 - Experiment in the [Playground](https://firecrawl.link/search-pg)
 - See /search [examples and templates](https://www.firecrawl.dev/templates)
-- Share your projects on [Discord](https://discord.com/invite/gSmWdAkdwd)
+- Share your projects on [Discord](https://discord.gg/firecrawl)
 
 That’s /search — the simplest way to discover and scrape web pages. Excited to see what you build with it!
 
