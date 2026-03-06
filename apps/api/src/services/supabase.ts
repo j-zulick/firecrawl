@@ -1,8 +1,17 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { configDotenv } from "dotenv";
 import { config } from "../config";
 import { logger } from "../lib/logger";
-import { configDotenv } from "dotenv";
 configDotenv();
+
+/** PostgREST code when .single() returns 0 or >1 rows. Use to distinguish "no row" from real DB errors. */
+export const POSTGREST_NO_ROWS_CODE = "PGRST116";
+
+export function isPostgrestNoRowsError(
+  error: { code?: string } | null | undefined,
+): boolean {
+  return error?.code === POSTGREST_NO_ROWS_CODE;
+}
 
 // SupabaseService class initializes the Supabase client conditionally based on environment variables.
 class SupabaseService {

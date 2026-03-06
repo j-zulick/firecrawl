@@ -41,6 +41,48 @@ export function checkCreditsMiddleware(
         return next();
       }
 
+      // Agent-provisioned key enforcement: check sponsor status and 50-credit cap
+      if (req.acuc?._agentSponsor) {
+        const sponsor = req.acuc._agentSponsor;
+
+        if (sponsor.status === "blocked") {
+          return res.status(403).json({
+            success: false,
+            error: "This API key has been blocked by the account holder.",
+          });
+        }
+
+        if (sponsor.status === "pending") {
+          const deadline = new Date(sponsor.verification_deadline);
+          if (deadline < new Date()) {
+            return res.status(403).json({
+              success: false,
+              error: "sponsor_verification_expired",
+              message:
+                "Sponsor verification has expired. The account holder needs to log in to confirm.",
+              login_url: "https://firecrawl.dev/signin",
+            });
+          }
+
+          // Enforce 50-credit cap for unverified agent keys
+          const UNVERIFIED_CREDIT_LIMIT = 50;
+          if (req.acuc.adjusted_credits_used >= UNVERIFIED_CREDIT_LIMIT) {
+            return res.status(402).json({
+              success: false,
+              error: "unverified_credit_limit_reached",
+              message:
+                "This agent key has used its 50 unverified credits. Ask the account holder to confirm the key to unlock full access.",
+              credit_limit: UNVERIFIED_CREDIT_LIMIT,
+              credits_used: req.acuc.adjusted_credits_used,
+              sponsor_status: "pending",
+              login_url: "https://firecrawl.dev/signin",
+              upgrade_url: "https://firecrawl.dev/pricing",
+            });
+          }
+        }
+        // If verified, fall through to normal credit check (key is now on real account)
+      }
+
       if (!minimum && req.body) {
         minimum = Number(
           (req.body as any)?.limit ?? (req.body as any)?.urls?.length ?? 1,

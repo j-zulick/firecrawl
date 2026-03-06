@@ -1255,6 +1255,13 @@ export type AuthCreditUsageChunk = {
 
   // appended on JS-side
   is_extract?: boolean;
+
+  // Agent signup: populated when the key is agent-provisioned
+  _agentSponsor?: {
+    status: "pending" | "verified" | "blocked";
+    verification_deadline: string;
+    email: string;
+  } | null;
 };
 
 export type TeamFlags = {

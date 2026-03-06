@@ -1,5 +1,5 @@
-import { supabase_service } from "../services/supabase";
-import { getValue, setValue, deleteKey } from "../services/redis";
+import { deleteKey, getValue, setValue } from "../services/redis";
+import { isPostgrestNoRowsError, supabase_service } from "../services/supabase";
 import { logger as _logger } from "./logger";
 
 const logger = _logger.child({ module: "browser-sessions" });
@@ -71,8 +71,7 @@ export async function getBrowserSession(
     .single();
 
   if (error) {
-    // PGRST116 = no rows found
-    if (error.code === "PGRST116") return null;
+    if (isPostgrestNoRowsError(error)) return null;
     logger.error("Failed to get browser session", { error, id });
     throw new Error(`Failed to get browser session: ${error.message}`);
   }
@@ -125,7 +124,7 @@ export async function getBrowserSessionByBrowserId(
     .single();
 
   if (error) {
-    if (error.code === "PGRST116") return null;
+    if (isPostgrestNoRowsError(error)) return null;
     logger.error("Failed to get browser session by browser_id", {
       error,
       browserId,
