@@ -38,6 +38,7 @@ function prepareCrawlPayload(request: CrawlRequest): Record<string, unknown> {
   if (request.regexOnFullURL != null) data.regexOnFullURL = request.regexOnFullURL;
   if (request.webhook != null) data.webhook = request.webhook;
   if (request.integration != null && request.integration.trim()) data.integration = request.integration.trim();
+  if (request.origin) data.origin = request.origin;
   if (request.scrapeOptions) {
     ensureValidScrapeOptions(request.scrapeOptions);
     data.scrapeOptions = request.scrapeOptions;

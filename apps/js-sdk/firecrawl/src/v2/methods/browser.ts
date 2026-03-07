@@ -17,6 +17,8 @@ export async function browser(
       name: string;
       saveChanges?: boolean;
     };
+    integration?: string;
+    origin?: string;
   } = {}
 ): Promise<BrowserCreateResponse> {
   const body: Record<string, unknown> = {};
@@ -24,6 +26,8 @@ export async function browser(
   if (args.activityTtl != null) body.activityTtl = args.activityTtl;
   if (args.streamWebView != null) body.streamWebView = args.streamWebView;
   if (args.profile != null) body.profile = args.profile;
+  if (args.integration != null) body.integration = args.integration;
+  if (args.origin) body.origin = args.origin;
 
   try {
     const res = await http.post<BrowserCreateResponse>("/v2/browser", body);

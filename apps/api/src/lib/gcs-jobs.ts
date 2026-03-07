@@ -567,9 +567,6 @@ export async function removeJobFromGCS(jobId: string): Promise<void> {
 
 // TODO: fix the any type (we have multiple Document types in the codebase)
 export async function getDocFromGCS(url: string): Promise<any | null> {
-  //   logger.info(`Getting f-engine document from GCS`, {
-  //     url,
-  //   });
   try {
     if (!config.GCS_FIRE_ENGINE_BUCKET_NAME) {
       return null;
@@ -577,14 +574,18 @@ export async function getDocFromGCS(url: string): Promise<any | null> {
 
     const bucket = storage.bucket(config.GCS_FIRE_ENGINE_BUCKET_NAME);
     const blob = bucket.file(`${url}`);
-    const [exists] = await blob.exists();
-    if (!exists) {
-      return null;
-    }
     const [blobContent] = await blob.download();
     const parsed = JSON.parse(blobContent.toString());
     return parsed;
   } catch (error) {
+    if (
+      error instanceof ApiError &&
+      error.code === 404 &&
+      error.message.includes("No such object:")
+    ) {
+      return null;
+    }
+
     logger.error(`Error getting f-engine document from GCS`, {
       error,
       url,

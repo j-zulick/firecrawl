@@ -26,6 +26,7 @@ import {
   ResponseWithSentry,
 } from "./controllers/v1/types";
 import { ZodError } from "zod";
+import { QueueFullError } from "./lib/concurrency-limit";
 import { v7 as uuidv7 } from "uuid";
 import { attachWsProxy } from "./services/agentLivecastWS";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
@@ -173,7 +174,12 @@ app.use(
     res: Response<ErrorResponse>,
     next: NextFunction,
   ) => {
-    if (err instanceof ZodError) {
+    if (err instanceof QueueFullError) {
+      res.status(429).json({
+        success: false,
+        error: err.message,
+      });
+    } else if (err instanceof ZodError) {
       // In zod v4, ZodError uses 'issues' instead of 'errors'
       const issues = err.issues;
 

@@ -62,6 +62,11 @@ const emailTemplates: Record<NotificationType, EmailTemplate> = {
     <p>You can modify your notification settings anytime at <a href='https://www.firecrawl.dev/app/account-settings'>firecrawl.dev/app/account-settings</a>.</p>
     <br/>Thanks,<br/>Firecrawl Team<br/>`,
   },
+  // Agent sponsor confirm emails are sent directly in the agent-signup controller
+  [NotificationType.AGENT_SPONSOR_CONFIRM]: {
+    subject: "An AI agent requested an API key under your email - Firecrawl",
+    html: "",
+  },
 };
 
 // Map notification types to email categories
@@ -76,6 +81,7 @@ const notificationToEmailCategory: Record<
   [NotificationType.AUTO_RECHARGE_FAILED]: "system_alerts",
   [NotificationType.CONCURRENCY_LIMIT_REACHED]: "rate_limit_warnings",
   [NotificationType.AUTO_RECHARGE_FREQUENT]: "system_alerts",
+  [NotificationType.AGENT_SPONSOR_CONFIRM]: "system_alerts",
 };
 
 export async function sendNotification(

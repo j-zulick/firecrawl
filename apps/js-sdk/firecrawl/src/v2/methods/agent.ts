@@ -9,6 +9,7 @@ function prepareAgentPayload(args: {
   prompt: string;
   schema?: Record<string, unknown> | ZodTypeAny;
   integration?: string;
+  origin?: string;
   maxCredits?: number;
   strictConstrainToURLs?: boolean;
   model?: "spark-1-pro" | "spark-1-mini";
@@ -21,6 +22,7 @@ function prepareAgentPayload(args: {
     body.schema = isZodSchema(args.schema) ? zodSchemaToJsonSchema(args.schema) : args.schema;
   }
   if (args.integration && args.integration.trim()) body.integration = args.integration.trim();
+  if (args.origin) body.origin = args.origin;
   if (args.maxCredits !== null && args.maxCredits !== undefined) body.maxCredits = args.maxCredits;
   if (args.strictConstrainToURLs !== null && args.strictConstrainToURLs !== undefined) body.strictConstrainToURLs = args.strictConstrainToURLs;
   if (args.model !== null && args.model !== undefined) body.model = args.model;

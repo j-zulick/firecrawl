@@ -25,6 +25,7 @@ export async function startBatchScrape(
     zeroDataRetention,
     idempotencyKey,
     integration,
+    origin,
   }: BatchScrapeOptions = {}
 ): Promise<BatchScrapeResponse> {
   if (!Array.isArray(urls) || urls.length === 0) throw new Error("URLs list cannot be empty");
@@ -39,6 +40,7 @@ export async function startBatchScrape(
   if (maxConcurrency != null) payload.maxConcurrency = maxConcurrency;
   if (zeroDataRetention != null) payload.zeroDataRetention = zeroDataRetention;
   if (integration != null && integration.trim()) payload.integration = integration.trim();
+  if (origin) payload.origin = origin;
 
   try {
     const headers = http.prepareHeaders(idempotencyKey);

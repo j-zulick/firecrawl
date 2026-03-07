@@ -6,6 +6,21 @@ import { logger } from "./logger";
 import { abTestJob } from "../services/ab-test";
 import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
 
+export class QueueFullError extends Error {
+  statusCode = 429;
+  constructor(queueSize: number, queueLimit: number) {
+    super(
+      `Queue limit reached: your team has ${queueSize} jobs queued (limit: ${queueLimit}). Please wait for existing jobs to complete before adding more, or upgrade your plan for a higher limit. For more info, see https://docs.firecrawl.dev/rate-limits#concurrent-browser-limits`,
+    );
+    this.name = "QueueFullError";
+  }
+}
+
+// min 50k, max 2M, 2000 per concurrent browser
+export function getTeamQueueLimit(concurrencyLimit: number): number {
+  return Math.min(Math.max(concurrencyLimit * 2000, 50_000), 2_000_000);
+}
+
 const constructKey = (team_id: string) => "concurrency-limiter:" + team_id;
 const constructQueueKey = (team_id: string) =>
   "concurrency-limit-queue:" + team_id;

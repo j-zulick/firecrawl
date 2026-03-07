@@ -27,6 +27,7 @@ import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
+import { comparePdfOutputs } from "./shadowComparison";
 
 /** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
 function getIneligibleReason(
@@ -140,6 +141,11 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     let result: PDFProcessorResult | null = null;
     let effectivePageCount: number = 0;
     let metadataTitle: string | undefined;
+    let rustMarkdownForShadow: string | undefined;
+    let shadowPdfType: string | undefined;
+    let shadowConfidence: number | undefined;
+    let shadowIsComplex: boolean | undefined;
+    let shadowIneligibleReason: string | null | undefined;
 
     const rustEnabled = !!config.PDF_RUST_EXTRACT_ENABLE;
     const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
@@ -217,6 +223,23 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           mode,
         });
 
+        // Only shadow-compare when Rust had a real chance at extraction.
+        // Scanned/ImageBased/Mixed PDFs are expected to produce near-zero
+        // Rust output — comparing them just adds noise to the metrics.
+        const shadowEligible =
+          !eligible &&
+          pdfResult.markdown &&
+          config.PDF_SHADOW_COMPARISON_ENABLE &&
+          pdfResult.pdfType === "TextBased";
+
+        rustMarkdownForShadow = shadowEligible ? pdfResult.markdown : undefined;
+        if (shadowEligible) {
+          shadowPdfType = pdfResult.pdfType;
+          shadowConfidence = pdfResult.confidence;
+          shadowIsComplex = pdfResult.isComplex;
+          shadowIneligibleReason = ineligibleReason;
+        }
+
         // In fast mode, if the PDF requires OCR, fail immediately with a
         // clear error instead of returning empty content.
         if (
@@ -288,6 +311,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             tempFilePath,
             base64Content,
             maxPages,
+            effectivePageCount,
           );
           const muV1DurationMs = Date.now() - muV1StartedAt;
           meta.logger
@@ -298,6 +322,37 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               pages: effectivePageCount,
               success: true,
             });
+
+          if (
+            rustMarkdownForShadow &&
+            result?.markdown &&
+            config.PDF_SHADOW_COMPARISON_ENABLE
+          ) {
+            const shadowRust = rustMarkdownForShadow;
+            const shadowMu = result.markdown;
+            const shadowLogger = meta.logger.child({
+              method: "scrapePDF/shadowComparison",
+            });
+            const isZdr = !!meta.internalOptions.zeroDataRetention;
+
+            (async () => {
+              try {
+                const metrics = comparePdfOutputs(shadowRust, shadowMu);
+                shadowLogger.info("shadow comparison complete", {
+                  scrapeId: meta.id,
+                  url: isZdr ? undefined : (meta.rewrittenUrl ?? meta.url),
+                  pageCount: effectivePageCount,
+                  pdfType: shadowPdfType,
+                  confidence: shadowConfidence,
+                  isComplex: shadowIsComplex,
+                  ineligibleReason: shadowIneligibleReason,
+                  ...metrics.overall,
+                });
+              } catch (error) {
+                shadowLogger.warn("shadow comparison failed", { error });
+              }
+            })();
+          }
         } catch (error) {
           if (
             error instanceof RemoveFeatureError ||

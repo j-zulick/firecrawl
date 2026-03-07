@@ -70,8 +70,6 @@ const configSchema = z.object({
   SUPABASE_ANON_TOKEN: z.string().optional(),
   SUPABASE_SERVICE_TOKEN: z.string().optional(),
   SUPABASE_REPLICA_URL: z.string().optional(),
-  SUPABASE_ACUC_URL: z.string().optional(),
-  SUPABASE_ACUC_SERVICE_TOKEN: z.string().optional(),
   INDEX_SUPABASE_URL: z.string().optional(),
   INDEX_SUPABASE_SERVICE_TOKEN: z.string().optional(),
   SEARCH_INDEX_SUPABASE_URL: z.string().optional(),
@@ -158,6 +156,7 @@ const configSchema = z.object({
 
   // PDF Rust Extraction (pdf-inspector)
   PDF_RUST_EXTRACT_ENABLE: z.stringbool().optional(),
+  PDF_SHADOW_COMPARISON_ENABLE: z.stringbool().optional(),
 
   // Webhooks
   SELF_HOSTED_WEBHOOK_URL: z.string().optional(),
