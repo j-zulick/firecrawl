@@ -102,10 +102,9 @@ Response:
 |---------|-------------|
 | [**Scrape**](#scraping) | Convert any URL to markdown, HTML, screenshots, or structured JSON |
 | [**Search**](#search) | Search the web and get full page content from results |
-| [**Agent**](#agent) | Automated data gathering, just describe what you need |
-| [**Crawl**](#crawling) | Scrape all URLs of a website with a single request |
 | [**Map**](#map) | Discover all URLs on a website instantly |
-
+| [**Crawl**](#crawling) | Scrape all URLs of a website with a single request |
+| [**Agent**](#agent) | Automated data gathering, just describe what you need |
 ---
 
 ## Scrape
