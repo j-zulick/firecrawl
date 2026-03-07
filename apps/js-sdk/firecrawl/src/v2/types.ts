@@ -697,6 +697,7 @@ export interface BrowserCreateResponse {
   id?: string;
   cdpUrl?: string;
   liveViewUrl?: string;
+  interactiveLiveViewUrl?: string;
   expiresAt?: string;
   error?: string;
 }
@@ -723,6 +724,7 @@ export interface BrowserSession {
   status: string;
   cdpUrl: string;
   liveViewUrl: string;
+  interactiveLiveViewUrl?: string;
   streamWebView: boolean;
   createdAt: string;
   lastActivity: string;

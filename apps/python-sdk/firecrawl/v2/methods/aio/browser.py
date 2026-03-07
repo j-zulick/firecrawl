@@ -21,6 +21,8 @@ def _normalize_browser_create_response(payload: Dict[str, Any]) -> Dict[str, Any
         out["cdp_url"] = out["cdpUrl"]
     if "liveViewUrl" in out and "live_view_url" not in out:
         out["live_view_url"] = out["liveViewUrl"]
+    if "interactiveLiveViewUrl" in out and "interactive_live_view_url" not in out:
+        out["interactive_live_view_url"] = out["interactiveLiveViewUrl"]
     if "expiresAt" in out and "expires_at" not in out:
         out["expires_at"] = out["expiresAt"]
     return out
@@ -36,6 +38,8 @@ def _normalize_browser_list_response(payload: Dict[str, Any]) -> Dict[str, Any]:
                 ns["cdp_url"] = ns["cdpUrl"]
             if "liveViewUrl" in ns and "live_view_url" not in ns:
                 ns["live_view_url"] = ns["liveViewUrl"]
+            if "interactiveLiveViewUrl" in ns and "interactive_live_view_url" not in ns:
+                ns["interactive_live_view_url"] = ns["interactiveLiveViewUrl"]
             if "streamWebView" in ns and "stream_web_view" not in ns:
                 ns["stream_web_view"] = ns["streamWebView"]
             if "createdAt" in ns and "created_at" not in ns:
