@@ -287,7 +287,7 @@ export async function agentSignupController(req: Request, res: Response) {
       try {
         const resend = new Resend(config.RESEND_API_KEY);
         const sendResult = await resend.emails.send({
-          from: "Firecrawl <auth@auth.firecrawl.dev>",
+          from: "Firecrawl <notifications@getmendableai.com>",
           to: [email],
           reply_to: "help@firecrawl.com",
           subject: `An AI agent "${agent_name}" created an API key under your email — Firecrawl`,
