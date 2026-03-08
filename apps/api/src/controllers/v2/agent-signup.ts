@@ -80,41 +80,46 @@ export async function agentSignupController(req: Request, res: Response) {
   try {
     // Parse and validate input
     const body = agentSignupSchema.parse(req.body);
-    const { email, agent_name } = body;
+    const email = body.email.toLowerCase();
+    const { agent_name } = body;
 
-    // Rate limit by IP (use req.ip so we respect Express trust proxy and don't
-    // trust client-controlled X-Forwarded-For; req.ip parses the forwarded chain correctly)
     const incomingIP = req.ip || req.socket.remoteAddress || "unknown";
-    try {
-      await ipRateLimiter.consume(incomingIP);
-    } catch {
-      return res.status(429).json({
-        success: false,
-        error:
-          "Rate limit exceeded. Maximum 5 agent signup requests per hour per IP.",
-      });
-    }
+    const [emailPrefix, emailDomain] = email.split("@");
+    const skipRateLimit =
+      emailDomain === "sideguide.dev" && emailPrefix.includes("+test");
+    if (!skipRateLimit) {
+      // Rate limit by IP (use req.ip so we respect Express trust proxy and don't
+      // trust client-controlled X-Forwarded-For; req.ip parses the forwarded chain correctly)
+      try {
+        await ipRateLimiter.consume(incomingIP);
+      } catch {
+        return res.status(429).json({
+          success: false,
+          error:
+            "Rate limit exceeded. Maximum 5 agent signup requests per hour per IP.",
+        });
+      }
 
-    // Rate limit by domain (per-email for public providers)
-    const emailDomain = email.split("@")[1]?.toLowerCase();
-    const domainKey = PUBLIC_EMAIL_DOMAINS.has(emailDomain)
-      ? email.toLowerCase()
-      : emailDomain;
-    try {
-      await domainRateLimiter.consume(domainKey);
-    } catch {
-      return res.status(429).json({
-        success: false,
-        error:
-          "Too many agent signups for this email domain. Please try again later.",
-      });
+      // Rate limit by domain (per-email for public providers)
+      const domainKey = PUBLIC_EMAIL_DOMAINS.has(emailDomain)
+        ? email
+        : emailDomain;
+      try {
+        await domainRateLimiter.consume(domainKey);
+      } catch {
+        return res.status(429).json({
+          success: false,
+          error:
+            "Too many agent signups for this email domain. Please try again later.",
+        });
+      }
     }
 
     // Check for existing blocked sponsor record (use primary for strong consistency)
     const { data: blockedSponsor } = await supabase_service
       .from("agent_sponsors")
       .select("id")
-      .eq("email", email.toLowerCase())
+      .eq("email", email)
       .eq("status", "blocked")
       .limit(1);
 
@@ -129,7 +134,7 @@ export async function agentSignupController(req: Request, res: Response) {
     const { data: pendingSponsor } = await supabase_service
       .from("agent_sponsors")
       .select("id, verification_deadline")
-      .eq("email", email.toLowerCase())
+      .eq("email", email)
       .eq("status", "pending")
       .limit(1);
 
@@ -244,7 +249,7 @@ export async function agentSignupController(req: Request, res: Response) {
 
     // Create sponsor record
     const sponsorRow: AgentSponsorInsert = {
-      email: email.toLowerCase(),
+      email,
       status: "pending",
       verification_deadline: deadline.toISOString(),
       agent_name,
@@ -281,7 +286,7 @@ export async function agentSignupController(req: Request, res: Response) {
 
     if (config.RESEND_API_KEY) {
       logger.info("Sending agent sponsor confirmation email", {
-        to: email.toLowerCase(),
+        to: email,
         agent_name,
       });
       try {
@@ -306,21 +311,21 @@ export async function agentSignupController(req: Request, res: Response) {
         });
         if (sendResult.data?.id) {
           logger.info("Agent sponsor confirmation email sent", {
-            to: email.toLowerCase(),
+            to: email,
             resendId: sendResult.data.id,
           });
         } else {
           logger.warn(
             "Agent sponsor confirmation email failed or returned no id",
             {
-              to: email.toLowerCase(),
+              to: email,
               error: sendResult.error,
             },
           );
         }
       } catch (err) {
         logger.error("Failed to send agent sponsor confirmation email", {
-          to: email.toLowerCase(),
+          to: email,
           error: err,
           message: err instanceof Error ? err.message : String(err),
         });
@@ -329,7 +334,7 @@ export async function agentSignupController(req: Request, res: Response) {
       logger.warn(
         "RESEND_API_KEY not set; skipping agent sponsor confirmation email",
         {
-          to: email.toLowerCase(),
+          to: email,
         },
       );
     }
@@ -338,7 +343,7 @@ export async function agentSignupController(req: Request, res: Response) {
     const { data: existingUser } = await supabase_rr_service
       .from("users")
       .select("team_id")
-      .eq("email", email.toLowerCase())
+      .eq("email", email)
       .limit(1);
 
     if (existingUser && existingUser.length > 0) {
@@ -365,7 +370,7 @@ export async function agentSignupController(req: Request, res: Response) {
     }
 
     logger.info("Agent signup completed", {
-      email: email.toLowerCase(),
+      email,
       agent_name,
       teamId,
       apiKeyId: apiKeyRecord.id,
