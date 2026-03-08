@@ -50,7 +50,8 @@ const domainRateLimiter = new RateLimiterRedis({
   duration: 86400, // 24 hours
 });
 
-// Higher limits for sideguide.dev +test (internal/testing) — still rate limited to prevent abuse
+// Higher limits for *+test*@sideguide.dev only. sideguide.dev is internal-only; external users
+// cannot receive mail or hold accounts there, so this path is not abusable.
 const ipRateLimiterSideguide = new RateLimiterRedis({
   storeClient: redisRateLimitClient,
   keyPrefix: "agent_signup_ip_sideguide",
@@ -100,10 +101,13 @@ export async function agentSignupController(req: Request, res: Response) {
 
     const incomingIP = req.ip || req.socket.remoteAddress || "unknown";
     const [emailPrefix, emailDomain] = email.split("@");
+    // sideguide.dev is an internal domain: only Sideguide team have mailboxes there. External
+    // users cannot receive confirmation emails or use accounts at this domain, so the higher
+    // rate limit for *+test*@sideguide.dev is not abusable by attackers.
     const isSideguideEmail =
       emailDomain === "sideguide.dev" && emailPrefix.includes("+test");
 
-    // Always rate limit; use higher limits for sideguide.dev +test (internal/testing)
+    // Always rate limit; use higher limits only for internal sideguide.dev +test addresses
     const ipLimiter = isSideguideEmail ? ipRateLimiterSideguide : ipRateLimiter;
     const domainLimiter = isSideguideEmail
       ? domainRateLimiterSideguide
