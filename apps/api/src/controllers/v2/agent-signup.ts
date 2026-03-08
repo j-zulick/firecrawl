@@ -33,11 +33,17 @@ const PUBLIC_EMAIL_DOMAINS = new Set([
   "fastmail.com",
 ]);
 
+// Rate limit values — used by limiters and error copy so they stay in sync
+const AGENT_SIGNUP_IP_LIMIT = 5;
+const AGENT_SIGNUP_DOMAIN_LIMIT = 20;
+const AGENT_SIGNUP_IP_LIMIT_SIDEGUIDE = 15; // 3x default
+const AGENT_SIGNUP_DOMAIN_LIMIT_SIDEGUIDE = 60; // 3x default
+
 // Rate limiters
 const ipRateLimiter = new RateLimiterRedis({
   storeClient: redisRateLimitClient,
   keyPrefix: "agent_signup_ip",
-  points: 5,
+  points: AGENT_SIGNUP_IP_LIMIT,
   duration: 3600, // 1 hour
 });
 
@@ -46,7 +52,23 @@ const ipRateLimiter = new RateLimiterRedis({
 const domainRateLimiter = new RateLimiterRedis({
   storeClient: redisRateLimitClient,
   keyPrefix: "agent_signup_domain",
-  points: 20,
+  points: AGENT_SIGNUP_DOMAIN_LIMIT,
+  duration: 86400, // 24 hours
+});
+
+// Higher limits for *+test*@sideguide.dev only. sideguide.dev is internal-only; external users
+// cannot receive mail or hold accounts there, so this path is not abusable.
+const ipRateLimiterSideguide = new RateLimiterRedis({
+  storeClient: redisRateLimitClient,
+  keyPrefix: "agent_signup_ip_sideguide",
+  points: AGENT_SIGNUP_IP_LIMIT_SIDEGUIDE,
+  duration: 3600, // 1 hour
+});
+
+const domainRateLimiterSideguide = new RateLimiterRedis({
+  storeClient: redisRateLimitClient,
+  keyPrefix: "agent_signup_domain_sideguide",
+  points: AGENT_SIGNUP_DOMAIN_LIMIT_SIDEGUIDE,
   duration: 86400, // 24 hours
 });
 
@@ -80,33 +102,47 @@ export async function agentSignupController(req: Request, res: Response) {
   try {
     // Parse and validate input
     const body = agentSignupSchema.parse(req.body);
-    const { email, agent_name } = body;
+    const email = body.email.toLowerCase();
+    const { agent_name } = body;
 
-    // Rate limit by IP (use req.ip so we respect Express trust proxy and don't
-    // trust client-controlled X-Forwarded-For; req.ip parses the forwarded chain correctly)
     const incomingIP = req.ip || req.socket.remoteAddress || "unknown";
+    const [emailPrefix, emailDomain] = email.split("@");
+    // sideguide.dev is an internal domain: only Sideguide team have mailboxes there. Even if
+    // someone used this pattern to get the higher limits, each signup still gets only 50 credits
+    // and keys stay sandboxed (no confirm/merge); limits are 3x default, not unbounded.
+    const isSideguideEmail =
+      emailDomain === "sideguide.dev" && emailPrefix.includes("+test");
+
+    // Always rate limit; use higher limits only for internal sideguide.dev +test addresses
+    const ipLimiter = isSideguideEmail ? ipRateLimiterSideguide : ipRateLimiter;
+    const domainLimiter = isSideguideEmail
+      ? domainRateLimiterSideguide
+      : domainRateLimiter;
+    const ipLimitMsg = isSideguideEmail
+      ? `Rate limit exceeded. Maximum ${AGENT_SIGNUP_IP_LIMIT_SIDEGUIDE} agent signup requests per hour per IP for sideguide test emails.`
+      : `Rate limit exceeded. Maximum ${AGENT_SIGNUP_IP_LIMIT} agent signup requests per hour per IP.`;
+    const domainLimitMsg = isSideguideEmail
+      ? "Too many agent signups for this email. Please try again later."
+      : "Too many agent signups for this email domain. Please try again later.";
+
     try {
-      await ipRateLimiter.consume(incomingIP);
+      await ipLimiter.consume(incomingIP);
     } catch {
       return res.status(429).json({
         success: false,
-        error:
-          "Rate limit exceeded. Maximum 5 agent signup requests per hour per IP.",
+        error: ipLimitMsg,
       });
     }
 
-    // Rate limit by domain (per-email for public providers)
-    const emailDomain = email.split("@")[1]?.toLowerCase();
     const domainKey = PUBLIC_EMAIL_DOMAINS.has(emailDomain)
-      ? email.toLowerCase()
+      ? email
       : emailDomain;
     try {
-      await domainRateLimiter.consume(domainKey);
+      await domainLimiter.consume(domainKey);
     } catch {
       return res.status(429).json({
         success: false,
-        error:
-          "Too many agent signups for this email domain. Please try again later.",
+        error: domainLimitMsg,
       });
     }
 
@@ -114,7 +150,7 @@ export async function agentSignupController(req: Request, res: Response) {
     const { data: blockedSponsor } = await supabase_service
       .from("agent_sponsors")
       .select("id")
-      .eq("email", email.toLowerCase())
+      .eq("email", email)
       .eq("status", "blocked")
       .limit(1);
 
@@ -129,7 +165,7 @@ export async function agentSignupController(req: Request, res: Response) {
     const { data: pendingSponsor } = await supabase_service
       .from("agent_sponsors")
       .select("id, verification_deadline")
-      .eq("email", email.toLowerCase())
+      .eq("email", email)
       .eq("status", "pending")
       .limit(1);
 
@@ -244,7 +280,7 @@ export async function agentSignupController(req: Request, res: Response) {
 
     // Create sponsor record
     const sponsorRow: AgentSponsorInsert = {
-      email: email.toLowerCase(),
+      email,
       status: "pending",
       verification_deadline: deadline.toISOString(),
       agent_name,
@@ -281,7 +317,7 @@ export async function agentSignupController(req: Request, res: Response) {
 
     if (config.RESEND_API_KEY) {
       logger.info("Sending agent sponsor confirmation email", {
-        to: email.toLowerCase(),
+        to: email,
         agent_name,
       });
       try {
@@ -306,21 +342,21 @@ export async function agentSignupController(req: Request, res: Response) {
         });
         if (sendResult.data?.id) {
           logger.info("Agent sponsor confirmation email sent", {
-            to: email.toLowerCase(),
+            to: email,
             resendId: sendResult.data.id,
           });
         } else {
           logger.warn(
             "Agent sponsor confirmation email failed or returned no id",
             {
-              to: email.toLowerCase(),
+              to: email,
               error: sendResult.error,
             },
           );
         }
       } catch (err) {
         logger.error("Failed to send agent sponsor confirmation email", {
-          to: email.toLowerCase(),
+          to: email,
           error: err,
           message: err instanceof Error ? err.message : String(err),
         });
@@ -329,7 +365,7 @@ export async function agentSignupController(req: Request, res: Response) {
       logger.warn(
         "RESEND_API_KEY not set; skipping agent sponsor confirmation email",
         {
-          to: email.toLowerCase(),
+          to: email,
         },
       );
     }
@@ -338,7 +374,7 @@ export async function agentSignupController(req: Request, res: Response) {
     const { data: existingUser } = await supabase_rr_service
       .from("users")
       .select("team_id")
-      .eq("email", email.toLowerCase())
+      .eq("email", email)
       .limit(1);
 
     if (existingUser && existingUser.length > 0) {
@@ -365,7 +401,7 @@ export async function agentSignupController(req: Request, res: Response) {
     }
 
     logger.info("Agent signup completed", {
-      email: email.toLowerCase(),
+      email,
       agent_name,
       teamId,
       apiKeyId: apiKeyRecord.id,
