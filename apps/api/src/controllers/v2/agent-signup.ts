@@ -50,6 +50,21 @@ const domainRateLimiter = new RateLimiterRedis({
   duration: 86400, // 24 hours
 });
 
+// Higher limits for sideguide.dev +test (internal/testing) — still rate limited to prevent abuse
+const ipRateLimiterSideguide = new RateLimiterRedis({
+  storeClient: redisRateLimitClient,
+  keyPrefix: "agent_signup_ip_sideguide",
+  points: 50,
+  duration: 3600, // 1 hour
+});
+
+const domainRateLimiterSideguide = new RateLimiterRedis({
+  storeClient: redisRateLimitClient,
+  keyPrefix: "agent_signup_domain_sideguide",
+  points: 200,
+  duration: 86400, // 24 hours
+});
+
 const agentSignupSchema = z.object({
   email: z.string().email(),
   agent_name: z.string().min(1).max(100),
@@ -85,34 +100,40 @@ export async function agentSignupController(req: Request, res: Response) {
 
     const incomingIP = req.ip || req.socket.remoteAddress || "unknown";
     const [emailPrefix, emailDomain] = email.split("@");
-    const skipRateLimit =
+    const isSideguideEmail =
       emailDomain === "sideguide.dev" && emailPrefix.includes("+test");
-    if (!skipRateLimit) {
-      // Rate limit by IP (use req.ip so we respect Express trust proxy and don't
-      // trust client-controlled X-Forwarded-For; req.ip parses the forwarded chain correctly)
-      try {
-        await ipRateLimiter.consume(incomingIP);
-      } catch {
-        return res.status(429).json({
-          success: false,
-          error:
-            "Rate limit exceeded. Maximum 5 agent signup requests per hour per IP.",
-        });
-      }
 
-      // Rate limit by domain (per-email for public providers)
-      const domainKey = PUBLIC_EMAIL_DOMAINS.has(emailDomain)
-        ? email
-        : emailDomain;
-      try {
-        await domainRateLimiter.consume(domainKey);
-      } catch {
-        return res.status(429).json({
-          success: false,
-          error:
-            "Too many agent signups for this email domain. Please try again later.",
-        });
-      }
+    // Always rate limit; use higher limits for sideguide.dev +test (internal/testing)
+    const ipLimiter = isSideguideEmail ? ipRateLimiterSideguide : ipRateLimiter;
+    const domainLimiter = isSideguideEmail
+      ? domainRateLimiterSideguide
+      : domainRateLimiter;
+    const ipLimitMsg = isSideguideEmail
+      ? "Rate limit exceeded. Maximum 50 agent signup requests per hour per IP for sideguide test emails."
+      : "Rate limit exceeded. Maximum 5 agent signup requests per hour per IP.";
+    const domainLimitMsg = isSideguideEmail
+      ? "Too many agent signups for this email. Please try again later."
+      : "Too many agent signups for this email domain. Please try again later.";
+
+    try {
+      await ipLimiter.consume(incomingIP);
+    } catch {
+      return res.status(429).json({
+        success: false,
+        error: ipLimitMsg,
+      });
+    }
+
+    const domainKey = PUBLIC_EMAIL_DOMAINS.has(emailDomain)
+      ? email
+      : emailDomain;
+    try {
+      await domainLimiter.consume(domainKey);
+    } catch {
+      return res.status(429).json({
+        success: false,
+        error: domainLimitMsg,
+      });
     }
 
     // Check for existing blocked sponsor record (use primary for strong consistency)
