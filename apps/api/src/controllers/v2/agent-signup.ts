@@ -33,11 +33,17 @@ const PUBLIC_EMAIL_DOMAINS = new Set([
   "fastmail.com",
 ]);
 
+// Rate limit values — used by limiters and error copy so they stay in sync
+const AGENT_SIGNUP_IP_LIMIT = 5;
+const AGENT_SIGNUP_DOMAIN_LIMIT = 20;
+const AGENT_SIGNUP_IP_LIMIT_SIDEGUIDE = 15; // 3x default
+const AGENT_SIGNUP_DOMAIN_LIMIT_SIDEGUIDE = 60; // 3x default
+
 // Rate limiters
 const ipRateLimiter = new RateLimiterRedis({
   storeClient: redisRateLimitClient,
   keyPrefix: "agent_signup_ip",
-  points: 5,
+  points: AGENT_SIGNUP_IP_LIMIT,
   duration: 3600, // 1 hour
 });
 
@@ -46,7 +52,7 @@ const ipRateLimiter = new RateLimiterRedis({
 const domainRateLimiter = new RateLimiterRedis({
   storeClient: redisRateLimitClient,
   keyPrefix: "agent_signup_domain",
-  points: 20,
+  points: AGENT_SIGNUP_DOMAIN_LIMIT,
   duration: 86400, // 24 hours
 });
 
@@ -55,14 +61,14 @@ const domainRateLimiter = new RateLimiterRedis({
 const ipRateLimiterSideguide = new RateLimiterRedis({
   storeClient: redisRateLimitClient,
   keyPrefix: "agent_signup_ip_sideguide",
-  points: 50,
+  points: AGENT_SIGNUP_IP_LIMIT_SIDEGUIDE,
   duration: 3600, // 1 hour
 });
 
 const domainRateLimiterSideguide = new RateLimiterRedis({
   storeClient: redisRateLimitClient,
   keyPrefix: "agent_signup_domain_sideguide",
-  points: 200,
+  points: AGENT_SIGNUP_DOMAIN_LIMIT_SIDEGUIDE,
   duration: 86400, // 24 hours
 });
 
@@ -101,9 +107,9 @@ export async function agentSignupController(req: Request, res: Response) {
 
     const incomingIP = req.ip || req.socket.remoteAddress || "unknown";
     const [emailPrefix, emailDomain] = email.split("@");
-    // sideguide.dev is an internal domain: only Sideguide team have mailboxes there. External
-    // users cannot receive confirmation emails or use accounts at this domain, so the higher
-    // rate limit for *+test*@sideguide.dev is not abusable by attackers.
+    // sideguide.dev is an internal domain: only Sideguide team have mailboxes there. Even if
+    // someone used this pattern to get the higher limits, each signup still gets only 50 credits
+    // and keys stay sandboxed (no confirm/merge); limits are 3x default, not unbounded.
     const isSideguideEmail =
       emailDomain === "sideguide.dev" && emailPrefix.includes("+test");
 
@@ -113,8 +119,8 @@ export async function agentSignupController(req: Request, res: Response) {
       ? domainRateLimiterSideguide
       : domainRateLimiter;
     const ipLimitMsg = isSideguideEmail
-      ? "Rate limit exceeded. Maximum 50 agent signup requests per hour per IP for sideguide test emails."
-      : "Rate limit exceeded. Maximum 5 agent signup requests per hour per IP.";
+      ? `Rate limit exceeded. Maximum ${AGENT_SIGNUP_IP_LIMIT_SIDEGUIDE} agent signup requests per hour per IP for sideguide test emails.`
+      : `Rate limit exceeded. Maximum ${AGENT_SIGNUP_IP_LIMIT} agent signup requests per hour per IP.`;
     const domainLimitMsg = isSideguideEmail
       ? "Too many agent signups for this email. Please try again later."
       : "Too many agent signups for this email domain. Please try again later.";
