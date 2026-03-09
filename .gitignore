@@ -55,3 +55,6 @@ apps/python-sdk/.venv/
 target/
 
 .cursor/
+
+# local files
+_local/
