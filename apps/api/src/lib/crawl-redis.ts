@@ -259,6 +259,19 @@ export async function finishCrawlKickoff(id: string) {
   );
 }
 
+export async function setCrawlError(id: string, error: string) {
+  await redisEvictConnection.set(
+    "crawl:" + id + ":error",
+    error,
+    "EX",
+    24 * 60 * 60,
+  );
+}
+
+export async function getCrawlError(id: string): Promise<string | null> {
+  return await redisEvictConnection.get("crawl:" + id + ":error");
+}
+
 export async function finishCrawl(id: string, __logger: Logger = _logger) {
   __logger.debug("Marking crawl as finished.", {
     module: "crawl-redis",

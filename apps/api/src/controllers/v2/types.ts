@@ -1226,6 +1226,16 @@ export type CrawlStatusResponse =
       next?: string;
       data: Document[];
       warning?: string;
+    }
+  | {
+      success: false;
+      status: "failed";
+      error: string;
+      completed: number;
+      total: number;
+      creditsUsed: number;
+      expiresAt: string;
+      data: Document[];
     };
 
 export type OngoingCrawlsResponse =
