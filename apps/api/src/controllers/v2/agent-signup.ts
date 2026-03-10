@@ -73,9 +73,24 @@ const domainRateLimiterSideguide = new RateLimiterRedis({
 });
 
 const agentSignupSchema = z.object({
-  email: z.string().email(),
+  email: z
+    .string()
+    .email()
+    .refine(
+      (e) =>
+        !e.includes("+") ||
+        (e.endsWith("@sideguide.dev") && e.includes("+test")),
+      {
+        message: "Email addresses with '+' are not allowed for agent signup.",
+      },
+    ),
   agent_name: z.string().min(1).max(100),
-  accept_terms: z.literal(true),
+  accept_terms: z.literal(true, {
+    errorMap: () => ({
+      message:
+        "You must accept the terms here. https://www.firecrawl.dev/terms-of-service",
+    }),
+  }),
 });
 
 /** Insert payload for agent_sponsors (nullable cols in DB are optional here). */
