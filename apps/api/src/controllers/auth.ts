@@ -9,10 +9,7 @@ import { getRedisConnection } from "../services/queue-service";
 import { getRateLimiter } from "../services/rate-limiter";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redlock } from "../services/redlock";
-import {
-  supabase_rr_service,
-  supabase_service,
-} from "../services/supabase";
+import { supabase_rr_service, supabase_service } from "../services/supabase";
 import { AuthResponse, RateLimiterMode } from "../types";
 import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
 
@@ -177,11 +174,10 @@ export async function getACUC(
     let retries = 0;
     const maxRetries = 5;
     while (retries < maxRetries) {
-      const client = Math.random() > 2 / 3
-        ? supabase_rr_service
-        : supabase_service;
+      const client =
+        Math.random() > 2 / 3 ? supabase_rr_service : supabase_service;
       ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_45",
+        "auth_credit_usage_chunk_46",
         {
           input_key: api_key,
           i_is_extract: isExtract,
@@ -305,11 +301,10 @@ export async function getACUCTeam(
     const maxRetries = 5;
 
     while (retries < maxRetries) {
-      const client = Math.random() > 2 / 3
-        ? supabase_rr_service
-        : supabase_service;
+      const client =
+        Math.random() > 2 / 3 ? supabase_rr_service : supabase_service;
       ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_45_from_team",
+        "auth_credit_usage_chunk_46_from_team",
         {
           input_team: team_id,
           i_is_extract: isExtract,
