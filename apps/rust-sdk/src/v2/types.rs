@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
+use crate::serde_helpers::deserialize_string_or_array;
+
 /// Available output formats for scraping operations.
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -307,49 +309,83 @@ pub struct DocumentMetadata {
     pub error: Option<String>,
 
     // Basic meta tags
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub title: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub description: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub language: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub keywords: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub robots: Option<String>,
 
     // OpenGraph namespace
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_title: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_description: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_url: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_image: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_audio: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_determiner: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_locale: Option<String>,
     pub og_locale_alternate: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_site_name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_video: Option<String>,
 
     // Article namespace
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub article_section: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub article_tag: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub published_time: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub modified_time: Option<String>,
 
     // Dublin Core namespace
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dcterms_keywords: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dc_description: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dc_subject: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dcterms_subject: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dcterms_audience: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dc_type: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dcterms_type: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dc_date: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dc_date_created: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dcterms_created: Option<String>,
 
     // Response metadata
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub scrape_id: Option<String>,
     pub num_pages: Option<u32>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub content_type: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub timezone: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub proxy_used: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub cache_state: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub cached_at: Option<String>,
     pub credits_used: Option<u32>,
     pub concurrency_limited: Option<bool>,
@@ -507,4 +543,39 @@ pub struct CrawlErrorsResponse {
     pub errors: Vec<CrawlError>,
     #[serde(rename = "robotsBlocked")]
     pub robots_blocked: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_full_document_with_array_metadata() {
+        let json = json!({
+            "markdown": "# Hello",
+            "metadata": {
+                "sourceURL": "https://example.com",
+                "statusCode": 200,
+                "title": "Example Page",
+                "description": ["A great page", "with multiple descriptions"],
+                "robots": ["index", "follow"],
+                "ogImage": ["https://img.jpg"],
+                "language": "en",
+                "keywords": ["rust", "sdk", "firecrawl"]
+            }
+        });
+        let doc: Document = serde_json::from_value(json).unwrap();
+        assert_eq!(doc.markdown, Some("# Hello".to_string()));
+        let meta = doc.metadata.unwrap();
+        assert_eq!(meta.title, Some("Example Page".to_string()));
+        assert_eq!(
+            meta.description,
+            Some("A great page, with multiple descriptions".to_string())
+        );
+        assert_eq!(meta.robots, Some("index, follow".to_string()));
+        assert_eq!(meta.og_image, Some("https://img.jpg".to_string()));
+        assert_eq!(meta.language, Some("en".to_string()));
+        assert_eq!(meta.keywords, Some("rust, sdk, firecrawl".to_string()));
+    }
 }
