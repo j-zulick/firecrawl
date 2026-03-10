@@ -190,7 +190,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       // Rust extraction enabled (fast / auto modes).
       try {
         const startedAt = Date.now();
-        const pdfResult = processPdf(tempFilePath);
+        const pdfResult = processPdf(tempFilePath, maxPages ?? undefined);
         const durationMs = Date.now() - startedAt;
 
         logger.info("processPdf completed", {

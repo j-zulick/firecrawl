@@ -40,9 +40,15 @@ fn to_napi_result(result: pdf_inspector::PdfProcessResult) -> PdfProcessResult {
 }
 
 /// Process a PDF file: detect type, extract text + markdown if text-based.
+/// When `max_pages` is provided, only the first N pages are extracted.
 #[napi]
-pub fn process_pdf(path: String) -> Result<PdfProcessResult> {
-  let result = rust_process_pdf(&path, PdfOptions::new()).map_err(|e| {
+pub fn process_pdf(path: String, max_pages: Option<u32>) -> Result<PdfProcessResult> {
+  let opts = match max_pages {
+    Some(n) if n > 0 => PdfOptions::new().pages(1..=n),
+    _ => PdfOptions::new(),
+  };
+
+  let result = rust_process_pdf(&path, opts).map_err(|e| {
     Error::new(
       Status::GenericFailure,
       format!("Failed to process PDF: {e}"),
