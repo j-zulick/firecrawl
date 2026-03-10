@@ -600,6 +600,56 @@ results.data.web.forEach(result => {
 });
 ```
 
+### Java
+
+Add the dependency ([Gradle/Maven](https://docs.firecrawl.dev/sdks/java#installation)):
+```groovy
+repositories {
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    implementation 'com.github.firecrawl:firecrawl-java-sdk:2.0'
+}
+```
+```java
+import dev.firecrawl.client.FirecrawlClient;
+import dev.firecrawl.model.*;
+
+FirecrawlClient client = new FirecrawlClient(
+    System.getenv("FIRECRAWL_API_KEY"), null, null
+);
+
+// Scrape a single URL
+ScrapeParams scrapeParams = new ScrapeParams();
+scrapeParams.setFormats(new String[]{"markdown"});
+FirecrawlDocument doc = client.scrapeURL("https://firecrawl.dev", scrapeParams);
+System.out.println(doc.getMarkdown());
+
+// Use the Agent for autonomous data gathering
+AgentParams agentParams = new AgentParams("Find the founders of Stripe");
+AgentResponse start = client.createAgent(agentParams);
+AgentStatusResponse result = client.getAgentStatus(start.getId());
+System.out.println(result.getData());
+
+// Crawl a website (polls until completion)
+CrawlParams crawlParams = new CrawlParams();
+crawlParams.setLimit(50);
+CrawlStatusResponse job = client.crawlURL("https://docs.firecrawl.dev", crawlParams, null, 10);
+for (FirecrawlDocument page : job.getData()) {
+    System.out.println(page.getMetadata().get("sourceURL"));
+}
+
+// Search the web
+SearchParams searchParams = new SearchParams("best web scraping tools 2024");
+searchParams.setLimit(10);
+SearchResponse results = client.search(searchParams);
+for (SearchResult r : results.getResults()) {
+    System.out.println(r.getTitle() + ": " + r.getUrl());
+}
+```
+
 ### Community SDKs
 
 - [Go SDK](https://github.com/mendableai/firecrawl-go)
