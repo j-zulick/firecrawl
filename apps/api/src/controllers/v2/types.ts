@@ -400,6 +400,13 @@ const attributesFormatWithOptions = z.strictObject({
 
 type AttributesFormatWithOptions = z.output<typeof attributesFormatWithOptions>;
 
+const queryFormatWithOptions = z.strictObject({
+  type: z.literal("query"),
+  prompt: z.string().max(10000),
+});
+
+export type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
+
 export type FormatObject =
   | { type: "markdown" }
   | { type: "html" }
@@ -411,6 +418,7 @@ export type FormatObject =
   | ChangeTrackingFormatWithOptions
   | ScreenshotFormatWithOptions
   | AttributesFormatWithOptions
+  | QueryFormatWithOptions
   | { type: "branding" };
 
 const pdfModeSchema = z.enum(["fast", "auto", "ocr"]);
@@ -519,6 +527,7 @@ const baseScrapeOptions = z.strictObject({
           screenshotFormatWithOptions,
           attributesFormatWithOptions,
           z.strictObject({ type: z.literal("branding") }),
+          queryFormatWithOptions,
         ])
         .array()
         .optional()
@@ -991,6 +1000,7 @@ export type Document = {
   extract?: any;
   json?: any;
   summary?: string;
+  answer?: string;
   branding?: BrandingProfile;
   warning?: string;
   attributes?: {
@@ -1670,6 +1680,7 @@ export const searchRequestSchema = z
                 z.strictObject({ type: z.literal("images") }),
                 z.strictObject({ type: z.literal("summary") }),
                 jsonFormatWithOptions,
+                queryFormatWithOptions,
                 screenshotFormatWithOptions,
               ])
               .array()

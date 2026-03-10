@@ -40,6 +40,7 @@ jobs:
       TEST_SUITE_SELF_HOSTED: true
       TEST_SUITE_WEBSITE: http://127.0.0.1:4321
       OPENAI_API_KEY: ${{ matrix.ai == 'openai' && secrets.OPENAI_API_KEY || '' }}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
       SEARXNG_ENDPOINT: ${{ matrix.search == 'searxng' && 'http://localhost:3434' || '' }}
       PLAYWRIGHT_MICROSERVICE_URL: ${{ matrix.engine == 'playwright' && 'http://localhost:3003/scrape' || '' }}
       PROXY_SERVER: ${{ matrix.proxy == 'proxy' && secrets.PROXY_SERVER || '' }}

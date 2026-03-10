@@ -874,6 +874,31 @@ describe("V2 Types Validation", () => {
       const result = searchRequestSchema.parse(input);
       expect(result.enterprise).toEqual(["default", "zdr"]);
     });
+
+    it("should accept search scrapeOptions with query format", () => {
+      const input: SearchRequestInput = {
+        query: "test",
+        scrapeOptions: {
+          formats: [{ type: "query", prompt: "What is Firecrawl?" }],
+        },
+      };
+
+      const result = searchRequestSchema.parse(input);
+      expect(result.scrapeOptions?.formats).toEqual([
+        { type: "query", prompt: "What is Firecrawl?" },
+      ]);
+    });
+
+    it("should reject search scrapeOptions query prompt over 10000 characters", () => {
+      const input: SearchRequestInput = {
+        query: "test",
+        scrapeOptions: {
+          formats: [{ type: "query", prompt: "a".repeat(10001) }],
+        },
+      };
+
+      expect(() => searchRequestSchema.parse(input)).toThrow();
+    });
   });
 
   describe("Type inference", () => {

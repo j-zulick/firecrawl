@@ -355,8 +355,9 @@ async function scrapeURLLoopIter(
     );
     const hasJson = hasFormatOfType(meta.options.formats, "json");
     const hasSummary = hasFormatOfType(meta.options.formats, "summary");
+    const hasQuery = hasFormatOfType(meta.options.formats, "query");
     const needsMarkdown =
-      hasMarkdown || hasChangeTracking || hasJson || hasSummary;
+      hasMarkdown || hasChangeTracking || hasJson || hasSummary || hasQuery;
 
     let checkMarkdown: string;
     const htmlSize = engineResult.html?.length ?? 0;

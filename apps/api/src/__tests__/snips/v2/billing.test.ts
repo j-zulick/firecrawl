@@ -27,7 +27,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
       const rc1 = (await creditUsage(identity)).remainingCredits;
 
       // Run all scrape operations in parallel with Promise.all
-      const [scrape1, scrape2, scrape3] = await Promise.all([
+      const [scrape1, scrape2, scrape3, scrape4] = await Promise.all([
         // scrape 1: regular fc.dev scrape (1 credit)
         scrape(
           {
@@ -63,19 +63,29 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
           },
           identity,
         ),
+
+        // scrape 3: fc.dev with query (5 credits)
+        scrape(
+          {
+            url: TEST_SUITE_WEBSITE,
+            formats: [{ type: "query", prompt: "What is Firecrawl?" }],
+          },
+          identity,
+        ),
       ]);
 
       expect(scrape1.metadata.creditsUsed).toBe(1);
       expect(scrape2.metadata.creditsUsed).toBe(1);
       expect(scrape3.metadata.creditsUsed).toBe(5);
+      expect(scrape4.metadata.creditsUsed).toBe(5);
 
-      // sum: 7 credits
+      // sum: 12 credits
 
       await sleepForBatchBilling();
 
       const rc2 = (await creditUsage(identity)).remainingCredits;
 
-      expect(rc1 - rc2).toBe(7);
+      expect(rc1 - rc2).toBe(12);
     },
     120000,
   );

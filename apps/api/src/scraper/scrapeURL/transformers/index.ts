@@ -8,6 +8,7 @@ import { extractMetadata } from "../lib/extractMetadata";
 import {
   performLLMExtract,
   performSummary,
+  performQuery,
   performCleanContent,
 } from "./llmExtract";
 import { uploadScreenshot } from "./uploadScreenshot";
@@ -81,6 +82,7 @@ async function deriveMarkdownFromHTML(
   // - changeTracking requires markdown
   // - json format requires markdown (for LLM extraction)
   // - summary format requires markdown (for summarization)
+  // - query format requires markdown (for page-level answers)
   const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
   const hasChangeTracking = hasFormatOfType(
     meta.options.formats,
@@ -88,12 +90,13 @@ async function deriveMarkdownFromHTML(
   );
   const hasJson = hasFormatOfType(meta.options.formats, "json");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
-
+  const hasQuery = hasFormatOfType(meta.options.formats, "query");
   if (
     !hasMarkdown &&
     !hasChangeTracking &&
     !hasJson &&
     !hasSummary &&
+    !hasQuery &&
     !meta.options.onlyCleanContent
   ) {
     return document;
@@ -310,6 +313,7 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasScreenshot = hasFormatOfType(meta.options.formats, "screenshot");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
   const hasBranding = hasFormatOfType(meta.options.formats, "branding");
+  const hasQueryFormat = hasFormatOfType(meta.options.formats, "query");
 
   if (!hasMarkdown && document.markdown !== undefined) {
     delete document.markdown;
@@ -424,6 +428,17 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     );
   }
 
+  if (!hasQueryFormat && document.answer !== undefined) {
+    meta.logger.warn(
+      "Removed answer from Document because query wasn't in formats -- this is wasteful and indicates a bug.",
+    );
+    delete document.answer;
+  } else if (hasQueryFormat && document.answer === undefined) {
+    meta.logger.warn(
+      "Request had format query, but there was no answer field in the result.",
+    );
+  }
+
   if (!hasBranding && document.branding !== undefined) {
     meta.logger.warn(
       "Removed branding from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
@@ -503,6 +518,7 @@ const transformerStack: Transformer[] = [
   ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
   performLLMExtract,
   performSummary,
+  performQuery,
   performAttributes,
   performAgent,
   deriveDiff,
