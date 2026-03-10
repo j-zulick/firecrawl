@@ -53,8 +53,8 @@ const engines: Engine[] = [
         "fire-engine;chrome-cdp;stealth" as const,
         "fire-engine(retry);chrome-cdp" as const,
         "fire-engine(retry);chrome-cdp;stealth" as const,
-        "fire-engine;playwright" as const,
-        "fire-engine;playwright;stealth" as const,
+        // "fire-engine;playwright" as const,
+        // "fire-engine;playwright;stealth" as const,
         "fire-engine;tlsclient" as const,
         "fire-engine;tlsclient;stealth" as const,
       ]
