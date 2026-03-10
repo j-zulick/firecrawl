@@ -102,6 +102,7 @@ Response:
 |---------|-------------|
 | [**Scrape**](#scraping) | Convert any URL to markdown, HTML, screenshots, or structured JSON |
 | [**Search**](#search) | Search the web and get full page content from results |
+| [**Browse**](#browse) | Let agents safely interact with the web |
 | [**Map**](#map) | Discover all URLs on a website instantly |
 | [**Crawl**](#crawling) | Scrape all URLs of a website with a single request |
 | [**Agent**](#agent) | Automated data gathering, just describe what you need |
@@ -253,6 +254,75 @@ results = firecrawl.search(
         "formats": ["markdown", "links"]
     }
 )
+```
+
+---
+
+## Browse
+
+Give your agents a secure browser environment. Let them run code safely to gather data and take action on the web.
+```bash
+curl -X POST 'https://api.firecrawl.dev/v2/browser' \
+  -H 'Authorization: Bearer fc-YOUR_API_KEY' \
+  -H 'Content-Type: application/json'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "cdpUrl": "wss://cdp-proxy.firecrawl.dev/cdp/550e8400-e29b-41d4-a716-446655440000",
+  "liveViewUrl": "https://liveview.firecrawl.dev/550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+### Execute Code in the Browser
+
+Run Playwright code, Python, or bash commands remotely:
+```javascript
+import Firecrawl from '@mendable/firecrawl-js';
+
+const firecrawl = new Firecrawl({ apiKey: "fc-YOUR_API_KEY" });
+
+// 1. Launch a session
+const session = await firecrawl.browser();
+
+// 2. Execute code
+const result = await firecrawl.browserExecute(session.id, {
+  code: `
+    await page.goto("https://news.ycombinator.com");
+    const title = await page.title();
+    console.log(title);
+  `,
+  language: "node",
+});
+console.log(result.result); // "Hacker News"
+
+// 3. Close
+await firecrawl.deleteBrowser(session.id);
+```
+
+### Persistent Sessions
+
+Save and reuse browser state (cookies, localStorage) across sessions:
+```javascript
+const session = await firecrawl.browser({
+  ttl: 600,
+  profile: {
+    name: "my-profile",
+    saveChanges: true,
+  },
+});
+```
+
+### agent-browser (Bash Mode)
+
+Instead of writing Playwright code, agents can send simple bash commands via [agent-browser](https://github.com/vercel-labs/agent-browser):
+```bash
+firecrawl browser "open https://example.com"
+firecrawl browser "snapshot"
+firecrawl browser "click @e5"
 ```
 
 ---
