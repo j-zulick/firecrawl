@@ -96,7 +96,7 @@ Response:
 
 ### Install the Firecrawl Skill & CLI
 
-The Firecrawl Skill is an easy way for AI agents such as [Claude Code](https://claude.ai/code), [Antigravity](https://antigravity.dev) and [OpenCode](https://opencode.ai) to use Firecrawl through the CLI.
+The Firecrawl Skill is an easy way for AI agents such as [Claude Code](https://claude.ai/code), [Antigravity](https://antigravity.google) and [OpenCode](https://opencode.ai) to use Firecrawl through the CLI.
 
 Install and configure the skill for all detected AI coding agents:
 ```bash
