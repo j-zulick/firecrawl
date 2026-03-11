@@ -66,9 +66,14 @@ export async function agentController(
     freeRequest = data;
   }
 
-  const isFreeRequest = config.USE_DB_AUTHENTICATION
+  let isFreeRequest = config.USE_DB_AUTHENTICATION
     ? !!freeRequest?.[0]?.consumed
     : true;
+
+  // If maxCredits > 2500, force it to be a paid request
+  if (req.body.maxCredits !== undefined && req.body.maxCredits > 2500) {
+    isFreeRequest = false;
+  }
 
   await logRequest({
     id: agentId,
