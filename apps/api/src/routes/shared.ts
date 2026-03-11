@@ -119,6 +119,7 @@ export function checkCreditsMiddleware(
         req.auth.team_id,
         minimum ?? 1,
       );
+      //todo(autumn) add .check call here
       if (chunk) {
         req.acuc = chunk;
       }

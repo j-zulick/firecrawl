@@ -803,6 +803,5 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
   clearInterval(browserActivityInterval);
   clearInterval(omceInserterInterval);
   clearInterval(billingTallyInterval);
-
   logger.info("All workers shut down, exiting process");
 })();

@@ -4,6 +4,10 @@ import { supabase_service } from "../../../services/supabase";
 import crypto from "crypto";
 import { z } from "zod";
 import { apiKeyToFcApiKey } from "../../../lib/parseApi";
+import {
+  autumnService,
+  isAutumnEnabled,
+} from "../../../services/autumn/autumn.service";
 
 async function addCoupon(teamId: string, integration: any) {
   if (!integration.coupon_credits) {
@@ -215,6 +219,13 @@ export async function integCreateUserController(req: Request, res: Response) {
           });
         }
 
+        if (isAutumnEnabled()) {
+          await autumnService.ensureTeamProvisioned({
+            teamId,
+            orgId: existingTeam[0].org_id,
+          });
+        }
+
         alreadyExisted = true;
 
         logger.info("Found existing team from existing user", {
@@ -229,7 +240,9 @@ export async function integCreateUserController(req: Request, res: Response) {
           .single();
         if (newOrgError) {
           logger.error("Failed to create organization", { error: newOrgError });
-          return res.status(500).json({ error: "Failed to create organization" });
+          return res
+            .status(500)
+            .json({ error: "Failed to create organization" });
         }
 
         // create a new team with this referrer, linked to the org
@@ -254,7 +267,11 @@ export async function integCreateUserController(req: Request, res: Response) {
           .update({ name: teamId })
           .eq("id", newOrg.id);
         if (orgNameError) {
-          logger.warn("Failed to update org name to team ID", { error: orgNameError, orgId: newOrg.id, teamId });
+          logger.warn("Failed to update org name to team ID", {
+            error: orgNameError,
+            orgId: newOrg.id,
+            teamId,
+          });
         }
 
         // Link team to org in join table
@@ -265,8 +282,19 @@ export async function integCreateUserController(req: Request, res: Response) {
             team_id: teamId,
           });
         if (orgLinkError) {
-          logger.error("Failed to link team to organization", { error: orgLinkError });
-          return res.status(500).json({ error: "Failed to link team to organization" });
+          logger.error("Failed to link team to organization", {
+            error: orgLinkError,
+          });
+          return res
+            .status(500)
+            .json({ error: "Failed to link team to organization" });
+        }
+
+        if (isAutumnEnabled()) {
+          await autumnService.ensureTeamProvisioned({
+            teamId,
+            orgId: newOrg.id,
+          });
         }
 
         const { error: newUserTeamError } = await supabase_service
@@ -350,6 +378,21 @@ export async function integCreateUserController(req: Request, res: Response) {
       }
 
       apiKey = apiKeyFc.key;
+
+      if (isAutumnEnabled()) {
+        // Look up org_id for the trigger-created team so ensureTeamProvisioned
+        // can evaluate the stable percent gate without a redundant query.
+        const { data: triggerTeam } = await supabase_service
+          .from("teams")
+          .select("org_id")
+          .eq("id", teamId)
+          .single();
+
+        await autumnService.ensureTeamProvisioned({
+          teamId,
+          orgId: triggerTeam?.org_id ?? undefined,
+        });
+      }
 
       await addCoupon(teamId, integration);
 

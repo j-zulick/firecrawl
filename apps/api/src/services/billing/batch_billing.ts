@@ -5,6 +5,7 @@ import { supabase_service } from "../supabase";
 import * as Sentry from "@sentry/node";
 import { withAuth } from "../../lib/withAuth";
 import { setCachedACUC, setCachedACUCTeam } from "../../controllers/auth";
+import { autumnService } from "../autumn/autumn.service";
 
 // Configuration constants
 const BATCH_KEY = "billing_batch";
@@ -21,6 +22,8 @@ interface BillingOperation {
   is_extract: boolean;
   timestamp: string;
   api_key_id: number | null;
+  /** True if credits were pre-reserved in Autumn at request time via reserveCredits(). */
+  autumnReserved: boolean;
 }
 
 // Grouped billing operations for batch processing
@@ -52,7 +55,14 @@ async function releaseLock() {
   logger.info("🔓 Released billing batch processing lock");
 }
 
-// Main function to process the billing batch
+/**
+ * Dequeues pending billing operations from Redis, groups them by team, and
+ * commits each group to Supabase via the `bill_team_6` RPC.
+ *
+ * For groups where credits were pre-reserved in Autumn (`autumnReserved: true`),
+ * a refund is issued on failure; nothing is done on success. For unreserved
+ * groups (legacy / BullMQ path), Autumn is updated post-commit.
+ */
 export async function processBillingBatch() {
   const redis = getRedisConnection();
 
@@ -120,9 +130,16 @@ export async function processBillingBatch() {
         continue;
       }
 
+      // Compute per-group credit split before billing so the catch block can
+      // issue a refund even if supaBillTeam throws.
+      const reservedCredits = group.operations
+        .filter(op => op.autumnReserved)
+        .reduce((sum, op) => sum + op.credits, 0);
+      const unreservedCredits = group.total_credits - reservedCredits;
+
       try {
         // Execute the actual billing
-        await withAuth(supaBillTeam, {
+        const billingResult = await withAuth(supaBillTeam, {
           success: true,
           message: "No DB, bypassed.",
         })(
@@ -134,9 +151,43 @@ export async function processBillingBatch() {
           group.is_extract,
         );
 
+        if (!billingResult.success) {
+          logger.warn(
+            `⚠️ Billing returned success: false for team ${group.team_id}, skipping Autumn tracking`,
+            { billingResult, team_id: group.team_id, credits: group.total_credits },
+          );
+          // Refund only the credits that were actually reserved in Autumn.
+          if (reservedCredits > 0) {
+            void autumnService.refundCredits({
+              teamId: group.team_id,
+              value: reservedCredits,
+              properties: {
+                source: "processBillingBatch_failure",
+                apiKeyId: group.api_key_id,
+                subscriptionId: group.subscription_id,
+              },
+            });
+          }
+          continue;
+        }
+
         logger.info(
-          `✅ Successfully billed team ${group.team_id} for ${group.total_credits} ${group.is_extract ? "tokens" : "credits"}`,
+          `✅ Successfully billed team ${group.team_id} for ${group.total_credits} credits`,
         );
+
+        // Track only unreserved credits post-commit; reserved credits were
+        // already recorded in Autumn at request time.
+        if (unreservedCredits > 0) {
+          void autumnService.reserveCredits({
+            teamId: group.team_id,
+            value: unreservedCredits,
+            properties: {
+              source: "processBillingBatch",
+              apiKeyId: group.api_key_id,
+              subscriptionId: group.subscription_id,
+            },
+          });
+        }
       } catch (error) {
         logger.error(`❌ Failed to bill team ${group.team_id}`, {
           error,
@@ -149,6 +200,18 @@ export async function processBillingBatch() {
             credits: group.total_credits,
           },
         });
+        // Billing threw before committing — refund any Autumn-reserved credits.
+        if (reservedCredits > 0) {
+          void autumnService.refundCredits({
+            teamId: group.team_id,
+            value: reservedCredits,
+            properties: {
+              source: "processBillingBatch_exception",
+              apiKeyId: group.api_key_id,
+              subscriptionId: group.subscription_id,
+            },
+          });
+        }
       }
     }
 
@@ -182,13 +245,20 @@ export function startBillingBatchProcessing() {
   batchInterval.unref();
 }
 
-// Add a billing operation to the queue
+/**
+ * Enqueues a billing operation for async batch processing.
+ *
+ * Pass `autumnReserved: true` if credits were already reserved in Autumn via
+ * `autumnService.reserveCredits()` — the batch processor will refund on
+ * `bill_team_6` failure and skip re-tracking on success.
+ */
 export async function queueBillingOperation(
   team_id: string,
   subscription_id: string | null | undefined,
   credits: number,
   api_key_id: number | null,
   is_extract: boolean = false,
+  autumnReserved: boolean = false,
 ) {
   // Skip queuing for preview teams
   if (team_id === "preview" || team_id.startsWith("preview_")) {
@@ -211,6 +281,7 @@ export async function queueBillingOperation(
       is_extract,
       timestamp: new Date().toISOString(),
       api_key_id,
+      autumnReserved,
     };
 
     // Add operation to Redis list
@@ -320,7 +391,11 @@ async function supaBillTeam(
     return { success: false, error };
   }
 
-  await getRedisConnection().sadd("billed_teams", team_id);
+  // Fire-and-forget — a Redis failure here must not trigger a false Autumn refund
+  // after bill_team_6 has already committed.
+  getRedisConnection().sadd("billed_teams", team_id).catch(err => {
+    _logger.warn("Failed to add team to billed_teams set", { err, team_id });
+  });
 
   // Update cached ACUC to reflect the new credit usage
   (async () => {

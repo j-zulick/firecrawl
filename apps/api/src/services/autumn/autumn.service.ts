@@ -1,0 +1,391 @@
+import { config } from "../../config";
+import { logger } from "../../lib/logger";
+import { supabase_rr_service } from "../supabase";
+import { autumnClient } from "./client";
+import type {
+  CreateEntityParams,
+  CreateEntityResult,
+  EnsureOrgProvisionedParams,
+  EnsureTeamProvisionedParams,
+  GetEntityParams,
+  GetOrCreateCustomerParams,
+  TrackCreditsParams,
+  TrackParams,
+} from "./types";
+
+const CREDITS_FEATURE_ID = "CREDITS";
+
+/**
+ * Deterministic bucket for an org UUID.
+ *
+ * Takes the first 8 hex digits of the id (after stripping dashes) and maps
+ * them to an integer in [0, 100).  The same orgId always lands in the same
+ * bucket so the experiment decision is stable across requests.
+ */
+export function orgBucket(orgId: string): number {
+  const hex = orgId.replace(/-/g, "").slice(0, 8);
+  return parseInt(hex, 16) % 100;
+}
+
+/**
+ * Returns true when the Autumn experiment is active.
+ *
+ * Without an orgId the check is a simple on/off flag — useful as a fast
+ * bail-out before the orgId is known.  When an orgId is supplied the
+ * stable percent gate is also evaluated so the same org always gets the
+ * same answer.
+ *
+ * Only checked at the top-level billing entry point (`reserveCredits`).
+ * NOT checked by `refundCredits` (already guarded by `autumnReserved`) or
+ * `ensureTeamProvisioned` (handled by firecrawl-web edge functions
+ * independently).
+ */
+export function isAutumnEnabled(orgId?: string): boolean {
+  if (config.AUTUMN_EXPERIMENT !== "true") return false;
+  if (!orgId || config.AUTUMN_EXPERIMENT_PERCENT >= 100) return true;
+  return orgBucket(orgId) < config.AUTUMN_EXPERIMENT_PERCENT;
+}
+
+const AUTUMN_DEFAULT_PLAN_ID = "free";
+/**
+ * Size-bounded Map with FIFO eviction. When the map is at capacity the oldest
+ * inserted entry is removed before inserting the new one, keeping memory usage
+ * at most O(max) regardless of how many unique keys are seen over time.
+ */
+export class BoundedMap<K, V> extends Map<K, V> {
+  constructor(private readonly max: number) {
+    super();
+  }
+
+  set(key: K, value: V): this {
+    if (!this.has(key) && this.size >= this.max) {
+      this.delete(this.keys().next().value as K);
+    }
+    return super.set(key, value);
+  }
+}
+
+/**
+ * Size-bounded Set with FIFO eviction. Mirrors BoundedMap for set semantics.
+ */
+export class BoundedSet<V> extends Set<V> {
+  constructor(private readonly max: number) {
+    super();
+  }
+
+  add(value: V): this {
+    if (!this.has(value) && this.size >= this.max) {
+      this.delete(this.values().next().value as V);
+    }
+    return super.add(value);
+  }
+}
+
+/**
+ * Wraps Autumn customer/entity provisioning and usage tracking for team credit billing.
+ */
+export class AutumnService {
+  private customerOrgCache = new BoundedMap<string, string>(50_000);
+  private ensuredOrgs = new BoundedSet<string>(50_000);
+  private ensuredTeams = new BoundedSet<string>(50_000);
+
+  private isPreviewTeam(teamId: string): boolean {
+    return teamId === "preview" || teamId.startsWith("preview_");
+  }
+
+  private async lookupOrgIdForTeam(teamId: string): Promise<string> {
+    const { data, error } = await supabase_rr_service
+      .from("teams")
+      .select("org_id")
+      .eq("id", teamId)
+      .single();
+
+    if (error) throw error;
+    if (!data?.org_id) {
+      throw new Error(`Missing org_id for team ${teamId}`);
+    }
+
+    return data.org_id;
+  }
+
+  private getErrorStatus(error: unknown): number | undefined {
+    const status = (error as any)?.statusCode ?? (error as any)?.status;
+    if (typeof status === "number") return status;
+    const responseStatus = (error as any)?.response?.status;
+    return typeof responseStatus === "number" ? responseStatus : undefined;
+  }
+
+  private async getOrCreateCustomer({
+    customerId,
+    name,
+    email,
+    autoEnablePlanId = AUTUMN_DEFAULT_PLAN_ID,
+  }: GetOrCreateCustomerParams): Promise<unknown | null> {
+    if (!autumnClient) return null;
+    if (!customerId) return null;
+
+    try {
+      const customer = await autumnClient.customers.getOrCreate({
+        customerId,
+        name: name ?? undefined,
+        email: email ?? undefined,
+        autoEnablePlanId,
+      });
+      logger.info("Autumn getOrCreateCustomer succeeded", { customerId });
+      return customer;
+    } catch (error) {
+      logger.warn("Autumn getOrCreateCustomer failed", { customerId, error });
+      return null;
+    }
+  }
+
+  private async getEntity({
+    customerId,
+    entityId,
+  }: GetEntityParams): Promise<unknown | null> {
+    if (!autumnClient) return null;
+
+    try {
+      return await autumnClient.entities.get({ customerId, entityId });
+    } catch (error) {
+      const status = this.getErrorStatus(error);
+      if (status === 404) {
+        return null;
+      }
+      logger.warn("Autumn getEntity failed", { customerId, entityId, error });
+      return null;
+    }
+  }
+
+  private async createEntity({
+    customerId,
+    entityId,
+    featureId,
+    name,
+  }: CreateEntityParams): Promise<CreateEntityResult> {
+    if (!autumnClient) return { ok: false, conflict: false };
+
+    try {
+      const entity = await autumnClient.entities.create({
+        customerId,
+        entityId,
+        featureId,
+        name: name ?? undefined,
+      });
+      logger.info("Autumn createEntity succeeded", {
+        customerId,
+        entityId,
+        featureId,
+      });
+      return { ok: true, entity };
+    } catch (error) {
+      const status = this.getErrorStatus(error);
+      if (status === 409) {
+        // Entity already exists — treat as success for provisioning purposes.
+        return { ok: false, conflict: true };
+      }
+      logger.warn("Autumn createEntity failed", {
+        customerId,
+        entityId,
+        featureId,
+        error,
+      });
+      return { ok: false, conflict: false };
+    }
+  }
+
+  private async track({
+    customerId,
+    entityId,
+    featureId,
+    value,
+    properties,
+  }: TrackParams): Promise<void> {
+    if (!autumnClient) return;
+
+    try {
+      await autumnClient.track({
+        customerId,
+        entityId,
+        featureId,
+        value,
+        properties,
+      });
+      logger.info("Autumn track succeeded", {
+        customerId,
+        entityId,
+        featureId,
+        value,
+      });
+    } catch (error) {
+      logger.warn("Autumn track failed", {
+        customerId,
+        entityId,
+        featureId,
+        value,
+        error,
+      });
+    }
+  }
+
+  /**
+   * Ensures the Autumn customer exists for an org, caching successful lookups in-process.
+   */
+  async ensureOrgProvisioned({
+    orgId,
+    name,
+    email,
+  }: EnsureOrgProvisionedParams): Promise<void> {
+    if (this.ensuredOrgs.has(orgId)) return;
+    const customer = await this.getOrCreateCustomer({
+      customerId: orgId,
+      name,
+      email,
+    });
+    if (customer) {
+      this.ensuredOrgs.add(orgId);
+    }
+  }
+
+  /**
+   * Ensures the Autumn entity exists for a team under its org customer.
+   *
+   * The `ensuredTeams` check is performed first so that already-provisioned
+   * teams incur no HTTP calls — not even the `ensureOrgProvisioned` round-trip.
+   */
+  async ensureTeamProvisioned({
+    teamId,
+    orgId,
+    name,
+  }: EnsureTeamProvisionedParams): Promise<void> {
+    if (!autumnClient) return;
+    if (this.isPreviewTeam(teamId)) return;
+    // Fast path: team is already fully provisioned.
+    if (this.ensuredTeams.has(teamId)) return;
+
+    try {
+      const resolvedOrgId = orgId ?? (await this.lookupOrgIdForTeam(teamId));
+      this.customerOrgCache.set(teamId, resolvedOrgId);
+      await this.ensureOrgProvisioned({ orgId: resolvedOrgId });
+
+      const entity = await this.getEntity({
+        customerId: resolvedOrgId,
+        entityId: teamId,
+      });
+
+      if (!entity) {
+        const result = await this.createEntity({
+          customerId: resolvedOrgId,
+          entityId: teamId,
+          featureId: CREDITS_FEATURE_ID,
+          name,
+        });
+        if (result.ok || result.conflict) {
+          // Entity was just created, or already existed (409 race) — either way
+          // it's present. No need for a second getEntity confirmation call.
+          this.ensuredTeams.add(teamId);
+        }
+        // Genuine error: leave ensuredTeams empty so the next request retries.
+        return;
+      }
+
+      this.ensuredTeams.add(teamId);
+    } catch (error) {
+      logger.warn("Autumn ensureTeamProvisioned failed", { teamId, error });
+    }
+  }
+
+  /**
+   * Resolves the orgId for a team, returning the cached value when available
+   * and populating the cache on miss.  Does NOT provision anything.
+   */
+  private async resolveOrgId(teamId: string): Promise<string> {
+    const cached = this.customerOrgCache.get(teamId);
+    if (cached) return cached;
+    const orgId = await this.lookupOrgIdForTeam(teamId);
+    this.customerOrgCache.set(teamId, orgId);
+    return orgId;
+  }
+
+  /**
+   * Resolves and warms the Autumn customer/entity context needed before tracking usage.
+   *
+   * When both caches are warm (orgId known + team fully provisioned) we return
+   * immediately without calling ensureTeamProvisioned, avoiding redundant
+   * map/set lookups on every billing operation.
+   */
+  private async ensureTrackingContext(teamId: string): Promise<string> {
+    const orgId = await this.resolveOrgId(teamId);
+    if (!this.ensuredTeams.has(teamId)) {
+      await this.ensureTeamProvisioned({ teamId, orgId });
+    }
+    return orgId;
+  }
+
+  /**
+   * Records a credit usage event in Autumn at request time.
+   * Returns true on success, false if Autumn is unavailable or an error occurs.
+   *
+   * The experiment gate is evaluated here — once per request — using a stable
+   * bucket derived from the org UUID so the same org always gets the same
+   * answer for a given AUTUMN_EXPERIMENT_PERCENT value.
+   */
+  async reserveCredits({
+    teamId,
+    value,
+    properties,
+  }: TrackCreditsParams): Promise<boolean> {
+    if (!isAutumnEnabled()) return false; // fast bail-out: experiment off
+    if (!autumnClient) return false;
+    if (this.isPreviewTeam(teamId)) return false;
+
+    try {
+      const orgId = await this.resolveOrgId(teamId);
+      if (!isAutumnEnabled(orgId)) return false; // stable percent gate
+
+      const customerId = await this.ensureTrackingContext(teamId);
+      await this.track({
+        customerId,
+        entityId: teamId,
+        featureId: CREDITS_FEATURE_ID,
+        value,
+        properties,
+      });
+      return true;
+    } catch (error) {
+      logger.warn("Autumn reserveCredits failed", {
+        teamId,
+        value,
+        error,
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Reverses a prior reserveCredits call by tracking a negative usage event.
+   */
+  async refundCredits({
+    teamId,
+    value,
+    properties,
+  }: TrackCreditsParams): Promise<void> {
+    if (!autumnClient) return;
+    if (this.isPreviewTeam(teamId)) return;
+
+    try {
+      const customerId = await this.ensureTrackingContext(teamId);
+      await this.track({
+        customerId,
+        entityId: teamId,
+        featureId: CREDITS_FEATURE_ID,
+        value: -value,
+        properties: { ...properties, source: "autumn_refund" },
+      });
+    } catch (error) {
+      logger.warn("Autumn refundCredits failed", { teamId, value, error });
+    }
+  }
+}
+
+export const autumnService = new AutumnService();
