@@ -148,7 +148,14 @@ async function performExtraction(
         cost_tracking: costTracking.toJSON(),
       });
 
-      await billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(
+      await billTeam(
+        teamId,
+        subId,
+        creditsToBill,
+        apiKeyId,
+        { endpoint: "extract" },
+        logger,
+      ).catch(
         error => {
           logger.error(
             `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
@@ -659,7 +666,14 @@ async function performExtraction(
           error: "Failed to transform array to object",
           cost_tracking: costTracking.toJSON(),
         });
-        await billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(
+        await billTeam(
+          teamId,
+          subId,
+          creditsToBill,
+          apiKeyId,
+          { endpoint: "extract" },
+          logger,
+        ).catch(
           error => {
             logger.error(
               `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
@@ -766,7 +780,14 @@ async function performExtraction(
           model_kind: "fire-1",
           cost_tracking: costTracking.toJSON(),
         });
-        await billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(
+        await billTeam(
+          teamId,
+          subId,
+          creditsToBill,
+          apiKeyId,
+          { endpoint: "extract" },
+          logger,
+        ).catch(
           error => {
             logger.error(
               `Failed to bill team ${teamId} for thinking tokens: ${error}`,
@@ -789,7 +810,14 @@ async function performExtraction(
         logger.error(errorMessage);
         const tokens_billed = 300 + calculateThinkingCost(costTracking);
         const creditsToBill = Math.ceil(tokens_billed / 15);
-        await billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(
+        await billTeam(
+          teamId,
+          subId,
+          creditsToBill,
+          apiKeyId,
+          { endpoint: "extract" },
+          logger,
+        ).catch(
           error => {
             logger.error(
               `Failed to bill team ${teamId} for thinking tokens: ${error}`,
@@ -976,7 +1004,14 @@ async function performExtraction(
     const creditsToBill = Math.ceil(tokensToBill / 15);
 
     // Bill team for usage
-    await billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(
+    await billTeam(
+      teamId,
+      subId,
+      creditsToBill,
+      apiKeyId,
+      { endpoint: "extract" },
+      logger,
+    ).catch(
       error => {
         logger.error(
           `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
@@ -1039,7 +1074,14 @@ async function performExtraction(
   } catch (error) {
     const tokens_billed = 300 + calculateThinkingCost(costTracking);
     const creditsToBill = Math.ceil(tokens_billed / 15);
-    await billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(
+    await billTeam(
+      teamId,
+      subId,
+      creditsToBill,
+      apiKeyId,
+      { endpoint: "extract" },
+      logger,
+    ).catch(
       error => {
         logger.error(
           `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,

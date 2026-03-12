@@ -174,6 +174,7 @@ export async function batchScrapeController(
     });
   }
   logger.debug("Using job priority " + jobPriority, { jobPriority });
+  const billing = { endpoint: "batch_scrape" as const };
 
   const jobs = urls.map(x => ({
     jobId: uuidv7(),
@@ -185,6 +186,7 @@ export async function batchScrapeController(
       scrapeOptions,
       origin: "api",
       integration: req.body.integration,
+      billing,
       crawl_id: id,
       sitemapped: true,
       v1: true,

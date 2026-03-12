@@ -201,6 +201,9 @@ describe("ensureTeamProvisioned", () => {
     // Only one getEntity call (no confirmation get).
     expect(mockEntityGet).toHaveBeenCalledTimes(1);
     expect(mockEntityCreate).toHaveBeenCalledTimes(1);
+    expect(mockEntityCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ featureId: "TEAM" }),
+    );
   });
 
   it("marks team as ensured on 409 conflict without a second getEntity", async () => {
@@ -286,7 +289,7 @@ describe("reserveCredits", () => {
     const result = await svc.reserveCredits({
       teamId: "team-1",
       value: 42,
-      properties: { source: "test" },
+      properties: { source: "test", endpoint: "extract" },
     });
 
     expect(result).toBe(true);
@@ -296,6 +299,7 @@ describe("reserveCredits", () => {
       (c: any[]) => c[0].featureId === "CREDITS" && c[0].value === 42,
     );
     expect(usageCall).toBeDefined();
+    expect((usageCall as any[])[0].properties?.endpoint).toBe("extract");
   });
 });
 
@@ -306,13 +310,18 @@ describe("reserveCredits", () => {
 describe("refundCredits", () => {
   it("calls track with the negated value", async () => {
     const svc = makeService();
-    await svc.refundCredits({ teamId: "team-1", value: 30 });
+    await svc.refundCredits({
+      teamId: "team-1",
+      value: 30,
+      properties: { endpoint: "extract" },
+    });
 
     const refundCall = mockTrack.mock.calls.find(
       (c: any[]) => c[0].value === -30,
     );
     expect(refundCall).toBeDefined();
     expect((refundCall as any[])[0].properties?.source).toBe("autumn_refund");
+    expect((refundCall as any[])[0].properties?.endpoint).toBe("extract");
   });
 
   it("is a no-op when autumnClient is null", async () => {

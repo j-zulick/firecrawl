@@ -80,14 +80,19 @@ async function searchHelper(
   );
 
   if (justSearch) {
-    billTeam(team_id, subscription_id, res.length, api_key_id, logger).catch(
-      error => {
-        logger.error(
-          `Failed to bill team ${team_id} for ${res.length} credits: ${error}`,
-        );
-        // Optionally, you could notify an admin or add to a retry queue here
-      },
-    );
+    billTeam(
+      team_id,
+      subscription_id,
+      res.length,
+      api_key_id,
+      { endpoint: "search" },
+      logger,
+    ).catch(error => {
+      logger.error(
+        `Failed to bill team ${team_id} for ${res.length} credits: ${error}`,
+      );
+      // Optionally, you could notify an admin or add to a retry queue here
+    });
     return { success: true, data: res, returnCode: 200 };
   }
 
@@ -101,6 +106,7 @@ async function searchHelper(
   }
 
   const jobPriority = await getJobPriority({ team_id, basePriority: 20 });
+  const billing = { endpoint: "search" as const };
 
   // filter out social media links
 
@@ -120,6 +126,7 @@ async function searchHelper(
         apiKeyId: api_key_id,
         origin: req.body.origin ?? defaultOrigin,
         requestId: jobId,
+        billing,
       } satisfies ScrapeJobSingleUrls,
     };
   });

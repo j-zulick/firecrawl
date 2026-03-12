@@ -9,6 +9,10 @@ import { autoCharge } from "./auto_charge";
 import { getValue, setValue } from "../redis";
 import { queueBillingOperation } from "./batch_billing";
 import { autumnService } from "../autumn/autumn.service";
+import {
+  toAutumnBillingProperties,
+  type BillingMetadata,
+} from "./types";
 import type { Logger } from "winston";
 
 /**
@@ -19,6 +23,7 @@ export async function billTeam(
   subscription_id: string | null | undefined,
   credits: number,
   api_key_id: number | null,
+  billing: BillingMetadata,
   logger?: Logger,
 ) {
   return withAuth(
@@ -27,6 +32,7 @@ export async function billTeam(
       subscription_id: string | null | undefined,
       credits: number,
       api_key_id: number | null,
+      billing: BillingMetadata,
       logger: Logger | undefined,
     ) => {
       // Reserve in Autumn at request time; await so autumnReserved is accurate.
@@ -34,19 +40,24 @@ export async function billTeam(
       const autumnReserved = await autumnService.reserveCredits({
         teamId: team_id,
         value: credits,
-        properties: { source: "billTeam", apiKeyId: api_key_id },
+        properties: {
+          source: "billTeam",
+          ...toAutumnBillingProperties(billing),
+          apiKeyId: api_key_id,
+        },
       });
       return queueBillingOperation(
         team_id,
         subscription_id,
         credits,
         api_key_id,
+        billing,
         false,
         autumnReserved,
       );
     },
     { success: true, message: "No DB, bypassed." },
-  )(team_id, subscription_id, credits, api_key_id, logger);
+  )(team_id, subscription_id, credits, api_key_id, billing, logger);
 }
 
 type CheckTeamCreditsResponse = {

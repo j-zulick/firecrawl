@@ -8,6 +8,7 @@ import { NuQJob } from "../services/worker/nuq";
 import { processJobInternal } from "../services/worker/scrape-worker";
 import { ScrapeJobData } from "../types";
 import { SearchV2Response } from "../lib/entities";
+import type { BillingMetadata } from "../services/billing/types";
 
 export interface DocumentWithCostTracking {
   document: Document;
@@ -35,6 +36,7 @@ interface ScrapeSearchOptions {
   apiKeyId: number | null;
   zeroDataRetention?: boolean;
   requestId?: string;
+  billing?: BillingMetadata;
 }
 
 async function scrapeSearchResultDirect(
@@ -83,6 +85,7 @@ async function scrapeSearchResultDirect(
         zeroDataRetention,
         apiKeyId: options.apiKeyId,
         requestId: options.requestId,
+        billing: options.billing,
       },
     };
 

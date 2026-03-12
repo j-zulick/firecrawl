@@ -91,6 +91,7 @@ async function scrapeHelper(
       internalOptions,
       origin: req.body.origin ?? defaultOrigin,
       integration: req.body.integration,
+      billing: { endpoint: "scrape" },
       startTime: Date.now(),
       zeroDataRetention: false, // not supported on v0
       apiKeyId,

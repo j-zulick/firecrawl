@@ -171,6 +171,7 @@ export async function crawlController(
       internalOptions: sc.internalOptions,
       origin: req.body.origin,
       integration: req.body.integration,
+      billing: { endpoint: "crawl" },
       crawl_id: id,
       webhook: req.body.webhook,
       v1: true,

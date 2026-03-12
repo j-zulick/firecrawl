@@ -852,7 +852,7 @@ export async function performExtraction_F0(
   const creditsToBill = Math.ceil(tokensToBill / 15);
 
   // Bill team for usage
-  billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(error => {
+  billTeam(teamId, subId, creditsToBill, apiKeyId, { endpoint: "extract" }, logger).catch(error => {
     logger.error(
       `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
     );

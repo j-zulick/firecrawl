@@ -30,6 +30,7 @@ import {
   StoredCrawl,
 } from "../../lib/crawl-redis";
 import { redisEvictConnection } from "../redis";
+import { resolveBillingMetadata } from "../billing/types";
 import {
   _addScrapeJobToBullMQ,
   addScrapeJob,
@@ -115,11 +116,17 @@ async function billScrapeJob(
       config.USE_DB_AUTHENTICATION
     ) {
       try {
+        const billing = resolveBillingMetadata({
+          billing: job.data.billing,
+          crawlId: job.data.crawl_id,
+          crawlerOptions: job.data.crawlerOptions,
+        });
         const billingJobId = uuidv7();
         logger.debug(
           `Adding billing job to queue for team ${job.data.team_id}`,
           {
             billingJobId,
+            billing,
             credits: creditsToBeBilled,
             is_extract: false,
           },
@@ -132,6 +139,7 @@ async function billScrapeJob(
             team_id: job.data.team_id,
             subscription_id: undefined,
             credits: creditsToBeBilled,
+            billing,
             is_extract: false,
             timestamp: new Date().toISOString(),
             originating_job_id: job.id,
@@ -408,6 +416,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                     integration: job.data.integration,
                     crawl_id: job.data.crawl_id,
                     requestId: job.data.requestId,
+                    billing: job.data.billing,
                     webhook: job.data.webhook,
                     v1: job.data.v1,
                     zeroDataRetention: job.data.zeroDataRetention,
@@ -797,6 +806,7 @@ async function addKickoffSitemapJob(
       integration: sourceJob.data.integration,
       crawl_id: sourceJob.data.crawl_id,
       requestId: sourceJob.data.requestId,
+      billing: sourceJob.data.billing,
       webhook: sourceJob.data.webhook,
       v1: sourceJob.data.v1,
       apiKeyId: sourceJob.data.apiKeyId,
@@ -849,6 +859,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         integration: job.data.integration,
         crawl_id: job.data.crawl_id,
         requestId: job.data.requestId,
+        billing: job.data.billing,
         webhook: job.data.webhook,
         v1: job.data.v1,
         isCrawlSourceScrape: true,
@@ -936,6 +947,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
             integration: job.data.integration,
             crawl_id: job.data.crawl_id,
             requestId: job.data.requestId,
+            billing: job.data.billing,
             sitemapped: true,
             webhook: job.data.webhook,
             v1: job.data.v1,
@@ -1048,6 +1060,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
           integration: job.data.integration,
           crawl_id: job.data.crawl_id,
           requestId: job.data.requestId,
+          billing: job.data.billing,
           sitemapped: true,
           webhook: job.data.webhook,
           v1: job.data.v1,

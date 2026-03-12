@@ -246,7 +246,10 @@ export class WebCrawler {
             break;
           default:
             // Use the static enum message for other cases
-            fancyDenialReasons.set(key, DenialReason[value]);
+            fancyDenialReasons.set(
+              key,
+              DenialReason[value as keyof typeof DenialReason] ?? value,
+            );
         }
       });
 

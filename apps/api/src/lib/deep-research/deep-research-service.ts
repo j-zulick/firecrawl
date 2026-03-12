@@ -425,7 +425,14 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
       json: finalAnalysisJson,
     });
     // Bill team for usage based on URLs analyzed
-    billTeam(teamId, subId, credits_billed, apiKeyId, logger).catch(error => {
+    billTeam(
+      teamId,
+      subId,
+      credits_billed,
+      apiKeyId,
+      { endpoint: "deep_research" },
+      logger,
+    ).catch(error => {
       logger.error(
         `Failed to bill team ${teamId} for ${urlsAnalyzed} URLs analyzed`,
         { teamId, count: urlsAnalyzed, error },

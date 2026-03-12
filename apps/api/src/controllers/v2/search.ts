@@ -18,6 +18,7 @@ import {
   captureExceptionWithZdrCheck,
 } from "../../services/sentry";
 import { executeSearch } from "../../search/execute";
+import type { BillingMetadata } from "../../services/billing/types";
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -72,6 +73,9 @@ export async function searchController(
 
     const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
     const agentRequestId = req.body.__agentInterop?.requestId ?? null;
+    const billing: BillingMetadata = req.body.__agentInterop
+      ? { endpoint: "agent" as const }
+      : { endpoint: "search" as const };
 
     logger = logger.child({
       version: "v2",
@@ -122,6 +126,7 @@ export async function searchController(
         requestId: agentRequestId ?? jobId,
         bypassBilling: !shouldBill,
         zeroDataRetention: isZDROrAnon,
+        billing,
       },
       logger,
     );
@@ -133,6 +138,7 @@ export async function searchController(
         req.acuc?.sub_id ?? undefined,
         result.searchCredits,
         req.acuc?.api_key_id ?? null,
+        billing,
       ).catch(error =>
         logger.error(
           `Failed to bill team ${req.acuc?.sub_id} for ${result.searchCredits} credits: ${error}`,

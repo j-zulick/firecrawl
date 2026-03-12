@@ -13,6 +13,7 @@ import type {
   TrackParams,
 } from "./types";
 
+const TEAM_FEATURE_ID = "TEAM";
 const CREDITS_FEATURE_ID = "CREDITS";
 
 /**
@@ -277,10 +278,10 @@ export class AutumnService {
         const result = await this.createEntity({
           customerId: resolvedOrgId,
           entityId: teamId,
-          featureId: CREDITS_FEATURE_ID,
+          featureId: TEAM_FEATURE_ID,
           name,
         });
-        if (result.ok || result.conflict) {
+        if (result.ok || ("conflict" in result && result.conflict)) {
           // Entity was just created, or already existed (409 race) — either way
           // it's present. No need for a second getEntity confirmation call.
           this.ensuredTeams.add(teamId);

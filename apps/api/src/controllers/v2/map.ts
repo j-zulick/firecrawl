@@ -129,6 +129,7 @@ export async function mapController(
     req.acuc?.sub_id ?? undefined,
     1,
     req.acuc?.api_key_id ?? null,
+    { endpoint: "map" },
   ).catch(error => {
     logger.error(
       `Failed to bill team ${req.auth.team_id} for 1 credit: ${error}`,

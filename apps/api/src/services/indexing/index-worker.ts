@@ -16,6 +16,7 @@ import {
   queueBillingOperation,
   startBillingBatchProcessing,
 } from "../billing/batch_billing";
+import { resolveBillingMetadata } from "../billing/types";
 import systemMonitor from "../system-monitor";
 import { v7 as uuidv7 } from "uuid";
 import {
@@ -80,7 +81,7 @@ const processBillingJobInternal = async (token: string, job: Job) => {
       await processBillingBatch();
     } else if (job.name === "bill_team") {
       // This is an individual billing operation that should be queued for batch processing
-      const { team_id, subscription_id, credits, is_extract, api_key_id } =
+      const { team_id, subscription_id, credits, billing, endpoint, is_extract, api_key_id } =
         job.data;
 
       logger.info(`Adding team ${team_id} billing operation to batch queue`, {
@@ -95,6 +96,10 @@ const processBillingJobInternal = async (token: string, job: Job) => {
         subscription_id,
         credits,
         api_key_id ?? null,
+        resolveBillingMetadata({
+          billing: billing ?? (endpoint ? { endpoint } : undefined),
+          isExtract: is_extract,
+        }),
         is_extract,
       );
     } else {

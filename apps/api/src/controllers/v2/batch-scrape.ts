@@ -28,6 +28,7 @@ import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { checkPermissions } from "../../lib/permissions";
 import { crawlGroup } from "../../services/worker/nuq";
 import { logRequest } from "../../services/logging/log_job";
+import type { BillingMetadata } from "../../services/billing/types";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -68,6 +69,9 @@ export async function batchScrapeController(
   }
 
   const id = req.body.appendToId ?? uuidv7();
+  const billing: BillingMetadata = req.body.__agentInterop
+    ? { endpoint: "agent" as const }
+    : { endpoint: "batch_scrape" as const };
   const logger = _logger.child({
     crawlId: id,
     batchScrapeId: id,
@@ -208,6 +212,7 @@ export async function batchScrapeController(
       scrapeOptions,
       origin: "api",
       integration: req.body.integration,
+      billing,
       crawl_id: id,
       requestId: req.body.__agentInterop?.requestId ?? undefined,
       bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
