@@ -49,9 +49,13 @@ export async function agentController(
     throw new Error("Agent beta is not enabled.");
   }
 
+  // If maxCredits > 2500, skip free request consumption — this is always a paid request
+  const highCreditRequest =
+    req.body.maxCredits !== undefined && req.body.maxCredits > 2500;
+
   let freeRequest: any;
 
-  if (config.USE_DB_AUTHENTICATION) {
+  if (config.USE_DB_AUTHENTICATION && !highCreditRequest) {
     const { data, error: freeRequestError } = await supabase_service.rpc(
       "agent_consume_free_request_if_left",
       {
@@ -66,9 +70,11 @@ export async function agentController(
     freeRequest = data;
   }
 
-  const isFreeRequest = config.USE_DB_AUTHENTICATION
-    ? !!freeRequest?.[0]?.consumed
-    : true;
+  const isFreeRequest = highCreditRequest
+    ? false
+    : config.USE_DB_AUTHENTICATION
+      ? !!freeRequest?.[0]?.consumed
+      : true;
 
   await logRequest({
     id: agentId,
