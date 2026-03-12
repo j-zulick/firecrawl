@@ -153,7 +153,7 @@ async function performExtraction(
         subId,
         creditsToBill,
         apiKeyId,
-        { endpoint: "extract" },
+        { endpoint: "extract", jobId: extractId },
         logger,
       ).catch(
         error => {
@@ -671,7 +671,7 @@ async function performExtraction(
           subId,
           creditsToBill,
           apiKeyId,
-          { endpoint: "extract" },
+          { endpoint: "extract", jobId: extractId },
           logger,
         ).catch(
           error => {
@@ -785,7 +785,7 @@ async function performExtraction(
           subId,
           creditsToBill,
           apiKeyId,
-          { endpoint: "extract" },
+          { endpoint: "extract", jobId: extractId },
           logger,
         ).catch(
           error => {
@@ -815,7 +815,7 @@ async function performExtraction(
           subId,
           creditsToBill,
           apiKeyId,
-          { endpoint: "extract" },
+          { endpoint: "extract", jobId: extractId },
           logger,
         ).catch(
           error => {

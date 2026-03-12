@@ -267,7 +267,7 @@ export async function performGenerateLlmsTxt(
     });
 
     // Bill team for usage
-    billTeam(teamId, subId, urls.length, apiKeyId, { endpoint: "llms_txt" }, logger).catch(error => {
+    billTeam(teamId, subId, urls.length, apiKeyId, { endpoint: "llms_txt", jobId: generationId }, logger).catch(error => {
       logger.error(`Failed to bill team ${teamId} for ${urls.length} urls`, {
         teamId,
         count: urls.length,

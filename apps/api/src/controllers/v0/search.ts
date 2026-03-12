@@ -85,7 +85,7 @@ async function searchHelper(
       subscription_id,
       res.length,
       api_key_id,
-      { endpoint: "search" },
+      { endpoint: "search", jobId },
       logger,
     ).catch(error => {
       logger.error(
@@ -106,7 +106,7 @@ async function searchHelper(
   }
 
   const jobPriority = await getJobPriority({ team_id, basePriority: 20 });
-  const billing = { endpoint: "search" as const };
+  const billing = { endpoint: "search" as const, jobId };
 
   // filter out social media links
 

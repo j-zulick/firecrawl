@@ -203,7 +203,7 @@ export async function searchController(
         req.acuc?.sub_id ?? undefined,
         result.searchCredits,
         req.acuc?.api_key_id ?? null,
-        { endpoint: "search" },
+        { endpoint: "search", jobId },
       ).catch(error => {
         logger.error(
           `Failed to bill team ${req.auth.team_id} for ${result.searchCredits} credits: ${error}`,

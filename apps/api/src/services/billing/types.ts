@@ -12,6 +12,7 @@ export type BillingEndpoint =
 
 export type BillingMetadata = {
   endpoint: BillingEndpoint;
+  jobId?: string;
 };
 
 export function resolveBillingMetadata({
@@ -39,5 +40,9 @@ export function resolveBillingMetadata({
 export function toAutumnBillingProperties(
   billing: BillingMetadata,
 ): Record<string, string> {
-  return { endpoint: billing.endpoint };
+  const props: Record<string, string> = { endpoint: billing.endpoint };
+  if (billing.jobId) {
+    props.jobId = billing.jobId;
+  }
+  return props;
 }

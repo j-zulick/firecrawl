@@ -174,7 +174,7 @@ export async function batchScrapeController(
     });
   }
   logger.debug("Using job priority " + jobPriority, { jobPriority });
-  const billing = { endpoint: "batch_scrape" as const };
+  const billing = { endpoint: "batch_scrape" as const, jobId: id };
 
   const jobs = urls.map(x => ({
     jobId: uuidv7(),

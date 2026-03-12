@@ -85,8 +85,8 @@ export async function scrapeController(
       const zeroDataRetention =
         req.acuc?.flags?.forceZDR || (req.body.zeroDataRetention ?? false);
       const billing: BillingMetadata = req.body.__agentInterop
-        ? { endpoint: "agent" as const }
-        : { endpoint: "scrape" as const };
+        ? { endpoint: "agent" as const, jobId }
+        : { endpoint: "scrape" as const, jobId };
 
       if (
         req.body.__agentInterop &&

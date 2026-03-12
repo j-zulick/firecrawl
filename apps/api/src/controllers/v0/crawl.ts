@@ -238,7 +238,7 @@ export async function crawlController(req: Request, res: Response) {
             team_id,
             basePriority: 21,
           });
-          const billing = { endpoint: "crawl" as const };
+          const billing = { endpoint: "crawl" as const, jobId: id };
           const jobs = urls.map(url => {
             const uuid = uuidv7();
             return {
@@ -296,7 +296,7 @@ export async function crawlController(req: Request, res: Response) {
           team_id,
           origin: req.body.origin ?? defaultOrigin,
           integration: req.body.integration,
-          billing: { endpoint: "crawl" },
+          billing: { endpoint: "crawl", jobId: id },
           crawl_id: id,
           zeroDataRetention: false, // not supported on v0
           apiKeyId: chunk?.api_key_id ?? null,

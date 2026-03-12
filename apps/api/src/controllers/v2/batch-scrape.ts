@@ -70,8 +70,8 @@ export async function batchScrapeController(
 
   const id = req.body.appendToId ?? uuidv7();
   const billing: BillingMetadata = req.body.__agentInterop
-    ? { endpoint: "agent" as const }
-    : { endpoint: "batch_scrape" as const };
+    ? { endpoint: "agent" as const, jobId: id }
+    : { endpoint: "batch_scrape" as const, jobId: id };
   const logger = _logger.child({
     crawlId: id,
     batchScrapeId: id,
