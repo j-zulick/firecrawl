@@ -230,6 +230,10 @@ const configSchema = z.object({
   EXTRACT_V3_BETA_URL: z.string().optional(),
   AGENT_INTEROP_SECRET: z.string().optional(),
 
+  // Wikipedia Enterprise API
+  WIKIPEDIA_ENTERPRISE_USERNAME: z.string().optional(),
+  WIKIPEDIA_ENTERPRISE_PASSWORD: z.string().optional(),
+
   // Browser Service
   BROWSER_SERVICE_URL: z.string().optional(),
   BROWSER_SERVICE_API_KEY: z.string().optional(),

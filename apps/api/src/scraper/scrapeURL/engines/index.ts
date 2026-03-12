@@ -15,6 +15,11 @@ import {
   scrapeURLWithPlaywright,
 } from "./playwright";
 import { indexMaxReasonableTime, scrapeURLWithIndex } from "./index/index";
+import {
+  scrapeURLWithWikipedia,
+  wikipediaMaxReasonableTime,
+  isWikimediaUrl,
+} from "./wikipedia";
 import { queryEngpickerVerdict, useIndex } from "../../../services";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { getPDFMaxPages } from "../../../controllers/v2/types";
@@ -36,7 +41,8 @@ export type Engine =
   | "pdf"
   | "document"
   | "index"
-  | "index;documents";
+  | "index;documents"
+  | "wikipedia";
 
 const useFireEngine =
   config.FIRE_ENGINE_BETA_URL !== "" &&
@@ -44,8 +50,14 @@ const useFireEngine =
 const usePlaywright =
   config.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
   config.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
+const useWikipedia =
+  config.WIKIPEDIA_ENTERPRISE_USERNAME !== undefined &&
+  config.WIKIPEDIA_ENTERPRISE_USERNAME !== "" &&
+  config.WIKIPEDIA_ENTERPRISE_PASSWORD !== undefined &&
+  config.WIKIPEDIA_ENTERPRISE_PASSWORD !== "";
 
 const engines: Engine[] = [
+  ...(useWikipedia ? ["wikipedia" as const] : []),
   ...(useIndex ? ["index" as const, "index;documents" as const] : []),
   ...(useFireEngine
     ? [
@@ -158,6 +170,7 @@ const engineHandlers: {
   fetch: scrapeURLWithFetch,
   pdf: scrapePDF,
   document: scrapeDocument,
+  wikipedia: scrapeURLWithWikipedia,
 };
 
 const engineMRTs: {
@@ -185,6 +198,7 @@ const engineMRTs: {
   fetch: fetchMaxReasonableTime,
   pdf: pdfMaxReasonableTime,
   document: documentMaxReasonableTime,
+  wikipedia: wikipediaMaxReasonableTime,
 };
 
 const engineOptions: {
@@ -463,6 +477,25 @@ const engineOptions: {
     },
     quality: -20,
   },
+  wikipedia: {
+    features: {
+      actions: false,
+      waitFor: false,
+      screenshot: false,
+      "screenshot@fullScreen": false,
+      pdf: false,
+      document: false,
+      atsv: false,
+      location: false,
+      mobile: false,
+      skipTlsVerification: true,
+      useFastMode: true,
+      stealthProxy: false,
+      branding: false,
+      disableAdblock: true,
+    },
+    quality: 500, // below index (1000) so cache is tried first, above fire-engine (50)
+  },
 };
 
 export function shouldUseIndex(meta: Meta) {
@@ -526,6 +559,13 @@ export async function buildFallbackList(meta: Meta): Promise<
     const indexDocumentsIndex = _engines.indexOf("index;documents");
     if (indexDocumentsIndex !== -1) {
       _engines.splice(indexDocumentsIndex, 1);
+    }
+  }
+
+  if (!isWikimediaUrl(meta.url)) {
+    const wikiIndex = _engines.indexOf("wikipedia");
+    if (wikiIndex !== -1) {
+      _engines.splice(wikiIndex, 1);
     }
   }
 
