@@ -27,10 +27,8 @@ The engine forcing is configured via the `FORCED_ENGINE_DOMAINS` environment var
 ### Available Engines
 
 - `fire-engine;chrome-cdp` - Advanced browser with Chrome DevTools Protocol
-- `fire-engine;playwright` - Playwright-based browser automation
 - `fire-engine;tlsclient` - TLS fingerprinting for anti-bot bypass
 - `fire-engine;chrome-cdp;stealth` - Chrome CDP with stealth mode
-- `fire-engine;playwright;stealth` - Playwright with stealth mode
 - `fire-engine;tlsclient;stealth` - TLS client with stealth mode
 - `playwright` - Direct Playwright integration
 - `fetch` - Simple HTTP requests

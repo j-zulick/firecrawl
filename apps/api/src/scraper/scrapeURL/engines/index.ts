@@ -5,7 +5,6 @@ import { documentMaxReasonableTime, scrapeDocument } from "./document";
 import {
   fireEngineMaxReasonableTime,
   scrapeURLWithFireEngineChromeCDP,
-  scrapeURLWithFireEnginePlaywright,
   scrapeURLWithFireEngineTLSClient,
 } from "./fire-engine";
 import { pdfMaxReasonableTime, scrapePDF } from "./pdf";
@@ -32,8 +31,6 @@ export type Engine =
   | "fire-engine(retry);chrome-cdp"
   | "fire-engine;chrome-cdp;stealth"
   | "fire-engine(retry);chrome-cdp;stealth"
-  | "fire-engine;playwright"
-  | "fire-engine;playwright;stealth"
   | "fire-engine;tlsclient"
   | "fire-engine;tlsclient;stealth"
   | "playwright"
@@ -65,8 +62,6 @@ const engines: Engine[] = [
         "fire-engine;chrome-cdp;stealth" as const,
         "fire-engine(retry);chrome-cdp" as const,
         "fire-engine(retry);chrome-cdp;stealth" as const,
-        // "fire-engine;playwright" as const,
-        // "fire-engine;playwright;stealth" as const,
         "fire-engine;tlsclient" as const,
         "fire-engine;tlsclient;stealth" as const,
       ]
@@ -162,8 +157,6 @@ const engineHandlers: {
   "fire-engine(retry);chrome-cdp": scrapeURLWithFireEngineChromeCDP,
   "fire-engine;chrome-cdp;stealth": scrapeURLWithFireEngineChromeCDP,
   "fire-engine(retry);chrome-cdp;stealth": scrapeURLWithFireEngineChromeCDP,
-  "fire-engine;playwright": scrapeURLWithFireEnginePlaywright,
-  "fire-engine;playwright;stealth": scrapeURLWithFireEnginePlaywright,
   "fire-engine;tlsclient": scrapeURLWithFireEngineTLSClient,
   "fire-engine;tlsclient;stealth": scrapeURLWithFireEngineTLSClient,
   playwright: scrapeURLWithPlaywright,
@@ -186,10 +179,6 @@ const engineMRTs: {
     fireEngineMaxReasonableTime(meta, "chrome-cdp"),
   "fire-engine(retry);chrome-cdp;stealth": meta =>
     fireEngineMaxReasonableTime(meta, "chrome-cdp"),
-  "fire-engine;playwright": meta =>
-    fireEngineMaxReasonableTime(meta, "playwright"),
-  "fire-engine;playwright;stealth": meta =>
-    fireEngineMaxReasonableTime(meta, "playwright"),
   "fire-engine;tlsclient": meta =>
     fireEngineMaxReasonableTime(meta, "tlsclient"),
   "fire-engine;tlsclient;stealth": meta =>
@@ -324,44 +313,6 @@ const engineOptions: {
       disableAdblock: false,
     },
     quality: -5,
-  },
-  "fire-engine;playwright": {
-    features: {
-      actions: false,
-      waitFor: true,
-      screenshot: true,
-      "screenshot@fullScreen": true,
-      pdf: false,
-      document: false,
-      atsv: false,
-      location: false,
-      mobile: false,
-      skipTlsVerification: false,
-      useFastMode: false,
-      stealthProxy: false,
-      branding: false,
-      disableAdblock: true,
-    },
-    quality: 40,
-  },
-  "fire-engine;playwright;stealth": {
-    features: {
-      actions: false,
-      waitFor: true,
-      screenshot: true,
-      "screenshot@fullScreen": true,
-      pdf: false,
-      document: false,
-      atsv: false,
-      location: false,
-      mobile: false,
-      skipTlsVerification: false,
-      useFastMode: false,
-      stealthProxy: true,
-      branding: false,
-      disableAdblock: true,
-    },
-    quality: -10,
   },
   playwright: {
     features: {
@@ -543,9 +494,7 @@ export async function buildFallbackList(meta: Meta): Promise<
           "fire-engine(retry);chrome-cdp",
           "fire-engine;chrome-cdp;stealth",
           "fire-engine(retry);chrome-cdp;stealth",
-          "fire-engine;playwright",
           // "fire-engine;tlsclient",
-          // "fire-engine;playwright;stealth",
           // "fire-engine;tlsclient;stealth",
         ] as Engine[])
       : []),

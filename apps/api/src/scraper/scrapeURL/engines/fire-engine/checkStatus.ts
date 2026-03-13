@@ -36,10 +36,6 @@ const successSchema = z.object({
   // timeTakenCookie: z.number().optional(),
   // timeTakenRequest: z.number().optional(),
 
-  // legacy: playwright only
-  screenshot: z.string().optional(),
-
-  // new: actions
   screenshots: z.string().array().optional(),
   actionContent: z
     .object({

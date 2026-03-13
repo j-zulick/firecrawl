@@ -22,7 +22,6 @@ import { parseMarkdown } from "../../lib/html-to-markdown";
 const testEngines: (Engine | undefined)[] = [
   undefined,
   "fire-engine;chrome-cdp",
-  "fire-engine;playwright",
   "fire-engine;tlsclient",
   "fetch",
 ];
@@ -30,7 +29,6 @@ const testEngines: (Engine | undefined)[] = [
 const testEnginesScreenshot: (Engine | undefined)[] = [
   undefined,
   "fire-engine;chrome-cdp",
-  "fire-engine;playwright",
 ];
 
 describe("Standalone scrapeURL tests", () => {

@@ -405,7 +405,7 @@ const queryFormatWithOptions = z.strictObject({
   prompt: z.string().max(10000),
 });
 
-export type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
+type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
 
 export type FormatObject =
   | { type: "markdown" }

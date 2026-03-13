@@ -5,7 +5,6 @@ import { config } from "../config";
 import {
   FireEngineScrapeRequestChromeCDP,
   FireEngineScrapeRequestCommon,
-  FireEngineScrapeRequestPlaywright,
   FireEngineScrapeRequestTLSClient,
 } from "../scraper/scrapeURL/engines/fire-engine/scrape";
 import { getDocFromGCS } from "../lib/gcs-jobs";
@@ -80,11 +79,7 @@ type ABTestDecision =
 
 export function abTestFireEngine(
   feRequest: FireEngineScrapeRequestCommon &
-    (
-      | FireEngineScrapeRequestChromeCDP
-      | FireEngineScrapeRequestPlaywright
-      | FireEngineScrapeRequestTLSClient
-    ),
+    (FireEngineScrapeRequestChromeCDP | FireEngineScrapeRequestTLSClient),
 ): ABTestDecision {
   const abLogger = _logger.child({ method: "ABTestFireEngine" });
 

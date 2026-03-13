@@ -32,14 +32,6 @@ export const urlSpecificParams: Record<string, UrlSpecificParams> = {
   //         },
   //     },
   // },
-  // "notion.com": {
-  //     scrapeOptions: { waitFor: 2000 },
-  //     internalOptions: { forceEngine: "fire-engine;playwright" }
-  // },
-  // "developer.apple.com": {
-  //     scrapeOptions: { waitFor: 2000 },
-  //     internalOptions: { forceEngine: "fire-engine;playwright" }
-  // },
   "digikey.com": {
     scrapeOptions: {},
     internalOptions: { forceEngine: "fire-engine;tlsclient" },

@@ -6,7 +6,6 @@ import {
   fireEngineStagingURL,
   FireEngineScrapeRequestChromeCDP,
   FireEngineScrapeRequestCommon,
-  FireEngineScrapeRequestPlaywright,
   FireEngineScrapeRequestTLSClient,
 } from "./scrape";
 import { EngineScrapeResult } from "..";
@@ -48,7 +47,6 @@ const BRANDING_DEFAULT_WAIT_MS = 2000;
 async function performFireEngineScrape<
   Engine extends
     | FireEngineScrapeRequestChromeCDP
-    | FireEngineScrapeRequestPlaywright
     | FireEngineScrapeRequestTLSClient,
 >(
   meta: Meta,
@@ -244,7 +242,9 @@ async function performFireEngineScrape<
       "fire-engine.duration_ms": Date.now() - startTime,
       "fire-engine.status_code": status.pageStatusCode,
       "fire-engine.content_length": status.content?.length,
-      "fire-engine.has_screenshot": !!status.screenshot,
+      "fire-engine.has_screenshot": !!(
+        status.screenshots && status.screenshots.length > 0
+      ),
       "fire-engine.has_pdf": !!(status as any).pdf,
       "fire-engine.job_id": (scrape as any).jobId,
     });
@@ -367,19 +367,12 @@ export async function scrapeURLWithFireEngineChromeCDP(
       true,
     );
 
+    let screenshot: string | undefined;
     if (hasFormatOfType(meta.options.formats, "screenshot")) {
-      // meta.logger.debug(
-      //   "Transforming screenshots from actions into screenshot field",
-      //   { screenshots: response.screenshots },
-      // );
-      if (response.screenshots) {
-        response.screenshot = response.screenshots.slice(-1)[0];
+      if (response.screenshots && response.screenshots.length > 0) {
+        screenshot = response.screenshots.slice(-1)[0];
         response.screenshots = response.screenshots.slice(0, -1);
       }
-      // meta.logger.debug("Screenshot transformation done", {
-      //   screenshots: response.screenshots,
-      //   screenshot: response.screenshot,
-      // });
     }
 
     if (!response.url) {
@@ -435,7 +428,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
           x => x[0].toLowerCase() === "content-type",
         ) ?? [])[1] ?? undefined,
 
-      screenshot: response.screenshot,
+      screenshot,
       ...(actions.length > 0
         ? {
             actions: {
@@ -451,84 +444,6 @@ export async function scrapeURLWithFireEngineChromeCDP(
 
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
       youtubeTranscriptContent: response.youtubeTranscriptContent,
-      timezone: response.timezone,
-    };
-  });
-}
-
-export async function scrapeURLWithFireEnginePlaywright(
-  meta: Meta,
-): Promise<EngineScrapeResult> {
-  return withSpan("engine.fire-engine.playwright", async span => {
-    setSpanAttributes(span, {
-      "engine.type": "fire-engine-playwright",
-      "engine.url": meta.url,
-      "engine.team_id": meta.internalOptions.teamId,
-    });
-    const totalWait = meta.options.waitFor;
-
-    const request: FireEngineScrapeRequestCommon &
-      FireEngineScrapeRequestPlaywright = {
-      url: meta.rewrittenUrl ?? meta.url,
-      scrapeId: meta.id,
-      engine: "playwright",
-      instantReturn: false,
-
-      headers: meta.options.headers,
-      priority: meta.internalOptions.priority,
-      screenshot:
-        hasFormatOfType(meta.options.formats, "screenshot") !== undefined,
-      fullPageScreenshot: hasFormatOfType(meta.options.formats, "screenshot")
-        ?.fullPage,
-      wait: meta.options.waitFor,
-      geolocation: meta.options.location,
-      blockAds: meta.options.blockAds,
-      mobileProxy: meta.featureFlags.has("stealthProxy"),
-
-      timeout: meta.abort.scrapeTimeout() ?? 300000,
-      saveScrapeResultToGCS:
-        !meta.internalOptions.zeroDataRetention &&
-        meta.internalOptions.saveScrapeResultToGCS,
-      zeroDataRetention: meta.internalOptions.zeroDataRetention,
-    };
-
-    let response = await performFireEngineScrape(
-      meta,
-      meta.logger.child({
-        method: "scrapeURLWithFireEnginePlaywright/callFireEngine",
-        request,
-      }),
-      request,
-      meta.mock,
-      meta.abort.asSignal(),
-    );
-
-    if (!response.url) {
-      meta.logger.warn("Fire-engine did not return the response's URL", {
-        response,
-        sourceURL: meta.url,
-      });
-    }
-
-    return {
-      url: response.url ?? meta.url,
-
-      html: response.content,
-      error: response.pageError,
-      statusCode: response.pageStatusCode,
-
-      contentType:
-        (Object.entries(response.responseHeaders ?? {}).find(
-          x => x[0].toLowerCase() === "content-type",
-        ) ?? [])[1] ?? undefined,
-
-      ...(response.screenshots !== undefined && response.screenshots.length > 0
-        ? {
-            screenshot: response.screenshots[0],
-          }
-        : {}),
-
-      proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
       timezone: response.timezone,
     };
   });
@@ -603,7 +518,7 @@ export async function scrapeURLWithFireEngineTLSClient(
 
 export function fireEngineMaxReasonableTime(
   meta: Meta,
-  engine: "chrome-cdp" | "playwright" | "tlsclient",
+  engine: "chrome-cdp" | "tlsclient",
 ): number {
   const hasBranding = hasFormatOfType(meta.options.formats, "branding");
   const defaultWait = hasBranding ? BRANDING_DEFAULT_WAIT_MS : 0;
@@ -614,8 +529,6 @@ export function fireEngineMaxReasonableTime(
 
   if (engine === "tlsclient") {
     return 15000;
-  } else if (engine === "playwright") {
-    return (meta.options.waitFor ?? 0) + 30000;
   } else {
     return (
       effectiveWait +
