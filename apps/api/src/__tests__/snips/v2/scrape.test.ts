@@ -27,8 +27,10 @@ import {
 } from "./lib";
 import request from "./lib";
 import crypto from "crypto";
+import { z } from "zod";
 
 const CHANGE_TRACKING_TEST_URL = `${TEST_SUITE_WEBSITE}?testId=${crypto.randomUUID()}`;
+const stringbool = z.stringbool().catch(false);
 
 let identity: Identity;
 
@@ -52,6 +54,20 @@ beforeAll(async () => {
 
 describe("Scrape tests", () => {
   const base = TEST_SUITE_WEBSITE;
+  const playwrightAllowsLocalTargets = stringbool.parse(
+    process.env.ALLOW_LOCAL_WEBHOOKS,
+  );
+  const createSelfHostedLocalUrl = () => {
+    const target = new URL(TEST_SUITE_WEBSITE);
+    target.searchParams.set("testId", crypto.randomUUID());
+    return target.toString();
+  };
+
+  const createDnsResolvedLocalUrl = () => {
+    const target = new URL(createSelfHostedLocalUrl());
+    target.hostname = "localtest.me";
+    return target.toString();
+  };
 
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "works",
@@ -274,6 +290,50 @@ describe("Scrape tests", () => {
 
       expect(response.markdown?.trim()).toContain(
         config.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+      );
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf(
+    TEST_SELF_HOST &&
+      HAS_PLAYWRIGHT &&
+      ALLOW_TEST_SUITE_WEBSITE &&
+      playwrightAllowsLocalTargets,
+  )(
+    "playwright allows local-network targets when ALLOW_LOCAL_WEBHOOKS is enabled",
+    async () => {
+      const response = await scrape(
+        {
+          url: createSelfHostedLocalUrl(),
+          waitFor: 100,
+        },
+        identity,
+      );
+
+      expect(response.markdown).toContain("Firecrawl");
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf(
+    TEST_SELF_HOST && HAS_PLAYWRIGHT && !playwrightAllowsLocalTargets,
+  )(
+    "playwright blocks local-network targets resolved via DNS",
+    async () => {
+      const raw = await scrapeRaw(
+        {
+          url: createDnsResolvedLocalUrl(),
+          waitFor: 100,
+        },
+        identity,
+      );
+
+      expect(raw.statusCode).toBe(200);
+      expect(raw.body.success).toBe(true);
+      expect(raw.body.data?.metadata?.statusCode).toBe(403);
+      expect(raw.body.data?.metadata?.error).toContain(
+        "Blocked insecure target URL",
       );
     },
     scrapeTimeout,

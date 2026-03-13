@@ -3,6 +3,8 @@ import { chromium, Browser, BrowserContext, Route, Request as PlaywrightRequest,
 import dotenv from 'dotenv';
 import UserAgent from 'user-agents';
 import { getError } from './helpers/get_error';
+import { lookup } from 'dns/promises';
+import IPAddr from 'ipaddr.js';
 
 dotenv.config();
 
@@ -13,10 +15,106 @@ app.use(express.json());
 
 const BLOCK_MEDIA = (process.env.BLOCK_MEDIA || 'False').toUpperCase() === 'TRUE';
 const MAX_CONCURRENT_PAGES = Math.max(1, Number.parseInt(process.env.MAX_CONCURRENT_PAGES ?? '10', 10) || 10);
+const ALLOW_LOCAL_WEBHOOKS = (process.env.ALLOW_LOCAL_WEBHOOKS || 'False').toUpperCase() === 'TRUE';
+const DNS_CACHE_TTL_MS = 30_000;
 
 const PROXY_SERVER = process.env.PROXY_SERVER || null;
 const PROXY_USERNAME = process.env.PROXY_USERNAME || null;
 const PROXY_PASSWORD = process.env.PROXY_PASSWORD || null;
+const dnsLookupCache = new Map<string, { addresses: string[]; expiresAt: number }>();
+
+class InsecureConnectionError extends Error {
+  constructor(public readonly blockedUrl: string, reason: string) {
+    super(`Blocked insecure target URL "${blockedUrl}": ${reason}`);
+    this.name = 'InsecureConnectionError';
+  }
+}
+
+const normalizeHostname = (hostname: string): string => hostname.toLowerCase().replace(/\.$/, '');
+
+const isHttpProtocol = (protocol: string): boolean => protocol === 'http:' || protocol === 'https:';
+
+const isIPPrivate = (address: string): boolean => {
+  if (!IPAddr.isValid(address)) return false;
+  const parsedAddress = IPAddr.parse(address);
+  return parsedAddress.range() !== 'unicast';
+};
+
+const isLocalHostname = (hostname: string): boolean =>
+  hostname === 'localhost' || hostname.endsWith('.localhost');
+
+const lookupWithCache = async (hostname: string): Promise<string[]> => {
+  const cached = dnsLookupCache.get(hostname);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.addresses;
+  }
+
+  const resolvedAddresses = await lookup(hostname, { all: true, verbatim: true });
+  const uniqueAddresses = [...new Set(resolvedAddresses.map(x => x.address))];
+  dnsLookupCache.set(hostname, {
+    addresses: uniqueAddresses,
+    expiresAt: Date.now() + DNS_CACHE_TTL_MS,
+  });
+  return uniqueAddresses;
+};
+
+const assertSafeTargetUrl = async (urlString: string): Promise<void> => {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(urlString);
+  } catch {
+    throw new InsecureConnectionError(urlString, 'URL is invalid');
+  }
+
+  if (!isHttpProtocol(parsedUrl.protocol)) {
+    throw new InsecureConnectionError(urlString, `unsupported protocol "${parsedUrl.protocol}"`);
+  }
+
+  if (ALLOW_LOCAL_WEBHOOKS) {
+    return;
+  }
+
+  const hostname = normalizeHostname(parsedUrl.hostname);
+  if (!hostname) {
+    throw new InsecureConnectionError(urlString, 'hostname is missing');
+  }
+
+  if (isLocalHostname(hostname)) {
+    throw new InsecureConnectionError(urlString, 'localhost targets are not allowed');
+  }
+
+  if (IPAddr.isValid(hostname)) {
+    if (isIPPrivate(hostname)) {
+      throw new InsecureConnectionError(urlString, `private IP "${hostname}" is not allowed`);
+    }
+    return;
+  }
+
+  let resolvedAddresses: string[];
+  try {
+    resolvedAddresses = await lookupWithCache(hostname);
+  } catch {
+    throw new InsecureConnectionError(
+      urlString,
+      `DNS lookup failed for "${hostname}", cannot verify target is safe`,
+    );
+  }
+
+  if (resolvedAddresses.length === 0) {
+    throw new InsecureConnectionError(
+      urlString,
+      `hostname "${hostname}" did not resolve to any IP address`,
+    );
+  }
+
+  if (resolvedAddresses.some(address => isIPPrivate(address))) {
+    throw new InsecureConnectionError(urlString, `hostname "${hostname}" resolves to a private IP`);
+  }
+};
+
+type ContextSecurityState = {
+  blockedNavigationRequestUrl: string | null;
+};
 class Semaphore {
   private permits: number;
   private queue: (() => void)[] = [];
@@ -99,14 +197,18 @@ const initializeBrowser = async () => {
   });
 };
 
-const createContext = async (skipTlsVerification: boolean = false) => {
+const createContext = async (skipTlsVerification: boolean = false): Promise<{ context: BrowserContext; securityState: ContextSecurityState }> => {
   const userAgent = new UserAgent().toString();
   const viewport = { width: 1280, height: 800 };
+  const securityState: ContextSecurityState = {
+    blockedNavigationRequestUrl: null,
+  };
 
   const contextOptions: any = {
     userAgent,
     viewport,
     ignoreHTTPSErrors: skipTlsVerification,
+    serviceWorkers: 'block',
   };
 
   if (PROXY_SERVER && PROXY_USERNAME && PROXY_PASSWORD) {
@@ -130,9 +232,23 @@ const createContext = async (skipTlsVerification: boolean = false) => {
   }
 
   // Intercept all requests to avoid loading ads
-  await newContext.route('**/*', (route: Route, request: PlaywrightRequest) => {
-    const requestUrl = new URL(request.url());
-    const hostname = requestUrl.hostname;
+  await newContext.route('**/*', async (route: Route, request: PlaywrightRequest) => {
+    const requestUrlString = request.url();
+    try {
+      await assertSafeTargetUrl(requestUrlString);
+    } catch (error) {
+      if (error instanceof InsecureConnectionError) {
+        if (request.isNavigationRequest()) {
+          securityState.blockedNavigationRequestUrl = requestUrlString;
+        }
+        console.warn(`Blocked request: ${requestUrlString}`);
+        return route.abort('blockedbyclient');
+      }
+      throw error;
+    }
+
+    const requestUrl = new URL(requestUrlString);
+    const hostname = normalizeHostname(requestUrl.hostname);
 
     if (AD_SERVING_DOMAINS.some(domain => hostname.includes(domain))) {
       console.log(hostname);
@@ -141,7 +257,7 @@ const createContext = async (skipTlsVerification: boolean = false) => {
     return route.continue();
   });
   
-  return newContext;
+  return { context: newContext, securityState };
 };
 
 const shutdownBrowser = async () => {
@@ -159,9 +275,28 @@ const isValidUrl = (urlString: string): boolean => {
   }
 };
 
-const scrapePage = async (page: Page, url: string, waitUntil: 'load' | 'networkidle', waitAfterLoad: number, timeout: number, checkSelector: string | undefined) => {
+const scrapePage = async (
+  page: Page,
+  url: string,
+  waitUntil: 'load' | 'networkidle',
+  waitAfterLoad: number,
+  timeout: number,
+  checkSelector: string | undefined,
+  securityState: ContextSecurityState,
+) => {
   console.log(`Navigating to ${url} with waitUntil: ${waitUntil} and timeout: ${timeout}ms`);
-  const response = await page.goto(url, { waitUntil, timeout });
+  let response;
+  try {
+    response = await page.goto(url, { waitUntil, timeout });
+  } catch (error) {
+    if (securityState.blockedNavigationRequestUrl) {
+      throw new InsecureConnectionError(
+        securityState.blockedNavigationRequestUrl,
+        'navigation to private/internal resource is not allowed',
+      );
+    }
+    throw error;
+  }
 
   if (waitAfterLoad > 0) {
     await page.waitForTimeout(waitAfterLoad);
@@ -199,7 +334,7 @@ app.get('/health', async (req: Request, res: Response) => {
       await initializeBrowser();
     }
     
-    const testContext = await createContext();
+    const { context: testContext } = await createContext();
     const testPage = await testContext.newPage();
     await testPage.close();
     await testContext.close();
@@ -238,6 +373,19 @@ app.post('/scrape', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid URL' });
   }
 
+  try {
+    await assertSafeTargetUrl(url);
+  } catch (error) {
+    if (error instanceof InsecureConnectionError) {
+      return res.json({
+        content: '',
+        pageStatusCode: 403,
+        pageError: error.message,
+      });
+    }
+    throw error;
+  }
+
   if (!PROXY_SERVER) {
     console.warn('⚠️ WARNING: No proxy server provided. Your IP address may be blocked.');
   }
@@ -249,17 +397,28 @@ app.post('/scrape', async (req: Request, res: Response) => {
   await pageSemaphore.acquire();
   
   let requestContext: BrowserContext | null = null;
+  let securityState: ContextSecurityState | null = null;
   let page: Page | null = null;
 
   try {
-    requestContext = await createContext(skip_tls_verification);
+    const contextBundle = await createContext(skip_tls_verification);
+    requestContext = contextBundle.context;
+    securityState = contextBundle.securityState;
     page = await requestContext.newPage();
 
     if (headers) {
       await page.setExtraHTTPHeaders(headers);
     }
 
-    const result = await scrapePage(page, url, 'load', wait_after_load, timeout, check_selector);
+    const result = await scrapePage(
+      page,
+      url,
+      'load',
+      wait_after_load,
+      timeout,
+      check_selector,
+      securityState,
+    );
     const pageError = result.status !== 200 ? getError(result.status) : undefined;
 
     if (!pageError) {
@@ -276,6 +435,13 @@ app.post('/scrape', async (req: Request, res: Response) => {
     });
 
   } catch (error) {
+    if (error instanceof InsecureConnectionError) {
+      return res.json({
+        content: '',
+        pageStatusCode: 403,
+        pageError: error.message,
+      });
+    }
     console.error('Scrape error:', error);
     res.status(500).json({ error: 'An error occurred while fetching the page.' });
   } finally {
