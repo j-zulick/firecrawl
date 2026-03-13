@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { supabase_rr_service } from "../supabase";
@@ -7,8 +8,10 @@ import type {
   CreateEntityResult,
   EnsureOrgProvisionedParams,
   EnsureTeamProvisionedParams,
+  FinalizeCreditsLockParams,
   GetEntityParams,
   GetOrCreateCustomerParams,
+  LockCreditsParams,
   TrackCreditsParams,
   TrackParams,
 } from "./types";
@@ -36,10 +39,10 @@ export function orgBucket(orgId: string): number {
  * stable percent gate is also evaluated so the same org always gets the
  * same answer.
  *
- * Only checked at the top-level billing entry point (`reserveCredits`).
- * NOT checked by `refundCredits` (already guarded by `autumnReserved`) or
- * `ensureTeamProvisioned` (handled by firecrawl-web edge functions
- * independently).
+ * Only checked at the top-level billing entry points (`lockCredits` and the
+ * legacy direct-track `reserveCredits`).
+ * NOT checked by `finalizeCreditsLock`, `refundCredits`, or
+ * `ensureTeamProvisioned`.
  */
 export function isAutumnEnabled(orgId?: string): boolean {
   if (config.AUTUMN_EXPERIMENT !== "true") return false;
@@ -324,8 +327,105 @@ export class AutumnService {
   }
 
   /**
-   * Records a credit usage event in Autumn at request time.
-   * Returns true on success, false if Autumn is unavailable or an error occurs.
+   * Reserves a team's credits in Autumn without letting Autumn gate usage.
+   * Returns the lock ID on success, or null if no lock was acquired.
+   */
+  async lockCredits({
+    teamId,
+    value,
+    lockId,
+    expiresAt,
+    properties,
+  }: LockCreditsParams): Promise<string | null> {
+    if (!isAutumnEnabled() || !autumnClient || this.isPreviewTeam(teamId)) {
+      return null;
+    }
+
+    const resolvedLockId = lockId ?? `billing_${randomUUID()}`;
+
+    try {
+      const orgId = await this.resolveOrgId(teamId);
+      if (!isAutumnEnabled(orgId)) return null;
+
+      const customerId = await this.ensureTrackingContext(teamId);
+      const { allowed } = await autumnClient.check({
+        customerId,
+        entityId: teamId,
+        featureId: CREDITS_FEATURE_ID,
+        requiredBalance: value,
+        properties,
+        lock: {
+          enabled: true,
+          lockId: resolvedLockId,
+          expiresAt,
+        },
+      });
+
+      if (!allowed) {
+        logger.info("Autumn lockCredits denied", {
+          teamId,
+          value,
+          lockId: resolvedLockId,
+        });
+        return null;
+      }
+
+      logger.info("Autumn lockCredits succeeded", {
+        customerId,
+        entityId: teamId,
+        featureId: CREDITS_FEATURE_ID,
+        value,
+        lockId: resolvedLockId,
+        properties,
+      });
+      return resolvedLockId;
+    } catch (error) {
+      logger.warn("Autumn lockCredits failed", {
+        teamId,
+        value,
+        lockId: resolvedLockId,
+        error,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Finalizes a previously-acquired Autumn lock.
+   */
+  async finalizeCreditsLock({
+    lockId,
+    action,
+    overrideValue,
+    properties,
+  }: FinalizeCreditsLockParams): Promise<void> {
+    if (!autumnClient) return;
+
+    try {
+      await autumnClient.balances.finalize({
+        lockId,
+        action,
+        overrideValue,
+        properties,
+      });
+      logger.info("Autumn finalizeCreditsLock succeeded", {
+        lockId,
+        action,
+        overrideValue,
+      });
+    } catch (error) {
+      logger.warn("Autumn finalizeCreditsLock failed", {
+        lockId,
+        action,
+        overrideValue,
+        error,
+      });
+    }
+  }
+
+  /**
+   * Records a credit usage event directly in Autumn for flows that do not
+   * acquire a request-time lock. Returns true on success.
    *
    * The experiment gate is evaluated here — once per request — using a stable
    * bucket derived from the org UUID so the same org always gets the same

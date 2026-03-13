@@ -15,6 +15,12 @@ import { jest } from "@jest/globals";
 const mockTrack = jest
   .fn<(args: any) => Promise<void>>()
   .mockResolvedValue(undefined);
+const mockCheck = jest
+  .fn<(args: any) => Promise<any>>()
+  .mockResolvedValue({ allowed: true, customerId: "org-1", balance: null });
+const mockFinalize = jest
+  .fn<(args: any) => Promise<void>>()
+  .mockResolvedValue(undefined);
 const mockGetOrCreate = jest
   .fn<(args: any) => Promise<unknown>>()
   .mockResolvedValue({ id: "org-1" });
@@ -24,6 +30,8 @@ const mockEntityCreate = jest.fn<(args: any) => Promise<unknown>>();
 const mockAutumnClient = {
   customers: { getOrCreate: mockGetOrCreate },
   entities: { get: mockEntityGet, create: mockEntityCreate },
+  balances: { finalize: mockFinalize },
+  check: mockCheck,
   track: mockTrack,
 };
 
@@ -97,6 +105,12 @@ beforeEach(() => {
   jest.clearAllMocks();
   autumnClientRef = mockAutumnClient;
   supabaseStubData = { data: { org_id: "org-1" }, error: null };
+  mockCheck.mockResolvedValue({
+    allowed: true,
+    customerId: "org-1",
+    balance: null,
+  });
+  mockFinalize.mockResolvedValue(undefined);
   mockEntityGet.mockResolvedValue(makeEntity(0));
   mockEntityCreate.mockResolvedValue({ id: "team-1" });
 });
@@ -261,6 +275,71 @@ describe("ensureTrackingContext warm-cache short-circuit", () => {
 });
 
 // ---------------------------------------------------------------------------
+// lockCredits
+// ---------------------------------------------------------------------------
+
+describe("lockCredits", () => {
+  it("returns null when autumnClient is null", async () => {
+    autumnClientRef = null;
+    const svc = makeService();
+    const result = await svc.lockCredits({ teamId: "team-1", value: 10 });
+    expect(result).toBeNull();
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
+  it("returns null for preview teams", async () => {
+    const svc = makeService();
+    const result = await svc.lockCredits({
+      teamId: "preview_abc",
+      value: 10,
+    });
+    expect(result).toBeNull();
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
+  it("returns the lockId on happy path", async () => {
+    const svc = makeService();
+
+    const result = await svc.lockCredits({
+      teamId: "team-1",
+      value: 42,
+      lockId: "lock-123",
+      properties: { source: "billTeam", endpoint: "extract" },
+    });
+
+    expect(result).toBe("lock-123");
+    expect(mockCheck).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: "org-1",
+        entityId: "team-1",
+        featureId: "CREDITS",
+        requiredBalance: 42,
+        properties: { source: "billTeam", endpoint: "extract" },
+        lock: expect.objectContaining({
+          enabled: true,
+          lockId: "lock-123",
+        }),
+      }),
+    );
+  });
+
+  it("returns null when Autumn denies the lock", async () => {
+    mockCheck.mockResolvedValue({
+      allowed: false,
+      customerId: "org-1",
+      balance: null,
+    });
+    const svc = makeService();
+    const result = await svc.lockCredits({
+      teamId: "team-1",
+      value: 10,
+      lockId: "lock-123",
+    });
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // reserveCredits
 // ---------------------------------------------------------------------------
 
@@ -300,6 +379,35 @@ describe("reserveCredits", () => {
     );
     expect(usageCall).toBeDefined();
     expect((usageCall as any[])[0].properties?.endpoint).toBe("extract");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// finalizeCreditsLock
+// ---------------------------------------------------------------------------
+
+describe("finalizeCreditsLock", () => {
+  it("calls balances.finalize with confirm", async () => {
+    const svc = makeService();
+    await svc.finalizeCreditsLock({
+      lockId: "lock-123",
+      action: "confirm",
+      properties: { source: "test" },
+    });
+
+    expect(mockFinalize).toHaveBeenCalledWith({
+      lockId: "lock-123",
+      action: "confirm",
+      overrideValue: undefined,
+      properties: { source: "test" },
+    });
+  });
+
+  it("is a no-op when autumnClient is null", async () => {
+    autumnClientRef = null;
+    const svc = makeService();
+    await svc.finalizeCreditsLock({ lockId: "lock-123", action: "release" });
+    expect(mockFinalize).not.toHaveBeenCalled();
   });
 });
 
@@ -402,21 +510,21 @@ describe("isAutumnEnabled", () => {
   });
 });
 
-describe("experiment gate on reserveCredits", () => {
+describe("experiment gate on lockCredits", () => {
   afterEach(() => {
     (config as any).AUTUMN_EXPERIMENT = "true";
     (config as any).AUTUMN_EXPERIMENT_PERCENT = 100;
   });
 
-  it("reserveCredits returns false when experiment is disabled", async () => {
+  it("lockCredits returns null when experiment is disabled", async () => {
     (config as any).AUTUMN_EXPERIMENT = undefined;
     const svc = makeService();
-    const result = await svc.reserveCredits({ teamId: "team-1", value: 10 });
-    expect(result).toBe(false);
-    expect(mockTrack).not.toHaveBeenCalled();
+    const result = await svc.lockCredits({ teamId: "team-1", value: 10 });
+    expect(result).toBeNull();
+    expect(mockCheck).not.toHaveBeenCalled();
   });
 
-  it("reserveCredits returns false when org is outside the percent bucket", async () => {
+  it("lockCredits returns null when org is outside the percent bucket", async () => {
     // Supabase returns org whose bucket (16) is >= percent (10).
     supabaseStubData = {
       data: { org_id: "a1b2c3d4-0000-0000-0000-000000000000" },
@@ -424,12 +532,12 @@ describe("experiment gate on reserveCredits", () => {
     };
     (config as any).AUTUMN_EXPERIMENT_PERCENT = 10;
     const svc = makeService();
-    const result = await svc.reserveCredits({ teamId: "team-1", value: 10 });
-    expect(result).toBe(false);
-    expect(mockTrack).not.toHaveBeenCalled();
+    const result = await svc.lockCredits({ teamId: "team-1", value: 10 });
+    expect(result).toBeNull();
+    expect(mockCheck).not.toHaveBeenCalled();
   });
 
-  it("reserveCredits succeeds when org is inside the percent bucket", async () => {
+  it("lockCredits succeeds when org is inside the percent bucket", async () => {
     // Supabase returns org whose bucket (16) is < percent (50).
     supabaseStubData = {
       data: { org_id: "a1b2c3d4-0000-0000-0000-000000000000" },
@@ -437,9 +545,13 @@ describe("experiment gate on reserveCredits", () => {
     };
     (config as any).AUTUMN_EXPERIMENT_PERCENT = 50;
     const svc = makeService();
-    const result = await svc.reserveCredits({ teamId: "team-1", value: 10 });
-    expect(result).toBe(true);
-    expect(mockTrack).toHaveBeenCalled();
+    const result = await svc.lockCredits({
+      teamId: "team-1",
+      value: 10,
+      lockId: "lock-123",
+    });
+    expect(result).toBe("lock-123");
+    expect(mockCheck).toHaveBeenCalled();
   });
 
   it("refundCredits still works when experiment is disabled (guard is autumnReserved)", async () => {

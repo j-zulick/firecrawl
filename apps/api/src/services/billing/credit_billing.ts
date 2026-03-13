@@ -9,10 +9,7 @@ import { autoCharge } from "./auto_charge";
 import { getValue, setValue } from "../redis";
 import { queueBillingOperation } from "./batch_billing";
 import { autumnService } from "../autumn/autumn.service";
-import {
-  toAutumnBillingProperties,
-  type BillingMetadata,
-} from "./types";
+import { toAutumnBillingProperties, type BillingMetadata } from "./types";
 import type { Logger } from "winston";
 
 /**
@@ -35,16 +32,17 @@ export async function billTeam(
       billing: BillingMetadata,
       logger: Logger | undefined,
     ) => {
-      // Reserve in Autumn at request time; await so autumnReserved is accurate.
-      // billTeam is fire-and-forget at call sites, so this doesn't block responses.
-      const autumnReserved = await autumnService.reserveCredits({
+      const autumnProperties = {
+        source: "billTeam",
+        ...toAutumnBillingProperties(billing),
+        apiKeyId: api_key_id,
+      };
+      // Acquire an Autumn lock opportunistically, but never gate usage on it.
+      // billTeam is fire-and-forget at call sites, so this does not block responses.
+      const autumnLockId = await autumnService.lockCredits({
         teamId: team_id,
         value: credits,
-        properties: {
-          source: "billTeam",
-          ...toAutumnBillingProperties(billing),
-          apiKeyId: api_key_id,
-        },
+        properties: autumnProperties,
       });
       return queueBillingOperation(
         team_id,
@@ -53,7 +51,8 @@ export async function billTeam(
         api_key_id,
         billing,
         false,
-        autumnReserved,
+        autumnLockId,
+        autumnProperties,
       );
     },
     { success: true, message: "No DB, bypassed." },

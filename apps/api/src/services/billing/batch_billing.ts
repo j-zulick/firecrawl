@@ -30,8 +30,9 @@ interface BillingOperation {
   is_extract: boolean;
   timestamp: string;
   api_key_id: number | null;
-  /** True if credits were pre-reserved in Autumn at request time via reserveCredits(). */
-  autumnReserved: boolean;
+  /** Autumn lock ID acquired at request time, if any. */
+  autumnLockId: string | null;
+  autumnProperties?: Record<string, unknown>;
 }
 
 // Grouped billing operations for batch processing
@@ -64,12 +65,62 @@ async function releaseLock() {
   logger.info("🔓 Released billing batch processing lock");
 }
 
+async function finalizeAutumnLocks(
+  group: GroupedBillingOperation,
+  action: "confirm" | "release",
+  source: string,
+) {
+  const lockedOperations = group.operations.filter(
+    (
+      op,
+    ): op is BillingOperation & {
+      autumnLockId: string;
+    } => typeof op.autumnLockId === "string",
+  );
+
+  if (lockedOperations.length === 0) return;
+
+  try {
+    const results = await Promise.allSettled(
+      lockedOperations.map(op =>
+        autumnService.finalizeCreditsLock({
+          lockId: op.autumnLockId,
+          action,
+          properties: {
+            ...op.autumnProperties,
+            subscriptionId: op.subscription_id,
+            finalizeSource: source,
+          },
+        }),
+      ),
+    );
+
+    const rejectedCount = results.filter(
+      result => result.status === "rejected",
+    ).length;
+    if (rejectedCount > 0) {
+      logger.warn("Autumn finalizeCreditsLock rejected unexpectedly", {
+        team_id: group.team_id,
+        action,
+        rejectedCount,
+      });
+    }
+  } catch (error) {
+    logger.warn("Autumn finalizeAutumnLocks failed unexpectedly", {
+      team_id: group.team_id,
+      action,
+      operation_count: lockedOperations.length,
+      error,
+    });
+  }
+}
+
 /**
  * Dequeues pending billing operations from Redis, groups them by team, and
  * commits each group to Supabase via the `bill_team_6` RPC.
  *
- * For groups where credits were pre-reserved in Autumn (`autumnReserved: true`),
- * a refund is issued on failure; nothing is done on success. For unreserved
+ * For groups where credits were locked in Autumn (`autumnLockId != null`),
+ * the lock is confirmed on success and released on failure. For unlocked
  * groups (legacy / BullMQ path), Autumn is updated post-commit.
  */
 export async function processBillingBatch() {
@@ -127,7 +178,7 @@ export async function processBillingBatch() {
     }
 
     // Process each group of operations
-    for (const [key, group] of groupedOperations.entries()) {
+    for (const [, group] of groupedOperations.entries()) {
       logger.info(
         `🔄 Billing team ${group.team_id} for ${group.total_credits} credits`,
         {
@@ -146,12 +197,9 @@ export async function processBillingBatch() {
         continue;
       }
 
-      // Compute per-group credit split before billing so the catch block can
-      // issue a refund even if supaBillTeam throws.
-      const reservedCredits = group.operations
-        .filter(op => op.autumnReserved)
+      const unreservedCredits = group.operations
+        .filter(op => op.autumnLockId == null)
         .reduce((sum, op) => sum + op.credits, 0);
-      const unreservedCredits = group.total_credits - reservedCredits;
 
       try {
         // Execute the actual billing
@@ -176,19 +224,11 @@ export async function processBillingBatch() {
               credits: group.total_credits,
             },
           );
-          // Refund only the credits that were actually reserved in Autumn.
-          if (reservedCredits > 0) {
-            void autumnService.refundCredits({
-              teamId: group.team_id,
-              value: reservedCredits,
-              properties: {
-                source: "processBillingBatch_failure",
-                ...toAutumnBillingProperties(group.billing),
-                apiKeyId: group.api_key_id,
-                subscriptionId: group.subscription_id,
-              },
-            });
-          }
+          await finalizeAutumnLocks(
+            group,
+            "release",
+            "processBillingBatch_failure",
+          );
           continue;
         }
 
@@ -196,10 +236,12 @@ export async function processBillingBatch() {
           `✅ Successfully billed team ${group.team_id} for ${group.total_credits} credits`,
         );
 
-        // Track only unreserved credits post-commit; reserved credits were
-        // already recorded in Autumn at request time.
+        await finalizeAutumnLocks(group, "confirm", "processBillingBatch");
+
+        // Track only unlocked credits post-commit; locked credits are
+        // confirmed above and should not be re-tracked.
         if (unreservedCredits > 0) {
-          void autumnService.reserveCredits({
+          await autumnService.reserveCredits({
             teamId: group.team_id,
             value: unreservedCredits,
             properties: {
@@ -222,19 +264,11 @@ export async function processBillingBatch() {
             credits: group.total_credits,
           },
         });
-        // Billing threw before committing — refund any Autumn-reserved credits.
-        if (reservedCredits > 0) {
-          void autumnService.refundCredits({
-            teamId: group.team_id,
-            value: reservedCredits,
-            properties: {
-              source: "processBillingBatch_exception",
-              ...toAutumnBillingProperties(group.billing),
-              apiKeyId: group.api_key_id,
-              subscriptionId: group.subscription_id,
-            },
-          });
-        }
+        await finalizeAutumnLocks(
+          group,
+          "release",
+          "processBillingBatch_exception",
+        );
       }
     }
 
@@ -271,9 +305,9 @@ export function startBillingBatchProcessing() {
 /**
  * Enqueues a billing operation for async batch processing.
  *
- * Pass `autumnReserved: true` if credits were already reserved in Autumn via
- * `autumnService.reserveCredits()` — the batch processor will refund on
- * `bill_team_6` failure and skip re-tracking on success.
+ * Pass `autumnLockId` when credits were locked in Autumn via
+ * `autumnService.lockCredits()` — the batch processor will release on
+ * `bill_team_6` failure and confirm on success.
  */
 export async function queueBillingOperation(
   team_id: string,
@@ -282,7 +316,8 @@ export async function queueBillingOperation(
   api_key_id: number | null,
   billing: BillingMetadata,
   is_extract: boolean = false,
-  autumnReserved: boolean = false,
+  autumnLockId: string | null = null,
+  autumnProperties?: Record<string, unknown>,
 ) {
   // Skip queuing for preview teams
   if (team_id === "preview" || team_id.startsWith("preview_")) {
@@ -307,7 +342,8 @@ export async function queueBillingOperation(
       is_extract,
       timestamp: new Date().toISOString(),
       api_key_id,
-      autumnReserved,
+      autumnLockId,
+      autumnProperties,
     };
 
     // Add operation to Redis list

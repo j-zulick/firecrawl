@@ -37,6 +37,21 @@ export type EnsureTeamProvisionedParams = {
   name?: string | null;
 };
 
+export type LockCreditsParams = {
+  teamId: string;
+  value: number;
+  lockId?: string;
+  expiresAt?: number;
+  properties?: Record<string, unknown>;
+};
+
+export type FinalizeCreditsLockParams = {
+  lockId: string;
+  action: "confirm" | "release";
+  overrideValue?: number;
+  properties?: Record<string, unknown>;
+};
+
 export type TrackCreditsParams = {
   teamId: string;
   value: number;
