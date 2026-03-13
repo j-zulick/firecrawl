@@ -25,32 +25,40 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "node" ]
           args: [ "--max-old-space-size=3072", "dist/src/services/worker/nuq-worker.js" ]
+          ports:
+            - containerPort: {{ .Values.nuqWorker.port | int }}
           env:
             - name: FLY_PROCESS_GROUP
               value: "nuq-worker"
             - name: NUQ_WORKER_PORT
-              value: "3006"
+              value: {{ .Values.nuqWorker.port | quote }}
+            - name: NUQ_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
           envFrom:
             - configMapRef:
                 name: {{ include "firecrawl.fullname" . }}-config
             - secretRef:
                 name: {{ include "firecrawl.fullname" . }}-secret
-          {{- if .Values.nuqWorker.resources }}
+          {{- if .Values.resources.enabled }}
+            {{- if .Values.nuqWorker.resources }}
           resources:
-            {{- toYaml .Values.nuqWorker.resources | nindent 12 }}
-          {{- else }}
+              {{- toYaml .Values.nuqWorker.resources | nindent 12 }}
+            {{- else }}
           resources:
-            requests:
-              memory: "3G"
-              cpu: "1000m"
-            limits:
-              memory: "4G"
-              cpu: "1000m"
+              requests:
+                memory: "3G"
+                cpu: "1000m"
+              limits:
+                memory: "4G"
+                cpu: "1000m"
+            {{- end }}
           {{- end }}
           livenessProbe:
             httpGet:
               path: /health
-              port: 3006
+              port: {{ .Values.nuqWorker.port | int }}
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 5
@@ -59,7 +67,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 3006
+              port: {{ .Values.nuqWorker.port | int }}
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 5

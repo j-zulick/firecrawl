@@ -5,7 +5,7 @@ metadata:
   labels:
     app: {{ include "firecrawl.name" . }}-api
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.api.replicaCount | default .Values.replicaCount }}
   selector:
     matchLabels:
       app: {{ include "firecrawl.name" . }}-api
@@ -18,21 +18,31 @@ spec:
       imagePullSecrets:
         {{- toYaml .Values.imagePullSecrets | nindent 8 }}
       {{- end }}
+      terminationGracePeriodSeconds: 180
       containers:
         - name: api
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args: [ "pnpm", "run", "start" ]
+          command: [ "node" ]
+          args: [ "--max-old-space-size=6144", "dist/src/index.js" ]
           ports:
             - containerPort: {{ .Values.service.api.port }}
           env:
             - name: FLY_PROCESS_GROUP
               value: "app"
+            - name: NUQ_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
           envFrom:
             - configMapRef:
                 name: {{ include "firecrawl.fullname" . }}-config
             - secretRef:
                 name: {{ include "firecrawl.fullname" . }}-secret
+          {{- if and .Values.resources.enabled .Values.api.resources }}
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          {{- end }}
           livenessProbe:
             httpGet:
               path: /v0/health/liveness
