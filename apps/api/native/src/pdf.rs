@@ -1,9 +1,8 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use pdf_inspector::{
-  PdfOptions, PdfType,
-  process_pdf_with_options as rust_process_pdf,
-};
+use pdf_inspector::{PdfOptions, PdfType, process_pdf_with_options as rust_process_pdf};
+
+use crate::logging::{embed_logs_in_error, with_native_tracing, NativeContext, NativeLogEntry};
 
 #[napi(object)]
 pub struct PdfProcessResult {
@@ -15,6 +14,7 @@ pub struct PdfProcessResult {
   pub title: Option<String>,
   pub confidence: f64,
   pub is_complex: bool,
+  pub logs: Vec<NativeLogEntry>,
 }
 
 fn pdf_type_str(t: PdfType) -> &'static str {
@@ -36,38 +36,83 @@ fn to_napi_result(result: pdf_inspector::PdfProcessResult) -> PdfProcessResult {
     title: result.title,
     confidence: result.confidence as f64,
     is_complex: result.layout.is_complex,
+    logs: Vec::new(),
   }
 }
 
 /// Process a PDF file: detect type, extract text + markdown if text-based.
 /// When `max_pages` is provided, only the first N pages are extracted.
+/// Pass `ctx` (NativeContext) for structured tracing with scrape_id/url.
 #[napi]
-pub fn process_pdf(path: String, max_pages: Option<u32>) -> Result<PdfProcessResult> {
-  let opts = match max_pages {
-    Some(n) if n > 0 => PdfOptions::new().pages(1..=n),
-    _ => PdfOptions::new(),
-  };
+pub fn process_pdf(
+  path: String,
+  max_pages: Option<u32>,
+  ctx: Option<NativeContext>,
+) -> Result<PdfProcessResult> {
+  let traced = with_native_tracing(ctx.as_ref(), "pdf", || {
+    tracing::info!(max_pages = ?max_pages, "starting PDF processing");
 
-  let result = rust_process_pdf(&path, opts).map_err(|e| {
-    Error::new(
-      Status::GenericFailure,
-      format!("Failed to process PDF: {e}"),
-    )
-  })?;
+    let opts = match max_pages {
+      Some(n) if n > 0 => PdfOptions::new().pages(1..=n),
+      _ => PdfOptions::new(),
+    };
 
-  Ok(to_napi_result(result))
+    let result = rust_process_pdf(&path, opts).map_err(|e| {
+      tracing::error!(error = %e, "PDF processing failed");
+      Error::new(Status::GenericFailure, format!("Failed to process PDF: {e}"))
+    })?;
+
+    tracing::info!(
+      pdf_type = pdf_type_str(result.pdf_type),
+      page_count = result.page_count,
+      confidence = %result.confidence,
+      is_complex = result.layout.is_complex,
+      "PDF processing complete"
+    );
+
+    Ok(to_napi_result(result))
+  });
+
+  match traced.value {
+    Ok(mut result) => {
+      result.logs = traced.logs;
+      Ok(result)
+    }
+    Err(err) => Err(embed_logs_in_error(err, &traced.logs)),
+  }
 }
 
 /// Fast metadata-only detection: page count, title, type, confidence.
 /// Skips text extraction, markdown generation, and layout analysis.
+/// Pass `ctx` (NativeContext) for structured tracing with scrape_id/url.
 #[napi]
-pub fn detect_pdf(path: String) -> Result<PdfProcessResult> {
-  let result = rust_process_pdf(&path, PdfOptions::detect_only()).map_err(|e| {
-    Error::new(
-      Status::GenericFailure,
-      format!("Failed to detect PDF: {e}"),
-    )
-  })?;
+pub fn detect_pdf(
+  path: String,
+  ctx: Option<NativeContext>,
+) -> Result<PdfProcessResult> {
+  let traced = with_native_tracing(ctx.as_ref(), "pdf", || {
+    tracing::info!("starting PDF detection");
 
-  Ok(to_napi_result(result))
+    let result = rust_process_pdf(&path, PdfOptions::detect_only()).map_err(|e| {
+      tracing::error!(error = %e, "PDF detection failed");
+      Error::new(Status::GenericFailure, format!("Failed to detect PDF: {e}"))
+    })?;
+
+    tracing::info!(
+      pdf_type = pdf_type_str(result.pdf_type),
+      page_count = result.page_count,
+      confidence = %result.confidence,
+      "PDF detection complete"
+    );
+
+    Ok(to_napi_result(result))
+  });
+
+  match traced.value {
+    Ok(mut result) => {
+      result.logs = traced.logs;
+      Ok(result)
+    }
+    Err(err) => Err(embed_logs_in_error(err, &traced.logs)),
+  }
 }

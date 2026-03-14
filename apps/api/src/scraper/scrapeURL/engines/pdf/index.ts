@@ -23,6 +23,8 @@ import type { PDFMode } from "../../../../controllers/v2/types";
 import { processPdf, detectPdf } from "@mendable/firecrawl-rs";
 import { MAX_FILE_SIZE, MILLISECONDS_PER_PAGE } from "./types";
 import type { PDFProcessorResult } from "./types";
+import { emitNativeLogs, extractAndEmitNativeLogs } from "../../../../lib/native-logging";
+import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
@@ -155,8 +157,18 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       // When PDF_RUST_EXTRACT_ENABLE is off this is the only path taken,
       // matching current prod behaviour (detectPdf → MinerU → pdfParse).
       try {
+        const nativeCtx = { scrapeId: meta.id, url: meta.rewrittenUrl ?? meta.url };
         const startedAt = Date.now();
-        const detection = detectPdf(tempFilePath);
+        const detection = await withSpan("native.pdf.detect", async (span) => {
+          const result = detectPdf(tempFilePath, nativeCtx);
+          setSpanAttributes(span, {
+            "native.module": "pdf",
+            "native.pdf_type": result.pdfType,
+            "native.page_count": result.pageCount,
+          });
+          emitNativeLogs(result.logs, meta.logger, "pdf.detect");
+          return result;
+        });
         const durationMs = Date.now() - startedAt;
 
         logger.info("detectPdf completed", {
@@ -173,6 +185,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           : detection.pageCount;
         metadataTitle = detection.title ?? undefined;
       } catch (error) {
+        extractAndEmitNativeLogs(error, meta.logger, "pdf.detect");
         logger.warn("detectPdf failed", {
           error,
           url: meta.rewrittenUrl ?? meta.url,
@@ -189,8 +202,20 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     } else {
       // Rust extraction enabled (fast / auto modes).
       try {
+        const nativeCtx = { scrapeId: meta.id, url: meta.rewrittenUrl ?? meta.url };
         const startedAt = Date.now();
-        const pdfResult = processPdf(tempFilePath, maxPages ?? undefined);
+        const pdfResult = await withSpan("native.pdf.process", async (span) => {
+          const result = processPdf(tempFilePath, maxPages ?? undefined, nativeCtx);
+          setSpanAttributes(span, {
+            "native.module": "pdf",
+            "native.pdf_type": result.pdfType,
+            "native.page_count": result.pageCount,
+            "native.confidence": result.confidence,
+            "native.is_complex": result.isComplex,
+          });
+          emitNativeLogs(result.logs, meta.logger, "pdf.process");
+          return result;
+        });
         const durationMs = Date.now() - startedAt;
 
         logger.info("processPdf completed", {
@@ -258,6 +283,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         if (error instanceof PDFOCRRequiredError) {
           throw error;
         }
+        extractAndEmitNativeLogs(error, meta.logger, "pdf.process");
         logger.warn("processPdf failed, falling back to MU/PdfParse", {
           error,
           url: meta.rewrittenUrl ?? meta.url,
