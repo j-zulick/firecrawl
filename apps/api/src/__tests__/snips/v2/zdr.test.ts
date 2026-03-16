@@ -24,12 +24,7 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
         name: `zdr/${scope}/scrape`,
         credits: 10000,
         flags: {
-          allowZDR: true,
-          ...(scope === "Team-scoped"
-            ? {
-                forceZDR: true,
-              }
-            : {}),
+          scrapeZDR: scope === "Team-scoped" ? "forced" : "allowed",
         },
       });
 
@@ -66,12 +61,7 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
           name: `zdr/${scope}/crawl`,
           credits: 10000,
           flags: {
-            allowZDR: true,
-            ...(scope === "Team-scoped"
-              ? {
-                  forceZDR: true,
-                }
-              : {}),
+            scrapeZDR: scope === "Team-scoped" ? "forced" : "allowed",
           },
         });
 
@@ -120,12 +110,7 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
           name: `zdr/${scope}/batch-scrape`,
           credits: 10000,
           flags: {
-            allowZDR: true,
-            ...(scope === "Team-scoped"
-              ? {
-                  forceZDR: true,
-                }
-              : {}),
+            scrapeZDR: scope === "Team-scoped" ? "forced" : "allowed",
           },
         });
 

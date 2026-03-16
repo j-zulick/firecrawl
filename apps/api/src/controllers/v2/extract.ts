@@ -13,6 +13,7 @@ import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { logger as _logger } from "../../lib/logger";
 import { logRequest } from "../../services/logging/log_job";
 import { config } from "../../config";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 /**
  * Extracts data from the provided URLs based on the request parameters.
@@ -28,7 +29,7 @@ export async function extractController(
   const originalRequest = { ...req.body };
   req.body = extractRequestSchema.parse(req.body);
 
-  if (req.acuc?.flags?.forceZDR) {
+  if (getScrapeZDR(req.acuc?.flags) === "forced") {
     return res.status(400).json({
       success: false,
       error:
@@ -45,7 +46,7 @@ export async function extractController(
     team_id: req.auth.team_id,
     subId: req.acuc?.sub_id,
     extractId,
-    zeroDataRetention: req.acuc?.flags?.forceZDR,
+    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
   });
 
   if (req.body.agent?.model === "v3-beta") {
@@ -100,7 +101,7 @@ export async function extractController(
     showLLMUsage: req.body.__experimental_llmUsage,
     showSources: req.body.__experimental_showSources || req.body.showSources,
     showCostTracking: req.body.__experimental_showCostTracking,
-    zeroDataRetention: req.acuc?.flags?.forceZDR,
+    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
   });
 
   await addExtractJobToQueue(extractId, {

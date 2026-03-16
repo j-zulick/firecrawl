@@ -7,6 +7,7 @@ import {
   MAX_MAP_LIMIT,
 } from "../controllers/v2/types";
 import { crawlToCrawler, StoredCrawl } from "./crawl-redis";
+import { getScrapeZDR } from "./zdr-helpers";
 import {
   checkAndUpdateURLForMap,
   isSameDomain,
@@ -130,7 +131,7 @@ export async function getMapResults({
 
   const id = providedId ?? uuidv7();
   let mapResults: MapDocument[] = [];
-  const zeroDataRetention = flags?.forceZDR || false;
+  const zeroDataRetention = getScrapeZDR(flags) === "forced" || false;
 
   const sc: StoredCrawl = {
     originUrl: url,

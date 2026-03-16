@@ -1279,6 +1279,8 @@ export type TeamFlags = {
   unblockedDomains?: string[];
   forceZDR?: boolean;
   allowZDR?: boolean;
+  scrapeZDR?: "disabled" | "allowed" | "forced";
+  searchZDR?: "disabled" | "allowed" | "forced";
   zdrCost?: number;
   checkRobotsOnScrape?: boolean;
   crawlTtlHours?: number;

@@ -27,6 +27,7 @@ import {
   captureExceptionWithZdrCheck,
 } from "../../services/sentry";
 import { getJobPriority } from "../../lib/job-priority";
+import { getSearchZDR } from "../../lib/zdr-helpers";
 
 interface DocumentWithCostTracking {
   document: Document;
@@ -51,7 +52,7 @@ async function scrapeX402SearchResult(
 
   const costTracking = new CostTracking();
 
-  const zeroDataRetention = flags?.forceZDR ?? false;
+  const zeroDataRetention = getSearchZDR(flags) === "forced";
   applyZdrScope(zeroDataRetention);
 
   try {
@@ -185,10 +186,10 @@ export async function x402SearchController(
     teamId: req.auth.team_id,
     module: "x402-search",
     method: "x402SearchController",
-    zeroDataRetention: req.acuc?.flags?.forceZDR,
+    zeroDataRetention: getSearchZDR(req.acuc?.flags) === "forced",
   });
 
-  if (req.acuc?.flags?.forceZDR) {
+  if (getSearchZDR(req.acuc?.flags) === "forced") {
     return res.status(400).json({
       success: false,
       error:

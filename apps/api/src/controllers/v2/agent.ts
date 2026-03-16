@@ -10,6 +10,7 @@ import { logger as _logger } from "../../lib/logger";
 import { logRequest } from "../../services/logging/log_job";
 import { config } from "../../config";
 import { supabase_service } from "../../services/supabase";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 export async function agentController(
   req: RequestWithAuth<{}, AgentResponse, AgentRequest>,
@@ -24,13 +25,13 @@ export async function agentController(
     team_id: req.auth.team_id,
     module: "api/v2",
     method: "agentController",
-    zeroDataRetention: req.acuc?.flags?.forceZDR,
+    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
   });
 
   const originalRequest = { ...req.body };
   req.body = agentRequestSchema.parse(req.body);
 
-  if (req.acuc?.flags?.forceZDR) {
+  if (getScrapeZDR(req.acuc?.flags) === "forced") {
     return res.status(400).json({
       success: false,
       error:
@@ -42,7 +43,7 @@ export async function agentController(
     request: req.body,
     originalRequest,
     subId: req.acuc?.sub_id,
-    zeroDataRetention: req.acuc?.flags?.forceZDR,
+    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
   });
 
   if (!config.EXTRACT_V3_BETA_URL) {

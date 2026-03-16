@@ -10,6 +10,7 @@ import { getGenerateLlmsTxtQueue } from "../../services/queue-service";
 import * as Sentry from "@sentry/node";
 import { saveGeneratedLlmsTxt } from "../../lib/generate-llmstxt/generate-llmstxt-redis";
 import { logRequest } from "../../services/logging/log_job";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 type GenerateLLMsTextResponse =
   | ErrorResponse
@@ -28,7 +29,7 @@ export async function generateLLMsTextController(
   req: RequestWithAuth<{}, GenerateLLMsTextResponse, GenerateLLMsTextRequest>,
   res: Response<GenerateLLMsTextResponse>,
 ) {
-  if (req.acuc?.flags?.forceZDR) {
+  if (getScrapeZDR(req.acuc?.flags) === "forced") {
     return res.status(400).json({
       success: false,
       error:

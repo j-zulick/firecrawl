@@ -14,6 +14,7 @@ import { checkPermissions } from "../../lib/permissions";
 import { getMapResults, MapResult } from "../../lib/map-utils";
 import { v7 as uuidv7 } from "uuid";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 configDotenv();
 
@@ -26,7 +27,7 @@ export async function mapController(
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "mapController",
-    zeroDataRetention: req.acuc?.flags?.forceZDR,
+    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
   });
   // Get timing data from middleware (includes all middleware processing time)
   const middlewareStartTime =

@@ -22,6 +22,7 @@ import { AbortManagerThrownError } from "../../scraper/scrapeURL/lib/abortManage
 import { logRequest } from "../../services/logging/log_job";
 import { getErrorContactMessage } from "../../lib/deployment";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -45,7 +46,7 @@ export async function scrapeController(
   }
 
   const zeroDataRetention =
-    req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
+    getScrapeZDR(req.acuc?.flags) === "forced" || req.body.zeroDataRetention;
 
   const logger = _logger.child({
     method: "scrapeController",

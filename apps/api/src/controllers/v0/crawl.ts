@@ -35,6 +35,7 @@ import { fromV0ScrapeOptions } from "../v2/types";
 import { isSelfHosted } from "../../lib/deployment";
 import { crawlGroup } from "../../services/worker/nuq";
 import { logRequest } from "../../services/logging/log_job";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 export async function crawlController(req: Request, res: Response) {
   try {
@@ -45,7 +46,7 @@ export async function crawlController(req: Request, res: Response) {
 
     const { team_id, chunk } = auth;
 
-    if (chunk?.flags?.forceZDR) {
+    if (getScrapeZDR(chunk?.flags) === "forced") {
       return res.status(400).json({
         error:
           "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API.",

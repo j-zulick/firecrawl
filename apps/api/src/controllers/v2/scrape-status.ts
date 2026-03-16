@@ -1,6 +1,7 @@
 import { supabaseGetScrapeByIdOnlyData } from "../../lib/supabase-jobs";
 import { getJob } from "./crawl-status";
 import { logger as _logger } from "../../lib/logger";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 export async function scrapeStatusController(req: any, res: any) {
   const uuidReg =
@@ -18,10 +19,10 @@ export async function scrapeStatusController(req: any, res: any) {
     teamId: req.auth.team_id,
     jobId: req.params.jobId,
     scrapeId: req.params.jobId,
-    zeroDataRetention: req.acuc?.flags?.forceZDR,
+    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
   });
 
-  if (req.acuc?.flags?.forceZDR) {
+  if (getScrapeZDR(req.acuc?.flags) === "forced") {
     return res.status(400).json({
       success: false,
       error:

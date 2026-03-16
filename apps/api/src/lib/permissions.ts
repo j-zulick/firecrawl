@@ -1,4 +1,5 @@
 import { TeamFlags } from "../controllers/v2/types";
+import { getScrapeZDR } from "./zdr-helpers";
 
 type LocationOptions = { country?: string };
 
@@ -16,8 +17,9 @@ export function checkPermissions(
   request: APIRequest,
   flags?: TeamFlags,
 ): { error?: string } {
-  // zdr perms
-  if (request.zeroDataRetention && !flags?.allowZDR) {
+  // zdr perms — scrapeZDR must be 'allowed' or 'forced' for request-scoped ZDR
+  const scrapeMode = getScrapeZDR(flags);
+  if (request.zeroDataRetention && scrapeMode !== "allowed" && scrapeMode !== "forced") {
     return {
       error: `Zero Data Retention (ZDR) is not enabled for your team. Contact ${SUPPORT_EMAIL} to enable this feature.`,
     };

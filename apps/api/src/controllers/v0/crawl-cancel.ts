@@ -7,6 +7,7 @@ import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { crawlGroup } from "../../services/worker/nuq";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 configDotenv();
 
 export async function crawlCancelController(req: Request, res: Response) {
@@ -18,7 +19,7 @@ export async function crawlCancelController(req: Request, res: Response) {
 
     const { team_id } = auth;
 
-    if (auth.chunk?.flags?.forceZDR) {
+    if (getScrapeZDR(auth.chunk?.flags) === "forced") {
       return res.status(400).json({
         error:
           "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API.",

@@ -6,6 +6,7 @@ import * as Sentry from "@sentry/node";
 import { saveDeepResearch } from "../../lib/deep-research/deep-research-redis";
 import { z } from "zod";
 import { logRequest } from "../../services/logging/log_job";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 const deepResearchRequestSchema = z
   .object({
@@ -81,7 +82,7 @@ export async function deepResearchController(
   req: RequestWithAuth<{}, DeepResearchResponse, DeepResearchRequest>,
   res: Response<DeepResearchResponse>,
 ) {
-  if (req.acuc?.flags?.forceZDR) {
+  if (getScrapeZDR(req.acuc?.flags) === "forced") {
     return res.status(400).json({
       success: false,
       error:

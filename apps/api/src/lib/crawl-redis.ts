@@ -6,6 +6,7 @@ import { logger as _logger } from "./logger";
 import { getAdjustedMaxDepth } from "../scraper/WebScraper/utils/maxDepthUtils";
 import type { Logger } from "winston";
 import { withSpan, setSpanAttributes } from "./otel-tracer";
+import { getScrapeZDR } from "./zdr-helpers";
 
 export type StoredCrawl = {
   originUrl?: string;
@@ -559,7 +560,7 @@ export function crawlToCrawler(
     regexOnFullURL: sc.crawlerOptions?.regexOnFullURL ?? false,
     maxDiscoveryDepth: sc.crawlerOptions?.maxDiscoveryDepth,
     currentDiscoveryDepth: crawlerOptions?.currentDiscoveryDepth ?? 0,
-    zeroDataRetention: (teamFlags?.forceZDR || sc.zeroDataRetention) ?? false,
+    zeroDataRetention: (getScrapeZDR(teamFlags) === "forced" || sc.zeroDataRetention) ?? false,
     location: sc.scrapeOptions?.location,
     headers: sc.scrapeOptions?.headers,
   });

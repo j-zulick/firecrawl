@@ -13,6 +13,7 @@ import type { DBScrape, PseudoJob } from "../v1/crawl-status";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { scrapeQueue, NuQJob } from "../../services/worker/nuq";
 import { includesFormat } from "../../lib/format-utils";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 configDotenv();
 
 async function getJobs(
@@ -96,7 +97,7 @@ export async function crawlStatusController(req: Request, res: Response) {
       return res.status(auth.status).json({ error: auth.error });
     }
 
-    if (auth.chunk?.flags?.forceZDR) {
+    if (getScrapeZDR(auth.chunk?.flags) === "forced") {
       return res.status(400).json({
         error:
           "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API.",

@@ -22,6 +22,7 @@ import { checkPermissions } from "../../lib/permissions";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 import { crawlGroup } from "../../services/worker/nuq";
 import { logRequest } from "../../services/logging/log_job";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -39,7 +40,7 @@ export async function crawlController(
   }
 
   const zeroDataRetention =
-    req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
+    getScrapeZDR(req.acuc?.flags) === "forced" || req.body.zeroDataRetention;
 
   const id = uuidv7();
   const logger = _logger.child({

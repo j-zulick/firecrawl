@@ -394,7 +394,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
         name: "billing/bills ZDR scrape correctly",
         credits: 100,
         flags: {
-          allowZDR: true,
+          scrapeZDR: "allowed",
         },
       });
 
@@ -462,7 +462,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
         name: "billing/bills ZDR batch scrape correctly",
         credits: 100,
         flags: {
-          allowZDR: true,
+          scrapeZDR: "allowed",
         },
       });
 
@@ -531,7 +531,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
         name: "billing/bills ZDR crawl correctly",
         credits: 200,
         flags: {
-          allowZDR: true,
+          scrapeZDR: "allowed",
         },
       });
 
@@ -595,7 +595,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
         name: "billing/bills ZDR scrape correctly",
         credits: 100,
         flags: {
-          allowZDR: true,
+          scrapeZDR: "allowed",
           zdrCost: 0,
         },
       });

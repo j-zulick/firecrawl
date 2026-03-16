@@ -26,6 +26,7 @@ import {
   filterDocumentsWithContent,
 } from "../../search/transform";
 import { fromV1ScrapeOptions } from "../v2/types";
+import { getSearchZDR } from "../../lib/zdr-helpers";
 
 // Used for deep research
 export async function searchAndScrapeSearchResult(
@@ -90,11 +91,11 @@ export async function searchController(
     teamId: req.auth.team_id,
     module: "search",
     method: "searchController",
-    zeroDataRetention: req.acuc?.flags?.forceZDR,
+    zeroDataRetention: getSearchZDR(req.acuc?.flags) === "forced",
     searchQuery: req.body.query.slice(0, 100),
   });
 
-  if (req.acuc?.flags?.forceZDR) {
+  if (getSearchZDR(req.acuc?.flags) === "forced") {
     return res.status(400).json({
       success: false,
       error:
