@@ -324,7 +324,7 @@ export async function scrapeURLWithIndex(
 
   const checkpoint2 = Date.now();
 
-  const id = data[0].id;
+  const id = selectedRow.id;
 
   const doc = await getIndexFromGCS(
     id + ".json",
@@ -386,7 +386,7 @@ export async function scrapeURLWithIndex(
     contentType: doc.contentType,
 
     cacheInfo: {
-      created_at: new Date(data[0].created_at),
+      created_at: new Date(selectedRow.created_at),
     },
 
     postprocessorsUsed: doc.postprocessorsUsed,
