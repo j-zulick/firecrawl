@@ -3,7 +3,7 @@ import type { Logger } from "winston";
 const NATIVE_LOGS_SEPARATOR = "\n__native_logs__:";
 
 /** Matches the NativeLogEntry struct from Rust (@mendable/firecrawl-rs). */
-export interface NativeLogEntry {
+interface NativeLogEntry {
   level: string;
   target: string;
   message: string;

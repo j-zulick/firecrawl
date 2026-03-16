@@ -151,6 +151,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
           location_languages: meta.options.location?.languages ?? null,
           status: document.metadata.statusCode,
           is_precrawl: meta.internalOptions.isPreCrawl === true,
+          is_stealth: meta.featureFlags.has("stealthProxy"),
           wait_time_ms: meta.options.waitFor > 0 ? meta.options.waitFor : null,
           ...urlSplitsHash.slice(0, 10).reduce(
             (a, x, i) => ({
@@ -259,7 +260,7 @@ export async function scrapeURLWithIndex(
   const checkpoint1 = Date.now();
 
   const { data, error } = await index_supabase_service.rpc(
-    "index_get_recent_3",
+    "index_get_recent_4",
     {
       p_url_hash: urlHash,
       p_max_age_ms: maxAge,
@@ -275,6 +276,7 @@ export async function scrapeURLWithIndex(
           ? meta.options.location?.languages
           : null,
       p_wait_time_ms: meta.options.waitFor,
+      p_is_stealth: meta.featureFlags.has("stealthProxy"),
       p_min_age_ms: meta.options.minAge ?? null,
     },
   );

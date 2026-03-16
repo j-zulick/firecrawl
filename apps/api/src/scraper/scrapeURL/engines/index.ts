@@ -213,7 +213,7 @@ const engineOptions: {
       location: true,
       skipTlsVerification: true,
       useFastMode: true,
-      stealthProxy: false,
+      stealthProxy: true,
       branding: false,
       disableAdblock: true,
     },
@@ -270,7 +270,7 @@ const engineOptions: {
       mobile: true,
       skipTlsVerification: true,
       useFastMode: true,
-      stealthProxy: false,
+      stealthProxy: true,
       branding: false,
       disableAdblock: false,
     },
@@ -467,8 +467,7 @@ export function shouldUseIndex(meta: Meta) {
     meta.options.maxAge !== 0 &&
     (meta.options.headers === undefined ||
       Object.keys(meta.options.headers).length === 0) &&
-    (meta.options.actions === undefined || meta.options.actions.length === 0) &&
-    meta.options.proxy !== "stealth"
+    (meta.options.actions === undefined || meta.options.actions.length === 0)
   );
 }
 
@@ -561,7 +560,11 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
   }
 
-  if (selectedEngines.some(x => engineOptions[x.engine].quality > 0)) {
+  if (
+    selectedEngines.some(
+      x => engineOptions[x.engine].quality > 0 && !x.engine.startsWith("index"),
+    )
+  ) {
     selectedEngines = selectedEngines.filter(
       x => engineOptions[x.engine].quality > 0,
     );
@@ -628,7 +631,10 @@ export async function scrapeURLWithEngine(
   });
 
   const featureFlags = new Set(meta.featureFlags);
-  if (engineOptions[engine].features.stealthProxy) {
+  if (
+    engineOptions[engine].features.stealthProxy &&
+    !engine.startsWith("index") // don't force stealth proxy for index
+  ) {
     featureFlags.add("stealthProxy");
   }
 
