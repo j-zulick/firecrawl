@@ -217,12 +217,121 @@ jobs:
 
       - name: Publish test report
         if: always()
-        uses: dorny/test-reporter@v1
-        with:
-          name: Test Report (${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.search }}, ${{ matrix.ai }})
-          path: apps/api/test-results/junit.xml
-          reporter: jest-junit
-          fail-on-error: true
+        shell: python3 {0}
+        env:
+          JUNIT: apps/api/test-results/junit.xml
+          MATRIX_LABEL: "${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.search }}, ${{ matrix.ai }}"
+        run: |
+          import os, sys, xml.etree.ElementTree as ET
+
+          junit = os.environ["JUNIT"]
+          label = os.environ["MATRIX_LABEL"]
+          summary = os.environ["GITHUB_STEP_SUMMARY"]
+
+          if not os.path.isfile(junit):
+              print(f"::warning::No junit.xml found — tests may have crashed before producing a report.")
+              with open(summary, "a") as f:
+                  f.write(f"## ⚠️ No test report\njunit.xml was not generated. Tests likely crashed before completing.\n")
+              sys.exit(0)
+
+          try:
+              tree = ET.parse(junit)
+              root = tree.getroot()
+          except ET.ParseError as e:
+              print(f"::warning::junit.xml is malformed: {e}")
+              with open(summary, "a") as f:
+                  f.write(f"## ⚠️ Malformed test report\njunit.xml could not be parsed (tests may have crashed mid-run): `{e}`\n")
+              sys.exit(1)
+
+          # Get total time from root element
+          top = root if root.tag == "testsuites" else root
+          time_s = top.get("time", "?")
+
+          failed = []
+          passed = []
+          skipped = []
+          for tc in tree.iter("testcase"):
+              name = tc.get("name", "unknown")
+              suite = tc.get("classname", "")
+              t = tc.get("time", "?")
+              if tc.find("skipped") is not None:
+                  skipped.append((suite, name, t))
+                  continue
+              fail = tc.find("failure")
+              if fail is None:
+                  fail = tc.find("error")
+              if fail is not None:
+                  msg = (fail.get("message") or fail.text or "")[:200].replace("\n", " ")
+                  failed.append((suite, name, t, msg))
+              else:
+                  passed.append((suite, name, t))
+
+          # Derive counts from parsed testcases (root attributes can be unreliable)
+          tests = len(failed) + len(passed) + len(skipped)
+          failures = len(failed)
+
+          def esc(s):
+              return s.replace("|", "\\|")
+
+          def log(line):
+              print(line)
+
+          def md(line, f):
+              f.write(line + "\n")
+
+          # Print plain text to step log (failures at the end so they're visible on auto-scroll)
+          log(f"Test Report ({label}): {tests} tests, {failures} failures, {time_s}s")
+          log("")
+          log("All tests:")
+          for suite, name, t in passed:
+              log(f"  ✅ PASS  {suite} > {name} ({t}s)")
+          for suite, name, t in skipped:
+              log(f"  ⏭️ SKIP  {suite} > {name} ({t}s)")
+          for suite, name, t, _msg in failed:
+              log(f"  ❌ FAIL  {suite} > {name} ({t}s)")
+          if failed:
+              log("")
+              log("Failed tests:")
+              for suite, name, t, msg in failed:
+                  log(f"  ❌ {suite} > {name} ({t}s)")
+                  if msg:
+                      log(f"     {msg}")
+
+          # Write markdown tables to step summary
+          with open(summary, "a") as f:
+              status = "❌" if failures > 0 else "✅"
+              md(f"## {status} Test Report ({label})", f)
+              md("| 🧪 Tests | ❌ Failures | ⏭️ Skipped | ⏱️ Time |", f)
+              md("|----------|------------|-----------|---------|", f)
+              md(f"| {tests} | {failures} | {len(skipped)} | {time_s}s |", f)
+              md("", f)
+
+              if failed:
+                  md("### ❌ Failed tests", f)
+                  md("", f)
+                  md("| Suite | Test | Time | Message |", f)
+                  md("|-------|------|------|---------|", f)
+                  for suite, name, t, msg in failed:
+                      md(f"| `{esc(suite)}` | **{esc(name)}** | {t}s | {esc(msg)} |", f)
+                  md("", f)
+
+              md("<details>", f)
+              md(f"<summary>📋 All tests ({len(passed)} passed, {len(failed)} failed, {len(skipped)} skipped)</summary>", f)
+              md("", f)
+              md("| Status | Suite | Test | Time |", f)
+              md("|--------|-------|------|------|", f)
+              for suite, name, t, _msg in failed:
+                  md(f"| ❌ | `{esc(suite)}` | {esc(name)} | {t}s |", f)
+              for suite, name, t in passed:
+                  md(f"| ✅ | `{esc(suite)}` | {esc(name)} | {t}s |", f)
+              for suite, name, t in skipped:
+                  md(f"| ⏭️ | `{esc(suite)}` | {esc(name)} | {t}s |", f)
+              md("", f)
+              md("</details>", f)
+
+          if failures > 0:
+              print(f"::error::{failures} failure(s)")
+              sys.exit(1)
 
       - name: Copy log files
         if: always()
