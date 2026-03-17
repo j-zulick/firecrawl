@@ -151,6 +151,7 @@ export type AuthResponse =
   | {
       success: true;
       team_id: string;
+      org_id?: string | null;
       api_key?: string;
       chunk: AuthCreditUsageChunk | null;
     }

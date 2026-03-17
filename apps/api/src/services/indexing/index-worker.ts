@@ -81,7 +81,16 @@ const processBillingJobInternal = async (token: string, job: Job) => {
       await processBillingBatch();
     } else if (job.name === "bill_team") {
       // This is an individual billing operation that should be queued for batch processing
-      const { team_id, subscription_id, credits, billing, endpoint, is_extract, api_key_id } =
+      const {
+        team_id,
+        subscription_id,
+        credits,
+        billing,
+        endpoint,
+        is_extract,
+        api_key_id,
+        autumnTrackInRequest,
+      } =
         job.data;
 
       logger.info(`Adding team ${team_id} billing operation to batch queue`, {
@@ -101,6 +110,7 @@ const processBillingJobInternal = async (token: string, job: Job) => {
           isExtract: is_extract,
         }),
         is_extract,
+        autumnTrackInRequest,
       );
     } else {
       logger.warn(`Unknown billing job type: ${job.name}`);

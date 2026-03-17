@@ -30,7 +30,11 @@ import {
   StoredCrawl,
 } from "../../lib/crawl-redis";
 import { redisEvictConnection } from "../redis";
-import { resolveBillingMetadata } from "../billing/types";
+import {
+  resolveBillingMetadata,
+  toAutumnBillingProperties,
+} from "../billing/types";
+import { autumnService } from "../autumn/autumn.service";
 import {
   _addScrapeJobToBullMQ,
   addScrapeJob,
@@ -99,6 +103,17 @@ async function billScrapeJob(
   unsupportedFeatures?: Set<FeatureFlag>,
 ) {
   let creditsToBeBilled: number | null = null;
+  const billing = resolveBillingMetadata({
+    billing: job.data.billing,
+    crawlId: job.data.crawl_id,
+    crawlerOptions: job.data.crawlerOptions,
+  });
+  const autumnProperties = {
+    source: "billScrapeJob",
+    ...toAutumnBillingProperties(billing),
+    apiKeyId: job.data.apiKeyId,
+  };
+  let trackedInRequest = false;
 
   if (job.data.is_scrape !== true && !job.data.internalOptions?.bypassBilling) {
     creditsToBeBilled = await calculateCreditsToBeBilled(
@@ -116,10 +131,11 @@ async function billScrapeJob(
       config.USE_DB_AUTHENTICATION
     ) {
       try {
-        const billing = resolveBillingMetadata({
-          billing: job.data.billing,
-          crawlId: job.data.crawl_id,
-          crawlerOptions: job.data.crawlerOptions,
+        trackedInRequest = await autumnService.trackCredits({
+          teamId: job.data.team_id,
+          value: creditsToBeBilled,
+          properties: autumnProperties,
+          requestScoped: true,
         });
         const billingJobId = uuidv7();
         logger.debug(
@@ -144,18 +160,27 @@ async function billScrapeJob(
             timestamp: new Date().toISOString(),
             originating_job_id: job.id,
             api_key_id: job.data.apiKeyId,
+            autumnTrackInRequest: trackedInRequest,
           },
           {
             jobId: billingJobId,
             priority: 10,
           },
         );
+
         return creditsToBeBilled;
       } catch (error) {
         logger.error(
           `Failed to add billing job to queue for team ${job.data.team_id} for ${creditsToBeBilled} credits`,
           { error },
         );
+        if (trackedInRequest && creditsToBeBilled !== null) {
+          await autumnService.refundCredits({
+            teamId: job.data.team_id,
+            value: creditsToBeBilled,
+            properties: autumnProperties,
+          });
+        }
         captureExceptionWithZdrCheck(error, {
           extra: { zeroDataRetention: job.data.zeroDataRetention ?? false },
         });

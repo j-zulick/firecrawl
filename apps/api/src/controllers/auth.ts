@@ -12,6 +12,7 @@ import { redlock } from "../services/redlock";
 import { supabase_rr_service, supabase_service } from "../services/supabase";
 import { AuthResponse, RateLimiterMode } from "../types";
 import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
+import { isAutumnCheckEnabled } from "../services/autumn/autumn.service";
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
@@ -387,7 +388,43 @@ export async function authenticateUser(
     success: true,
     chunk: null,
     team_id: "bypass",
+    org_id: null,
   })(req, res, mode);
+}
+
+/**
+ * Backfills org_id for stale cached auth chunks so Autumn check gating can run.
+ */
+async function ensureChunkOrgId(
+  apiKey: string,
+  chunk: AuthCreditUsageChunk | null,
+): Promise<AuthCreditUsageChunk | null> {
+  if (
+    !chunk ||
+    chunk.org_id ||
+    config.USE_DB_AUTHENTICATION !== true ||
+    !isAutumnCheckEnabled()
+  ) {
+    return chunk;
+  }
+
+  const { data, error } = await supabase_rr_service
+    .from("teams")
+    .select("org_id")
+    .eq("id", chunk.team_id)
+    .single();
+
+  if (error || !data?.org_id) {
+    logger.warn("Failed to backfill org_id for auth chunk", {
+      teamId: chunk.team_id,
+      error,
+    });
+    return chunk;
+  }
+
+  chunk.org_id = data.org_id;
+  await setCachedACUC(apiKey, !!chunk.is_extract, chunk);
+  return chunk;
 }
 
 async function supaAuthenticateUser(
@@ -449,6 +486,7 @@ async function supaAuthenticateUser(
     }
 
     chunk = await getACUC(normalizedApi, false, true, RateLimiterMode.Scrape);
+    chunk = await ensureChunkOrgId(normalizedApi, chunk);
 
     if (chunk === null) {
       return {
@@ -513,6 +551,7 @@ async function supaAuthenticateUser(
     return {
       success: true,
       team_id: `preview_${iptoken}`,
+      org_id: null,
       chunk: null,
     };
     // check the origin of the request and make sure its from firecrawl.dev
@@ -551,6 +590,7 @@ async function supaAuthenticateUser(
   return {
     success: true,
     team_id: teamId ?? undefined,
+    org_id: chunk?.org_id ?? null,
     chunk,
   };
 }

@@ -56,6 +56,7 @@ export type TrackCreditsParams = {
   teamId: string;
   value: number;
   properties?: Record<string, unknown>;
+  requestScoped?: boolean;
 };
 
 export type CreateEntityResult =

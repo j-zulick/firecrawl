@@ -24,6 +24,11 @@ import { validate as isUuid } from "uuid";
 
 import { config } from "../config";
 import { supabase_service } from "../services/supabase";
+import {
+  autumnService,
+  isAutumnCheckEnabled,
+} from "../services/autumn/autumn.service";
+
 export function checkCreditsMiddleware(
   _minimum?: number,
 ): (req: RequestWithAuth, res: Response, next: NextFunction) => void {
@@ -114,12 +119,42 @@ export function checkCreditsMiddleware(
         }
       }
 
-      const { success, remainingCredits, chunk } = await checkTeamCredits(
-        req.acuc ?? null,
-        req.auth.team_id,
-        minimum ?? 1,
-      );
-      //todo(autumn) add .check call here
+      const requestedCredits = minimum ?? 1;
+      const useAutumnCheck =
+        !!req.auth.org_id &&
+        isAutumnCheckEnabled(req.auth.org_id) &&
+        !req.acuc?.is_extract;
+
+      const autumnProperties = {
+        source: "checkCreditsMiddleware",
+        path: req.path,
+      };
+      const [legacyCheck, autumnAllowed] = await Promise.all([
+        checkTeamCredits(req.acuc ?? null, req.auth.team_id, requestedCredits),
+        useAutumnCheck
+          ? autumnService.checkCredits({
+              teamId: req.auth.team_id,
+              value: requestedCredits,
+              properties: autumnProperties,
+            })
+          : null,
+      ]);
+      let { success, remainingCredits, chunk } = legacyCheck;
+
+      if (autumnAllowed !== null) {
+        if (autumnAllowed !== legacyCheck.success) {
+          logger.warn("Autumn check result diverged from legacy credit gate", {
+            teamId: req.auth.team_id,
+            path: req.path,
+            requestedCredits,
+            autumnAllowed,
+            legacyAllowed: legacyCheck.success,
+          });
+        }
+        success = autumnAllowed;
+        remainingCredits = legacyCheck.remainingCredits;
+      }
+
       if (chunk) {
         req.acuc = chunk;
       }
@@ -204,9 +239,9 @@ export function authMiddleware(
         }
       }
 
-      const { team_id, chunk } = auth;
+      const { team_id, org_id, chunk } = auth;
 
-      req.auth = { team_id };
+      req.auth = { team_id, org_id };
       req.acuc = chunk ?? undefined;
       if (chunk) {
         req.account = {

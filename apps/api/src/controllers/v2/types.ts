@@ -1276,6 +1276,7 @@ export type CrawlErrorsResponse =
 
 type AuthObject = {
   team_id: string;
+  org_id?: string | null;
 };
 
 type Account = {

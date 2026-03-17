@@ -20,12 +20,12 @@ jest.mock("../../../lib/withAuth", () => ({
   withAuth,
 }));
 
-const reserveCredits = jest.fn<(args: any) => Promise<boolean>>();
-const finalizeCreditsLock = jest.fn<(args: any) => Promise<void>>();
+const trackCredits = jest.fn<(args: any) => Promise<boolean>>();
+const refundCredits = jest.fn<(args: any) => Promise<void>>();
 jest.mock("../../autumn/autumn.service", () => ({
   autumnService: {
-    reserveCredits,
-    finalizeCreditsLock,
+    trackCredits,
+    refundCredits,
   },
 }));
 
@@ -117,24 +117,8 @@ function makeOp(overrides: Record<string, unknown> = {}) {
     is_extract: false,
     timestamp: "2026-03-13T00:00:00.000Z",
     api_key_id: 123,
-    autumnLockId: null,
-    autumnProperties: {
-      source: "billTeam",
-      endpoint: "extract",
-      apiKeyId: 123,
-    },
     ...overrides,
   });
-}
-
-function deferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
 }
 
 beforeEach(() => {
@@ -142,109 +126,119 @@ beforeEach(() => {
   queue = [];
   billedTeams.clear();
   locks.clear();
-  reserveCredits.mockResolvedValue(true);
-  finalizeCreditsLock.mockResolvedValue(undefined);
   rpc.mockResolvedValue({ data: [], error: null });
+  trackCredits.mockResolvedValue(true);
+  refundCredits.mockResolvedValue(undefined);
 });
 
 describe("processBillingBatch", () => {
-  it("awaits lock confirmation before tracking unlocked credits", async () => {
-    const finalize = deferred<void>();
-    finalizeCreditsLock.mockReturnValueOnce(finalize.promise);
-    queue = [
-      makeOp({ credits: 7, autumnLockId: "lock-1" }),
-      makeOp({ credits: 3, autumnLockId: null }),
-    ];
+  it("tracks queued Autumn usage when the request path did not", async () => {
+    queue = [makeOp()];
 
-    const run = processBillingBatch();
-    await new Promise(resolve => setImmediate(resolve));
+    await processBillingBatch();
 
-    expect(finalizeCreditsLock).toHaveBeenCalledWith({
-      lockId: "lock-1",
-      action: "confirm",
-      properties: expect.objectContaining({
-        source: "billTeam",
-        apiKeyId: 123,
-        subscriptionId: "sub-1",
-        finalizeSource: "processBillingBatch",
-      }),
-    });
-    expect(reserveCredits).not.toHaveBeenCalled();
-
-    finalize.resolve();
-    await run;
-
-    expect(reserveCredits).toHaveBeenCalledWith({
+    expect(rpc).toHaveBeenCalled();
+    expect(trackCredits).toHaveBeenCalledWith({
       teamId: "team-1",
-      value: 3,
-      properties: expect.objectContaining({
+      value: 10,
+      properties: {
         source: "processBillingBatch",
+        endpoint: "extract",
         apiKeyId: 123,
         subscriptionId: "sub-1",
-      }),
+      },
     });
+    expect(captureException).not.toHaveBeenCalled();
   });
 
-  it("releases Autumn locks when billing returns success false", async () => {
-    queue = [makeOp({ autumnLockId: "lock-1" })];
+  it("skips Autumn tracking when the request path already tracked the op", async () => {
+    queue = [makeOp({ autumnTrackInRequest: true })];
+
+    await processBillingBatch();
+
+    expect(rpc).toHaveBeenCalled();
+    expect(trackCredits).not.toHaveBeenCalled();
+  });
+
+  it("continues when billing returns success false", async () => {
+    queue = [makeOp({ autumnTrackInRequest: true })];
     rpc.mockResolvedValueOnce({ data: null, error: new Error("db failed") });
 
     await processBillingBatch();
 
-    expect(finalizeCreditsLock).toHaveBeenCalledWith({
-      lockId: "lock-1",
-      action: "release",
-      properties: expect.objectContaining({
-        source: "billTeam",
-        finalizeSource: "processBillingBatch_failure",
-      }),
-    });
-    expect(reserveCredits).not.toHaveBeenCalled();
-  });
-
-  it("releases Autumn locks when billing throws", async () => {
-    queue = [makeOp({ autumnLockId: "lock-1" })];
-    rpc.mockRejectedValueOnce(new Error("rpc exploded"));
-
-    await processBillingBatch();
-
-    expect(finalizeCreditsLock).toHaveBeenCalledWith({
-      lockId: "lock-1",
-      action: "release",
-      properties: expect.objectContaining({
-        source: "billTeam",
-        finalizeSource: "processBillingBatch_exception",
-      }),
+    expect(refundCredits).toHaveBeenCalledWith({
+      teamId: "team-1",
+      value: 10,
+      properties: {
+        source: "processBillingBatch",
+        endpoint: "extract",
+        apiKeyId: 123,
+        subscriptionId: "sub-1",
+      },
     });
     expect(captureException).toHaveBeenCalled();
   });
 
-  it("treats undefined autumnLockId as unlocked for legacy queued ops", async () => {
-    queue = [makeOp({ autumnLockId: undefined })];
+  it("captures exceptions when billing throws", async () => {
+    queue = [makeOp({ autumnTrackInRequest: true })];
+    rpc.mockRejectedValueOnce(new Error("rpc exploded"));
 
     await processBillingBatch();
 
-    expect(finalizeCreditsLock).not.toHaveBeenCalled();
-    expect(reserveCredits).toHaveBeenCalledWith({
+    expect(refundCredits).toHaveBeenCalledWith({
       teamId: "team-1",
       value: 10,
-      properties: expect.objectContaining({
+      properties: {
         source: "processBillingBatch",
-      }),
+        endpoint: "extract",
+        apiKeyId: 123,
+        subscriptionId: "sub-1",
+      },
     });
+    expect(captureException).toHaveBeenCalled();
   });
 
-  it("survives unexpected synchronous finalizeAutumnLocks failures", async () => {
-    queue = [makeOp({ autumnLockId: "lock-1" })];
-    finalizeCreditsLock.mockImplementationOnce(() => {
-      throw new Error("sync finalize failure");
-    });
+  it("continues processing later groups when Autumn refund fails", async () => {
+    queue = [
+      makeOp({
+        team_id: "team-1",
+        subscription_id: "sub-1",
+        autumnTrackInRequest: true,
+      }),
+      makeOp({
+        team_id: "team-2",
+        subscription_id: "sub-2",
+        autumnTrackInRequest: false,
+      }),
+    ];
+    rpc
+      .mockResolvedValueOnce({ data: null, error: new Error("db failed") })
+      .mockResolvedValueOnce({ data: [], error: null });
+    refundCredits.mockRejectedValueOnce(new Error("refund failed"));
 
     await processBillingBatch();
 
-    expect(logger.warn).toHaveBeenCalledWith(
-      "Autumn finalizeAutumnLocks failed unexpectedly",
-      expect.objectContaining({ team_id: "team-1", action: "confirm" }),
-    );
+    expect(refundCredits).toHaveBeenCalledWith({
+      teamId: "team-1",
+      value: 10,
+      properties: {
+        source: "processBillingBatch",
+        endpoint: "extract",
+        apiKeyId: 123,
+        subscriptionId: "sub-1",
+      },
+    });
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(trackCredits).toHaveBeenCalledWith({
+      teamId: "team-2",
+      value: 10,
+      properties: {
+        source: "processBillingBatch",
+        endpoint: "extract",
+        apiKeyId: 123,
+        subscriptionId: "sub-2",
+      },
+    });
+    expect(captureException).toHaveBeenCalled();
   });
 });

@@ -70,8 +70,11 @@ jest.mock("../../supabase", () => ({
 
 jest.mock("../../../config", () => ({
   config: {
+    AUTUMN_CHECK_ENABLED: undefined,
     AUTUMN_EXPERIMENT: "true",
     AUTUMN_EXPERIMENT_PERCENT: 100,
+    AUTUMN_REQUEST_TRACK_EXPERIMENT: undefined,
+    AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT: 100,
   },
 }));
 
@@ -80,7 +83,9 @@ import {
   AutumnService,
   BoundedMap,
   BoundedSet,
+  isAutumnCheckEnabled,
   isAutumnEnabled,
+  isAutumnRequestTrackEnabled,
   orgBucket,
 } from "../autumn.service";
 import { config } from "../../../config";
@@ -97,6 +102,23 @@ function makeEntity(usage: number) {
   return { balances: { CREDITS: { usage } } };
 }
 
+function setAutumnConfig(overrides: {
+  AUTUMN_CHECK_ENABLED?: string;
+  AUTUMN_EXPERIMENT?: string;
+  AUTUMN_EXPERIMENT_PERCENT?: number;
+  AUTUMN_REQUEST_TRACK_EXPERIMENT?: string;
+  AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT?: number;
+} = {}) {
+  config.AUTUMN_CHECK_ENABLED = overrides.AUTUMN_CHECK_ENABLED;
+  config.AUTUMN_EXPERIMENT = overrides.AUTUMN_EXPERIMENT ?? "true";
+  config.AUTUMN_EXPERIMENT_PERCENT =
+    overrides.AUTUMN_EXPERIMENT_PERCENT ?? 100;
+  config.AUTUMN_REQUEST_TRACK_EXPERIMENT =
+    overrides.AUTUMN_REQUEST_TRACK_EXPERIMENT;
+  config.AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT =
+    overrides.AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT ?? 100;
+}
+
 // ---------------------------------------------------------------------------
 // Test setup
 // ---------------------------------------------------------------------------
@@ -105,6 +127,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   autumnClientRef = mockAutumnClient;
   supabaseStubData = { data: { org_id: "org-1" }, error: null };
+  setAutumnConfig({ AUTUMN_CHECK_ENABLED: undefined });
   mockCheck.mockResolvedValue({
     allowed: true,
     customerId: "org-1",
@@ -263,11 +286,11 @@ describe("ensureTrackingContext warm-cache short-circuit", () => {
     mockEntityGet.mockResolvedValue(makeEntity(0));
 
     // Warm the caches.
-    await svc.reserveCredits({ teamId: "team-1", value: 5 });
+    await svc.trackCredits({ teamId: "team-1", value: 5 });
     const callsAfterWarm = mockEntityGet.mock.calls.length;
 
     // Subsequent call — should not touch provisioning.
-    await svc.reserveCredits({ teamId: "team-1", value: 5 });
+    await svc.trackCredits({ teamId: "team-1", value: 5 });
 
     // No additional getEntity calls for provisioning.
     expect(mockEntityGet.mock.calls.length).toBe(callsAfterWarm);
@@ -340,21 +363,72 @@ describe("lockCredits", () => {
 });
 
 // ---------------------------------------------------------------------------
-// reserveCredits
+// checkCredits
 // ---------------------------------------------------------------------------
 
-describe("reserveCredits", () => {
+describe("checkCredits", () => {
+  it("returns null when autumnClient is null", async () => {
+    autumnClientRef = null;
+    config.AUTUMN_CHECK_ENABLED = "true";
+    const svc = makeService();
+    const result = await svc.checkCredits({ teamId: "team-1", value: 10 });
+    expect(result).toBeNull();
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
+  it("returns allowed on happy path without a lock", async () => {
+    config.AUTUMN_CHECK_ENABLED = "true";
+    const svc = makeService();
+    const result = await svc.checkCredits({
+      teamId: "team-1",
+      value: 42,
+      properties: { source: "checkCreditsMiddleware" },
+    });
+
+    expect(result).toBe(true);
+    expect(mockCheck).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: "org-1",
+        entityId: "team-1",
+        featureId: "CREDITS",
+        requiredBalance: 42,
+        properties: { source: "checkCreditsMiddleware" },
+      }),
+    );
+    expect(mockCheck).toHaveBeenCalledWith(
+      expect.not.objectContaining({ lock: expect.anything() }),
+    );
+  });
+
+  it("returns false when Autumn denies the check", async () => {
+    config.AUTUMN_CHECK_ENABLED = "true";
+    mockCheck.mockResolvedValue({
+      allowed: false,
+      customerId: "org-1",
+      balance: null,
+    });
+    const svc = makeService();
+    const result = await svc.checkCredits({ teamId: "team-1", value: 10 });
+    expect(result).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// trackCredits
+// ---------------------------------------------------------------------------
+
+describe("trackCredits", () => {
   it("returns false when autumnClient is null", async () => {
     autumnClientRef = null;
     const svc = makeService();
-    const result = await svc.reserveCredits({ teamId: "team-1", value: 10 });
+    const result = await svc.trackCredits({ teamId: "team-1", value: 10 });
     expect(result).toBe(false);
     expect(mockTrack).not.toHaveBeenCalled();
   });
 
   it("returns false for preview teams", async () => {
     const svc = makeService();
-    const result = await svc.reserveCredits({
+    const result = await svc.trackCredits({
       teamId: "preview_abc",
       value: 10,
     });
@@ -365,7 +439,7 @@ describe("reserveCredits", () => {
   it("calls track with correct feature and value on happy path", async () => {
     const svc = makeService();
 
-    const result = await svc.reserveCredits({
+    const result = await svc.trackCredits({
       teamId: "team-1",
       value: 42,
       properties: { source: "test", endpoint: "extract" },
@@ -379,6 +453,15 @@ describe("reserveCredits", () => {
     );
     expect(usageCall).toBeDefined();
     expect((usageCall as any[])[0].properties?.endpoint).toBe("extract");
+  });
+
+  it("returns false when the Autumn track request fails", async () => {
+    mockTrack.mockRejectedValueOnce(new Error("track failed"));
+    const svc = makeService();
+
+    expect(await svc.trackCredits({ teamId: "team-1", value: 42 })).toBe(
+      false,
+    );
   });
 });
 
@@ -477,9 +560,7 @@ describe("orgBucket", () => {
 
 describe("isAutumnEnabled", () => {
   afterEach(() => {
-    // Restore defaults for other tests.
-    (config as any).AUTUMN_EXPERIMENT = "true";
-    (config as any).AUTUMN_EXPERIMENT_PERCENT = 100;
+    setAutumnConfig({ AUTUMN_CHECK_ENABLED: undefined });
   });
 
   it("returns true when experiment is enabled and percent is 100", () => {
@@ -487,37 +568,73 @@ describe("isAutumnEnabled", () => {
   });
 
   it("returns true without orgId even when percent < 100 (fast bail-out only)", () => {
-    (config as any).AUTUMN_EXPERIMENT_PERCENT = 0;
+    config.AUTUMN_EXPERIMENT_PERCENT = 0;
     // Without orgId the percent gate is skipped — only the on/off flag matters.
     expect(isAutumnEnabled()).toBe(true);
   });
 
   it("returns false when AUTUMN_EXPERIMENT is not 'true'", () => {
-    (config as any).AUTUMN_EXPERIMENT = undefined;
+    config.AUTUMN_EXPERIMENT = undefined;
     expect(isAutumnEnabled()).toBe(false);
   });
 
   it("returns false for an orgId whose bucket >= percent", () => {
     // orgBucket("a1b2c3d4-...") = 16, so percent=10 should exclude it.
-    (config as any).AUTUMN_EXPERIMENT_PERCENT = 10;
+    config.AUTUMN_EXPERIMENT_PERCENT = 10;
     expect(isAutumnEnabled("a1b2c3d4-0000-0000-0000-000000000000")).toBe(false);
   });
 
   it("returns true for an orgId whose bucket < percent", () => {
     // orgBucket("a1b2c3d4-...") = 16, so percent=50 should include it.
-    (config as any).AUTUMN_EXPERIMENT_PERCENT = 50;
+    config.AUTUMN_EXPERIMENT_PERCENT = 50;
     expect(isAutumnEnabled("a1b2c3d4-0000-0000-0000-000000000000")).toBe(true);
+  });
+});
+
+describe("isAutumnCheckEnabled", () => {
+  afterEach(() => {
+    setAutumnConfig({ AUTUMN_CHECK_ENABLED: undefined });
+  });
+
+  it("returns false when AUTUMN_CHECK_ENABLED is not 'true'", () => {
+    config.AUTUMN_CHECK_ENABLED = undefined;
+    expect(isAutumnCheckEnabled()).toBe(false);
+  });
+
+  it("returns false when Autumn experiment is disabled", () => {
+    config.AUTUMN_CHECK_ENABLED = "true";
+    config.AUTUMN_EXPERIMENT = undefined;
+    expect(isAutumnCheckEnabled()).toBe(false);
+  });
+
+  it("returns true only when both check flag and experiment are enabled", () => {
+    config.AUTUMN_CHECK_ENABLED = "true";
+    expect(isAutumnCheckEnabled()).toBe(true);
+  });
+});
+
+describe("isAutumnRequestTrackEnabled", () => {
+  afterEach(() => {
+    setAutumnConfig({ AUTUMN_REQUEST_TRACK_EXPERIMENT: undefined });
+  });
+
+  it("returns false when request tracking flag is not 'true'", () => {
+    expect(isAutumnRequestTrackEnabled()).toBe(false);
+  });
+
+  it("returns true only when both request tracking and Autumn experiment are enabled", () => {
+    config.AUTUMN_REQUEST_TRACK_EXPERIMENT = "true";
+    expect(isAutumnRequestTrackEnabled()).toBe(true);
   });
 });
 
 describe("experiment gate on lockCredits", () => {
   afterEach(() => {
-    (config as any).AUTUMN_EXPERIMENT = "true";
-    (config as any).AUTUMN_EXPERIMENT_PERCENT = 100;
+    setAutumnConfig();
   });
 
   it("lockCredits returns null when experiment is disabled", async () => {
-    (config as any).AUTUMN_EXPERIMENT = undefined;
+    config.AUTUMN_EXPERIMENT = undefined;
     const svc = makeService();
     const result = await svc.lockCredits({ teamId: "team-1", value: 10 });
     expect(result).toBeNull();
@@ -530,7 +647,7 @@ describe("experiment gate on lockCredits", () => {
       data: { org_id: "a1b2c3d4-0000-0000-0000-000000000000" },
       error: null,
     };
-    (config as any).AUTUMN_EXPERIMENT_PERCENT = 10;
+    config.AUTUMN_EXPERIMENT_PERCENT = 10;
     const svc = makeService();
     const result = await svc.lockCredits({ teamId: "team-1", value: 10 });
     expect(result).toBeNull();
@@ -543,7 +660,7 @@ describe("experiment gate on lockCredits", () => {
       data: { org_id: "a1b2c3d4-0000-0000-0000-000000000000" },
       error: null,
     };
-    (config as any).AUTUMN_EXPERIMENT_PERCENT = 50;
+    config.AUTUMN_EXPERIMENT_PERCENT = 50;
     const svc = makeService();
     const result = await svc.lockCredits({
       teamId: "team-1",
@@ -555,22 +672,22 @@ describe("experiment gate on lockCredits", () => {
   });
 
   it("refundCredits still works when experiment is disabled (guard is autumnReserved)", async () => {
-    (config as any).AUTUMN_EXPERIMENT = undefined;
+    config.AUTUMN_EXPERIMENT = undefined;
     const svc = makeService();
     // Warm the caches so refund can resolve the tracking context.
-    (config as any).AUTUMN_EXPERIMENT = "true";
-    await svc.reserveCredits({ teamId: "team-1", value: 10 });
+    config.AUTUMN_EXPERIMENT = "true";
+    await svc.trackCredits({ teamId: "team-1", value: 10 });
     jest.clearAllMocks();
 
     // Disable experiment — refund must still succeed to avoid orphaned credits.
-    (config as any).AUTUMN_EXPERIMENT = undefined;
+    config.AUTUMN_EXPERIMENT = undefined;
     mockTrack.mockResolvedValue(undefined);
     await svc.refundCredits({ teamId: "team-1", value: 10 });
     expect(mockTrack).toHaveBeenCalled();
   });
 
   it("ensureTeamProvisioned still works when experiment is disabled (handled by firecrawl-web)", async () => {
-    (config as any).AUTUMN_EXPERIMENT = undefined;
+    config.AUTUMN_EXPERIMENT = undefined;
     const svc = makeService();
     await svc.ensureTeamProvisioned({ teamId: "team-1", orgId: "org-1" });
     // Provisioning should proceed — firecrawl-web edge functions do this
