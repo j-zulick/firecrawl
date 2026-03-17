@@ -243,6 +243,20 @@ export async function x402SearchController(
       origin: req.body.origin,
     });
 
+    // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
+    const isZDR = req.body.enterprise?.includes("zdr");
+    const isAnon = req.body.enterprise?.includes("anon");
+    if (isZDR || isAnon) {
+      const searchMode = getSearchZDR(req.acuc?.flags);
+      if (searchMode !== "allowed" && searchMode !== "forced") {
+        return res.status(403).json({
+          success: false,
+          error:
+            "Zero Data Retention (ZDR) search is not enabled for your team. Contact support@firecrawl.com to enable this feature.",
+        });
+      }
+    }
+
     await logRequest({
       id: jobId,
       kind: "search",
