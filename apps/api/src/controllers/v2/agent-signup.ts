@@ -33,10 +33,37 @@ const PUBLIC_EMAIL_DOMAINS = new Set([
   "fastmail.com",
 ]);
 
+const GMAIL_DOMAINS = new Set(["gmail.com", "googlemail.com"]);
+
+/**
+ * Normalize a public-provider email for rate limiting so that alias tricks
+ * (dots in Gmail, +suffix in most providers) all map to the same bucket.
+ * Only used for rate-limit keys — the original email is stored in the DB.
+ */
+function normalizeEmailForRateLimit(
+  email: string,
+  domain: string,
+): string {
+  let [local] = email.split("@");
+
+  // Strip +suffix (supported by Gmail, Outlook, Proton, Fastmail, etc.)
+  const plusIdx = local.indexOf("+");
+  if (plusIdx !== -1) {
+    local = local.slice(0, plusIdx);
+  }
+
+  // Gmail/Googlemail also ignores dots in the local part
+  if (GMAIL_DOMAINS.has(domain)) {
+    local = local.replace(/\./g, "");
+  }
+
+  return `${local}@${domain}`;
+}
+
 // Rate limit values — used by limiters and error copy so they stay in sync
-const AGENT_SIGNUP_IP_LIMIT = 5;
+const AGENT_SIGNUP_IP_LIMIT = 3;
 const AGENT_SIGNUP_DOMAIN_LIMIT = 20;
-const AGENT_SIGNUP_IP_LIMIT_SIDEGUIDE = 15; // 3x default
+const AGENT_SIGNUP_IP_LIMIT_SIDEGUIDE = 9; // 3x default
 const AGENT_SIGNUP_DOMAIN_LIMIT_SIDEGUIDE = 60; // 3x default
 
 // Rate limiters
@@ -44,7 +71,7 @@ const ipRateLimiter = new RateLimiterRedis({
   storeClient: redisRateLimitClient,
   keyPrefix: "agent_signup_ip",
   points: AGENT_SIGNUP_IP_LIMIT,
-  duration: 3600, // 1 hour
+  duration: 86400, // 24 hours
 });
 
 // Per-domain (or per-email for public providers) limit to curb abuse while allowing
@@ -62,7 +89,7 @@ const ipRateLimiterSideguide = new RateLimiterRedis({
   storeClient: redisRateLimitClient,
   keyPrefix: "agent_signup_ip_sideguide",
   points: AGENT_SIGNUP_IP_LIMIT_SIDEGUIDE,
-  duration: 3600, // 1 hour
+  duration: 86400, // 24 hours
 });
 
 const domainRateLimiterSideguide = new RateLimiterRedis({
@@ -119,8 +146,8 @@ export async function agentSignupController(req: Request, res: Response) {
       ? domainRateLimiterSideguide
       : domainRateLimiter;
     const ipLimitMsg = isSideguideEmail
-      ? `Rate limit exceeded. Maximum ${AGENT_SIGNUP_IP_LIMIT_SIDEGUIDE} agent signup requests per hour per IP for sideguide test emails.`
-      : `Rate limit exceeded. Maximum ${AGENT_SIGNUP_IP_LIMIT} agent signup requests per hour per IP.`;
+      ? `Rate limit exceeded. Maximum ${AGENT_SIGNUP_IP_LIMIT_SIDEGUIDE} agent signup requests per day per IP for sideguide test emails.`
+      : `Rate limit exceeded. Maximum ${AGENT_SIGNUP_IP_LIMIT} agent signup requests per day per IP.`;
     const domainLimitMsg = isSideguideEmail
       ? "Too many agent signups for this email. Please try again later."
       : "Too many agent signups for this email domain. Please try again later.";
@@ -135,7 +162,7 @@ export async function agentSignupController(req: Request, res: Response) {
     }
 
     const domainKey = PUBLIC_EMAIL_DOMAINS.has(emailDomain)
-      ? email
+      ? normalizeEmailForRateLimit(email, emailDomain)
       : emailDomain;
     try {
       await domainLimiter.consume(domainKey);

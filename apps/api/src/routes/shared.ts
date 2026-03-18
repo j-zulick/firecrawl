@@ -85,6 +85,9 @@ export function checkCreditsMiddleware(
               upgrade_url: "https://firecrawl.dev/pricing",
             });
           }
+
+          // Force index-only mode for all pre-confirmation agent requests
+          (req as any).agentIndexOnly = true;
         }
         // If verified, fall through to normal credit check (key is now on real account)
       }

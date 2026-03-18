@@ -499,7 +499,12 @@ export async function buildFallbackList(meta: Meta): Promise<
       : []),
   ];
 
-  if (!shouldUseIndex(meta)) {
+  if (meta.internalOptions.agentIndexOnly) {
+    const indexEngines: Engine[] = useIndex ? ["index", "index;documents"] : [];
+    _engines.length = 0;
+    _engines.push(...indexEngines);
+    meta.internalOptions.forceEngine = indexEngines;
+  } else if (!shouldUseIndex(meta)) {
     const indexIndex = _engines.indexOf("index");
     if (indexIndex !== -1) {
       _engines.splice(indexIndex, 1);

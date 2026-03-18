@@ -447,6 +447,28 @@ export class DocumentPrefetchFailed extends TransportableError {
   }
 }
 
+export class AgentIndexOnlyError extends TransportableError {
+  constructor() {
+    super(
+      "AGENT_INDEX_ONLY",
+      "This page is not available in Firecrawl's index. Your API key was provisioned by an agent and the account has not yet been confirmed by the account holder. Until the account is confirmed, only pages already in Firecrawl's index can be served. Please ask the account holder to check their email and confirm the account to unlock full scraping capabilities, or visit https://firecrawl.dev/signin to claim the account.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new AgentIndexOnlyError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class BrandingNotSupportedError extends TransportableError {
   constructor(message: string) {
     super("SCRAPE_BRANDING_NOT_SUPPORTED", message);

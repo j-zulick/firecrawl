@@ -1104,6 +1104,8 @@ export type ErrorResponse = {
   code?: ErrorCodes;
   error: string;
   details?: any;
+  sponsor_status?: string;
+  login_url?: string;
 };
 
 export type ScrapeResponse =

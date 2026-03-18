@@ -140,6 +140,7 @@ export async function searchController(
         bypassBilling: !shouldBill,
         zeroDataRetention: isZDROrAnon,
         billing,
+        agentIndexOnly: (req as any).agentIndexOnly ?? false,
       },
       logger,
     );

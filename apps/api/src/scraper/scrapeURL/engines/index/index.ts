@@ -14,7 +14,7 @@ import {
   generateDomainSplits,
   addOMCEJob,
 } from "../../../../services";
-import { EngineError, IndexMissError, NoCachedDataError } from "../../error";
+import { AgentIndexOnlyError, EngineError, IndexMissError, NoCachedDataError } from "../../error";
 import { shouldParsePDF } from "../../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../../lib/format-utils";
 
@@ -315,6 +315,10 @@ export async function scrapeURLWithIndex(
       timingsMaxAge: checkpoint1 - startTime,
       timingsSupa: Date.now() - checkpoint1,
     });
+
+    if (meta.internalOptions.agentIndexOnly) {
+      throw new AgentIndexOnlyError();
+    }
 
     // when minAge is specified, don't waterfall to other engines
     if (meta.options.minAge !== undefined) {

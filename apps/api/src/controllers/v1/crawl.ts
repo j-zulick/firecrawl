@@ -126,6 +126,7 @@ export async function crawlController(
       teamId: req.auth.team_id,
       saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
       zeroDataRetention,
+      agentIndexOnly: (req as any).agentIndexOnly ?? false,
     }, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
     team_id: req.auth.team_id,
     createdAt: Date.now(),

@@ -38,6 +38,7 @@ interface ScrapeSearchOptions {
   zeroDataRetention?: boolean;
   requestId?: string;
   billing?: BillingMetadata;
+  agentIndexOnly?: boolean;
 }
 
 async function scrapeSearchResultDirect(
@@ -78,6 +79,7 @@ async function scrapeSearchResultDirect(
           bypassBilling: options.bypassBilling ?? true,
           zeroDataRetention,
           teamFlags: flags,
+          agentIndexOnly: options.agentIndexOnly ?? false,
         },
         skipNuq: true,
         origin: options.origin,

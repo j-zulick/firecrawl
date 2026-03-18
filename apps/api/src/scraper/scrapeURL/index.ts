@@ -27,6 +27,7 @@ import { hasFormatOfType } from "../../lib/format-utils";
 import {
   ActionError,
   AddFeatureError,
+  AgentIndexOnlyError,
   EngineError,
   NoEnginesLeftError,
   PDFAntibotError,
@@ -323,6 +324,7 @@ export type InternalOptions = {
   v1OriginalFormat?: "extract" | "json"; // Track original v1 format for backward compatibility
 
   isPreCrawl?: boolean; // Whether this scrape is part of a precrawl job
+  agentIndexOnly?: boolean; // Pre-confirmation agent key: serve from index only, never touch web/Fire Engine
 };
 
 type EngineScrapeResultWithContext = {
@@ -653,7 +655,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof DocumentAntibotError ||
               error.error instanceof PDFInsufficientTimeError ||
               error.error instanceof ProxySelectionError ||
-              error.error instanceof NoCachedDataError
+              error.error instanceof NoCachedDataError ||
+              error.error instanceof AgentIndexOnlyError
             ) {
               throw error.error;
             } else if (error.error instanceof LLMRefusalError) {

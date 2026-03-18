@@ -168,6 +168,7 @@ export async function searchController(
         requestId: jobId,
         bypassBilling: false,
         zeroDataRetention: false,
+        agentIndexOnly: (req as any).agentIndexOnly ?? false,
       },
       logger,
     );

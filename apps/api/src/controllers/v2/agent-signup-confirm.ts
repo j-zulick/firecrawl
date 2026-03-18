@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { RateLimiterRedis } from "rate-limiter-flexible";
 import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import {
@@ -7,8 +8,16 @@ import {
   markSponsorBlocked,
   markSponsorVerified,
 } from "../../services/agent-sponsor";
+import { redisRateLimitClient } from "../../services/rate-limiter";
 import { supabase_rr_service, supabase_service } from "../../services/supabase";
 import { clearACUC } from "../auth";
+
+const confirmBlockRateLimiter = new RateLimiterRedis({
+  storeClient: redisRateLimitClient,
+  keyPrefix: "agent_signup_confirm_ip",
+  points: 10,
+  duration: 3600, // 1 hour
+});
 
 const agentSignupTokenSchema = z.object({
   agent_signup_token: z.string().min(1),
@@ -28,6 +37,16 @@ export async function agentSignupConfirmController(
   });
 
   try {
+    const incomingIP = req.ip || req.socket.remoteAddress || "unknown";
+    try {
+      await confirmBlockRateLimiter.consume(incomingIP);
+    } catch {
+      return res.status(429).json({
+        success: false,
+        error: "Too many attempts. Please try again later.",
+      });
+    }
+
     const { agent_signup_token } = agentSignupTokenSchema.parse(req.body);
 
     const sponsor = await getAgentSponsorByToken({ agent_signup_token });
@@ -213,6 +232,16 @@ export async function agentSignupBlockController(req: Request, res: Response) {
   });
 
   try {
+    const incomingIP = req.ip || req.socket.remoteAddress || "unknown";
+    try {
+      await confirmBlockRateLimiter.consume(incomingIP);
+    } catch {
+      return res.status(429).json({
+        success: false,
+        error: "Too many attempts. Please try again later.",
+      });
+    }
+
     const { agent_signup_token } = agentSignupTokenSchema.parse(req.body);
 
     const sponsor = await getAgentSponsorByToken({ agent_signup_token });

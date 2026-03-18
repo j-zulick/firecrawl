@@ -39,6 +39,7 @@ interface SearchContext {
   bypassBilling?: boolean;
   zeroDataRetention?: boolean;
   billing?: BillingMetadata;
+  agentIndexOnly?: boolean;
 }
 
 interface SearchExecuteResult {
@@ -153,6 +154,7 @@ export async function executeSearch(
         zeroDataRetention,
         requestId,
         billing,
+        agentIndexOnly: context.agentIndexOnly,
       };
 
       const allDocsWithCostTracking = await scrapeSearchResults(

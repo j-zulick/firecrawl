@@ -247,6 +247,7 @@ export async function scrapeController(
                       bypassBilling: isDirectToBullMQ || !shouldBill,
                       zeroDataRetention,
                       teamFlags: req.acuc?.flags ?? null,
+                      agentIndexOnly: (req as any).agentIndexOnly ?? false,
                     },
                     skipNuq: true,
                     origin,
@@ -310,6 +311,19 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+            });
+          }
+
+          if (e.code === "AGENT_INDEX_ONLY") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+              sponsor_status: "pending",
+              login_url: "https://firecrawl.dev/signin",
             });
           }
 
