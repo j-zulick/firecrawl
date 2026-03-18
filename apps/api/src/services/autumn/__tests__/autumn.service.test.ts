@@ -71,6 +71,7 @@ jest.mock("../../supabase", () => ({
 jest.mock("../../../config", () => ({
   config: {
     AUTUMN_CHECK_ENABLED: undefined,
+    AUTUMN_CHECK_DRY_RUN: undefined,
     AUTUMN_EXPERIMENT: "true",
     AUTUMN_EXPERIMENT_PERCENT: 100,
     AUTUMN_REQUEST_TRACK_EXPERIMENT: undefined,
@@ -83,6 +84,7 @@ import {
   AutumnService,
   BoundedMap,
   BoundedSet,
+  isAutumnCheckDryRun,
   isAutumnCheckEnabled,
   isAutumnEnabled,
   isAutumnRequestTrackEnabled,
@@ -102,17 +104,20 @@ function makeEntity(usage: number) {
   return { balances: { CREDITS: { usage } } };
 }
 
-function setAutumnConfig(overrides: {
-  AUTUMN_CHECK_ENABLED?: string;
-  AUTUMN_EXPERIMENT?: string;
-  AUTUMN_EXPERIMENT_PERCENT?: number;
-  AUTUMN_REQUEST_TRACK_EXPERIMENT?: string;
-  AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT?: number;
-} = {}) {
+function setAutumnConfig(
+  overrides: {
+    AUTUMN_CHECK_ENABLED?: string;
+    AUTUMN_CHECK_DRY_RUN?: string;
+    AUTUMN_EXPERIMENT?: string;
+    AUTUMN_EXPERIMENT_PERCENT?: number;
+    AUTUMN_REQUEST_TRACK_EXPERIMENT?: string;
+    AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT?: number;
+  } = {},
+) {
   config.AUTUMN_CHECK_ENABLED = overrides.AUTUMN_CHECK_ENABLED;
+  config.AUTUMN_CHECK_DRY_RUN = overrides.AUTUMN_CHECK_DRY_RUN;
   config.AUTUMN_EXPERIMENT = overrides.AUTUMN_EXPERIMENT ?? "true";
-  config.AUTUMN_EXPERIMENT_PERCENT =
-    overrides.AUTUMN_EXPERIMENT_PERCENT ?? 100;
+  config.AUTUMN_EXPERIMENT_PERCENT = overrides.AUTUMN_EXPERIMENT_PERCENT ?? 100;
   config.AUTUMN_REQUEST_TRACK_EXPERIMENT =
     overrides.AUTUMN_REQUEST_TRACK_EXPERIMENT;
   config.AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT =
@@ -459,9 +464,7 @@ describe("trackCredits", () => {
     mockTrack.mockRejectedValueOnce(new Error("track failed"));
     const svc = makeService();
 
-    expect(await svc.trackCredits({ teamId: "team-1", value: 42 })).toBe(
-      false,
-    );
+    expect(await svc.trackCredits({ teamId: "team-1", value: 42 })).toBe(false);
   });
 });
 
@@ -610,6 +613,27 @@ describe("isAutumnCheckEnabled", () => {
   it("returns true only when both check flag and experiment are enabled", () => {
     config.AUTUMN_CHECK_ENABLED = "true";
     expect(isAutumnCheckEnabled()).toBe(true);
+  });
+});
+
+describe("isAutumnCheckDryRun", () => {
+  afterEach(() => {
+    config.AUTUMN_CHECK_DRY_RUN = undefined;
+  });
+
+  it("returns false when AUTUMN_CHECK_DRY_RUN is not set", () => {
+    config.AUTUMN_CHECK_DRY_RUN = undefined;
+    expect(isAutumnCheckDryRun()).toBe(false);
+  });
+
+  it("returns false when AUTUMN_CHECK_DRY_RUN is not 'true'", () => {
+    config.AUTUMN_CHECK_DRY_RUN = "false";
+    expect(isAutumnCheckDryRun()).toBe(false);
+  });
+
+  it("returns true when AUTUMN_CHECK_DRY_RUN is 'true'", () => {
+    config.AUTUMN_CHECK_DRY_RUN = "true";
+    expect(isAutumnCheckDryRun()).toBe(true);
   });
 });
 

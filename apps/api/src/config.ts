@@ -49,6 +49,7 @@ const configSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
   AUTUMN_CHECK_ENABLED: z.string().optional(),
+  AUTUMN_CHECK_DRY_RUN: z.string().optional(),
   AUTUMN_CHECK_EXPERIMENT_PERCENT: z.coerce.number().default(100),
   AUTUMN_EXPERIMENT: z.string().optional(),
   AUTUMN_EXPERIMENT_PERCENT: z.coerce.number().default(100),
