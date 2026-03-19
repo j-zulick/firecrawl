@@ -158,6 +158,12 @@ const configSchema = z.object({
   PDF_MU_V2_EXPERIMENT: z.string().optional(),
   PDF_MU_V2_EXPERIMENT_PERCENT: z.coerce.number().default(100),
 
+  // Self-Hosted OCR Experiment
+  PDF_OCR_EXPERIMENT_ENABLE: z.stringbool().optional(),
+  PDF_OCR_EXPERIMENT_PERCENT: z.coerce.number().min(0).max(100).default(10),
+  PDF_OCR_BASE_URL: z.string().optional(),
+  PDF_OCR_API_KEY: z.string().optional(),
+
   // RunPod
   RUNPOD_MU_API_KEY: z.string().optional(),
   RUNPOD_MU_POD_ID: z.string().optional(),
