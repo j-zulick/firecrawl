@@ -40,10 +40,7 @@ const GMAIL_DOMAINS = new Set(["gmail.com", "googlemail.com"]);
  * (dots in Gmail, +suffix in most providers) all map to the same bucket.
  * Only used for rate-limit keys — the original email is stored in the DB.
  */
-function normalizeEmailForRateLimit(
-  email: string,
-  domain: string,
-): string {
+function normalizeEmailForRateLimit(email: string, domain: string): string {
   let [local] = email.split("@");
 
   // Strip +suffix (supported by Gmail, Outlook, Proton, Fastmail, etc.)
@@ -61,7 +58,7 @@ function normalizeEmailForRateLimit(
 }
 
 // Rate limit values — used by limiters and error copy so they stay in sync
-const AGENT_SIGNUP_IP_LIMIT = 3;
+const AGENT_SIGNUP_IP_LIMIT = 1;
 const AGENT_SIGNUP_DOMAIN_LIMIT = 20;
 const AGENT_SIGNUP_IP_LIMIT_SIDEGUIDE = 9; // 3x default
 const AGENT_SIGNUP_DOMAIN_LIMIT_SIDEGUIDE = 60; // 3x default
@@ -104,7 +101,7 @@ const agentSignupSchema = z.object({
     .string()
     .email()
     .refine(
-      (e) =>
+      e =>
         !e.includes("+") ||
         (e.endsWith("@sideguide.dev") && e.includes("+test")),
       {

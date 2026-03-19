@@ -409,7 +409,7 @@ v2Router.post(
 );
 
 // Agent signup routes (public, no auth required — rate limiting is handled inside the controller)
-v2Router.post("/agent-signup", wrap(agentSignupController));
+// v2Router.post("/agent-signup", wrap(agentSignupController));
 v2Router.post("/agent-signup/confirm", wrap(agentSignupConfirmController));
 v2Router.post("/agent-signup/block", wrap(agentSignupBlockController));
 
