@@ -25,6 +25,7 @@ import { deepResearchController } from "../controllers/v1/deep-research";
 import { deepResearchStatusController } from "../controllers/v1/deep-research-status";
 import { tokenUsageController } from "../controllers/v1/token-usage";
 import { ongoingCrawlsController } from "../controllers/v1/crawl-ongoing";
+import { fireclawController } from "../controllers/v1/fireclaw";
 import {
   authMiddleware,
   checkCreditsMiddleware,
@@ -280,6 +281,13 @@ v1Router.delete(
 // Health/Probe routes
 // v1Router.get("/health/liveness", livenessController);
 // v1Router.get("/health/readiness", readinessController);
+
+v1Router.post(
+  "/fireclaw",
+  authMiddleware(RateLimiterMode.Scrape),
+  checkCreditsMiddleware(100),
+  wrap(fireclawController),
+);
 
 v1Router.get(
   "/team/credit-usage",
