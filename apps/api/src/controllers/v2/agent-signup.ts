@@ -100,9 +100,24 @@ const domainRateLimiterSideguide = new RateLimiterRedis({
 });
 
 const agentSignupSchema = z.object({
-  email: z.string().email(),
+  email: z
+    .string()
+    .email()
+    .refine(
+      (e) =>
+        !e.includes("+") ||
+        (e.endsWith("@sideguide.dev") && e.includes("+test")),
+      {
+        message: "Email addresses with '+' are not allowed for agent signup.",
+      },
+    ),
   agent_name: z.string().min(1).max(100),
-  accept_terms: z.literal(true),
+  accept_terms: z.literal(true, {
+    errorMap: () => ({
+      message:
+        "You must accept the terms here. https://www.firecrawl.dev/terms-of-service",
+    }),
+  }),
 });
 
 /** Insert payload for agent_sponsors (nullable cols in DB are optional here). */
@@ -355,16 +370,22 @@ export async function agentSignupController(req: Request, res: Response) {
           reply_to: "help@firecrawl.com",
           subject: `An AI agent "${agent_name}" created an API key under your email — Firecrawl`,
           html: `
-          <p>Hey there,</p>
-          <p>An AI agent called <strong>${escapeHtml(agent_name)}</strong> just created a Firecrawl API key and listed your email as the account holder.</p>
-          <p>The key is currently sandboxed with a <strong>50-credit limit</strong>. To link it to your account and unlock your full plan, please confirm:</p>
-          <p><a href="${confirmUrl}" style="display:inline-block;padding:12px 24px;background:#f97316;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">Confirm &amp; Link Key</a></p>
-          <p>If you did not authorize this, you can block the key:</p>
-          <p><a href="${blockUrl}">Block this key</a></p>
-          <p>This confirmation link expires on <strong>${deadline.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</strong>.</p>
-          <p>If you have questions, reach out to us at <a href="mailto:help@firecrawl.com">help@firecrawl.com</a>.</p>
-          <br/>
-          <p>Thanks,<br/>Firecrawl Team</p>
+          <div style="font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 40px auto; padding: 20px;">
+            <div style="margin-bottom: 30px;">
+              <img src="https://www.firecrawl.dev/brand/firecrawl-wordmark-500.png" alt="Firecrawl" style="max-width: 150px; height: auto;">
+            </div>
+            <p style="margin: 15px 0;">Hey there,</p>
+            <p style="margin: 15px 0;">An AI agent called <strong>${escapeHtml(agent_name)}</strong> just created a Firecrawl API key and listed your email as the account holder.</p>
+            <p style="margin: 15px 0;">The key is currently sandboxed with a <strong>50-credit limit</strong>. To link it to your account and unlock your full plan, please confirm:</p>
+            <p style="margin: 30px 0;">
+              <a href="${confirmUrl}" style="background-color: #FA5D19; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600; font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;">Confirm &amp; Link Key</a>
+            </p>
+            <p style="margin: 15px 0;">If you did not authorize this, you can block the key:</p>
+            <p style="margin: 15px 0;"><a href="${blockUrl}" style="color: #FF6B35;">Block this key</a></p>
+            <p style="margin: 15px 0;">This confirmation link expires on <strong>${deadline.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</strong>.</p>
+            <p style="margin: 15px 0;">If you have questions, reach out to us at <a href="mailto:help@firecrawl.com" style="color: #FF6B35;">help@firecrawl.com</a></p>
+            <p style="margin: 15px 0;">Best,<br>The Firecrawl Team 🔥</p>
+          </div>
         `,
         });
         if (sendResult.data?.id) {
