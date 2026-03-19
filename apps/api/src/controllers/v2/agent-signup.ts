@@ -113,10 +113,8 @@ const agentSignupSchema = z.object({
     ),
   agent_name: z.string().min(1).max(100),
   accept_terms: z.literal(true, {
-    errorMap: () => ({
-      message:
-        "You must accept the terms here. https://www.firecrawl.dev/terms-of-service",
-    }),
+    message:
+      "You must accept the terms here. https://www.firecrawl.dev/terms-of-service",
   }),
 });
 
