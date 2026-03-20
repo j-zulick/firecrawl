@@ -196,6 +196,7 @@ export async function brandingTransformer(
       scrapeId: meta.id,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       teamFlags: meta.internalOptions.teamFlags,
+      logger: meta.logger,
     });
 
     // Track LLM success/failure status (will be updated after all processing)

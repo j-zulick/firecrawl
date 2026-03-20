@@ -1,5 +1,5 @@
 import { generateObject } from "ai";
-import { logger } from "../logger";
+
 import { config } from "../../config";
 import { BrandingEnhancement, getBrandingEnhancementSchema } from "./schema";
 import { buildBrandingPrompt } from "./prompt";
@@ -16,6 +16,7 @@ function isDebugBrandingEnabled(input: BrandingLLMInput): boolean {
 export async function enhanceBrandingWithLLM(
   input: BrandingLLMInput,
 ): Promise<BrandingEnhancement> {
+  const logger = input.logger;
   const prompt = buildBrandingPrompt(input);
 
   // Smart model selection: use more powerful model for complex cases
