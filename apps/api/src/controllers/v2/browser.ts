@@ -239,15 +239,17 @@ export async function browserCreateController(
   }
 
   // 0b. Enforce per-team active session limit
+  const browserSessionLimit =
+    req.acuc?.flags?.maxBrowserSessions ?? MAX_ACTIVE_BROWSER_SESSIONS_PER_TEAM;
   const activeCount = await getActiveBrowserSessionCount(req.auth.team_id);
-  if (activeCount >= MAX_ACTIVE_BROWSER_SESSIONS_PER_TEAM) {
+  if (activeCount >= browserSessionLimit) {
     logger.warn("Active browser session limit reached", {
       activeCount,
-      limit: MAX_ACTIVE_BROWSER_SESSIONS_PER_TEAM,
+      limit: browserSessionLimit,
     });
     return res.status(429).json({
       success: false,
-      error: `You have reached the maximum number of active browser sessions (${MAX_ACTIVE_BROWSER_SESSIONS_PER_TEAM}). Please destroy existing sessions before creating new ones.`,
+      error: `You have reached the maximum number of active browser sessions (${browserSessionLimit}). Please destroy existing sessions before creating new ones.`,
     });
   }
 

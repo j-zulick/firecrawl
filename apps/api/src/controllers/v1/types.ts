@@ -1293,6 +1293,7 @@ export type TeamFlags = {
   browserBeta?: boolean;
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
+  maxBrowserSessions?: number;
 } | null;
 
 export type AuthCreditUsageChunkFromTeam = Omit<

@@ -1298,6 +1298,7 @@ export type TeamFlags = {
   ipWhitelist?: boolean;
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
+  maxBrowserSessions?: number;
 } | null;
 
 interface RequestWithMaybeACUC<
