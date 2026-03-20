@@ -56,6 +56,7 @@ export function runSelfHostedOCRExperiment(
           : undefined,
         body: {
           pdf: base64Content,
+          scrape_id: meta.id,
           ...(maxPages !== undefined && { max_pages: maxPages }),
         },
         logger,
