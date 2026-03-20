@@ -216,6 +216,7 @@ export async function scrapePDFWithRunPodMU(
         base64Content,
         { markdown: result.markdown, durationMs },
         maxPages,
+        pagesProcessed,
       );
     }
   }
