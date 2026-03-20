@@ -63,6 +63,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         html: content,
         markdown: content,
 
+        contentType: "application/pdf",
         proxyUsed: meta.pdfPrefetch.proxyUsed,
       };
     } else {
@@ -97,6 +98,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         html: content,
         markdown: content,
 
+        contentType: "application/pdf",
         proxyUsed: "basic",
       };
     }
@@ -452,6 +454,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         title: metadataTitle,
       },
 
+      contentType: "application/pdf",
       proxyUsed: "basic",
     };
   } finally {
