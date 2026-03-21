@@ -74,6 +74,9 @@ jobs:
         working-directory: apps/api
       - run: pnpm fetch
         working-directory: apps/test-site
+      - run: pnpm fetch
+        if: matrix.engine == 'playwright'
+        working-directory: apps/playwright-service-ts
 
       - name: Restore native lib
         id: napi_restore
@@ -148,16 +151,23 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-pw-chromium-
 
-      - name: Install Playwright dependencies
+      - name: Install Playwright node modules
         if: matrix.engine == 'playwright'
-        run: |
-          pnpm install
-          pnpm exec playwright install-deps
-          pnpm exec playwright install chromium
+        run: pnpm install --frozen-lockfile
+        working-directory: ./apps/playwright-service-ts
+
+      - name: Install Playwright system deps
+        if: matrix.engine == 'playwright'
+        run: pnpm exec playwright install-deps chromium
+        working-directory: ./apps/playwright-service-ts
+
+      - name: Install Playwright Chromium
+        if: matrix.engine == 'playwright' && steps.pw_cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install chromium
         working-directory: ./apps/playwright-service-ts
 
       - name: Cache Playwright
-        if: steps.pw_cache.outputs.cache-hit != 'true'
+        if: matrix.engine == 'playwright' && steps.pw_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ~/.cache/ms-playwright
