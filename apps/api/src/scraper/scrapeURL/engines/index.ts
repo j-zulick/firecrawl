@@ -467,7 +467,8 @@ export function shouldUseIndex(meta: Meta) {
     meta.options.maxAge !== 0 &&
     (meta.options.headers === undefined ||
       Object.keys(meta.options.headers).length === 0) &&
-    (meta.options.actions === undefined || meta.options.actions.length === 0)
+    (meta.options.actions === undefined || meta.options.actions.length === 0) &&
+    meta.options.profile === undefined
   );
 }
 

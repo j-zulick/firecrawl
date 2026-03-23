@@ -464,6 +464,7 @@ export async function browserExecuteController(
   enqueueBrowserSessionActivity({
     team_id: req.auth.team_id,
     session_id: id,
+    source: "browser",
     language,
     timeout,
     exit_code: execResult.exitCode ?? null,
@@ -552,8 +553,11 @@ export async function browserDeleteController(
     });
   }
 
+  const wallClockMs = Date.now() - new Date(session.created_at).getTime();
   const durationMs =
-    sessionDurationMs ?? Date.now() - new Date(session.created_at).getTime();
+    sessionDurationMs && sessionDurationMs > 0
+      ? sessionDurationMs
+      : wallClockMs;
   const creditsBilled = calculateBrowserSessionCredits(durationMs);
 
   updateBrowserSessionCreditsUsed(session.id, creditsBilled).catch(error => {
@@ -623,8 +627,8 @@ export async function browserListController(
       id: r.id,
       status: r.status,
       cdpUrl: r.cdp_url,
-      liveViewUrl: r.cdp_path, // cdp_path stores the view URL
-      interactiveLiveViewUrl: r.cdp_interactive_path, // cdp_interactive_path stores the interactive view URL
+      liveViewUrl: r.cdp_path,
+      interactiveLiveViewUrl: r.cdp_interactive_path,
       streamWebView: r.stream_web_view,
       createdAt: r.created_at,
       lastActivity: r.updated_at,

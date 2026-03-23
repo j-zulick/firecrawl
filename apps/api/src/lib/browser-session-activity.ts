@@ -10,6 +10,7 @@ const BATCH_SIZE = 500;
 interface BrowserSessionActivityEvent {
   team_id: string;
   session_id: string;
+  source: "interact" | "browser";
   language: string;
   timeout: number;
   exit_code: number | null;
@@ -25,17 +26,14 @@ export function enqueueBrowserSessionActivity(
     created_at: new Date().toISOString(),
   };
 
-  redisEvictConnection
-    .rpush(QUEUE_KEY, JSON.stringify(row))
-    .catch(() => {});
+  redisEvictConnection.rpush(QUEUE_KEY, JSON.stringify(row)).catch(() => {});
 }
 
 export async function processBrowserSessionActivityJobs() {
-  const raw =
-    (await redisEvictConnection.lpop(QUEUE_KEY, BATCH_SIZE)) ?? [];
+  const raw = (await redisEvictConnection.lpop(QUEUE_KEY, BATCH_SIZE)) ?? [];
   if (raw.length === 0) return;
 
-  const rows: BrowserSessionActivityEvent[] = raw.map((x) => JSON.parse(x));
+  const rows: BrowserSessionActivityEvent[] = raw.map(x => JSON.parse(x));
 
   try {
     const { error } = await supabase_service

@@ -6,6 +6,7 @@ export type BillingEndpoint =
   | "deep_research"
   | "extract"
   | "fireclaw"
+  | "interact"
   | "llms_txt"
   | "map"
   | "scrape"

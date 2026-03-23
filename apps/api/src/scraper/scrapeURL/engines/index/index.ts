@@ -14,7 +14,12 @@ import {
   generateDomainSplits,
   addOMCEJob,
 } from "../../../../services";
-import { AgentIndexOnlyError, EngineError, IndexMissError, NoCachedDataError } from "../../error";
+import {
+  AgentIndexOnlyError,
+  EngineError,
+  IndexMissError,
+  NoCachedDataError,
+} from "../../error";
 import { shouldParsePDF } from "../../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../../lib/format-utils";
 
@@ -48,7 +53,8 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
     !meta.featureFlags.has("actions") &&
     !hasCustomScreenshotSettings &&
     (meta.options.headers === undefined ||
-      Object.keys(meta.options.headers).length === 0);
+      Object.keys(meta.options.headers).length === 0) &&
+    meta.options.profile === undefined;
 
   if (!shouldCache) {
     return document;

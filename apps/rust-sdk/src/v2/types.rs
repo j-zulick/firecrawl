@@ -112,6 +112,17 @@ pub struct LocationConfig {
     pub languages: Option<Vec<String>>,
 }
 
+/// Persistent browser profile for maintaining state across scrapes.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileConfig {
+    /// Profile name (1–128 characters).
+    pub name: String,
+    /// Whether to persist changes made during the session (defaults to true).
+    pub save_changes: Option<bool>,
+}
+
 /// Proxy type for scraping.
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]

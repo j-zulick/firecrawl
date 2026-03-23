@@ -12,6 +12,44 @@ content-type: application/json
   "url": "https://firecrawl.dev"
 }
 
+### Scrape Website (Replay-ready for scrape interact APIs)
+# @name scrapeForBrowser
+POST {{baseUrl}}/v2/scrape HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "url": "https://firecrawl.dev",
+  "actions": [
+    {
+      "type": "executeJavascript",
+      "script": "window.location.href = 'https://roastmywebsite.ai'"
+    },
+    {
+      "type": "wait",
+      "milliseconds": 2000
+    }
+  ]
+}
+
+### Interact With Scrape Browser Session (POST /interact)
+@scrapeJobId = {{scrapeForBrowser.response.body.$.data.metadata.scrapeId}}
+# @name scrapeInteract
+POST {{baseUrl}}/v2/scrape/{{scrapeJobId}}/interact HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "code": "const title = await page.title(); const url = page.url(); console.log('url=', url, 'title=', JSON.stringify(title)); JSON.stringify({ url, title });",
+  "language": "node",
+  "timeout": 30
+}
+
+### Stop Interactive Browser Session (DELETE /interact)
+# @name scrapeStopInteractiveBrowser
+DELETE {{baseUrl}}/v2/scrape/{{scrapeJobId}}/interact HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+
 ### Crawl Website
 # @name crawl
 POST {{baseUrl}}/v2/crawl HTTP/1.1

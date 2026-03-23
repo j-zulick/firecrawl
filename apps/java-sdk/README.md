@@ -82,13 +82,13 @@ Before using the Java SDK, ensure you have the following installed:
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("com.firecrawl:firecrawl-java:1.1.0")
+implementation("com.firecrawl:firecrawl-java:1.1.1")
 ```
 
 ### Gradle (Groovy)
 
 ```groovy
-implementation 'com.firecrawl:firecrawl-java:1.1.0'
+implementation 'com.firecrawl:firecrawl-java:1.1.1'
 ```
 
 ### Maven
@@ -97,7 +97,7 @@ implementation 'com.firecrawl:firecrawl-java:1.1.0'
 <dependency>
     <groupId>com.firecrawl</groupId>
     <artifactId>firecrawl-java</artifactId>
-    <version>1.1.0</version>
+    <version>1.1.1</version>
 </dependency>
 ```
 
@@ -169,6 +169,27 @@ Document doc = client.scrape("https://example.com/product",
         .build());
 
 System.out.println(doc.getJson());
+```
+
+#### Scrape-Bound Interactive Session
+
+Run browser automation against the page context captured by a scrape job:
+
+```java
+Document doc = client.scrape("https://example.com");
+String scrapeId = String.valueOf(doc.getMetadata().get("scrapeId"));
+
+BrowserExecuteResponse exec = client.interact(
+    scrapeId,
+    "console.log(await page.title());",
+    "node",
+    30
+);
+
+System.out.println(exec.getStdout());
+
+BrowserDeleteResponse deleted = client.stopInteractiveBrowser(scrapeId);
+System.out.println("Deleted: " + deleted.isSuccess());
 ```
 
 ### Crawl
@@ -350,14 +371,14 @@ gradle build
 
 ```bash
 gradle jar
-# Output: build/libs/firecrawl-java-1.1.0.jar
+# Output: build/libs/firecrawl-java-1.1.1.jar
 ```
 
 ### Install Locally
 
 ```bash
 gradle publishToMavenLocal
-# Now available as: com.firecrawl:firecrawl-java:1.1.0 in local Maven repository
+# Now available as: com.firecrawl:firecrawl-java:1.1.1 in local Maven repository
 ```
 
 ## Running Tests

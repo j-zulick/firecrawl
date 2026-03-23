@@ -185,6 +185,82 @@ class FirecrawlClient:
         ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, integration]) else None
         return scrape_module.scrape(self.http_client, url, options)
 
+    def interact(
+        self,
+        job_id: str,
+        code: Optional[str] = None,
+        *,
+        prompt: Optional[str] = None,
+        language: Literal["python", "node", "bash"] = "node",
+        timeout: Optional[int] = None,
+        origin: Optional[str] = None,
+    ):
+        """
+        Interact with the browser session associated with a scrape job.
+
+        Either ``code`` or ``prompt`` must be provided.
+
+        Args:
+            job_id: Scrape job ID
+            code: Code to execute (optional if prompt is provided)
+            prompt: Natural-language instruction for the browser agent (optional if code is provided)
+            language: Programming language ("python", "node", or "bash")
+            timeout: Execution timeout in seconds (1-300)
+            origin: Optional request origin tag
+
+        Returns:
+            BrowserExecuteResponse with execution result
+        """
+        return scrape_module.interact(
+            self.http_client,
+            job_id,
+            code,
+            prompt=prompt,
+            language=language,
+            timeout=timeout,
+            origin=origin,
+        )
+
+    def stop_interaction(self, job_id: str):
+        """
+        Stop the interaction session associated with a scrape job.
+
+        Args:
+            job_id: Scrape job ID
+
+        Returns:
+            BrowserDeleteResponse
+        """
+        return scrape_module.stop_interaction(self.http_client, job_id)
+
+    def stop_interactive_browser(self, job_id: str):
+        """Deprecated alias for stop_interaction()."""
+        return self.stop_interaction(job_id)
+
+    def scrape_execute(
+        self,
+        job_id: str,
+        code: Optional[str] = None,
+        *,
+        prompt: Optional[str] = None,
+        language: Literal["python", "node", "bash"] = "node",
+        timeout: Optional[int] = None,
+        origin: Optional[str] = None,
+    ):
+        """Deprecated alias for interact()."""
+        return self.interact(
+            job_id,
+            code,
+            prompt=prompt,
+            language=language,
+            timeout=timeout,
+            origin=origin,
+        )
+
+    def delete_scrape_browser(self, job_id: str):
+        """Deprecated alias for stop_interaction()."""
+        return self.stop_interaction(job_id)
+
     def search(
         self,
         query: str,

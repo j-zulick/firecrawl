@@ -132,6 +132,31 @@ map_result = firecrawl.map('https://firecrawl.dev')
 print(map_result)
 ```
 
+### Scrape-bound interactive browsing (v2)
+
+Use a scrape job ID to keep interacting with the replayed browser context:
+
+```python
+doc = firecrawl.scrape(
+  "https://example.com",
+  actions=[{"type": "click", "selector": "a[href='/pricing']"}],
+)
+
+scrape_job_id = doc.metadata_typed.scrape_id
+if not scrape_job_id:
+  raise RuntimeError("Missing scrape job id")
+
+run = firecrawl.interact(
+  scrape_job_id,
+  code="print(await page.url())",
+  language="python",
+  timeout=60,
+)
+print(run.stdout)
+
+firecrawl.stop_interaction(scrape_job_id)
+```
+
 {/* ### Extracting Structured Data from Websites
 
   To extract structured data from websites, use the `extract` method. It takes the URLs to extract data from, a prompt, and a schema as arguments. The schema is a Pydantic model that defines the structure of the extracted data.

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use super::client::Client;
 use super::types::{
     Action, AttributeSelector, ChangeTrackingOptions, Document, Format, JsonOptions,
-    LocationConfig, ProxyType, ScreenshotOptions,
+    LocationConfig, ProfileConfig, ProxyType, ScreenshotOptions,
 };
 use crate::FirecrawlError;
 
@@ -73,6 +73,9 @@ pub struct ScrapeOptions {
     /// Store the result in cache for future requests.
     pub store_in_cache: Option<bool>,
 
+    /// Persistent browser profile for maintaining state across scrapes.
+    pub profile: Option<ProfileConfig>,
+
     /// Integration identifier for tracking.
     pub integration: Option<String>,
 
@@ -121,6 +124,76 @@ struct ScrapeResponse {
     data: Document,
     #[serde(skip_serializing_if = "Option::is_none")]
     warning: Option<String>,
+}
+
+/// Supported languages for scrape-bound browser execution.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ScrapeExecuteLanguage {
+    Python,
+    Node,
+    Bash,
+}
+
+/// Options for executing code or a prompt in a scrape-bound browser session.
+///
+/// At least one of `code` or `prompt` must be provided.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeExecuteOptions {
+    /// Code to execute (optional if `prompt` is provided).
+    pub code: Option<String>,
+    /// Natural-language instruction for the browser agent (optional if `code` is provided).
+    pub prompt: Option<String>,
+    /// Runtime language for the code.
+    pub language: Option<ScrapeExecuteLanguage>,
+    /// Execution timeout in seconds.
+    pub timeout: Option<u32>,
+    /// Optional origin tag for request attribution.
+    pub origin: Option<String>,
+}
+
+/// Response from scrape-bound browser execution.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeExecuteResponse {
+    /// Whether the request succeeded.
+    pub success: bool,
+    /// Live-view URL for the browser session.
+    pub live_view_url: Option<String>,
+    /// Interactive live-view URL for the browser session.
+    pub interactive_live_view_url: Option<String>,
+    /// Agent output when a prompt was used.
+    pub output: Option<String>,
+    /// Captured stdout from execution.
+    pub stdout: Option<String>,
+    /// Optional execution result payload.
+    pub result: Option<String>,
+    /// Captured stderr from execution.
+    pub stderr: Option<String>,
+    /// Process exit code.
+    pub exit_code: Option<i32>,
+    /// Whether execution was killed by timeout or system.
+    pub killed: Option<bool>,
+    /// Error message when execution fails.
+    pub error: Option<String>,
+}
+
+/// Response from deleting a scrape-bound browser session.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrapeBrowserDeleteResponse {
+    /// Whether the delete request succeeded.
+    pub success: bool,
+    /// Session duration in milliseconds when available.
+    pub session_duration_ms: Option<u64>,
+    /// Credits billed when available.
+    pub credits_billed: Option<u32>,
+    /// Error message when deletion fails.
+    pub error: Option<String>,
 }
 
 impl Client {
@@ -247,6 +320,109 @@ impl Client {
 
         let document = self.scrape(url, options).await?;
         Ok(document.json.unwrap_or(Value::Null))
+    }
+
+    /// Interacts with the browser session associated with a scrape job.
+    ///
+    /// # Arguments
+    ///
+    /// * `job_id` - The scrape job ID.
+    /// * `options` - Execution options including code and runtime config.
+    ///
+    /// # Returns
+    ///
+    /// A `ScrapeExecuteResponse` containing execution output.
+    pub async fn interact(
+        &self,
+        job_id: impl AsRef<str>,
+        options: ScrapeExecuteOptions,
+    ) -> Result<ScrapeExecuteResponse, FirecrawlError> {
+        let has_code = options.code.as_ref().is_some_and(|c| !c.trim().is_empty());
+        let has_prompt = options.prompt.as_ref().is_some_and(|p| !p.trim().is_empty());
+        if !has_code && !has_prompt {
+            return Err(FirecrawlError::Missuse(
+                "Either 'code' or 'prompt' must be provided".into(),
+            ));
+        }
+
+        let mut body = options;
+        if body.language.is_none() {
+            body.language = Some(ScrapeExecuteLanguage::Node);
+        }
+
+        let response = self
+            .client
+            .post(self.url(&format!("/scrape/{}/interact", job_id.as_ref())))
+            .headers(self.prepare_headers(None))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| {
+                FirecrawlError::HttpError(
+                    format!("Interacting with scrape browser for {}", job_id.as_ref()),
+                    e,
+                )
+            })?;
+
+        self.handle_response(response, "scrape interact").await
+    }
+
+    /// Stops the interaction session associated with a scrape job.
+    ///
+    /// # Arguments
+    ///
+    /// * `job_id` - The scrape job ID.
+    ///
+    /// # Returns
+    ///
+    /// A `ScrapeBrowserDeleteResponse` indicating stop status.
+    pub async fn stop_interaction(
+        &self,
+        job_id: impl AsRef<str>,
+    ) -> Result<ScrapeBrowserDeleteResponse, FirecrawlError> {
+        let response = self
+            .client
+            .delete(self.url(&format!("/scrape/{}/interact", job_id.as_ref())))
+            .headers(self.prepare_headers(None))
+            .send()
+            .await
+            .map_err(|e| {
+                FirecrawlError::HttpError(
+                    format!("Stopping interaction for {}", job_id.as_ref()),
+                    e,
+                )
+            })?;
+
+        self.handle_response(response, "stop interaction")
+            .await
+    }
+
+    /// Deprecated alias for [`Client::interact`].
+    #[deprecated(note = "Use interact() instead")]
+    pub async fn scrape_execute(
+        &self,
+        job_id: impl AsRef<str>,
+        options: ScrapeExecuteOptions,
+    ) -> Result<ScrapeExecuteResponse, FirecrawlError> {
+        self.interact(job_id, options).await
+    }
+
+    /// Deprecated alias for [`Client::stop_interaction`].
+    #[deprecated(note = "Use stop_interaction() instead")]
+    pub async fn stop_interactive_browser(
+        &self,
+        job_id: impl AsRef<str>,
+    ) -> Result<ScrapeBrowserDeleteResponse, FirecrawlError> {
+        self.stop_interaction(job_id).await
+    }
+
+    /// Deprecated alias for [`Client::stop_interaction`].
+    #[deprecated(note = "Use stop_interaction() instead")]
+    pub async fn delete_scrape_browser(
+        &self,
+        job_id: impl AsRef<str>,
+    ) -> Result<ScrapeBrowserDeleteResponse, FirecrawlError> {
+        self.stop_interaction(job_id).await
     }
 }
 
@@ -397,6 +573,146 @@ mod tests {
 
         let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
         let result = client.scrape("invalid-url", None).await;
+
+        assert!(result.is_err());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_interact_with_mock() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/scrape/job-123/interact")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "stdout": "ok",
+                    "result": "done",
+                    "stderr": "",
+                    "exitCode": 0,
+                    "killed": false
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let response = client
+            .interact(
+                "job-123",
+                ScrapeExecuteOptions {
+                    code: Some("console.log('ok')".to_string()),
+                    timeout: Some(30),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(response.success);
+        assert_eq!(response.exit_code, Some(0));
+        assert_eq!(response.result, Some("done".to_string()));
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_interact_with_prompt() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/scrape/job-789/interact")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "output": "Clicked the login button",
+                    "liveViewUrl": "https://live.example.com/view",
+                    "interactiveLiveViewUrl": "https://live.example.com/interactive",
+                    "stdout": "",
+                    "exitCode": 0,
+                    "killed": false
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let response = client
+            .interact(
+                "job-789",
+                ScrapeExecuteOptions {
+                    prompt: Some("Click the login button".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(response.success);
+        assert_eq!(response.output, Some("Clicked the login button".to_string()));
+        assert_eq!(response.live_view_url, Some("https://live.example.com/view".to_string()));
+        assert_eq!(response.interactive_live_view_url, Some("https://live.example.com/interactive".to_string()));
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_stop_interaction_with_mock() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("DELETE", "/v2/scrape/job-123/interact")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "sessionDurationMs": 1200,
+                    "creditsBilled": 3
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let response = client.stop_interaction("job-123").await.unwrap();
+
+        assert!(response.success);
+        assert_eq!(response.session_duration_ms, Some(1200));
+        assert_eq!(response.credits_billed, Some(3));
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_interact_error_response() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/scrape/job-404/interact")
+            .with_status(404)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": false,
+                    "error": "Job not found."
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let result = client
+            .interact(
+                "job-404",
+                ScrapeExecuteOptions {
+                    code: Some("console.log('ok')".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await;
 
         assert!(result.is_err());
         mock.assert();

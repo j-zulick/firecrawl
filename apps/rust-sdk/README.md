@@ -141,6 +141,32 @@ match map_result {
 }
 ```
 
+### Scrape-bound interactive browsing (v2)
+
+Use a scrape job ID to keep interacting with the replayed browser context:
+
+```rust
+use firecrawl::v2::{Client, ScrapeExecuteLanguage, ScrapeExecuteOptions};
+
+let client = Client::new("fc-YOUR-API-KEY")?;
+let job_id = "550e8400-e29b-41d4-a716-446655440000";
+
+let run = client
+    .interact(
+        job_id,
+        ScrapeExecuteOptions {
+            code: Some("console.log(await page.url())".to_string()),
+            language: Some(ScrapeExecuteLanguage::Node),
+            timeout: Some(60),
+            ..Default::default()
+        },
+    )
+    .await?;
+
+println!("{:?}", run.stdout);
+client.stop_interaction(job_id).await?;
+```
+
 ## Error Handling
 
 The SDK handles errors returned by the Firecrawl API and by our dependencies, and combines them into the `FirecrawlError` enum, implementing `Error`, `Debug` and `Display`. All of our methods return a `Result<T, FirecrawlError>`.

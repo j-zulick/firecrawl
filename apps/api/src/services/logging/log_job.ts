@@ -155,7 +155,8 @@ type LoggedRequest = {
     | "deep_research"
     | "map"
     | "agent"
-    | "browser";
+    | "browser"
+    | "interact";
   api_version: string;
   team_id: string;
   origin?: string;

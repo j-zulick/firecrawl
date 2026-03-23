@@ -57,6 +57,11 @@ class V2Proxy:
 
         if client_instance:
             self.scrape = client_instance.scrape
+            self.interact = client_instance.interact
+            self.stop_interaction = client_instance.stop_interaction
+            self.stop_interactive_browser = client_instance.stop_interactive_browser
+            self.scrape_execute = self.interact
+            self.delete_scrape_browser = self.stop_interaction
             self.search = client_instance.search
             self.crawl = client_instance.crawl
             self.start_crawl = client_instance.start_crawl
@@ -129,6 +134,11 @@ class AsyncV2Proxy:
 
         if client_instance:
             self.scrape = client_instance.scrape
+            self.interact = client_instance.interact
+            self.stop_interaction = client_instance.stop_interaction
+            self.stop_interactive_browser = client_instance.stop_interactive_browser
+            self.scrape_execute = self.interact
+            self.delete_scrape_browser = self.stop_interaction
             self.search = client_instance.search
             self.crawl = client_instance.crawl
             self.start_crawl = client_instance.start_crawl
@@ -221,6 +231,11 @@ class Firecrawl:
         self.v2 = V2Proxy(self._v2_client)
         
         self.scrape = self._v2_client.scrape
+        self.interact = self._v2_client.interact
+        self.stop_interaction = self._v2_client.stop_interaction
+        self.stop_interactive_browser = self._v2_client.stop_interactive_browser
+        self.scrape_execute = self.interact
+        self.delete_scrape_browser = self.stop_interaction
         self.search = self._v2_client.search
         self.map = self._v2_client.map
 
@@ -293,6 +308,11 @@ class AsyncFirecrawl:
         # Expose v2 async surface directly on the top-level client for ergonomic access
         # Keep method names aligned with the sync client
         self.scrape = self._v2_client.scrape
+        self.interact = self._v2_client.interact
+        self.stop_interaction = self._v2_client.stop_interaction
+        self.stop_interactive_browser = self._v2_client.stop_interactive_browser
+        self.scrape_execute = self.interact
+        self.delete_scrape_browser = self.stop_interaction
         self.search = self._v2_client.search
         self.map = self._v2_client.map
 

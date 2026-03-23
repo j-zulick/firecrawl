@@ -110,6 +110,28 @@ const mapResult = await app.map('https://example.com');
 console.log(mapResult);
 ```
 
+### Scrape-bound interactive browsing (v2)
+
+Use a scrape job ID to keep interacting with the replayed browser context:
+
+```js
+const doc = await app.scrape('https://example.com', {
+  actions: [{ type: 'click', selector: 'a[href="/pricing"]' }],
+});
+
+const scrapeJobId = doc?.metadata?.scrapeId;
+if (!scrapeJobId) throw new Error('Missing scrapeId');
+
+const run = await app.interact(scrapeJobId, {
+  code: 'console.log(await page.url())',
+  language: 'node',
+  timeout: 60,
+});
+console.log(run.stdout);
+
+await app.stopInteraction(scrapeJobId);
+```
+
 ### Crawl a website with real‑time updates
 
 To receive real‑time updates, start a crawl and attach a watcher.

@@ -91,6 +91,60 @@ class AsyncFirecrawlClient:
         options = ScrapeOptions(**{k: v for k, v in kwargs.items() if v is not None}) if kwargs else None
         return await async_scrape.scrape(self.async_http_client, url, options)
 
+    async def interact(
+        self,
+        job_id: str,
+        code: Optional[str] = None,
+        *,
+        prompt: Optional[str] = None,
+        language: Literal["python", "node", "bash"] = "node",
+        timeout: Optional[int] = None,
+        origin: Optional[str] = None,
+    ):
+        return await async_scrape.interact(
+            self.async_http_client,
+            job_id,
+            code,
+            prompt=prompt,
+            language=language,
+            timeout=timeout,
+            origin=origin,
+        )
+
+    async def stop_interaction(self, job_id: str):
+        return await async_scrape.stop_interaction(
+            self.async_http_client,
+            job_id,
+        )
+
+    async def stop_interactive_browser(self, job_id: str):
+        """Deprecated alias for stop_interaction()."""
+        return await self.stop_interaction(job_id)
+
+    async def scrape_execute(
+        self,
+        job_id: str,
+        code: Optional[str] = None,
+        *,
+        prompt: Optional[str] = None,
+        language: Literal["python", "node", "bash"] = "node",
+        timeout: Optional[int] = None,
+        origin: Optional[str] = None,
+    ):
+        """Deprecated alias for interact()."""
+        return await self.interact(
+            job_id,
+            code,
+            prompt=prompt,
+            language=language,
+            timeout=timeout,
+            origin=origin,
+        )
+
+    async def delete_scrape_browser(self, job_id: str):
+        """Deprecated alias for stop_interaction()."""
+        return await self.stop_interaction(job_id)
+
     # Search
     async def search(
         self,

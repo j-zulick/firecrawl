@@ -16,6 +16,7 @@ type BrowserSessionStatus = "active" | "destroyed" | "error";
 interface BrowserSessionRow {
   id: string;
   team_id: string;
+  scrape_id?: string | null; // linked scrape job id for /scrape/:jobId/interact sessions
   browser_id: string; // browser service sessionId
   workspace_id: string; // unused (legacy), stored as ""
   context_id: string; // unused (legacy), stored as ""
@@ -74,6 +75,26 @@ export async function getBrowserSession(
     if (isPostgrestNoRowsError(error)) return null;
     logger.error("Failed to get browser session", { error, id });
     throw new Error(`Failed to get browser session: ${error.message}`);
+  }
+
+  return data as BrowserSessionRow;
+}
+
+export async function getBrowserSessionFromScrape(
+  id: string,
+): Promise<BrowserSessionRow | null> {
+  const { data, error } = await supabase_service
+    .from(TABLE)
+    .select("*")
+    .eq("scrape_id", id)
+    .single();
+
+  if (error) {
+    if (isPostgrestNoRowsError(error)) return null;
+    logger.error("Failed to get browser session from scrape", { error, id });
+    throw new Error(
+      `Failed to get browser session from scrape: ${error.message}`,
+    );
   }
 
   return data as BrowserSessionRow;

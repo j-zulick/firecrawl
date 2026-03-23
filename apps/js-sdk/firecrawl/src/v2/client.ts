@@ -1,5 +1,9 @@
 import { HttpClient } from "./utils/httpClient";
-import { scrape } from "./methods/scrape";
+import {
+  scrape,
+  interact as interactMethod,
+  stopInteraction as stopInteractionMethod,
+} from "./methods/scrape";
 import { search } from "./methods/search";
 import { map as mapMethod } from "./methods/map";
 import {
@@ -50,6 +54,9 @@ import type {
   BrowserExecuteResponse,
   BrowserDeleteResponse,
   BrowserListResponse,
+  ScrapeExecuteRequest,
+  ScrapeExecuteResponse,
+  ScrapeBrowserDeleteResponse,
 } from "./types";
 import { Watcher } from "./watcher";
 import type { WatcherOptions } from "./watcher";
@@ -128,6 +135,46 @@ export class FirecrawlClient {
   async scrape(url: string, options?: ScrapeOptions): Promise<Document>;
   async scrape(url: string, options?: ScrapeOptions): Promise<Document> {
     return scrape(this.http, url, options);
+  }
+  /**
+   * Interact with the browser session associated with a scrape job.
+   * @param jobId Scrape job id.
+   * @param args Code or prompt to execute, with language/timeout options.
+   * @returns Execution result including output, stdout, stderr, exitCode, and killed status.
+   */
+  async interact(
+    jobId: string,
+    args: ScrapeExecuteRequest
+  ): Promise<ScrapeExecuteResponse> {
+    return interactMethod(this.http, jobId, args);
+  }
+  /**
+   * Stop the interaction session associated with a scrape job.
+   * @param jobId Scrape job id.
+   */
+  async stopInteraction(jobId: string): Promise<ScrapeBrowserDeleteResponse> {
+    return stopInteractionMethod(this.http, jobId);
+  }
+  /**
+   * @deprecated Use interact().
+   */
+  async scrapeExecute(
+    jobId: string,
+    args: ScrapeExecuteRequest
+  ): Promise<ScrapeExecuteResponse> {
+    return this.interact(jobId, args);
+  }
+  /**
+   * @deprecated Use stopInteraction().
+   */
+  async stopInteractiveBrowser(jobId: string): Promise<ScrapeBrowserDeleteResponse> {
+    return this.stopInteraction(jobId);
+  }
+  /**
+   * @deprecated Use stopInteraction().
+   */
+  async deleteScrapeBrowser(jobId: string): Promise<ScrapeBrowserDeleteResponse> {
+    return this.stopInteraction(jobId);
   }
 
   // Search

@@ -571,6 +571,14 @@ const baseScrapeOptions = z.strictObject({
   maxAge: z.int().gte(0).optional(),
   minAge: z.int().gte(0).optional(),
   storeInCache: z.boolean().prefault(true),
+
+  profile: z
+    .object({
+      name: z.string().min(1).max(128),
+      saveChanges: z.boolean().default(true),
+    })
+    .optional(),
+
   // @deprecated
   __searchPreviewToken: z.string().optional(),
   __experimental_omce: z.boolean().prefault(false).optional(),

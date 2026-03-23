@@ -714,11 +714,22 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                         converted_parsers.append(parser_data)
                 scrape_data["parsers"] = converted_parsers
             elif key == "location":
-                # Handle location conversion
                 if isinstance(value, dict):
                     scrape_data["location"] = value
                 else:
                     scrape_data["location"] = value.model_dump(exclude_none=True)
+            elif key == "profile":
+                if isinstance(value, dict):
+                    profile_data = {
+                        "name": value["name"],
+                        "saveChanges": value.get("save_changes", value.get("saveChanges", True)),
+                    }
+                else:
+                    profile_data = {
+                        "name": value.name,
+                        "saveChanges": getattr(value, "save_changes", getattr(value, "saveChanges", True)),
+                    }
+                scrape_data["profile"] = profile_data
             else:
                 # For fields that don't need conversion, use as-is
                 scrape_data[key] = value

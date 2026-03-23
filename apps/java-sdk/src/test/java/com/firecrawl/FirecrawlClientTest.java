@@ -121,12 +121,42 @@ class FirecrawlClientTest {
     }
 
     @Test
+    void testInteractRequiresJobId() {
+        FirecrawlClient client = FirecrawlClient.builder()
+                .apiKey("fc-test-key")
+                .build();
+        assertThrows(NullPointerException.class, () ->
+                client.interact(null, "console.log('hi')")
+        );
+    }
+
+    @Test
+    void testInteractRequiresCode() {
+        FirecrawlClient client = FirecrawlClient.builder()
+                .apiKey("fc-test-key")
+                .build();
+        assertThrows(NullPointerException.class, () ->
+                client.interact("job-id", null)
+        );
+    }
+
+    @Test
     void testBrowserDeleteRequiresSessionId() {
         FirecrawlClient client = FirecrawlClient.builder()
                 .apiKey("fc-test-key")
                 .build();
         assertThrows(NullPointerException.class, () ->
                 client.deleteBrowser(null)
+        );
+    }
+
+    @Test
+    void testStopInteractiveBrowserRequiresJobId() {
+        FirecrawlClient client = FirecrawlClient.builder()
+                .apiKey("fc-test-key")
+                .build();
+        assertThrows(NullPointerException.class, () ->
+                client.stopInteractiveBrowser(null)
         );
     }
 
