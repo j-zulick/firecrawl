@@ -125,9 +125,7 @@ export function checkCreditsMiddleware(
 
       const requestedCredits = minimum ?? 1;
       const useAutumnCheck =
-        !!req.auth.org_id &&
-        isAutumnCheckEnabled(req.auth.org_id) &&
-        !req.acuc?.is_extract;
+        !!req.auth.org_id && isAutumnCheckEnabled(req.auth.org_id);
 
       const autumnProperties = {
         source: "checkCreditsMiddleware",
