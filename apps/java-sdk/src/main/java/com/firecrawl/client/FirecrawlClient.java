@@ -4,6 +4,8 @@ import com.firecrawl.errors.FirecrawlException;
 import com.firecrawl.errors.JobTimeoutException;
 import com.firecrawl.models.*;
 
+import okhttp3.OkHttpClient;
+
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -757,6 +759,7 @@ public class FirecrawlClient {
         private int maxRetries = DEFAULT_MAX_RETRIES;
         private double backoffFactor = DEFAULT_BACKOFF_FACTOR;
         private Executor asyncExecutor;
+        private OkHttpClient httpClient;
 
         private Builder() {}
 
@@ -810,6 +813,35 @@ public class FirecrawlClient {
             return this;
         }
 
+        /**
+         * Sets a pre-configured OkHttpClient instance.
+         *
+         * <p>When provided, this client is used as-is for all HTTP requests, giving
+         * full control over connection pooling, interceptors, SSL configuration,
+         * proxy settings, timeouts, and any other OkHttp feature. The
+         * {@link #timeoutMs(long)} setting is ignored when a custom client is supplied.
+         *
+         * <p>Example:
+         * <pre>{@code
+         * OkHttpClient custom = new OkHttpClient.Builder()
+         *     .proxy(new Proxy(Proxy.Type.HTTP, new InetSocketAddress("proxy.example.com", 8080)))
+         *     .addInterceptor(myLoggingInterceptor)
+         *     .connectTimeout(10, TimeUnit.SECONDS)
+         *     .build();
+         *
+         * FirecrawlClient client = FirecrawlClient.builder()
+         *     .apiKey("fc-your-api-key")
+         *     .httpClient(custom)
+         *     .build();
+         * }</pre>
+         *
+         * @param httpClient the OkHttpClient instance to use
+         */
+        public Builder httpClient(OkHttpClient httpClient) {
+            this.httpClient = httpClient;
+            return this;
+        }
+
         public FirecrawlClient build() {
             String resolvedKey = apiKey;
             if (resolvedKey == null || resolvedKey.isBlank()) {
@@ -834,7 +866,7 @@ public class FirecrawlClient {
 
             Executor executor = asyncExecutor != null ? asyncExecutor : ForkJoinPool.commonPool();
             FirecrawlHttpClient http = new FirecrawlHttpClient(
-                    resolvedKey, resolvedUrl, timeoutMs, maxRetries, backoffFactor);
+                    resolvedKey, resolvedUrl, timeoutMs, maxRetries, backoffFactor, httpClient);
             return new FirecrawlClient(http, executor);
         }
     }

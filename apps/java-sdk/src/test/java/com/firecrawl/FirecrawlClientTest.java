@@ -3,10 +3,12 @@ package com.firecrawl;
 import com.firecrawl.client.FirecrawlClient;
 import com.firecrawl.errors.FirecrawlException;
 import com.firecrawl.models.*;
+import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,6 +32,20 @@ class FirecrawlClientTest {
         // Should not throw — just validates construction
         FirecrawlClient client = FirecrawlClient.builder()
                 .apiKey("fc-test-key")
+                .build();
+        assertNotNull(client);
+    }
+
+    @Test
+    void testBuilderAcceptsCustomHttpClient() {
+        OkHttpClient custom = new OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(10, TimeUnit.SECONDS)
+                .build();
+
+        FirecrawlClient client = FirecrawlClient.builder()
+                .apiKey("fc-test-key")
+                .httpClient(custom)
                 .build();
         assertNotNull(client);
     }

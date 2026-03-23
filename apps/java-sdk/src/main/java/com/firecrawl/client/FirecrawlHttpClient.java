@@ -30,16 +30,25 @@ class FirecrawlHttpClient {
     final ObjectMapper objectMapper;
 
     FirecrawlHttpClient(String apiKey, String baseUrl, long timeoutMs, int maxRetries, double backoffFactor) {
+        this(apiKey, baseUrl, timeoutMs, maxRetries, backoffFactor, null);
+    }
+
+    FirecrawlHttpClient(String apiKey, String baseUrl, long timeoutMs, int maxRetries, double backoffFactor,
+                         OkHttpClient httpClient) {
         this.apiKey = apiKey;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.maxRetries = maxRetries;
         this.backoffFactor = backoffFactor;
 
-        this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(timeoutMs, TimeUnit.MILLISECONDS)
-                .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
-                .writeTimeout(timeoutMs, TimeUnit.MILLISECONDS)
-                .build();
+        if (httpClient != null) {
+            this.httpClient = httpClient;
+        } else {
+            this.httpClient = new OkHttpClient.Builder()
+                    .connectTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                    .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                    .writeTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                    .build();
+        }
 
         this.objectMapper = new ObjectMapper()
                 .registerModule(new Jdk8Module())
