@@ -27,11 +27,11 @@ const BROWSER_CREDITS_PER_HOUR = 120;
 
 /**
  * Calculate credits to bill for a browser session based on its duration.
- * Prorates to the millisecond. Minimum charge is 1 credit.
+ * Prorates to the millisecond. Minimum charge is 2 credits.
  */
 function calculateBrowserSessionCredits(durationMs: number): number {
   const hours = durationMs / 3_600_000;
-  return Math.max(1, Math.ceil(hours * BROWSER_CREDITS_PER_HOUR));
+  return Math.max(2, Math.ceil(hours * BROWSER_CREDITS_PER_HOUR));
 }
 
 // ---------------------------------------------------------------------------

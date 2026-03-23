@@ -46,7 +46,7 @@ const BROWSER_CREDITS_PER_HOUR = 120;
 
 function calculateBrowserSessionCredits(durationMs: number): number {
   const hours = durationMs / 3_600_000;
-  return Math.max(1, Math.ceil(hours * BROWSER_CREDITS_PER_HOUR));
+  return Math.max(2, Math.ceil(hours * BROWSER_CREDITS_PER_HOUR));
 }
 
 const browserCreateRequestSchema = z.object({
