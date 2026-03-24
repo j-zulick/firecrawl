@@ -199,6 +199,24 @@ export async function claimBrowserSessionDestroyed(
   return (data?.length ?? 0) > 0;
 }
 
+export async function updateBrowserSessionScrapeId(
+  id: string,
+  scrapeId: string,
+): Promise<void> {
+  const { error } = await supabase_service
+    .from(TABLE)
+    .update({ scrape_id: scrapeId, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) {
+    logger.warn("Failed to update browser session scrape_id", {
+      error,
+      id,
+      scrapeId,
+    });
+  }
+}
+
 export async function updateBrowserSessionCreditsUsed(
   id: string,
   creditsUsed: number,

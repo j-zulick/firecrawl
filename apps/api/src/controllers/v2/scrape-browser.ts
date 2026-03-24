@@ -6,8 +6,10 @@ import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
 import {
   insertBrowserSession,
+  getBrowserSession,
   updateBrowserSessionActivity,
   updateBrowserSessionCreditsUsed,
+  updateBrowserSessionScrapeId,
   claimBrowserSessionDestroyed,
   getActiveBrowserSessionCount,
   invalidateActiveBrowserSessionCount,
@@ -70,6 +72,7 @@ const browserExecuteRequestSchema = z
     timeout: z.number().min(1).max(300).default(30),
     origin: z.string().optional(),
     integration: integrationSchema.optional().transform(val => val || null),
+    existingSessionId: z.string().optional(),
   })
   .refine(data => data.code || data.prompt, {
     message: "Either 'code' or 'prompt' must be provided.",
@@ -155,6 +158,23 @@ export async function scrapeInteractController(
   // --- Ensure a browser session exists (create + replay if needed) ---
 
   let session = await getBrowserSessionFromScrape(scrapeId);
+
+  if (!session && req.body.existingSessionId) {
+    const existing = await getBrowserSession(req.body.existingSessionId);
+    if (
+      existing &&
+      existing.team_id === req.auth.team_id &&
+      existing.status === "active"
+    ) {
+      await updateBrowserSessionScrapeId(existing.id, scrapeId);
+      session = { ...existing, scrape_id: scrapeId };
+      logger.info("Adopted pre-created browser session for scrape", {
+        scrapeId,
+        sessionId: session.id,
+        browserId: session.browser_id,
+      });
+    }
+  }
 
   if (!session) {
     const created = await createSessionForScrape(
