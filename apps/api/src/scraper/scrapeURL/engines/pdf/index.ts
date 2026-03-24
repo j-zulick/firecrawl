@@ -153,6 +153,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     let shadowConfidence: number | undefined;
     let shadowIsComplex: boolean | undefined;
     let shadowIneligibleReason: string | null | undefined;
+    let shadowPagesNeedingOcr: number[] | undefined;
 
     const rustEnabled = !!config.PDF_RUST_EXTRACT_ENABLE;
     const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
@@ -282,6 +283,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           shadowConfidence = pdfResult.confidence;
           shadowIsComplex = pdfResult.isComplex;
           shadowIneligibleReason = ineligibleReason;
+          shadowPagesNeedingOcr = pdfResult.pagesNeedingOcr;
         }
 
         // In fast mode, if the PDF requires OCR, fail immediately with a
@@ -391,6 +393,14 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                   confidence: shadowConfidence,
                   isComplex: shadowIsComplex,
                   ineligibleReason: shadowIneligibleReason,
+                  ocrPageCount: shadowPagesNeedingOcr?.length ?? 0,
+                  ocrPageRatio:
+                    effectivePageCount > 0
+                      ? Math.round(
+                          ((shadowPagesNeedingOcr?.length ?? 0) * 100) /
+                            effectivePageCount,
+                        ) / 100
+                      : 0,
                   ...metrics.overall,
                 });
               } catch (error) {
