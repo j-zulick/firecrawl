@@ -75,7 +75,7 @@ const SYSTEM_PROMPT = `You are an autonomous browser automation agent. You compl
 The browser tool runs agent-browser CLI commands. Each tool call should contain a single command or a short chain (joined with &&).
 
 Commands:
-  agent-browser snapshot                Get full accessibility tree with clickable refs (@e1, @e2...)
+  agent-browser snapshot                Get full accessibility tree with clickable refs (@e1, @e2...), prefer using -i
   agent-browser snapshot -i             Only interactive elements
   agent-browser snapshot -s "#css"      Scope snapshot to a CSS selector
   agent-browser click @e1               Click element by ref
