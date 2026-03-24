@@ -236,6 +236,47 @@ export async function updateBrowserSessionCreditsUsed(
 }
 
 // ---------------------------------------------------------------------------
+// Prompt usage tracking (Redis)
+// ---------------------------------------------------------------------------
+
+const PROMPT_FLAG_TTL_SECONDS = 7200; // 2 hours, well beyond max session TTL
+
+function promptFlagKey(sessionId: string): string {
+  return `browser_session:used_prompt:${sessionId}`;
+}
+
+export async function markBrowserSessionUsedPrompt(
+  sessionId: string,
+): Promise<void> {
+  try {
+    await setValue(promptFlagKey(sessionId), "1", PROMPT_FLAG_TTL_SECONDS);
+  } catch {
+    // Redis down — non-fatal, will fall back to standard rate at billing time
+  }
+}
+
+export async function didBrowserSessionUsePrompt(
+  sessionId: string,
+): Promise<boolean> {
+  try {
+    const val = await getValue(promptFlagKey(sessionId));
+    return val === "1";
+  } catch {
+    return false;
+  }
+}
+
+export async function clearBrowserSessionPromptFlag(
+  sessionId: string,
+): Promise<void> {
+  try {
+    await deleteKey(promptFlagKey(sessionId));
+  } catch {
+    // non-fatal
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Active session count (cached)
 // ---------------------------------------------------------------------------
 
