@@ -259,7 +259,7 @@ describe("Scrape browser interact replay", () => {
     scrapeTimeout,
   );
 
-  itIf(ALLOW_TEST_SUITE_WEBSITE)(
+  itIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)(
     "returns replay-context error when scrape data is not retained",
     async () => {
       const scrapeResponse = await scrapeRaw(
