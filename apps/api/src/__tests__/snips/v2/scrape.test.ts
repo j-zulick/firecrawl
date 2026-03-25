@@ -2012,6 +2012,42 @@ describe("Attribute formats", () => {
     );
   });
 
+  describeIf(!TEST_SELF_HOST)("Audio format", () => {
+    it.concurrent(
+      "should return audio field with signed GCS URL for a YouTube video",
+      async () => {
+        const data = await scrape(
+          {
+            url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            formats: ["audio"],
+          },
+          identity,
+        );
+
+        expect(data.audio).toBeDefined();
+        expect(typeof data.audio).toBe("string");
+        expect(data.audio).toMatch(/^https:\/\//);
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "should reject non-YouTube URL with audio format",
+      async () => {
+        const result = await scrapeWithFailure(
+          {
+            url: "https://example.com",
+            formats: ["audio"],
+          },
+          identity,
+        );
+
+        expect(result.error).toMatch(/audio.*youtube/i);
+      },
+      scrapeTimeout,
+    );
+  });
+
   describe("UUID validation", () => {
     it.concurrent(
       "should reject invalid UUID 'None' for scrape status",

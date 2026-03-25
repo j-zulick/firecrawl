@@ -32,6 +32,8 @@ pub enum Format {
     Attributes,
     /// Brand analysis of the page.
     Branding,
+    /// Audio extraction (MP3) from YouTube videos.
+    Audio,
 }
 
 /// Viewport dimensions for screenshots.
@@ -434,6 +436,8 @@ pub struct Document {
     pub images: Option<Vec<String>>,
     /// Screenshot URL or base64 data.
     pub screenshot: Option<String>,
+    /// Audio download URL (signed GCS link for MP3).
+    pub audio: Option<String>,
     /// Extracted attributes.
     pub attributes: Option<Vec<AttributeResult>>,
     /// Action results.

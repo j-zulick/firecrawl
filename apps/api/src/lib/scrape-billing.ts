@@ -59,15 +59,19 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled = 5;
   }
 
-  if (hasFormatOfType(options.formats, "query")) {
-    creditsToBeBilled = 5;
-  }
-
   if (
     internalOptions.v1Agent?.model === "fire-1" ||
     internalOptions.v1JSONAgent?.model?.toLowerCase() === "fire-1"
   ) {
     creditsToBeBilled = Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
+  }
+
+  if (hasFormatOfType(options.formats, "query")) {
+    creditsToBeBilled += 4;
+  }
+
+  if (hasFormatOfType(options.formats, "audio")) {
+    creditsToBeBilled += 4;
   }
 
   if (internalOptions.zeroDataRetention) {

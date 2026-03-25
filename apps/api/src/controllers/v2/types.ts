@@ -27,6 +27,24 @@ import {
 } from "../../services/webhook/schema";
 import { BrandingProfile } from "../../types/branding";
 
+function isYouTubeUrl(url: string): boolean {
+  try {
+    const parsed = new globalThis.URL(url);
+    if (
+      parsed.hostname === "youtube.com" ||
+      parsed.hostname.endsWith(".youtube.com")
+    ) {
+      return parsed.pathname === "/watch" && !!parsed.searchParams.get("v");
+    }
+    if (parsed.hostname === "youtu.be") {
+      return parsed.pathname !== "/";
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // Base URL schema with common validation logic
 export const URL = z.preprocess(
   x => {
@@ -419,7 +437,8 @@ export type FormatObject =
   | ScreenshotFormatWithOptions
   | AttributesFormatWithOptions
   | QueryFormatWithOptions
-  | { type: "branding" };
+  | { type: "branding" }
+  | { type: "audio" };
 
 const pdfModeSchema = z.enum(["fast", "auto", "ocr"]);
 
@@ -528,6 +547,7 @@ const baseScrapeOptions = z.strictObject({
           attributesFormatWithOptions,
           z.strictObject({ type: z.literal("branding") }),
           queryFormatWithOptions,
+          z.strictObject({ type: z.literal("audio") }),
         ])
         .array()
         .optional()
@@ -812,6 +832,10 @@ const scrapeRequestSchemaBase = baseScrapeOptions.extend({
 
 export const scrapeRequestSchema = strictWithMessage(scrapeRequestSchemaBase)
   .refine(waitForRefine, waitForRefineOpts)
+  .refine(
+    x => !x.formats?.some(f => f.type === "audio") || isYouTubeUrl(x.url),
+    "The audio format is only supported for YouTube URLs (youtube.com/watch?v=... or youtu.be/...)",
+  )
   .transform(extractTransformRequired);
 
 export type ScrapeRequest = z.infer<typeof scrapeRequestSchema>;
@@ -1005,6 +1029,7 @@ export type Document = {
   links?: string[];
   images?: string[];
   screenshot?: string;
+  audio?: string;
   extract?: any;
   json?: any;
   summary?: string;

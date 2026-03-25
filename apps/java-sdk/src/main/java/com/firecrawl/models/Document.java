@@ -19,6 +19,7 @@ public class Document {
     private List<String> links;
     private List<String> images;
     private String screenshot;
+    private String audio;
     private List<Map<String, Object>> attributes;
     private Map<String, Object> actions;
     private String warning;
@@ -34,6 +35,7 @@ public class Document {
     public List<String> getLinks() { return links; }
     public List<String> getImages() { return images; }
     public String getScreenshot() { return screenshot; }
+    public String getAudio() { return audio; }
     public List<Map<String, Object>> getAttributes() { return attributes; }
     public Map<String, Object> getActions() { return actions; }
     public String getWarning() { return warning; }
