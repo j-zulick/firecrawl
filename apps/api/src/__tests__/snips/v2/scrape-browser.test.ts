@@ -4,6 +4,7 @@ import {
   ALLOW_TEST_SUITE_WEBSITE,
   HAS_FIRE_ENGINE,
   TEST_PRODUCTION,
+  TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
   itIf,
 } from "../lib";
@@ -188,37 +189,43 @@ describe("Scrape browser interact replay", () => {
     scrapeTimeout,
   );
 
-  it("returns 400 for invalid scrape job id format", async () => {
-    const response = await scrapeInteractRaw(
-      "not-a-valid-uuid",
-      {
-        code: "console.log('hi')",
-        language: "node",
-      },
-      identity,
-    );
+  itIf(!TEST_SELF_HOST)(
+    "returns 400 for invalid scrape job id format",
+    async () => {
+      const response = await scrapeInteractRaw(
+        "not-a-valid-uuid",
+        {
+          code: "console.log('hi')",
+          language: "node",
+        },
+        identity,
+      );
 
-    expect(response.statusCode).toBe(400);
-    expect(response.body.success).toBe(false);
-    expect(response.body.error).toBe(
-      "Invalid job ID format. Job ID must be a valid UUID.",
-    );
-  });
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe(
+        "Invalid job ID format. Job ID must be a valid UUID.",
+      );
+    },
+  );
 
-  it("returns 404 when scrape job does not exist", async () => {
-    const response = await scrapeInteractRaw(
-      crypto.randomUUID(),
-      {
-        code: "console.log('hi')",
-        language: "node",
-      },
-      identity,
-    );
+  itIf(!TEST_SELF_HOST)(
+    "returns 404 when scrape job does not exist",
+    async () => {
+      const response = await scrapeInteractRaw(
+        crypto.randomUUID(),
+        {
+          code: "console.log('hi')",
+          language: "node",
+        },
+        identity,
+      );
 
-    expect(response.statusCode).toBe(404);
-    expect(response.body.success).toBe(false);
-    expect(response.body.error).toBe("Job not found.");
-  });
+      expect(response.statusCode).toBe(404);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe("Job not found.");
+    },
+  );
 
   itIf(ALLOW_TEST_SUITE_WEBSITE && !!config.IDMUX_URL)(
     "returns 403 when scrape job belongs to another team",
