@@ -102,8 +102,8 @@ importers:
         specifier: ^0.5.0
         version: 0.5.0
       autumn-js:
-        specifier: 1.0.0-beta.10
-        version: 1.0.0-beta.10(react@18.3.1)
+        specifier: 1.1.6
+        version: 1.1.6(express@4.22.0)(react@18.3.1)
       axios:
         specifier: ^1.13.5
         version: 1.13.5
@@ -3052,11 +3052,12 @@ packages:
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
 
-  autumn-js@1.0.0-beta.10:
-    resolution: {integrity: sha512-Gohg4VB9npGRik0MED35kdFYHzET5NVCsVeCwsaPg11Kw9eXbbP7TDqlamaANOE+TUZ1A6RDSvgMQBrsIDrnVw==}
+  autumn-js@1.1.6:
+    resolution: {integrity: sha512-AH4bzR+E7w6TqyoMsIQTTnqGpxVZt3bx3YL8BfG+5v/oWfFzdi0gsTW3lpLFZgmd1yxWAa9Vsr2pI8h8/AWiEQ==}
     peerDependencies:
       better-auth: ^1.3.17
       better-call: ^1.0.12
+      express: ^5.2.1
       hono: ^4.0.0
       next: ^14.0.0 || ^15.0.0
       react: ^18.0.0 || ^19.0.0
@@ -3064,6 +3065,8 @@ packages:
       better-auth:
         optional: true
       better-call:
+        optional: true
+      express:
         optional: true
       hono:
         optional: true
@@ -8641,12 +8644,13 @@ snapshots:
 
   asynckit@0.4.0: {}
 
-  autumn-js@1.0.0-beta.10(react@18.3.1):
+  autumn-js@1.1.6(express@4.22.0)(react@18.3.1):
     dependencies:
       query-string: 9.3.1
       rou3: 0.6.3
       zod: 4.1.12
     optionalDependencies:
+      express: 4.22.0
       react: 18.3.1
 
   axios-retry@4.5.0(axios@1.13.5):
