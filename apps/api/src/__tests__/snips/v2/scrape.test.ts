@@ -2014,7 +2014,7 @@ describe("Attribute formats", () => {
 
   describeIf(!TEST_SELF_HOST)("Audio format", () => {
     it.concurrent(
-      "should return audio field with signed GCS URL for a YouTube video",
+      "should return audio field with signed GCS URL for a supported video URL",
       async () => {
         const data = await scrape(
           {
@@ -2032,7 +2032,7 @@ describe("Attribute formats", () => {
     );
 
     it.concurrent(
-      "should reject non-YouTube URL with audio format",
+      "should reject unsupported URL with audio format",
       async () => {
         const result = await scrapeWithFailure(
           {
@@ -2042,7 +2042,7 @@ describe("Attribute formats", () => {
           identity,
         );
 
-        expect(result.error).toMatch(/audio.*youtube/i);
+        expect(result.error).toMatch(/audio/i);
       },
       scrapeTimeout,
     );

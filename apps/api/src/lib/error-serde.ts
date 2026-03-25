@@ -29,6 +29,7 @@ import {
   ScrapeJobCancelledError,
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
+  AudioUnsupportedUrlError,
 } from "../scraper/scrapeURL/error";
 
 // TODO: figure out correct typing for this
@@ -59,6 +60,7 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_RACED_REDIRECT_ERROR: RacedRedirectError,
   SCRAPE_SITEMAP_ERROR: SitemapError,
   CRAWL_DENIAL: CrawlDenialError,
+  SCRAPE_AUDIO_UNSUPPORTED_URL: AudioUnsupportedUrlError,
 
   // Zod errors
   BAD_REQUEST: null,

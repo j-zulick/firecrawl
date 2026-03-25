@@ -2,6 +2,37 @@ import { Meta } from "..";
 import { Document } from "../../../controllers/v2/types";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import { AudioUnsupportedUrlError } from "../error";
+
+let cachedUrlRegex: RegExp | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function getSupportedUrlRegex(): Promise<RegExp> {
+  if (cachedUrlRegex && Date.now() - cacheTimestamp < CACHE_TTL_MS) {
+    return cachedUrlRegex;
+  }
+
+  const res = await fetch(`${config.AVGRAB_SERVICE_URL}/supported-urls`);
+  if (!res.ok) {
+    throw new Error(
+      "Failed to fetch supported URL patterns from audio service",
+    );
+  }
+
+  const data = await res.json().catch(() => null);
+  if (!data || typeof data.regex !== "string") {
+    throw new Error("Audio service returned invalid supported URL patterns");
+  }
+
+  try {
+    cachedUrlRegex = new RegExp(data.regex);
+  } catch {
+    throw new Error("Audio service returned invalid supported URL patterns");
+  }
+  cacheTimestamp = Date.now();
+  return cachedUrlRegex;
+}
 
 export async function fetchAudio(
   meta: Meta,
@@ -17,6 +48,11 @@ export async function fetchAudio(
       "Audio format is not available (service not configured)." +
       (document.warning ? " " + document.warning : "");
     return document;
+  }
+
+  const urlRegex = await getSupportedUrlRegex();
+  if (!urlRegex.test(meta.url)) {
+    throw new AudioUnsupportedUrlError();
   }
 
   const response = await fetch(`${config.AVGRAB_SERVICE_URL}/download`, {
