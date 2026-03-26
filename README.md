@@ -137,7 +137,7 @@ See the full [Skill + CLI documentation](https://docs.firecrawl.dev/sdks/cli) fo
 |---------|-------------|
 | [**Scrape**](#scraping) | Convert any URL to markdown, HTML, screenshots, or structured JSON |
 | [**Search**](#search) | Search the web and get full page content from results |
-| [**Browse**](#browse) | Let agents safely interact with the web |
+| [**Interact**](#interact) | Scrape a page, then interact with it via prompts or code |
 | [**Map**](#map) | Discover all URLs on a website instantly |
 | [**Crawl**](#crawling) | Scrape all URLs of a website with a single request |
 | [**Agent**](#agent) | Automated data gathering, just describe what you need |
@@ -293,62 +293,76 @@ results = firecrawl.search(
 
 ---
 
-## Browse
+## Interact
 
-Give your agents a secure browser environment. Let them run code safely to gather data and take action on the web.
-```bash
-curl -X POST 'https://api.firecrawl.dev/v2/browser' \
-  -H 'Authorization: Bearer fc-YOUR_API_KEY' \
-  -H 'Content-Type: application/json'
+Scrape a page, then interact with it — click buttons, fill forms, extract dynamic content, or navigate deeper. Use natural language prompts or run code for full control. [Learn more →](https://docs.firecrawl.dev/features/interact)
+
+```python
+from firecrawl import Firecrawl
+
+app = Firecrawl(api_key="fc-YOUR_API_KEY")
+
+# 1. Scrape a page
+result = app.scrape("https://www.amazon.com", formats=["markdown"])
+scrape_id = result.metadata["scrapeId"]
+
+# 2. Interact with it using natural language
+app.interact(scrape_id, prompt="Search for iPhone 16 Pro Max")
+response = app.interact(scrape_id, prompt="Click on the first result and tell me the price")
+print(response.output)  # "The iPhone 16 Pro Max (256GB) is priced at $1,199.00."
+
+# 3. Stop the session
+app.stop_interaction(scrape_id)
 ```
 
-Response:
-```json
-{
-  "success": true,
-  "id": "550e8400-e29b-41d4-a716-446655440000",
-  "cdpUrl": "wss://cdp-proxy.firecrawl.dev/cdp/550e8400-e29b-41d4-a716-446655440000",
-  "liveViewUrl": "https://liveview.firecrawl.dev/550e8400-e29b-41d4-a716-446655440000"
-}
-```
+### Run Code in the Browser
 
-### Execute Code in the Browser
-
-Run Playwright code, Python, or bash commands remotely:
+For full control, execute Playwright code directly — `page` is already connected:
 ```javascript
 import Firecrawl from '@mendable/firecrawl-js';
 
 const firecrawl = new Firecrawl({ apiKey: "fc-YOUR_API_KEY" });
 
-// 1. Launch a session
-const session = await firecrawl.browser();
+// 1. Scrape a page
+const scrapeResult = await firecrawl.scrape("https://news.ycombinator.com", { formats: ["markdown"] });
+const scrapeId = scrapeResult.metadata.scrapeId;
 
-// 2. Execute code
-const result = await firecrawl.browserExecute(session.id, {
+// 2. Execute Playwright code
+const result = await firecrawl.interact(scrapeId, {
   code: `
-    await page.goto("https://news.ycombinator.com");
+    await page.click('#next-page');
+    await page.waitForLoadState('networkidle');
     const title = await page.title();
-    console.log(title);
+    JSON.stringify({ title });
   `,
   language: "node",
 });
-console.log(result.result); // "Hacker News"
+console.log(result.result);
 
-// 3. Close
-await firecrawl.deleteBrowser(session.id);
+// 3. Stop
+await firecrawl.stopInteraction(scrapeId);
 ```
 
-### Persistent Sessions
+### Persistent Profiles
 
 Save and reuse browser state (cookies, localStorage) across sessions:
-```javascript
-const session = await firecrawl.browser({
-  ttl: 600,
-  profile: {
-    name: "my-profile",
-    saveChanges: true,
-  },
-});
+```python
+result = app.scrape(
+    "https://app.example.com/login",
+    formats=["markdown"],
+    profile={"name": "my-app", "save_changes": True},
+)
+scrape_id = result.metadata["scrapeId"]
+
+app.interact(scrape_id, prompt="Fill in user@example.com and password, then click Login")
+app.stop_interaction(scrape_id)
+
+# Next session — already logged in
+result = app.scrape(
+    "https://app.example.com/dashboard",
+    formats=["markdown"],
+    profile={"name": "my-app", "save_changes": True},
+)
 ```
 
 ### agent-browser (Bash Mode)
