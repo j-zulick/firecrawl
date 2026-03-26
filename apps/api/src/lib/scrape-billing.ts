@@ -9,9 +9,11 @@ import { CostTracking } from "./cost-tracking";
 import { hasFormatOfType } from "./format-utils";
 import { TransportableError } from "./error";
 import { FeatureFlag } from "../scraper/scrapeURL/engines";
+import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 
 const creditsPerPDFPage = 1;
 const stealthProxyCostBonus = 4;
+const unblockedDomainCostBonus = 4;
 
 export async function calculateCreditsToBeBilled(
   options: ScrapeOptions,
@@ -92,6 +94,14 @@ export async function calculateCreditsToBeBilled(
     !unsupportedFeatures?.has("stealthProxy") // if stealth proxy was unsupported, don't bill for it
   ) {
     creditsToBeBilled += stealthProxyCostBonus;
+  }
+
+  const urlsToCheck = [
+    document.metadata?.url,
+    document.metadata?.sourceURL,
+  ].filter((u): u is string => !!u);
+  if (urlsToCheck.some(u => isUrlBlocked(u, null) && !isUrlBlocked(u, flags))) {
+    creditsToBeBilled += unblockedDomainCostBonus;
   }
 
   return creditsToBeBilled;
