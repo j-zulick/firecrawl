@@ -295,7 +295,11 @@ results = firecrawl.search(
 
 ## Interact
 
-Scrape a page, then interact with it — click buttons, fill forms, extract dynamic content, or navigate deeper. Use natural language prompts or run code for full control. [Learn more →](https://docs.firecrawl.dev/features/interact)
+Scrape a page, then interact with it - click buttons, fill forms, extract dynamic content, or navigate deeper. Use natural language prompts or run code for full control. [Learn more →](https://docs.firecrawl.dev/features/interact)
+
+### Interact via Prompting
+
+Describe what you want in natural language. The agent will click, type, scroll, and extract data automatically.
 
 ```python
 from firecrawl import Firecrawl
@@ -317,7 +321,7 @@ app.stop_interaction(scrape_id)
 
 ### Run Code in the Browser
 
-For full control, execute Playwright code directly — `page` is already connected:
+For full control, execute Playwright code directly - `page` is already connected:
 ```javascript
 import Firecrawl from '@mendable/firecrawl-js';
 
@@ -357,7 +361,7 @@ scrape_id = result.metadata["scrapeId"]
 app.interact(scrape_id, prompt="Fill in user@example.com and password, then click Login")
 app.stop_interaction(scrape_id)
 
-# Next session — already logged in
+# Next session - already logged in
 result = app.scrape(
     "https://app.example.com/dashboard",
     formats=["markdown"],
