@@ -295,11 +295,11 @@ results = firecrawl.search(
 
 ## Interact
 
-Scrape a page, then interact with it - click buttons, fill forms, extract dynamic content, or navigate deeper. Use natural language prompts or run code for full control. [Learn more →](https://docs.firecrawl.dev/features/interact)
+Scrape a page, then interact with it - click buttons, fill forms, extract dynamic content, or navigate deeper. Use natural language prompts or run code for full control.
 
 ### Interact via Prompting
 
-Describe what you want in natural language. The agent will click, type, scroll, and extract data automatically.
+Describe what you want and the agent will click, type, scroll, and extract data automatically.
 
 ```python
 from firecrawl import Firecrawl
