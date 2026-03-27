@@ -703,6 +703,39 @@ for (SearchResult r : results.getResults()) {
 }
 ```
 
+### Elixir
+
+Add the dependency:
+```elixir
+def deps do
+  [
+    {:firecrawl, "~> 1.0"}
+  ]
+end
+```
+```elixir
+# Scrape a URL
+{:ok, response} = Firecrawl.scrape_and_extract_from_url(
+  url: "https://firecrawl.dev",
+  formats: ["markdown"]
+)
+
+# Crawl a website
+{:ok, response} = Firecrawl.crawl_urls(
+  url: "https://docs.firecrawl.dev",
+  limit: 50
+)
+
+# Search the web
+{:ok, response} = Firecrawl.search_and_scrape(
+  query: "best web scraping tools 2024",
+  limit: 10
+)
+
+# Map URLs
+{:ok, response} = Firecrawl.map_urls(url: "https://example.com")
+```
+
 ### Community SDKs
 
 - [Go SDK](https://github.com/mendableai/firecrawl-go)
