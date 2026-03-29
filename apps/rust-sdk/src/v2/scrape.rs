@@ -338,7 +338,10 @@ impl Client {
         options: ScrapeExecuteOptions,
     ) -> Result<ScrapeExecuteResponse, FirecrawlError> {
         let has_code = options.code.as_ref().is_some_and(|c| !c.trim().is_empty());
-        let has_prompt = options.prompt.as_ref().is_some_and(|p| !p.trim().is_empty());
+        let has_prompt = options
+            .prompt
+            .as_ref()
+            .is_some_and(|p| !p.trim().is_empty());
         if !has_code && !has_prompt {
             return Err(FirecrawlError::Missuse(
                 "Either 'code' or 'prompt' must be provided".into(),
@@ -393,8 +396,7 @@ impl Client {
                 )
             })?;
 
-        self.handle_response(response, "stop interaction")
-            .await
+        self.handle_response(response, "stop interaction").await
     }
 
     /// Deprecated alias for [`Client::interact`].
@@ -653,9 +655,18 @@ mod tests {
             .unwrap();
 
         assert!(response.success);
-        assert_eq!(response.output, Some("Clicked the login button".to_string()));
-        assert_eq!(response.live_view_url, Some("https://live.example.com/view".to_string()));
-        assert_eq!(response.interactive_live_view_url, Some("https://live.example.com/interactive".to_string()));
+        assert_eq!(
+            response.output,
+            Some("Clicked the login button".to_string())
+        );
+        assert_eq!(
+            response.live_view_url,
+            Some("https://live.example.com/view".to_string())
+        );
+        assert_eq!(
+            response.interactive_live_view_url,
+            Some("https://live.example.com/interactive".to_string())
+        );
         mock.assert();
     }
 

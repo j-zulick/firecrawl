@@ -13,12 +13,15 @@ import {
   updateBrowserSessionStatus,
   updateBrowserSessionCreditsUsed,
   claimBrowserSessionDestroyed,
-  getActiveBrowserSessionCount,
   invalidateActiveBrowserSessionCount,
-  MAX_ACTIVE_BROWSER_SESSIONS_PER_TEAM,
   didBrowserSessionUsePrompt,
   clearBrowserSessionPromptFlag,
 } from "../../lib/browser-sessions";
+import {
+  getConcurrencyLimitActiveJobsCount,
+  pushConcurrencyLimitActiveJob,
+  removeConcurrencyLimitActiveJob,
+} from "../../lib/concurrency-limit";
 import { RequestWithAuth } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
@@ -234,18 +237,19 @@ export async function browserCreateController(
     });
   }
 
-  // 0b. Enforce per-team active session limit
-  const browserSessionLimit =
-    req.acuc?.flags?.maxBrowserSessions ?? MAX_ACTIVE_BROWSER_SESSIONS_PER_TEAM;
-  const activeCount = await getActiveBrowserSessionCount(req.auth.team_id);
-  if (activeCount >= browserSessionLimit) {
-    logger.warn("Active browser session limit reached", {
+  // 0b. Enforce concurrency limit (shared pool with scrape/crawl/interact)
+  const concurrencyLimit = req.acuc?.concurrency ?? 2;
+  const activeCount = await getConcurrencyLimitActiveJobsCount(
+    req.auth.team_id,
+  );
+  if (activeCount >= concurrencyLimit) {
+    logger.warn("Concurrency limit reached for browser session", {
       activeCount,
-      limit: browserSessionLimit,
+      limit: concurrencyLimit,
     });
     return res.status(429).json({
       success: false,
-      error: `You have reached the maximum number of active browser sessions (${browserSessionLimit}). Please destroy existing sessions before creating new ones.`,
+      error: `You have reached the maximum number of concurrent jobs (${concurrencyLimit}). Please wait for existing jobs to complete or destroy browser sessions before creating new ones.`,
     });
   }
 
@@ -361,6 +365,12 @@ export async function browserCreateController(
 
   // Invalidate cached count so next check reflects the new session
   invalidateActiveBrowserSessionCount(req.auth.team_id).catch(() => {});
+
+  // Register in the shared concurrency limiter so this session counts
+  // against the team's concurrent job limit while it's active.
+  pushConcurrencyLimitActiveJob(req.auth.team_id, sessionId, ttl * 1000).catch(
+    () => {},
+  );
 
   logger.info("Browser session created", {
     sessionId,
@@ -538,6 +548,16 @@ export async function browserDeleteController(
 
   // Invalidate cached count so next check reflects the destroyed session
   invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
+  removeConcurrencyLimitActiveJob(session.team_id, session.id).catch(error => {
+    logger.error(
+      "Failed to remove concurrency limiter entry for browser session",
+      {
+        error,
+        sessionId: session.id,
+        teamId: session.team_id,
+      },
+    );
+  });
 
   if (!claimed) {
     // The webhook (or another DELETE call) already transitioned and billed.
@@ -675,6 +695,16 @@ export async function browserWebhookDestroyedController(
   const claimed = await claimBrowserSessionDestroyed(session.id);
 
   invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
+  removeConcurrencyLimitActiveJob(session.team_id, session.id).catch(error => {
+    logger.error(
+      "Failed to remove concurrency limiter entry for browser session via webhook",
+      {
+        error,
+        sessionId: session.id,
+        teamId: session.team_id,
+      },
+    );
+  });
 
   if (!claimed) {
     logger.info("Session already destroyed by another path, skipping billing", {
