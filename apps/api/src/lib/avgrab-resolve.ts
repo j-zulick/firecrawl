@@ -1,6 +1,13 @@
+import { Agent, fetch } from "undici";
 import { config } from "../config";
 import { MapDocument } from "../controllers/v2/types";
 import * as winston from "winston";
+
+const avgrabAgent = new Agent({
+  headersTimeout: 0,
+  bodyTimeout: 0,
+  connectTimeout: 5 * 60 * 1000,
+});
 
 let cachedResolveRegex: RegExp | null = null;
 let cacheTimestamp = 0;
@@ -20,12 +27,12 @@ async function getResolveRegex(): Promise<RegExp | null> {
     );
   }
 
-  const data = await res.json().catch(() => null);
+  const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
   if (!data || typeof data.resolve_regex !== "string") {
     throw new Error("avgrab service returned invalid resolve URL pattern");
   }
 
-  cachedResolveRegex = new RegExp(data.resolve_regex);
+  cachedResolveRegex = new RegExp(data.resolve_regex as string);
   cacheTimestamp = Date.now();
   return cachedResolveRegex;
 }
@@ -72,6 +79,8 @@ export async function resolveViaAvgrab(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url, limit }),
+    signal: AbortSignal.timeout(5 * 60 * 1000),
+    dispatcher: avgrabAgent,
   });
 
   if (!response.ok) {
@@ -86,7 +95,7 @@ export async function resolveViaAvgrab(
     return null;
   }
 
-  const data: AvgrabResolveResponse = await response.json();
+  const data = (await response.json()) as AvgrabResolveResponse;
 
   return data.posts.map(post => {
     const { url: _url, title: _title, ...meta } = post;
