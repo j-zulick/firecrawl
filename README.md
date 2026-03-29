@@ -39,9 +39,7 @@
 
 # **🔥 Firecrawl**
 
-**Power AI agents with clean web data.** The API to search, scrape, and interact with the web at scale. [It's also open source.](https://github.com/firecrawl/firecrawl)
-
-*This repository is in development, and we're still integrating custom modules into the mono repo. It's not fully ready for self-hosted deployment yet, but you can run it locally.*
+**Power AI agents with clean web data.** The API to search, scrape, and interact with the web at scale. Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
 
 _Pst. Hey, you, join our stargazers :)_
 
