@@ -39,9 +39,7 @@
 
 # **🔥 Firecrawl**
 
-**Turn websites into LLM-ready data.** 
-
-[**Firecrawl**](https://firecrawl.dev/?ref=github) is the API to search, scrape, and interact with the web at scale, powering AI agents and apps with real-time web data.
+**Power AI agents with clean web data.** The API to search, scrape, and interact with the web at scale. [It's also open source.](https://github.com/firecrawl/firecrawl)
 
 *This repository is in development, and we're still integrating custom modules into the mono repo. It's not fully ready for self-hosted deployment yet, but you can run it locally.*
 
