@@ -209,7 +209,7 @@ from firecrawl import Firecrawl
 app = Firecrawl(api_key="fc-YOUR_API_KEY")
 
 result = app.scrape("https://amazon.com")
-scrape_id = result.metadata["scrapeId"]
+scrape_id = result.metadata.scrape_id
 
 app.interact(scrape_id, prompt="Search for 'mechanical keyboard'")
 app.interact(scrape_id, prompt="Click the first result")
