@@ -267,6 +267,13 @@ export async function agentSignupBlockController(req: Request, res: Response) {
       });
     }
 
+    // Fetch the API key value before deletion so we can clear ACUC cache
+    const { data: apiKeyData } = await supabase_service
+      .from("api_keys")
+      .select("key")
+      .eq("id", sponsor.api_key_id)
+      .single();
+
     // Disable the API key
     const { error: deleteKeyError } = await supabase_service
       .from("api_keys")
@@ -275,6 +282,17 @@ export async function agentSignupBlockController(req: Request, res: Response) {
 
     if (deleteKeyError) {
       logger.warn("Failed to delete agent API key", { error: deleteKeyError });
+    }
+
+    // Clear ACUC Redis cache so the deleted key stops authenticating immediately
+    if (apiKeyData) {
+      try {
+        await clearACUC(apiKeyData.key);
+      } catch (cacheError) {
+        logger.warn("Failed to clear ACUC cache for blocked agent key", {
+          error: cacheError,
+        });
+      }
     }
 
     // Ban the sandboxed team

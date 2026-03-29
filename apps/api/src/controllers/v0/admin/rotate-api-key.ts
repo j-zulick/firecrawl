@@ -5,6 +5,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import { validate as isUuid } from "uuid";
 import { parseApi, apiKeyToFcApiKey } from "../../../lib/parseApi";
+import { clearACUC } from "../../auth";
 
 export async function integRotateApiKeyController(req: Request, res: Response) {
   let logger = _logger.child({
@@ -119,7 +120,18 @@ export async function integRotateApiKeyController(req: Request, res: Response) {
 
     if (deleteError) {
       logger.error("Failed to delete leaked API key", { error: deleteError });
-      logger.warn("Old API key may still be active", { oldKey: normalizedApiKey });
+      logger.warn("Old API key may still be active", {
+        oldKey: normalizedApiKey,
+      });
+    }
+
+    // Clear ACUC Redis cache so the deleted key stops authenticating immediately
+    try {
+      await clearACUC(normalizedApiKey);
+    } catch (cacheError) {
+      logger.warn("Failed to clear ACUC cache for rotated key", {
+        error: cacheError,
+      });
     }
 
     logger.info("Rotated API key", { teamId });

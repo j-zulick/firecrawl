@@ -175,7 +175,10 @@ export class AutumnService {
       logger.info("Autumn getOrCreateCustomer succeeded", { customerId });
       return customer;
     } catch (error) {
-      logger.warn("Autumn getOrCreateCustomer failed", { customerId, error });
+      logger.error(
+        "Autumn getOrCreateCustomer failed — billing API may be unavailable",
+        { customerId, error },
+      );
       return null;
     }
   }
@@ -193,7 +196,12 @@ export class AutumnService {
       if (status === 404) {
         return null;
       }
-      logger.warn("Autumn getEntity failed", { customerId, entityId, error });
+
+      logger.error("Autumn getEntity failed — billing API may be unavailable", {
+        customerId,
+        entityId,
+        error,
+      });
       return null;
     }
   }
@@ -225,12 +233,16 @@ export class AutumnService {
         // Entity already exists — treat as success for provisioning purposes.
         return { ok: false, conflict: true };
       }
-      logger.warn("Autumn createEntity failed", {
-        customerId,
-        entityId,
-        featureId,
-        error,
-      });
+
+      logger.error(
+        "Autumn createEntity failed — billing API may be unavailable",
+        {
+          customerId,
+          entityId,
+          featureId,
+          error,
+        },
+      );
       return { ok: false, conflict: false };
     }
   }
@@ -260,7 +272,7 @@ export class AutumnService {
       });
       return true;
     } catch (error) {
-      logger.warn("Autumn track failed", {
+      logger.error("Autumn track failed — billing API may be unavailable", {
         customerId,
         entityId,
         featureId,
@@ -334,7 +346,10 @@ export class AutumnService {
 
       this.ensuredTeams.add(teamId);
     } catch (error) {
-      logger.warn("Autumn ensureTeamProvisioned failed", { teamId, error });
+      logger.error(
+        "Autumn ensureTeamProvisioned failed — billing API may be unavailable",
+        { teamId, error },
+      );
     }
   }
 
@@ -377,7 +392,6 @@ export class AutumnService {
     if (!autumnClient || this.isPreviewTeam(teamId)) {
       return null;
     }
-
     try {
       const orgId = await this.resolveOrgId(teamId);
       if (!isAutumnCheckEnabled(orgId)) return null;
@@ -400,11 +414,14 @@ export class AutumnService {
       });
       return allowed;
     } catch (error) {
-      logger.warn("Autumn checkCredits failed", {
-        teamId,
-        value,
-        error,
-      });
+      logger.error(
+        "Autumn checkCredits failed — billing API may be unavailable, falling back",
+        {
+          teamId,
+          value,
+          error,
+        },
+      );
       return null;
     }
   }
@@ -423,7 +440,6 @@ export class AutumnService {
     if (!autumnClient || this.isPreviewTeam(teamId)) {
       return null;
     }
-
     const resolvedLockId = lockId ?? `billing_${randomUUID()}`;
 
     try {
@@ -463,12 +479,15 @@ export class AutumnService {
       });
       return resolvedLockId;
     } catch (error) {
-      logger.warn("Autumn lockCredits failed", {
-        teamId,
-        value,
-        lockId: resolvedLockId,
-        error,
-      });
+      logger.error(
+        "Autumn lockCredits failed — billing API may be unavailable, falling back",
+        {
+          teamId,
+          value,
+          lockId: resolvedLockId,
+          error,
+        },
+      );
       return null;
     }
   }
@@ -497,12 +516,15 @@ export class AutumnService {
         overrideValue,
       });
     } catch (error) {
-      logger.warn("Autumn finalizeCreditsLock failed", {
-        lockId,
-        action,
-        overrideValue,
-        error,
-      });
+      logger.error(
+        "Autumn finalizeCreditsLock failed — billing API may be unavailable",
+        {
+          lockId,
+          action,
+          overrideValue,
+          error,
+        },
+      );
     }
   }
 
@@ -539,12 +561,15 @@ export class AutumnService {
         properties,
       });
     } catch (error) {
-      logger.warn("Autumn trackCredits failed", {
-        teamId,
-        value,
-        requestScoped,
-        error,
-      });
+      logger.error(
+        "Autumn trackCredits failed — billing API may be unavailable",
+        {
+          teamId,
+          value,
+          requestScoped,
+          error,
+        },
+      );
       return false;
     }
   }
@@ -570,7 +595,10 @@ export class AutumnService {
         properties: { ...properties, source: "autumn_refund" },
       });
     } catch (error) {
-      logger.warn("Autumn refundCredits failed", { teamId, value, error });
+      logger.error(
+        "Autumn refundCredits failed — billing API may be unavailable",
+        { teamId, value, error },
+      );
     }
   }
 }

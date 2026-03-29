@@ -12,7 +12,8 @@ export type FormatString =
   | 'changeTracking'
   | 'json'
   | 'attributes'
-  | 'branding';
+  | 'branding'
+  | 'audio';
 
 export interface Viewport {
   width: number;
@@ -392,6 +393,7 @@ export interface Document {
   links?: string[];
   images?: string[];
   screenshot?: string;
+  audio?: string;
   attributes?: Array<{
     selector: string;
     attribute: string;

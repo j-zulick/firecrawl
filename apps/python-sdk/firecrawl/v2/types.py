@@ -274,6 +274,7 @@ class Document(BaseModel):
     links: Optional[List[str]] = None
     images: Optional[List[str]] = None
     screenshot: Optional[str] = None
+    audio: Optional[str] = None
     actions: Optional[Dict[str, Any]] = None
     answer: Optional[str] = None
     warning: Optional[str] = None
@@ -386,6 +387,7 @@ FormatString = Literal[
     "attributes",
     "branding",
     "query",
+    "audio",
     # snake_case versions (user-friendly)
     "raw_html",
     "change_tracking",

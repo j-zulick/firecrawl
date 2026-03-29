@@ -469,6 +469,28 @@ export class AgentIndexOnlyError extends TransportableError {
   }
 }
 
+export class AudioUnsupportedUrlError extends TransportableError {
+  constructor(message?: string) {
+    super(
+      "SCRAPE_AUDIO_UNSUPPORTED_URL",
+      message ?? "The audio format does not support the provided URL",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new AudioUnsupportedUrlError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class BrandingNotSupportedError extends TransportableError {
   constructor(message: string) {
     super("SCRAPE_BRANDING_NOT_SUPPORTED", message);

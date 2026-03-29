@@ -419,7 +419,8 @@ export type FormatObject =
   | ScreenshotFormatWithOptions
   | AttributesFormatWithOptions
   | QueryFormatWithOptions
-  | { type: "branding" };
+  | { type: "branding" }
+  | { type: "audio" };
 
 const pdfModeSchema = z.enum(["fast", "auto", "ocr"]);
 
@@ -528,6 +529,7 @@ const baseScrapeOptions = z.strictObject({
           attributesFormatWithOptions,
           z.strictObject({ type: z.literal("branding") }),
           queryFormatWithOptions,
+          z.strictObject({ type: z.literal("audio") }),
         ])
         .array()
         .optional()
@@ -1005,6 +1007,7 @@ export type Document = {
   links?: string[];
   images?: string[];
   screenshot?: string;
+  audio?: string;
   extract?: any;
   json?: any;
   summary?: string;
