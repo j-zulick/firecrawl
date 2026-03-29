@@ -55,14 +55,35 @@ _Pst. Hey, you, join our stargazers :)_
 
 ## Why Firecrawl?
 
-- **LLM-ready output**: Clean markdown, structured JSON, screenshots, HTML, and more
-- **Industry-leading reliability**: >80% coverage on [benchmark evaluations](https://www.firecrawl.dev/blog/the-worlds-best-web-data-api-v25), outperforming every other provider tested
-- **Handles the hard stuff**: Proxies, JavaScript rendering, and dynamic content that breaks other scrapers
-- **Customization**: Exclude tags, crawl behind auth walls, max depth, and more
-- **Media parsing**: Automatic text extraction from PDFs, DOCX, and images
-- **Actions**: Click, scroll, input, wait, and more before extracting
-- **Batch processing**: Scrape thousands of URLs asynchronously
-- **Change tracking**: Monitor website content changes over time
+- **Industry-leading reliability**: Covers 96% of the web, including JS-heavy pages — no proxy headaches, just clean data ([see benchmarks](https://www.firecrawl.dev/blog/the-worlds-best-web-data-api-v25))
+- **Blazingly fast**: P95 latency of 3.4s across millions of pages, built for real-time agents and dynamic apps
+- **LLM-ready output**: Clean markdown, structured JSON, screenshots, and more — spend fewer tokens, build better AI apps
+- **We handle the hard stuff**: Rotating proxies, orchestration, rate limits, JS-blocked content, and more — zero configuration
+- **Agent ready**: Connect Firecrawl to any AI agent or MCP client with a single command
+- **Media parsing**: Parse and extract content from web-hosted PDFs, DOCX, and more
+- **Actions**: Click, scroll, write, wait, and press before extracting content
+- **Open source**: Developed transparently and collaboratively — [join our community](https://github.com/firecrawl/firecrawl)
+
+---
+
+## Feature Overview
+
+**Core Endpoints**
+
+| Feature | Description |
+|---------|-------------|
+| [**Search**](#search) | Search the web and get full page content from results |
+| [**Scrape**](#scrape) | Convert any URL to markdown, HTML, screenshots, or structured JSON |
+| [**Interact**](#interact) | Scrape a page, then interact with it using AI prompts or code |
+
+**More**
+
+| Feature | Description |
+|---------|-------------|
+| [**Agent**](#agent) | Automated data gathering, just describe what you need |
+| [**Crawl**](#crawl) | Scrape all URLs of a website with a single request |
+| [**Map**](#map) | Discover all URLs on a website instantly |
+| [**Batch Scrape**](#batch-scrape) | Scrape thousands of URLs asynchronously |
 
 ---
 
@@ -292,27 +313,6 @@ curl -s https://firecrawl.dev/agent-onboarding/SKILL.md
 ```
 
 See the [Skill + CLI documentation](https://docs.firecrawl.dev/sdks/cli) for all available commands. For MCP, see [firecrawl-mcp-server](https://github.com/firecrawl/firecrawl-mcp-server).
-
----
-
-## Feature Overview
-
-**Core Endpoints**
-
-| Feature | Description |
-|---------|-------------|
-| [**Search**](#search) | Search the web and get full page content from results |
-| [**Scrape**](#scrape) | Convert any URL to markdown, HTML, screenshots, or structured JSON |
-| [**Interact**](#interact) | Scrape a page, then interact with it using AI prompts or code |
-
-**More**
-
-| Feature | Description |
-|---------|-------------|
-| [**Agent**](#agent) | Automated data gathering, just describe what you need |
-| [**Crawl**](#crawl) | Scrape all URLs of a website with a single request |
-| [**Map**](#map) | Discover all URLs on a website instantly |
-| [**Batch Scrape**](#batch-scraping) | Scrape thousands of URLs asynchronously |
 
 ---
 
@@ -663,7 +663,7 @@ for (SearchResult r : results.getResults()) {
 
 Firecrawl is open source under the AGPL-3.0 license. The cloud version at [firecrawl.dev](https://firecrawl.dev) includes additional features:
 
-![Open Source vs Cloud](https://raw.githubusercontent.com/firecrawl/firecrawl/main/img/open-source-cloud-comparison.png)
+![Open Source vs Cloud](https://raw.githubusercontent.com/firecrawl/firecrawl/main/img/open-source-cloud.png)
 
 To run locally, see the [Contributing Guide](https://github.com/firecrawl/firecrawl/blob/main/CONTRIBUTING.md). To self-host, see [Self-Hosting Guide](https://docs.firecrawl.dev/contributing/self-host).
 
