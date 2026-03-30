@@ -1143,6 +1143,21 @@ export async function performCleanContent(
 
   document.warning = trimOutput.warning;
 
+  const modelLimits = getModelLimits("gpt-4o-mini");
+  if (trimOutput.numTokens > modelLimits.maxOutputTokens) {
+    const skipWarning = `Content cleaning was skipped because the content is too long (${trimOutput.numTokens} tokens) for the model to return in full (max output: ${modelLimits.maxOutputTokens} tokens). The original markdown has been preserved.`;
+    document.warning =
+      skipWarning + (document.warning ? " " + document.warning : "");
+    meta.logger.info(
+      "Skipping onlyCleanContent: input tokens exceed model output limit",
+      {
+        inputTokens: trimOutput.numTokens,
+        maxOutputTokens: modelLimits.maxOutputTokens,
+      },
+    );
+    return document;
+  }
+
   if (!trimOutput.text || trimOutput.text.trim() === "") {
     document.warning =
       "Content cleaning was skipped because the markdown content is empty." +
@@ -1414,8 +1429,14 @@ ${markdown}
 </page>`;
 
   const modelChain = [
-    { name: "gemini-2.5-flash-lite", model: getModel("gemini-2.5-flash-lite", "google") },
-    { name: "gemini-2.0-flash-lite", model: getModel("gemini-2.0-flash-lite", "google") },
+    {
+      name: "gemini-2.5-flash-lite",
+      model: getModel("gemini-2.5-flash-lite", "google"),
+    },
+    {
+      name: "gemini-2.0-flash-lite",
+      model: getModel("gemini-2.0-flash-lite", "google"),
+    },
   ];
 
   for (const { name, model } of modelChain) {
