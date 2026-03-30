@@ -26,6 +26,7 @@ export type ErrorCodes =
   | "AGENT_INDEX_ONLY"
   | "SCRAPE_AUDIO_UNSUPPORTED_URL"
   | "CRAWL_DENIAL"
+  | "MAP_FAILED"
   | "BAD_REQUEST_INVALID_JSON"
   | "BAD_REQUEST";
 
@@ -122,6 +123,25 @@ export class MapTimeoutError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new MapTimeoutError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class MapFailedError extends TransportableError {
+  constructor(message: string) {
+    super("MAP_FAILED", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _code: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new MapFailedError(data.message);
     x.stack = data.stack;
     return x;
   }

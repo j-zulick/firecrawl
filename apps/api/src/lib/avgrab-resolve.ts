@@ -1,6 +1,7 @@
 import { Agent, fetch } from "undici";
 import { config } from "../config";
 import { MapDocument } from "../controllers/v2/types";
+import { MapFailedError } from "./error";
 import * as winston from "winston";
 
 const avgrabAgent = new Agent({
@@ -27,7 +28,10 @@ async function getResolveRegex(): Promise<RegExp | null> {
     );
   }
 
-  const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  const data = (await res.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
   if (!data || typeof data.resolve_regex !== "string") {
     throw new Error("avgrab service returned invalid resolve URL pattern");
   }
@@ -84,15 +88,17 @@ export async function resolveViaAvgrab(
   });
 
   if (!response.ok) {
-    const error = await response
+    const body = (await response
       .json()
-      .catch(() => ({ detail: "Unknown error" }));
+      .catch(() => ({ detail: "Unknown error" }))) as Record<string, unknown>;
+    const detail =
+      typeof body.detail === "string" ? body.detail : "Unknown error";
     logger.error("avgrab resolve failed", {
       url,
       status: response.status,
-      error,
+      detail,
     });
-    return null;
+    throw new MapFailedError(detail);
   }
 
   const data = (await response.json()) as AvgrabResolveResponse;

@@ -2,6 +2,7 @@ import {
   ActionsNotSupportedError,
   CrawlDenialError,
   ErrorCodes,
+  MapFailedError,
   MapTimeoutError,
   RacedRedirectError,
   ScrapeJobTimeoutError,
@@ -61,6 +62,7 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_SITEMAP_ERROR: SitemapError,
   CRAWL_DENIAL: CrawlDenialError,
   SCRAPE_AUDIO_UNSUPPORTED_URL: AudioUnsupportedUrlError,
+  MAP_FAILED: MapFailedError,
 
   // Zod errors
   BAD_REQUEST: null,
