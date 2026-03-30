@@ -7,6 +7,26 @@ const ACTIVITY_WINDOW_HOURS = 24;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 
+function encodeCursor(createdAt: string, id: string): string {
+  return Buffer.from(`${createdAt}:${id}`).toString("base64url");
+}
+
+function decodeCursor(
+  cursor: string,
+): { createdAt: string; id: string } | null {
+  try {
+    const decoded = Buffer.from(cursor, "base64url").toString();
+    const sepIdx = decoded.lastIndexOf(":");
+    if (sepIdx === -1) return null;
+    const createdAt = decoded.slice(0, sepIdx);
+    const id = decoded.slice(sepIdx + 1);
+    if (!createdAt || !id) return null;
+    return { createdAt, id };
+  } catch {
+    return null;
+  }
+}
+
 const VALID_ENDPOINTS = [
   "scrape",
   "crawl",
@@ -63,7 +83,15 @@ export async function activityController(
   }
   limit = Math.min(limit, MAX_LIMIT);
 
-  const cursor = req.query.cursor as string | undefined;
+  const rawCursor = req.query.cursor as string | undefined;
+  const cursor = rawCursor ? decodeCursor(rawCursor) : null;
+
+  if (rawCursor && !cursor) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid cursor.",
+    });
+  }
 
   // Build query
   const windowStart = new Date(
@@ -75,6 +103,7 @@ export async function activityController(
     .select("id, kind, api_version, created_at, target_hint")
     .eq("team_id", req.auth.team_id)
     .gte("created_at", windowStart)
+    .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(limit + 1); // fetch one extra to determine has_more
 
@@ -83,7 +112,11 @@ export async function activityController(
   }
 
   if (cursor) {
-    query = query.lt("id", cursor);
+    // For keyset pagination: fetch rows where (created_at, id) < (cursor.createdAt, cursor.id)
+    // This translates to: created_at < cursor OR (created_at = cursor AND id < cursor.id)
+    query = query.or(
+      `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
+    );
   }
 
   const { data, error } = await query;
@@ -107,10 +140,13 @@ export async function activityController(
     target: row.target_hint,
   }));
 
-  const nextCursor =
+  const lastItem =
     hasMore && responseData.length > 0
-      ? responseData[responseData.length - 1].id
+      ? responseData[responseData.length - 1]
       : null;
+  const nextCursor = lastItem
+    ? encodeCursor(lastItem.created_at, lastItem.id)
+    : null;
 
   return res.status(200).json({
     success: true,
