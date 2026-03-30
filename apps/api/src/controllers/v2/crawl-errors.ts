@@ -115,7 +115,7 @@ export async function crawlErrorsController(
         .select("*")
         .eq("request_id", req.params.jobId)
         .eq("team_id", req.auth.team_id)
-        .eq("success", false)
+        .eq("is_successful", false)
         .throwOnError();
 
     if (failedScrapesError) {
@@ -127,9 +127,11 @@ export async function crawlErrorsController(
 
     res.status(200).json({
       errors: (failedScrapes || []).map(scrape => {
-        const error = deserializeTransportableError(
-          scrape.error,
-        ) as TransportableError | null;
+        const error = scrape.error
+          ? (deserializeTransportableError(
+              scrape.error,
+            ) as TransportableError | null)
+          : null;
         return {
           id: scrape.id,
           timestamp:
@@ -143,7 +145,7 @@ export async function crawlErrorsController(
                 error: error.message,
               }
             : {
-                error: scrape.error,
+                error: scrape.error ?? "An unknown error occurred",
               }),
         };
       }),
