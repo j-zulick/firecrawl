@@ -227,6 +227,7 @@ export async function enhanceBrandingWithLLM(
       },
       colorRoles: {
         primaryColor: "",
+        secondaryColor: "",
         accentColor: "",
         backgroundColor: "",
         textPrimary: "",
