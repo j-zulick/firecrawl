@@ -267,6 +267,7 @@ export function mergeBrandingResults(
     merged.colors = {
       ...merged.colors,
       primary: llm.colorRoles.primaryColor || merged.colors?.primary,
+      secondary: llm.colorRoles.secondaryColor || merged.colors?.secondary,
       accent: llm.colorRoles.accentColor || merged.colors?.accent,
       background: llm.colorRoles.backgroundColor || merged.colors?.background,
       textPrimary: llm.colorRoles.textPrimary || merged.colors?.textPrimary,
@@ -276,6 +277,7 @@ export function mergeBrandingResults(
     if ((merged as any).__debug_colors) {
       (merged as any).__debug_colors.llmSelectedColors = {
         primary: llm.colorRoles.primaryColor,
+        secondary: llm.colorRoles.secondaryColor,
         accent: llm.colorRoles.accentColor,
         background: llm.colorRoles.backgroundColor,
         textPrimary: llm.colorRoles.textPrimary,
