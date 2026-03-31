@@ -26,6 +26,9 @@ const CREDITS_FEATURE_ID = "CREDITS";
 export const AUTUMN_BYPASS_ORG_IDS = new Set([
   "318e9dfd-9d76-489d-86fa-64bcbc3682f9", // Autumn
   "601f9bf3-425c-4309-97ae-4626842738d5", // Autumn
+  "5ee89794-c287-47c5-b621-cbfbc0dbaaff",
+  "0f2c26d2-e1f9-4a96-b443-7e93067fc3a9",
+  "8454ff9b-833f-42ee-bcdd-87457f687779",
 ]);
 
 /**
