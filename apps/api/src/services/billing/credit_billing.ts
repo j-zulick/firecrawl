@@ -206,25 +206,25 @@ async function supaCheckTeamCredits(
     }
   }
 
-  // Only notify if their actual credits (not what they will use) used is greater than the total price credits
-  if (chunk.adjusted_credits_used > (chunk.total_credits_sum ?? 100000000)) {
-    sendNotification(
-      team_id,
-      NotificationType.LIMIT_REACHED,
-      chunk.sub_current_period_start,
-      chunk.sub_current_period_end,
-      chunk,
-    );
-  } else if (creditUsagePercentage >= 0.8 && creditUsagePercentage < 1) {
-    // Send email notification for approaching credit limit
-    sendNotification(
-      team_id,
-      NotificationType.APPROACHING_LIMIT,
-      chunk.sub_current_period_start,
-      chunk.sub_current_period_end,
-      chunk,
-    );
-  }
+  // TODO: Re-enable credit notifications once they are derived from Autumn balances
+  // instead of ACUC, which is no longer the source of truth.
+  // if (chunk.adjusted_credits_used > (chunk.total_credits_sum ?? 100000000)) {
+  //   sendNotification(
+  //     team_id,
+  //     NotificationType.LIMIT_REACHED,
+  //     chunk.sub_current_period_start,
+  //     chunk.sub_current_period_end,
+  //     chunk,
+  //   );
+  // } else if (creditUsagePercentage >= 0.8 && creditUsagePercentage < 1) {
+  //   sendNotification(
+  //     team_id,
+  //     NotificationType.APPROACHING_LIMIT,
+  //     chunk.sub_current_period_start,
+  //     chunk.sub_current_period_end,
+  //     chunk,
+  //   );
+  // }
 
   // Compare the adjusted total credits used with the credits allowed by the plan (and graceful)
   if (!success) {
