@@ -170,7 +170,6 @@ export async function specialtyScrapeCheck(
     "application/x-executable",
     "application/x-sharedlib",
     "application/java-archive",
-    "application/octet-stream",
   ];
   if (
     unsupportedBinaryPrefixes.some(prefix => contentType.startsWith(prefix))
