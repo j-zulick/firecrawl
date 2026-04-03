@@ -598,6 +598,7 @@ class CrawlRequest(BaseModel):
     crawl_entire_domain: bool = False
     allow_external_links: bool = False
     allow_subdomains: bool = False
+    ignore_robots_txt: bool = False
     delay: Optional[int] = None
     max_concurrency: Optional[int] = None
     webhook: Optional[Union[str, WebhookConfig]] = None
@@ -692,6 +693,7 @@ class CrawlParamsData(BaseModel):
     crawl_entire_domain: bool = False
     allow_external_links: bool = False
     allow_subdomains: bool = False
+    ignore_robots_txt: bool = False
     delay: Optional[int] = None
     max_concurrency: Optional[int] = None
     webhook: Optional[Union[str, WebhookConfig]] = None

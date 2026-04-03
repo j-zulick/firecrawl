@@ -88,6 +88,7 @@ def _prepare_crawl_request(request: CrawlRequest) -> dict:
         "crawl_entire_domain": "crawlEntireDomain",
         "allow_external_links": "allowExternalLinks",
         "allow_subdomains": "allowSubdomains",
+        "ignore_robots_txt": "ignoreRobotsTxt",
         "delay": "delay",
         "max_concurrency": "maxConcurrency",
         "regex_on_full_url": "regexOnFullURL",
