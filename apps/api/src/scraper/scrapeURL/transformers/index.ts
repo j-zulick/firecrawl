@@ -531,10 +531,10 @@ const transformerStack: Transformer[] = [
   performQuery,
   performAttributes,
   performAgent,
+  removeBase64Images,
   deriveDiff,
   fetchAudio,
   coerceFieldsToFormats,
-  removeBase64Images,
 ];
 
 export async function executeTransformers(
