@@ -466,13 +466,13 @@ async function createSessionForScrape(
 
   // Credit check (uses base rate — actual billing may be higher if prompts are used)
   const estimatedCredits = calculateBrowserSessionCredits(ttl * 1000);
-  const autumnAllowed = await autumnService.checkCredits({
+  const autumnResult = await autumnService.checkCredits({
     teamId: req.auth.team_id,
     value: estimatedCredits,
     properties: { source: "scrapeBrowserCreate", path: req.path },
   });
 
-  if (autumnAllowed === false) {
+  if (autumnResult !== null && !autumnResult.allowed) {
     return {
       status: 402,
       body: {

@@ -391,7 +391,10 @@ export class AutumnService {
     teamId,
     value,
     properties,
-  }: TrackCreditsParams): Promise<boolean | null> {
+  }: TrackCreditsParams): Promise<{
+    allowed: boolean;
+    remaining: number;
+  } | null> {
     if (!autumnClient || this.isPreviewTeam(teamId)) {
       return null;
     }
@@ -400,7 +403,7 @@ export class AutumnService {
       if (!isAutumnCheckEnabled(orgId)) return null;
 
       const customerId = await this.ensureTrackingContext(teamId);
-      const { allowed } = await autumnClient.check({
+      const { allowed, balance } = await autumnClient.check({
         customerId,
         entityId: teamId,
         featureId: CREDITS_FEATURE_ID,
@@ -408,14 +411,17 @@ export class AutumnService {
         properties,
       });
 
+      const remaining = balance?.remaining ?? 0;
+
       logger.debug("Autumn checkCredits completed", {
         customerId,
         entityId: teamId,
         featureId: CREDITS_FEATURE_ID,
         value,
         allowed,
+        remaining,
       });
-      return allowed;
+      return { allowed, remaining };
     } catch (error) {
       logger.error(
         "Autumn checkCredits failed — billing API may be unavailable, falling back",

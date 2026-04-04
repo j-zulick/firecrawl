@@ -226,13 +226,13 @@ export async function browserCreateController(
 
   // 0a. Check if team has enough credits for the full TTL
   const estimatedCredits = calculateBrowserSessionCredits(ttl * 1000);
-  const autumnAllowed = await autumnService.checkCredits({
+  const autumnResult = await autumnService.checkCredits({
     teamId: req.auth.team_id,
     value: estimatedCredits,
     properties: { source: "browserCreate", path: req.path },
   });
 
-  if (autumnAllowed === false) {
+  if (autumnResult !== null && !autumnResult.allowed) {
     logger.warn("Insufficient credits for browser session TTL", {
       estimatedCredits,
       ttl,

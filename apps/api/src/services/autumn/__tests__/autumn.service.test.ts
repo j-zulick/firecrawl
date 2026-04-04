@@ -381,8 +381,13 @@ describe("checkCredits", () => {
     expect(mockCheck).not.toHaveBeenCalled();
   });
 
-  it("returns allowed on happy path without a lock", async () => {
+  it("returns allowed and remaining on happy path without a lock", async () => {
     config.AUTUMN_CHECK_ENABLED = "true";
+    mockCheck.mockResolvedValue({
+      allowed: true,
+      customerId: "org-1",
+      balance: { remaining: 500 },
+    });
     const svc = makeService();
     const result = await svc.checkCredits({
       teamId: "team-1",
@@ -390,7 +395,7 @@ describe("checkCredits", () => {
       properties: { source: "checkCreditsMiddleware" },
     });
 
-    expect(result).toBe(true);
+    expect(result).toEqual({ allowed: true, remaining: 500 });
     expect(mockCheck).toHaveBeenCalledWith(
       expect.objectContaining({
         customerId: "org-1",
@@ -405,7 +410,7 @@ describe("checkCredits", () => {
     );
   });
 
-  it("returns false when Autumn denies the check", async () => {
+  it("returns allowed false with remaining 0 when balance is null", async () => {
     config.AUTUMN_CHECK_ENABLED = "true";
     mockCheck.mockResolvedValue({
       allowed: false,
@@ -414,7 +419,7 @@ describe("checkCredits", () => {
     });
     const svc = makeService();
     const result = await svc.checkCredits({ teamId: "team-1", value: 10 });
-    expect(result).toBe(false);
+    expect(result).toEqual({ allowed: false, remaining: 0 });
   });
 });
 
