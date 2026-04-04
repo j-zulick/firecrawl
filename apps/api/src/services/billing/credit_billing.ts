@@ -1,17 +1,10 @@
-import { NotificationType } from "../../types";
 import { withAuth } from "../../lib/withAuth";
-import { sendNotification } from "../notification/email_notification";
-import { supabase_rr_service, supabase_service } from "../supabase";
 import { logger } from "../../lib/logger";
-import * as Sentry from "@sentry/node";
 import { AuthCreditUsageChunk } from "../../controllers/v1/types";
-import { autoCharge } from "./auto_charge";
-import { getValue, setValue } from "../redis";
 import { queueBillingOperation } from "./batch_billing";
 import { autumnService } from "../autumn/autumn.service";
 import { toAutumnBillingProperties, type BillingMetadata } from "./types";
 import type { Logger } from "winston";
-import { config } from "../../config";
 
 /**
  * If you do not know the subscription_id in the current context, pass subscription_id as undefined.
@@ -141,70 +134,73 @@ async function supaCheckTeamCredits(
     };
   }
 
-  let isAutoRechargeEnabled = false,
-    autoRechargeThreshold = 1000;
-  const cacheKey = `team_auto_recharge_${team_id}`;
-  let cachedData = await getValue(cacheKey);
-  if (cachedData) {
-    const parsedData = JSON.parse(cachedData);
-    isAutoRechargeEnabled = parsedData.auto_recharge;
-    autoRechargeThreshold = parsedData.auto_recharge_threshold;
-  } else {
-    const { data, error } = await supabase_rr_service
-      .from("teams")
-      .select("auto_recharge, auto_recharge_threshold")
-      .eq("id", team_id)
-      .single();
-
-    if (data) {
-      isAutoRechargeEnabled = data.auto_recharge;
-      autoRechargeThreshold = data.auto_recharge_threshold;
-      await setValue(cacheKey, JSON.stringify(data), 300); // Cache for 5 minutes (300 seconds)
-    }
-  }
+  // Auto-recharge is now handled entirely by Autumn. The legacy ACUC-driven
+  // auto-recharge logic below is disabled to avoid double-charging or firing
+  // at the wrong threshold.
+  //
+  // let isAutoRechargeEnabled = false,
+  //   autoRechargeThreshold = 1000;
+  // const cacheKey = `team_auto_recharge_${team_id}`;
+  // let cachedData = await getValue(cacheKey);
+  // if (cachedData) {
+  //   const parsedData = JSON.parse(cachedData);
+  //   isAutoRechargeEnabled = parsedData.auto_recharge;
+  //   autoRechargeThreshold = parsedData.auto_recharge_threshold;
+  // } else {
+  //   const { data, error } = await supabase_rr_service
+  //     .from("teams")
+  //     .select("auto_recharge, auto_recharge_threshold")
+  //     .eq("id", team_id)
+  //     .single();
+  //
+  //   if (data) {
+  //     isAutoRechargeEnabled = data.auto_recharge;
+  //     autoRechargeThreshold = data.auto_recharge_threshold;
+  //     await setValue(cacheKey, JSON.stringify(data), 300);
+  //   }
+  // }
 
   const {
     success,
-    allowOverages,
     remainingCredits,
     creditsWillBeUsed,
     totalPriceCredits,
     creditUsagePercentage,
-  } = evaluateTeamCredits(chunk, credits, isAutoRechargeEnabled);
+  } = evaluateTeamCredits(chunk, credits, false);
 
-  if (
-    config.AUTO_RECHARGE_ENABLED &&
-    isAutoRechargeEnabled &&
-    chunk.remaining_credits < autoRechargeThreshold &&
-    !chunk.is_extract
-  ) {
-    logger.info("Auto-recharge triggered", {
-      team_id,
-      teamId: team_id,
-      autoRechargeThreshold,
-      remainingCredits: chunk.remaining_credits,
-    });
-
-    const autoChargeResult = await autoCharge(chunk, autoRechargeThreshold);
-
-    if (autoChargeResult && autoChargeResult.success) {
-      return {
-        success: true,
-        message: autoChargeResult.message,
-        remainingCredits: allowOverages
-          ? autoChargeResult.remainingCredits + chunk.price_credits
-          : autoChargeResult.remainingCredits,
-        chunk: autoChargeResult.chunk,
-      };
-    } else if (allowOverages) {
-      return {
-        success: true,
-        message: "Auto-recharge failed, but price should be graceful",
-        remainingCredits,
-        chunk,
-      };
-    }
-  }
+  // if (
+  //   config.AUTO_RECHARGE_ENABLED &&
+  //   isAutoRechargeEnabled &&
+  //   chunk.remaining_credits < autoRechargeThreshold &&
+  //   !chunk.is_extract
+  // ) {
+  //   logger.info("Auto-recharge triggered", {
+  //     team_id,
+  //     teamId: team_id,
+  //     autoRechargeThreshold,
+  //     remainingCredits: chunk.remaining_credits,
+  //   });
+  //
+  //   const autoChargeResult = await autoCharge(chunk, autoRechargeThreshold);
+  //
+  //   if (autoChargeResult && autoChargeResult.success) {
+  //     return {
+  //       success: true,
+  //       message: autoChargeResult.message,
+  //       remainingCredits: allowOverages
+  //         ? autoChargeResult.remainingCredits + chunk.price_credits
+  //         : autoChargeResult.remainingCredits,
+  //       chunk: autoChargeResult.chunk,
+  //     };
+  //   } else if (allowOverages) {
+  //     return {
+  //       success: true,
+  //       message: "Auto-recharge failed, but price should be graceful",
+  //       remainingCredits,
+  //       chunk,
+  //     };
+  //   }
+  // }
 
   // TODO: Re-enable credit notifications once they are derived from Autumn balances
   // instead of ACUC, which is no longer the source of truth.
@@ -235,7 +231,6 @@ async function supaCheckTeamCredits(
       is_extract: chunk.is_extract,
       bypassCreditChecks: chunk.flags?.bypassCreditChecks,
       price_should_be_graceful: chunk.price_should_be_graceful,
-      allowOverages,
       price_credits: chunk.price_credits,
       coupon_credits: chunk.coupon_credits,
       total_credits_sum: chunk.total_credits_sum,
@@ -249,8 +244,6 @@ async function supaCheckTeamCredits(
       computed_totalPriceCredits: totalPriceCredits,
       creditUsagePercentage,
       sumComponents: chunk.price_credits + chunk.coupon_credits,
-      isAutoRechargeEnabled,
-      autoRechargeThreshold,
     });
     return {
       success: false,

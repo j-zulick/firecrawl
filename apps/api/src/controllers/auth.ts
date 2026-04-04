@@ -140,6 +140,7 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
   is_extract: false,
 });
 
+/** @public used by auto_charge.ts (disabled, Autumn handles auto-recharge) */
 export async function getACUC(
   api_key: string,
   cacheOnly = false,

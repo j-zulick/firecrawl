@@ -84,6 +84,7 @@ const notificationToEmailCategory: Record<
   [NotificationType.AGENT_SPONSOR_CONFIRM]: "system_alerts",
 };
 
+/** @public used by credit_billing.ts notification logic (disabled, migrating to Autumn) */
 export async function sendNotification(
   team_id: string,
   notificationType: NotificationType,
