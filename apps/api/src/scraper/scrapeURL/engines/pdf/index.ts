@@ -29,6 +29,7 @@ import {
 } from "../../../../lib/native-logging";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
+import { scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
@@ -155,10 +156,12 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     let shadowIneligibleReason: string | null | undefined;
     let shadowPagesNeedingOcr: number[] | undefined;
 
+    const forceFirePDF =
+      !!meta.options.__forceFirePDF && !!config.FIRE_PDF_BASE_URL;
     const rustEnabled = !!config.PDF_RUST_EXTRACT_ENABLE;
     const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
 
-    if (!rustEnabled || mode === "ocr") {
+    if (!rustEnabled || mode === "ocr" || forceFirePDF) {
       // Legacy / OCR path: detect metadata only, skip Rust extraction.
       // When PDF_RUST_EXTRACT_ENABLE is off this is the only path taken,
       // matching current prod behaviour (detectPdf → MinerU → pdfParse).
@@ -341,7 +344,46 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     if (!result && !skipOCR) {
       const base64Content = (await readFile(tempFilePath)).toString("base64");
 
+      // Route a percentage of traffic to Fire PDF instead of MinerU
+      const useFirePDF =
+        forceFirePDF ||
+        (config.FIRE_PDF_ENABLE &&
+          config.FIRE_PDF_BASE_URL &&
+          base64Content.length < MAX_FILE_SIZE &&
+          Math.random() * 100 < config.FIRE_PDF_PERCENT);
+
+      if (useFirePDF) {
+        try {
+          result = await scrapePDFWithFirePDF(
+            {
+              ...meta,
+              logger: meta.logger.child({
+                method: "scrapePDF/firePDF",
+              }),
+            },
+            base64Content,
+            maxPages,
+            effectivePageCount,
+          );
+        } catch (error) {
+          if (
+            error instanceof RemoveFeatureError ||
+            error instanceof AbortManagerThrownError
+          ) {
+            throw error;
+          }
+          if (forceFirePDF) {
+            throw error;
+          }
+          meta.logger.warn("Fire PDF failed -- falling back to MinerU", {
+            error,
+          });
+        }
+      }
+
       if (
+        !result &&
+        !forceFirePDF &&
         base64Content.length < MAX_FILE_SIZE &&
         config.RUNPOD_MU_API_KEY &&
         config.RUNPOD_MU_POD_ID
@@ -441,8 +483,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       }
     }
 
-    // Final fallback to PdfParse.
-    if (!result) {
+    // Final fallback to PdfParse (skipped when Fire PDF is forced).
+    if (!result && !forceFirePDF) {
       result = await scrapePDFWithParsePDF(
         {
           ...meta,
