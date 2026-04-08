@@ -15,19 +15,19 @@ export async function scrapePDFWithFirePDF(
   maxPages?: number,
   pagesProcessed?: number,
 ): Promise<PDFProcessorResult> {
-  const logger = meta.logger.child({ method: "scrapePDF/firePDF" });
+  const logger = meta.logger;
 
   if (!maxPages && !meta.internalOptions.zeroDataRetention) {
     try {
       const cached = await getPdfResultFromCache(base64Content, "firepdf");
       if (cached) {
-        logger.info("Using cached Fire PDF result", {
+        logger.info("Using cached FirePDF result", {
           scrapeId: meta.id,
         });
         return cached;
       }
     } catch (error) {
-      logger.warn("Error checking Fire PDF cache, proceeding", { error });
+      logger.warn("Error checking FirePDF cache, proceeding", { error });
     }
   }
 
@@ -35,7 +35,7 @@ export async function scrapePDFWithFirePDF(
 
   const startedAt = Date.now();
 
-  logger.info("Fire PDF started", {
+  logger.info("FirePDF started", {
     scrapeId: meta.id,
     url: meta.rewrittenUrl ?? meta.url,
     maxPages,
@@ -66,7 +66,7 @@ export async function scrapePDFWithFirePDF(
   const durationMs = Date.now() - startedAt;
   const pages = resp.pages_processed ?? pagesProcessed;
 
-  logger.info("Fire PDF completed", {
+  logger.info("FirePDF completed", {
     scrapeId: meta.id,
     url: meta.rewrittenUrl ?? meta.url,
     durationMs,
@@ -85,7 +85,7 @@ export async function scrapePDFWithFirePDF(
     try {
       await savePdfResultToCache(base64Content, processorResult, "firepdf");
     } catch (error) {
-      logger.warn("Error saving Fire PDF result to cache", { error });
+      logger.warn("Error saving FirePDF result to cache", { error });
     }
   }
 

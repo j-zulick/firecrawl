@@ -373,9 +373,14 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             throw error;
           }
           if (forceFirePDF) {
+            meta.logger.error("FirePDF failed (forced, no fallback)", {
+              method: "scrapePDF/firePDF",
+              error,
+            });
             throw error;
           }
-          meta.logger.warn("Fire PDF failed -- falling back to MinerU", {
+          meta.logger.warn("FirePDF failed -- falling back to MinerU", {
+            method: "scrapePDF/firePDF",
             error,
           });
         }
