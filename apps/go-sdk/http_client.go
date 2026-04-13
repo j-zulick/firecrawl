@@ -2,6 +2,7 @@ package firecrawl
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,9 +26,10 @@ type httpClient struct {
 	baseURL       string
 	maxRetries    int
 	backoffFactor float64
+	extraHeaders  map[string]string
 }
 
-func newHTTPClient(apiKey, baseURL string, client *http.Client, maxRetries int, backoffFactor float64) *httpClient {
+func newHTTPClient(apiKey, baseURL string, client *http.Client, maxRetries int, backoffFactor float64, extraHeaders map[string]string) *httpClient {
 	baseURL = strings.TrimRight(baseURL, "/")
 	return &httpClient{
 		client:        client,
@@ -35,33 +37,34 @@ func newHTTPClient(apiKey, baseURL string, client *http.Client, maxRetries int, 
 		baseURL:       baseURL,
 		maxRetries:    maxRetries,
 		backoffFactor: backoffFactor,
+		extraHeaders:  extraHeaders,
 	}
 }
 
 // post sends a POST request with a JSON body.
-func (h *httpClient) post(path string, body interface{}, extraHeaders map[string]string) (json.RawMessage, error) {
+func (h *httpClient) post(ctx context.Context, path string, body interface{}, extraHeaders map[string]string) (json.RawMessage, error) {
 	url := h.baseURL + path
-	return h.doJSON("POST", url, body, extraHeaders)
+	return h.doJSON(ctx, "POST", url, body, extraHeaders)
 }
 
 // get sends a GET request.
-func (h *httpClient) get(path string) (json.RawMessage, error) {
+func (h *httpClient) get(ctx context.Context, path string) (json.RawMessage, error) {
 	url := h.baseURL + path
-	return h.doJSON("GET", url, nil, nil)
+	return h.doJSON(ctx, "GET", url, nil, nil)
 }
 
 // getAbsolute sends a GET request to an absolute URL (for pagination cursors).
-func (h *httpClient) getAbsolute(absoluteURL string) (json.RawMessage, error) {
-	return h.doJSON("GET", absoluteURL, nil, nil)
+func (h *httpClient) getAbsolute(ctx context.Context, absoluteURL string) (json.RawMessage, error) {
+	return h.doJSON(ctx, "GET", absoluteURL, nil, nil)
 }
 
 // delete sends a DELETE request.
-func (h *httpClient) delete(path string) (json.RawMessage, error) {
+func (h *httpClient) delete(ctx context.Context, path string) (json.RawMessage, error) {
 	url := h.baseURL + path
-	return h.doJSON("DELETE", url, nil, nil)
+	return h.doJSON(ctx, "DELETE", url, nil, nil)
 }
 
-func (h *httpClient) doJSON(method, url string, body interface{}, extraHeaders map[string]string) (json.RawMessage, error) {
+func (h *httpClient) doJSON(ctx context.Context, method, url string, body interface{}, extraHeaders map[string]string) (json.RawMessage, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -83,13 +86,18 @@ func (h *httpClient) doJSON(method, url string, body interface{}, extraHeaders m
 			}
 		}
 
-		req, err := http.NewRequest(method, url, bodyReader)
+		req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 		if err != nil {
 			return nil, &FirecrawlError{Message: fmt.Sprintf("failed to create request: %v", err)}
 		}
 
 		req.Header.Set("Authorization", "Bearer "+h.apiKey)
 		req.Header.Set("Content-Type", "application/json")
+		// Apply client-level headers.
+		for k, v := range h.extraHeaders {
+			req.Header.Set(k, v)
+		}
+		// Apply per-request headers (override client-level).
 		for k, v := range extraHeaders {
 			req.Header.Set(k, v)
 		}

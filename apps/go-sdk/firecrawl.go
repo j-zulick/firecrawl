@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/firecrawl/firecrawl/apps/go-sdk/option"
@@ -50,9 +51,9 @@ func NewClient(opts ...option.RequestOption) (*Client, error) {
 	}
 
 	// Resolve API key.
-	apiKey := cfg.APIKey
+	apiKey := strings.TrimSpace(cfg.APIKey)
 	if apiKey == "" {
-		apiKey = os.Getenv("FIRECRAWL_API_KEY")
+		apiKey = strings.TrimSpace(os.Getenv("FIRECRAWL_API_KEY"))
 	}
 	if apiKey == "" {
 		return nil, &FirecrawlError{
@@ -76,7 +77,7 @@ func NewClient(opts ...option.RequestOption) (*Client, error) {
 		httpCl = &http.Client{Timeout: defaultTimeout}
 	}
 
-	hc := newHTTPClient(apiKey, apiURL, httpCl, cfg.MaxRetries, cfg.BackoffFactor)
+	hc := newHTTPClient(apiKey, apiURL, httpCl, cfg.MaxRetries, cfg.BackoffFactor, cfg.ExtraHeaders)
 	return &Client{http: hc}, nil
 }
 
@@ -93,7 +94,7 @@ func (c *Client) Scrape(ctx context.Context, url string, opts *ScrapeOptions) (*
 	body := map[string]interface{}{"url": url}
 	mergeOptions(body, opts)
 
-	raw, err := c.http.post("/v2/scrape", body, nil)
+	raw, err := c.http.post(ctx, "/v2/scrape", body, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +131,7 @@ func (c *Client) Interact(ctx context.Context, jobID, code string, params *Inter
 		}
 	}
 
-	raw, err := c.http.post("/v2/scrape/"+jobID+"/interact", body, nil)
+	raw, err := c.http.post(ctx, "/v2/scrape/"+jobID+"/interact", body, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +149,7 @@ func (c *Client) StopInteractiveBrowser(ctx context.Context, jobID string) (*Bro
 		return nil, &FirecrawlError{Message: "job ID is required"}
 	}
 
-	raw, err := c.http.delete("/v2/scrape/" + jobID + "/interact")
+	raw, err := c.http.delete(ctx, "/v2/scrape/"+jobID+"/interact")
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +174,7 @@ func (c *Client) StartCrawl(ctx context.Context, url string, opts *CrawlOptions)
 	body := map[string]interface{}{"url": url}
 	mergeOptions(body, opts)
 
-	raw, err := c.http.post("/v2/crawl", body, nil)
+	raw, err := c.http.post(ctx, "/v2/crawl", body, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +192,7 @@ func (c *Client) GetCrawlStatus(ctx context.Context, jobID string) (*CrawlJob, e
 		return nil, &FirecrawlError{Message: "job ID is required"}
 	}
 
-	raw, err := c.http.get("/v2/crawl/" + jobID)
+	raw, err := c.http.get(ctx, "/v2/crawl/"+jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +224,7 @@ func (c *Client) CancelCrawl(ctx context.Context, jobID string) (map[string]inte
 		return nil, &FirecrawlError{Message: "job ID is required"}
 	}
 
-	raw, err := c.http.delete("/v2/crawl/" + jobID)
+	raw, err := c.http.delete(ctx, "/v2/crawl/"+jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +242,7 @@ func (c *Client) GetCrawlErrors(ctx context.Context, jobID string) (map[string]i
 		return nil, &FirecrawlError{Message: "job ID is required"}
 	}
 
-	raw, err := c.http.get("/v2/crawl/" + jobID + "/errors")
+	raw, err := c.http.get(ctx, "/v2/crawl/"+jobID+"/errors")
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +290,7 @@ func (c *Client) StartBatchScrape(ctx context.Context, urls []string, opts *Batc
 		}
 	}
 
-	raw, err := c.http.post("/v2/batch/scrape", body, extraHeaders)
+	raw, err := c.http.post(ctx, "/v2/batch/scrape", body, extraHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +308,7 @@ func (c *Client) GetBatchScrapeStatus(ctx context.Context, jobID string) (*Batch
 		return nil, &FirecrawlError{Message: "job ID is required"}
 	}
 
-	raw, err := c.http.get("/v2/batch/scrape/" + jobID)
+	raw, err := c.http.get(ctx, "/v2/batch/scrape/"+jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +340,7 @@ func (c *Client) CancelBatchScrape(ctx context.Context, jobID string) (map[strin
 		return nil, &FirecrawlError{Message: "job ID is required"}
 	}
 
-	raw, err := c.http.delete("/v2/batch/scrape/" + jobID)
+	raw, err := c.http.delete(ctx, "/v2/batch/scrape/"+jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +365,7 @@ func (c *Client) Map(ctx context.Context, url string, opts *MapOptions) (*MapDat
 	body := map[string]interface{}{"url": url}
 	mergeOptions(body, opts)
 
-	raw, err := c.http.post("/v2/map", body, nil)
+	raw, err := c.http.post(ctx, "/v2/map", body, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -389,7 +390,7 @@ func (c *Client) Search(ctx context.Context, query string, opts *SearchOptions) 
 	body := map[string]interface{}{"query": query}
 	mergeOptions(body, opts)
 
-	raw, err := c.http.post("/v2/search", body, nil)
+	raw, err := c.http.post(ctx, "/v2/search", body, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -411,7 +412,7 @@ func (c *Client) StartAgent(ctx context.Context, opts *AgentOptions) (*AgentResp
 		return nil, &FirecrawlError{Message: "agent options are required"}
 	}
 
-	raw, err := c.http.post("/v2/agent", opts, nil)
+	raw, err := c.http.post(ctx, "/v2/agent", opts, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +430,7 @@ func (c *Client) GetAgentStatus(ctx context.Context, jobID string) (*AgentStatus
 		return nil, &FirecrawlError{Message: "job ID is required"}
 	}
 
-	raw, err := c.http.get("/v2/agent/" + jobID)
+	raw, err := c.http.get(ctx, "/v2/agent/"+jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +472,11 @@ func (c *Client) AgentWithPolling(ctx context.Context, opts *AgentOptions, pollI
 		if status.IsDone() {
 			return status, nil
 		}
-		time.Sleep(time.Duration(pollIntervalSec) * time.Second)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Duration(pollIntervalSec) * time.Second):
+		}
 	}
 
 	return nil, &JobTimeoutError{
@@ -487,7 +492,7 @@ func (c *Client) CancelAgent(ctx context.Context, jobID string) (map[string]inte
 		return nil, &FirecrawlError{Message: "job ID is required"}
 	}
 
-	raw, err := c.http.delete("/v2/agent/" + jobID)
+	raw, err := c.http.delete(ctx, "/v2/agent/"+jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -518,7 +523,7 @@ func (c *Client) Browser(ctx context.Context, opts *BrowserOptions) (*BrowserCre
 		}
 	}
 
-	raw, err := c.http.post("/v2/browser", body, nil)
+	raw, err := c.http.post(ctx, "/v2/browser", body, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -552,7 +557,7 @@ func (c *Client) BrowserExecute(ctx context.Context, sessionID, code string, par
 		}
 	}
 
-	raw, err := c.http.post("/v2/browser/"+sessionID+"/execute", body, nil)
+	raw, err := c.http.post(ctx, "/v2/browser/"+sessionID+"/execute", body, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -570,7 +575,7 @@ func (c *Client) DeleteBrowser(ctx context.Context, sessionID string) (*BrowserD
 		return nil, &FirecrawlError{Message: "session ID is required"}
 	}
 
-	raw, err := c.http.delete("/v2/browser/" + sessionID)
+	raw, err := c.http.delete(ctx, "/v2/browser/"+sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -589,7 +594,7 @@ func (c *Client) ListBrowsers(ctx context.Context, status string) (*BrowserListR
 		endpoint += "?status=" + status
 	}
 
-	raw, err := c.http.get(endpoint)
+	raw, err := c.http.get(ctx, endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -607,7 +612,7 @@ func (c *Client) ListBrowsers(ctx context.Context, status string) (*BrowserListR
 
 // GetConcurrency gets current concurrency usage.
 func (c *Client) GetConcurrency(ctx context.Context) (*ConcurrencyCheck, error) {
-	raw, err := c.http.get("/v2/concurrency-check")
+	raw, err := c.http.get(ctx, "/v2/concurrency-check")
 	if err != nil {
 		return nil, err
 	}
@@ -621,7 +626,7 @@ func (c *Client) GetConcurrency(ctx context.Context) (*ConcurrencyCheck, error) 
 
 // GetCreditUsage gets current credit usage.
 func (c *Client) GetCreditUsage(ctx context.Context) (*CreditUsage, error) {
-	raw, err := c.http.get("/v2/team/credit-usage")
+	raw, err := c.http.get(ctx, "/v2/team/credit-usage")
 	if err != nil {
 		return nil, err
 	}
@@ -651,9 +656,13 @@ func (c *Client) pollCrawl(ctx context.Context, jobID string, pollIntervalSec, t
 			return nil, err
 		}
 		if job.IsDone() {
-			return c.paginateCrawl(job)
+			return c.paginateCrawl(ctx, job)
 		}
-		time.Sleep(time.Duration(pollIntervalSec) * time.Second)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Duration(pollIntervalSec) * time.Second):
+		}
 	}
 
 	return nil, &JobTimeoutError{
@@ -677,9 +686,13 @@ func (c *Client) pollBatchScrape(ctx context.Context, jobID string, pollInterval
 			return nil, err
 		}
 		if job.IsDone() {
-			return c.paginateBatchScrape(job)
+			return c.paginateBatchScrape(ctx, job)
 		}
-		time.Sleep(time.Duration(pollIntervalSec) * time.Second)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Duration(pollIntervalSec) * time.Second):
+		}
 	}
 
 	return nil, &JobTimeoutError{
@@ -689,13 +702,13 @@ func (c *Client) pollBatchScrape(ctx context.Context, jobID string, pollInterval
 	}
 }
 
-func (c *Client) paginateCrawl(job *CrawlJob) (*CrawlJob, error) {
+func (c *Client) paginateCrawl(ctx context.Context, job *CrawlJob) (*CrawlJob, error) {
 	if job.Data == nil {
 		job.Data = []Document{}
 	}
 	current := job
 	for current.Next != "" {
-		raw, err := c.http.getAbsolute(current.Next)
+		raw, err := c.http.getAbsolute(ctx, current.Next)
 		if err != nil {
 			return nil, err
 		}
@@ -709,13 +722,13 @@ func (c *Client) paginateCrawl(job *CrawlJob) (*CrawlJob, error) {
 	return job, nil
 }
 
-func (c *Client) paginateBatchScrape(job *BatchScrapeJob) (*BatchScrapeJob, error) {
+func (c *Client) paginateBatchScrape(ctx context.Context, job *BatchScrapeJob) (*BatchScrapeJob, error) {
 	if job.Data == nil {
 		job.Data = []Document{}
 	}
 	current := job
 	for current.Next != "" {
-		raw, err := c.http.getAbsolute(current.Next)
+		raw, err := c.http.getAbsolute(ctx, current.Next)
 		if err != nil {
 			return nil, err
 		}
