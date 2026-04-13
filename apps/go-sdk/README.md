@@ -9,7 +9,7 @@ Go SDK for the [Firecrawl](https://firecrawl.dev) v2 web scraping API.
 ## Installation
 
 ```bash
-go get github.com/mendableai/firecrawl-go
+go get github.com/firecrawl/firecrawl/apps/go-sdk
 ```
 
 ## API Key Setup
@@ -30,8 +30,8 @@ import (
 	"fmt"
 	"log"
 
-	firecrawl "github.com/mendableai/firecrawl-go"
-	"github.com/mendableai/firecrawl-go/option"
+	firecrawl "github.com/firecrawl/firecrawl/apps/go-sdk"
+	"github.com/firecrawl/firecrawl/apps/go-sdk/option"
 )
 
 func main() {

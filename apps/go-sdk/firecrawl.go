@@ -19,7 +19,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/mendableai/firecrawl-go/option"
+	"github.com/firecrawl/firecrawl/apps/go-sdk/option"
 )
 
 const (
