@@ -109,8 +109,13 @@ def get_packagist_version(package_name: str) -> str:
     stable_versions = []
     for v in versions:
         normalized = v.lstrip("v")
-        parsed = parse_version(normalized)
-        if "dev" not in v and not parsed.is_prerelease and re.match(r"^\d", normalized):
+        if "dev" in v or not re.match(r"^\d", normalized):
+            continue
+        try:
+            parsed = parse_version(normalized)
+        except Exception:
+            continue
+        if not parsed.is_prerelease:
             stable_versions.append(normalized)
     if not stable_versions:
         return "0.0.0"

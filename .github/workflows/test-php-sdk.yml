@@ -62,7 +62,7 @@ jobs:
         run: vendor/bin/pest --ci
 
       - name: Run E2E tests
-        if: env.FIRECRAWL_API_KEY != ''
+        if: ${{ secrets.FIRECRAWL_API_KEY != '' }}
         working-directory: ./apps/php-sdk
         env:
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
