@@ -108,10 +108,10 @@ def get_packagist_version(package_name: str) -> str:
     # Filter out dev versions and find highest stable version
     stable_versions = []
     for v in versions:
-        if "dev" not in v and v.startswith("v"):
-            stable_versions.append(v.lstrip("v"))
-        elif "dev" not in v and re.match(r"^\d", v):
-            stable_versions.append(v)
+        normalized = v.lstrip("v")
+        parsed = parse_version(normalized)
+        if "dev" not in v and not parsed.is_prerelease and re.match(r"^\d", normalized):
+            stable_versions.append(normalized)
     if not stable_versions:
         return "0.0.0"
     stable_versions.sort(key=lambda x: parse_version(x), reverse=True)
