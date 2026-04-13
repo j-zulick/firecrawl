@@ -1,0 +1,171 @@
+package firecrawl
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"math"
+	"net/http"
+	"strings"
+	"time"
+)
+
+const (
+	defaultAPIURL        = "https://api.firecrawl.dev"
+	defaultTimeout       = 5 * time.Minute
+	defaultMaxRetries    = 3
+	defaultBackoffFactor = 0.5
+)
+
+// httpClient is the internal HTTP client for the Firecrawl API.
+type httpClient struct {
+	client        *http.Client
+	apiKey        string
+	baseURL       string
+	maxRetries    int
+	backoffFactor float64
+}
+
+func newHTTPClient(apiKey, baseURL string, client *http.Client, maxRetries int, backoffFactor float64) *httpClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	return &httpClient{
+		client:        client,
+		apiKey:        apiKey,
+		baseURL:       baseURL,
+		maxRetries:    maxRetries,
+		backoffFactor: backoffFactor,
+	}
+}
+
+// post sends a POST request with a JSON body.
+func (h *httpClient) post(path string, body interface{}, extraHeaders map[string]string) (json.RawMessage, error) {
+	url := h.baseURL + path
+	return h.doJSON("POST", url, body, extraHeaders)
+}
+
+// get sends a GET request.
+func (h *httpClient) get(path string) (json.RawMessage, error) {
+	url := h.baseURL + path
+	return h.doJSON("GET", url, nil, nil)
+}
+
+// getAbsolute sends a GET request to an absolute URL (for pagination cursors).
+func (h *httpClient) getAbsolute(absoluteURL string) (json.RawMessage, error) {
+	return h.doJSON("GET", absoluteURL, nil, nil)
+}
+
+// delete sends a DELETE request.
+func (h *httpClient) delete(path string) (json.RawMessage, error) {
+	url := h.baseURL + path
+	return h.doJSON("DELETE", url, nil, nil)
+}
+
+func (h *httpClient) doJSON(method, url string, body interface{}, extraHeaders map[string]string) (json.RawMessage, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, &FirecrawlError{Message: fmt.Sprintf("failed to serialize request body: %v", err)}
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= h.maxRetries; attempt++ {
+		if attempt > 0 {
+			h.sleepBackoff(attempt)
+
+			// Reset the body reader for retries.
+			if body != nil {
+				data, _ := json.Marshal(body)
+				bodyReader = bytes.NewReader(data)
+			}
+		}
+
+		req, err := http.NewRequest(method, url, bodyReader)
+		if err != nil {
+			return nil, &FirecrawlError{Message: fmt.Sprintf("failed to create request: %v", err)}
+		}
+
+		req.Header.Set("Authorization", "Bearer "+h.apiKey)
+		req.Header.Set("Content-Type", "application/json")
+		for k, v := range extraHeaders {
+			req.Header.Set(k, v)
+		}
+
+		resp, err := h.client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue // Retry on transport errors.
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return json.RawMessage(respBody), nil
+		}
+
+		// Parse error details from the response.
+		errMsg, errCode := extractError(respBody, resp.StatusCode)
+
+		// Non-retryable client errors.
+		switch resp.StatusCode {
+		case 401:
+			return nil, &AuthenticationError{
+				FirecrawlError: FirecrawlError{StatusCode: 401, ErrorCode: errCode, Message: errMsg},
+			}
+		case 429:
+			return nil, &RateLimitError{
+				FirecrawlError: FirecrawlError{StatusCode: 429, ErrorCode: errCode, Message: errMsg},
+			}
+		}
+
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != 408 && resp.StatusCode != 409 {
+			return nil, &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg}
+		}
+
+		// Retryable: 408, 409, 5xx
+		lastErr = &FirecrawlError{StatusCode: resp.StatusCode, ErrorCode: errCode, Message: errMsg}
+	}
+
+	if lastErr != nil {
+		if fe, ok := lastErr.(*FirecrawlError); ok {
+			return nil, fe
+		}
+		return nil, &FirecrawlError{Message: fmt.Sprintf("request failed after %d retries: %v", h.maxRetries, lastErr)}
+	}
+	return nil, &FirecrawlError{Message: "request failed"}
+}
+
+func (h *httpClient) sleepBackoff(attempt int) {
+	delay := time.Duration(h.backoffFactor * 1000 * math.Pow(2, float64(attempt-1)))
+	time.Sleep(delay * time.Millisecond)
+}
+
+// extractError parses an API error response to get the message and error code.
+func extractError(body []byte, statusCode int) (string, string) {
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return fmt.Sprintf("HTTP %d error", statusCode), ""
+	}
+
+	msg := fmt.Sprintf("HTTP %d error", statusCode)
+	if v, ok := parsed["error"]; ok {
+		msg = fmt.Sprintf("%v", v)
+	} else if v, ok := parsed["message"]; ok {
+		msg = fmt.Sprintf("%v", v)
+	}
+
+	var errCode string
+	if v, ok := parsed["code"]; ok && v != nil {
+		errCode = fmt.Sprintf("%v", v)
+	}
+
+	return msg, errCode
+}
