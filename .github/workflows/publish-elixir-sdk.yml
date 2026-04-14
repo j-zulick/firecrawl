@@ -53,10 +53,19 @@ jobs:
           cd "$GITHUB_WORKSPACE"
 
           VERSION=$(grep '@version' apps/elixir-sdk/mix.exs | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not parse version from mix.exs"
+            exit 1
+          fi
           BRANCH="chore/elixir-sdk-regen-v${VERSION}"
 
-          # Check if a PR already exists for this version
-          EXISTING_PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+          # Check if a PR already exists for this version.
+          # If gh fails, abort rather than risk deleting a live PR branch.
+          if ! PR_JSON=$(gh pr list --head "$BRANCH" --state open --json number 2>&1); then
+            echo "::error::Failed to check for existing PRs: $PR_JSON"
+            exit 1
+          fi
+          EXISTING_PR=$(echo "$PR_JSON" | jq -r '.[0].number // empty')
           if [ -n "$EXISTING_PR" ]; then
             echo "PR #${EXISTING_PR} already exists for ${BRANCH} — skipping."
             exit 0
@@ -77,11 +86,11 @@ jobs:
             --title "chore(elixir-sdk): regenerate from OpenAPI spec (v${VERSION})" \
             --body "Auto-generated PR to update the Elixir SDK from the latest OpenAPI spec.
 
-          ## Changes
-          - Regenerated \`lib/firecrawl.ex\` from the v2 OpenAPI spec
-          - Version bumped to \`${VERSION}\`
+## Changes
+- Regenerated \`lib/firecrawl.ex\` from the v2 OpenAPI spec
+- Version bumped to \`${VERSION}\`
 
-          This PR was created automatically by the \`publish-elixir-sdk\` workflow." \
+This PR was created automatically by the \`publish-elixir-sdk\` workflow." \
             --head "$BRANCH" \
             --base main
 
@@ -106,6 +115,10 @@ jobs:
         id: version_info
         run: |
           LOCAL_VERSION=$(grep '@version' mix.exs | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ -z "$LOCAL_VERSION" ]; then
+            echo "::error::Could not parse local version from mix.exs"
+            exit 1
+          fi
           echo "local_version=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
 
           # Check published version on hex.pm
