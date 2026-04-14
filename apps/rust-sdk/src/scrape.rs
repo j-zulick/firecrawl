@@ -103,6 +103,8 @@ pub enum ParserConfig {
         #[serde(rename = "type")]
         parser_type: String,
         #[serde(skip_serializing_if = "Option::is_none")]
+        mode: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         max_pages: Option<u32>,
     },
 }

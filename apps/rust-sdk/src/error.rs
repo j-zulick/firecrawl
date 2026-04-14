@@ -38,8 +38,8 @@ pub enum FirecrawlError {
     ResponseParseError(serde_json::Error),
     #[error("{0} failed: {1}")]
     APIError(String, FirecrawlAPIError),
-    #[error("Job failed: {0}")]
-    JobFailed(String),
+    #[error("Job failed: {0} (status: {1:?})")]
+    JobFailed(String, crate::types::JobStatus),
     #[error("Misuse: {0}")]
     Misuse(String),
 }

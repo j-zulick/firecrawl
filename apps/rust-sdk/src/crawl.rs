@@ -316,11 +316,13 @@ impl Client {
                 JobStatus::Failed => {
                     return Err(FirecrawlError::JobFailed(
                         "Crawl job failed".to_string(),
+                        JobStatus::Failed,
                     ));
                 }
                 JobStatus::Cancelled => {
                     return Err(FirecrawlError::JobFailed(
                         "Crawl job was cancelled".to_string(),
+                        JobStatus::Cancelled,
                     ));
                 }
             }

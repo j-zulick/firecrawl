@@ -661,6 +661,7 @@ Add the dependency:
 ```toml
 [dependencies]
 firecrawl = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 ```rust
 use firecrawl::{Client, ScrapeOptions, Format, CrawlOptions};

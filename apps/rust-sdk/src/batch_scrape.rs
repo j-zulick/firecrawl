@@ -311,11 +311,13 @@ impl Client {
                 JobStatus::Failed => {
                     return Err(FirecrawlError::JobFailed(
                         "Batch scrape job failed".to_string(),
+                        JobStatus::Failed,
                     ));
                 }
                 JobStatus::Cancelled => {
                     return Err(FirecrawlError::JobFailed(
                         "Batch scrape job was cancelled".to_string(),
+                        JobStatus::Cancelled,
                     ));
                 }
             }
