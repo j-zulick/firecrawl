@@ -82,15 +82,20 @@ jobs:
           git commit -m "chore(elixir-sdk): regenerate from OpenAPI spec (v${VERSION})"
           git push -u origin "$BRANCH"
 
+          PR_BODY=$(cat <<EOF
+          Auto-generated PR to update the Elixir SDK from the latest OpenAPI spec.
+
+          ## Changes
+          - Regenerated \`lib/firecrawl.ex\` from the v2 OpenAPI spec
+          - Version bumped to \`${VERSION}\`
+
+          This PR was created automatically by the \`publish-elixir-sdk\` workflow.
+          EOF
+          )
+
           gh pr create \
             --title "chore(elixir-sdk): regenerate from OpenAPI spec (v${VERSION})" \
-            --body "Auto-generated PR to update the Elixir SDK from the latest OpenAPI spec.
-
-## Changes
-- Regenerated \`lib/firecrawl.ex\` from the v2 OpenAPI spec
-- Version bumped to \`${VERSION}\`
-
-This PR was created automatically by the \`publish-elixir-sdk\` workflow." \
+            --body "$PR_BODY" \
             --head "$BRANCH" \
             --base main
 
