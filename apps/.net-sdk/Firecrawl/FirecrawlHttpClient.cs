@@ -89,11 +89,13 @@ internal class FirecrawlHttpClient
         // Validate that the pagination URL belongs to the same host to prevent API key exfiltration
         var targetUri = new Uri(absoluteUrl);
         var baseUri = new Uri(_baseUrl);
-        if (!string.Equals(targetUri.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(targetUri.Scheme, baseUri.Scheme, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(targetUri.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase) ||
+            targetUri.Port != baseUri.Port)
         {
             throw new FirecrawlException(
-                $"Pagination URL host '{targetUri.Host}' does not match API base URL host '{baseUri.Host}'. " +
-                "Refusing to send credentials to a different host.");
+                $"Pagination URL origin '{targetUri.Scheme}://{targetUri.Host}:{targetUri.Port}' does not match API base URL origin '{baseUri.Scheme}://{baseUri.Host}:{baseUri.Port}'. " +
+                "Refusing to send credentials to a different origin.");
         }
 
         var request = new HttpRequestMessage(HttpMethod.Get, absoluteUrl);
