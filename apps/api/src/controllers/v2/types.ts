@@ -1299,7 +1299,7 @@ type Account = {
 };
 
 export type TeamFlags = {
-  ignoreRobots?: boolean;
+  ignoreRobots?: boolean | "disabled" | "allowed" | "forced";
   unblockedDomains?: string[];
   forceZDR?: boolean;
   allowZDR?: boolean;
