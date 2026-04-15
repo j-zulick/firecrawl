@@ -18,6 +18,11 @@ Local version: 1.0.0
 Published version: 0.0.0  (0.0.0 means not yet published on Maven Central)
 true
 
+python .github/scripts/check_version_has_incremented.py ruby ./apps/ruby-sdk firecrawl
+Local version: 1.0.0
+Published version: 0.0.0  (0.0.0 means not yet published on RubyGems)
+true
+
 """
 import json
 import os
@@ -65,6 +70,22 @@ def get_gradle_version(file_path: str) -> str:
     if version_match:
         return version_match.group(1).strip()
     raise RuntimeError("Unable to find version string in build.gradle.kts.")
+
+def get_ruby_version(file_path: str) -> str:
+    """Extract version string from Ruby version file (lib/firecrawl/version.rb)."""
+    version_file = Path(file_path).read_text()
+    version_match = re.search(r'VERSION\s*=\s*["\']([^"\']*)["\']', version_file, re.M)
+    if version_match:
+        return version_match.group(1).strip()
+    raise RuntimeError("Unable to find version string in Ruby version file.")
+
+def get_rubygems_version(package_name: str) -> str:
+    """Get latest version of Ruby gem from RubyGems.org."""
+    response = requests.get(f"https://rubygems.org/api/v1/versions/{package_name}/latest.json")
+    if response.status_code == 404:
+        return "0.0.0"
+    version = response.json()['version']
+    return version.strip()
 
 def get_maven_central_version(package_name: str) -> str:
     """Get latest version of Java package from Maven Central. package_name should be groupId:artifactId."""
@@ -121,6 +142,11 @@ if __name__ == "__main__":
         current_version = get_gradle_version(os.path.join(package_path, 'build.gradle.kts'))
         # Get published version from Maven Central
         published_version = get_maven_central_version(package_name)
+    elif package_type == "ruby":
+        # Get current version from lib/firecrawl/version.rb
+        current_version = get_ruby_version(os.path.join(package_path, 'lib', 'firecrawl', 'version.rb'))
+        # Get published version from RubyGems
+        published_version = get_rubygems_version(package_name)
     # if package_type == "rust":
     #     # Get current version from Cargo.toml
     #     current_version = get_rust_version(os.path.join(package_path, 'Cargo.toml'))
@@ -128,7 +154,7 @@ if __name__ == "__main__":
     #     published_version = get_crates_version(package_name)
 
     else:
-        raise ValueError("Invalid package type. Use 'python', 'js', or 'java'.")
+        raise ValueError("Invalid package type. Use 'python', 'js', 'java', or 'ruby'.")
 
     # Print versions for debugging
     # print(f"Local version: {current_version}")
