@@ -128,8 +128,7 @@ describe("Crawl tests", () => {
       expect(results.success).toBe(true);
       if (results.success) {
         for (const page of results.data) {
-          const pageUrl =
-            page.metadata.url ?? page.metadata.sourceURL ?? base;
+          const pageUrl = page.metadata.url ?? page.metadata.sourceURL ?? base;
           const normalized = normalizeUrlForCompare(pageUrl);
           expect(
             normalized === baseNormalized || sitemapUrls.has(normalized),
@@ -529,7 +528,7 @@ describe("Crawl tests", () => {
     10 * scrapeTimeout,
   );
 
-  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+  concurrentIf(TEST_PRODUCTION)(
     "accepts robotsUserAgent parameter",
     async () => {
       const robotsIdentity = await idmux({
