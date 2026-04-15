@@ -86,6 +86,16 @@ internal class FirecrawlHttpClient
 
     internal async Task<T> GetAbsoluteAsync<T>(string absoluteUrl, CancellationToken cancellationToken = default)
     {
+        // Validate that the pagination URL belongs to the same host to prevent API key exfiltration
+        var targetUri = new Uri(absoluteUrl);
+        var baseUri = new Uri(_baseUrl);
+        if (!string.Equals(targetUri.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new FirecrawlException(
+                $"Pagination URL host '{targetUri.Host}' does not match API base URL host '{baseUri.Host}'. " +
+                "Refusing to send credentials to a different host.");
+        }
+
         var request = new HttpRequestMessage(HttpMethod.Get, absoluteUrl);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -156,7 +166,7 @@ internal class FirecrawlHttpClient
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
             {
                 if (attempt < _maxRetries)
                 {

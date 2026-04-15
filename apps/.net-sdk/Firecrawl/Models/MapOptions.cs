@@ -38,4 +38,8 @@ public class MapOptions
     [JsonPropertyName("location")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LocationConfig? Location { get; set; }
+
+    [JsonPropertyName("ignoreCache")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IgnoreCache { get; set; }
 }

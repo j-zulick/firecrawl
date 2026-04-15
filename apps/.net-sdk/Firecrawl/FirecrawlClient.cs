@@ -384,6 +384,7 @@ public class FirecrawlClient
             current = nextPage;
         }
 
+        job.Next = null;
         return job;
     }
 
@@ -405,6 +406,7 @@ public class FirecrawlClient
             current = nextPage;
         }
 
+        job.Next = null;
         return job;
     }
 

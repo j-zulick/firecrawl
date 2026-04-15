@@ -28,7 +28,7 @@ Console.WriteLine(doc.Markdown);
 
 ### API Key
 
-The API key can be provided in three ways (in order of precedence):
+The API key can be provided in two ways (in order of precedence):
 
 1. Constructor parameter: `new FirecrawlClient("fc-your-api-key")`
 2. Environment variable: `FIRECRAWL_API_KEY`

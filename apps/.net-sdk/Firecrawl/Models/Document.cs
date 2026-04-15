@@ -26,10 +26,10 @@ public class Document
     public Dictionary<string, object>? Metadata { get; set; }
 
     [JsonPropertyName("links")]
-    public List<object>? Links { get; set; }
+    public List<string>? Links { get; set; }
 
     [JsonPropertyName("images")]
-    public List<object>? Images { get; set; }
+    public List<string>? Images { get; set; }
 
     [JsonPropertyName("screenshot")]
     public string? Screenshot { get; set; }

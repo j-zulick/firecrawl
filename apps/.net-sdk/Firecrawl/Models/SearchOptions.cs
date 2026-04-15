@@ -42,4 +42,12 @@ public class SearchOptions
     [JsonPropertyName("integration")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Integration { get; set; }
+
+    [JsonPropertyName("country")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Country { get; set; }
+
+    [JsonPropertyName("enterprise")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Enterprise { get; set; }
 }

@@ -8,7 +8,7 @@ namespace Firecrawl.Models;
 public class WebhookConfig
 {
     [JsonPropertyName("url")]
-    public string Url { get; set; } = string.Empty;
+    public required string Url { get; set; }
 
     [JsonPropertyName("headers")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
