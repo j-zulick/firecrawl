@@ -36,11 +36,14 @@ module Firecrawl
       backoff_factor: DEFAULT_BACKOFF_FACTOR
     )
       resolved_key = api_key || ENV["FIRECRAWL_API_KEY"]
-      if resolved_key.nil? || resolved_key.empty?
+      if resolved_key.nil? || resolved_key.strip.empty?
         raise FirecrawlError, "API key is required. Provide api_key: or set FIRECRAWL_API_KEY environment variable."
       end
 
       resolved_url = api_url || ENV["FIRECRAWL_API_URL"] || DEFAULT_API_URL
+      unless resolved_url.match?(%r{\Ahttps?://}i)
+        raise FirecrawlError, "API URL must be a fully qualified HTTP or HTTPS URL (got: #{resolved_url})."
+      end
 
       @http = HttpClient.new(
         api_key: resolved_key,

@@ -20,6 +20,19 @@ class ClientTest < Minitest::Test
     assert_raises(Firecrawl::FirecrawlError) { Firecrawl::Client.new }
   end
 
+  def test_raises_when_whitespace_only_api_key
+    ENV.delete("FIRECRAWL_API_KEY")
+    assert_raises(Firecrawl::FirecrawlError) { Firecrawl::Client.new(api_key: "   ") }
+  end
+
+  def test_raises_when_api_url_not_http
+    assert_raises(Firecrawl::FirecrawlError) { Firecrawl::Client.new(api_key: API_KEY, api_url: "ftp://bad.host") }
+  end
+
+  def test_raises_when_api_url_has_no_scheme
+    assert_raises(Firecrawl::FirecrawlError) { Firecrawl::Client.new(api_key: API_KEY, api_url: "not-a-url") }
+  end
+
   def test_from_env_with_env_var
     ENV["FIRECRAWL_API_KEY"] = "fc-env-key"
     client = Firecrawl::Client.from_env
@@ -441,7 +454,20 @@ class ClientTest < Minitest::Test
     assert_equal 1000, h["waitFor"]
     assert_equal false, h["mobile"]
     assert_equal "stealth", h["proxy"]
+    assert_equal true, h["skipTlsVerification"] # defaults to true
     refute h.key?("timeout") # nil values should be omitted
+  end
+
+  def test_scrape_options_skip_tls_defaults_to_true
+    opts = Firecrawl::Models::ScrapeOptions.new
+    assert_equal true, opts.skip_tls_verification
+    assert_equal true, opts.to_h["skipTlsVerification"]
+  end
+
+  def test_scrape_options_skip_tls_can_be_overridden_to_false
+    opts = Firecrawl::Models::ScrapeOptions.new(skip_tls_verification: false)
+    assert_equal false, opts.skip_tls_verification
+    assert_equal false, opts.to_h["skipTlsVerification"]
   end
 
   def test_crawl_options_to_h
@@ -504,7 +530,7 @@ class ClientTest < Minitest::Test
       zero_data_retention: true
     )
     h = opts.to_h
-    assert_equal({ "formats" => ["markdown"] }, h["options"])
+    assert_equal({ "formats" => ["markdown"], "skipTlsVerification" => true }, h["options"])
     assert_equal 5, h["maxConcurrency"]
     assert_equal true, h["zeroDataRetention"]
   end
@@ -546,6 +572,30 @@ class ClientTest < Minitest::Test
     assert_equal 2, job.data.size
     assert_equal "# Page 1", job.data[0].markdown
     assert_equal "# Page 2", job.data[1].markdown
+  end
+
+  def test_crawl_pagination_rejects_third_party_url
+    stub_request(:post, "#{BASE_URL}/v2/crawl")
+      .to_return(
+        status: 200,
+        body: JSON.generate(id: "crawl-leak"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    stub_request(:get, "#{BASE_URL}/v2/crawl/crawl-leak")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          id: "crawl-leak", status: "completed", total: 1, completed: 1,
+          data: [{ markdown: "# Page 1" }],
+          next: "https://evil.example.com/steal?token=yes"
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    assert_raises(Firecrawl::FirecrawlError) do
+      @client.crawl("https://example.com", nil, poll_interval: 0, timeout: 10)
+    end
   end
 
   # ================================================================

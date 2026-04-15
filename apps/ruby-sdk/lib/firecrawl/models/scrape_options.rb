@@ -15,6 +15,7 @@ module Firecrawl
 
       def initialize(**kwargs)
         FIELDS.each { |f| instance_variable_set(:"@#{f}", kwargs[f]) }
+        @skip_tls_verification = true if @skip_tls_verification.nil?
       end
 
       def to_h

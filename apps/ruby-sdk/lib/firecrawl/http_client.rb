@@ -38,8 +38,13 @@ module Firecrawl
     end
 
     # Sends a GET request with a full URL (for following next-page cursors).
+    # Only sends the Authorization header if the URL matches the configured API origin.
     def get_absolute(absolute_url)
       uri = URI(absolute_url)
+      base_uri = URI(@base_url)
+      unless uri.host == base_uri.host && uri.port == base_uri.port && uri.scheme == base_uri.scheme
+        raise FirecrawlError, "Absolute URL origin (#{uri.scheme}://#{uri.host}:#{uri.port}) does not match API base URL origin (#{base_uri.scheme}://#{base_uri.host}:#{base_uri.port}). Refusing to send credentials."
+      end
       request = Net::HTTP::Get.new(uri)
       request["Authorization"] = "Bearer #{@api_key}"
       execute_with_retry(uri, request)
