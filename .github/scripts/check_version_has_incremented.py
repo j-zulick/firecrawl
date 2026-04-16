@@ -18,7 +18,7 @@ Local version: 1.0.0
 Published version: 0.0.0  (0.0.0 means not yet published on Maven Central)
 true
 
-python .github/scripts/check_version_has_incremented.py ruby ./apps/ruby-sdk firecrawl
+python .github/scripts/check_version_has_incremented.py ruby ./apps/ruby-sdk firecrawl-sdk
 Local version: 1.0.0
 Published version: 0.0.0  (0.0.0 means not yet published on RubyGems)
 true

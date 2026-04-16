@@ -27,7 +27,7 @@ jobs:
       - name: Run version check script
         id: version_check
         run: |
-          VERSION_INCREMENTED=$(python .github/scripts/check_version_has_incremented.py ruby ./apps/ruby-sdk firecrawl)
+          VERSION_INCREMENTED=$(python .github/scripts/check_version_has_incremented.py ruby ./apps/ruby-sdk firecrawl-sdk)
           echo "VERSION_INCREMENTED=$VERSION_INCREMENTED" >> $GITHUB_ENV
 
       - name: Set up Ruby
@@ -40,7 +40,7 @@ jobs:
       - name: Build gem
         if: ${{ env.VERSION_INCREMENTED == 'true' }}
         working-directory: ./apps/ruby-sdk
-        run: gem build firecrawl.gemspec
+        run: gem build firecrawl-sdk.gemspec
 
       - name: Publish to RubyGems
         if: ${{ env.VERSION_INCREMENTED == 'true' }}

@@ -3,7 +3,7 @@
 require_relative "lib/firecrawl/version"
 
 Gem::Specification.new do |spec|
-  spec.name = "firecrawl"
+  spec.name = "firecrawl-sdk"
   spec.version = Firecrawl::VERSION
   spec.authors = ["Firecrawl"]
   spec.email = ["hello@firecrawl.dev"]

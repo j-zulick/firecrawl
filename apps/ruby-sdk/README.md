@@ -11,13 +11,13 @@ Ruby SDK for the [Firecrawl](https://firecrawl.dev) v2 web scraping API.
 Add to your `Gemfile`:
 
 ```ruby
-gem "firecrawl", "~> 1.0"
+gem "firecrawl-sdk", "~> 1.0"
 ```
 
 Or install directly:
 
 ```bash
-gem install firecrawl
+gem install firecrawl-sdk
 ```
 
 ## Quick Start
