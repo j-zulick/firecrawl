@@ -49,11 +49,17 @@ jobs:
         working-directory: ./apps/php-sdk
         run: composer validate --strict
 
+      - name: Set up SSH for firecrawl-php
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.PHP_SDK_DEPLOY_KEY }}
+
       - name: Subtree split and push to firecrawl-php
         if: ${{ env.VERSION_INCREMENTED == 'true' }}
         run: |
           git subtree split --prefix=apps/php-sdk -b php-sdk-split
-          git remote add php-sdk https://x-access-token:${{ secrets.PHP_SDK_GITHUB_TOKEN }}@github.com/firecrawl/firecrawl-php.git
+          git remote add php-sdk git@github.com:firecrawl/firecrawl-php.git
           git push php-sdk php-sdk-split:main --force
 
       - name: Notify Packagist
