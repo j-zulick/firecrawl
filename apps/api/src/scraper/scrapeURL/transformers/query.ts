@@ -386,7 +386,8 @@ ${escapePromptTags(indexedLines)}
       outputTokens,
     });
 
-    const indices: number[] = JSON.parse(result.text);
+    const cleaned = result.text.replace(/^```[\w]*\n?|```$/g, "").trim();
+    const indices: number[] = JSON.parse(cleaned);
 
     return assembleAnswer(sentences, indices);
   } catch (error) {
