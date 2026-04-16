@@ -146,18 +146,25 @@ def get_packagist_version(package_name: str) -> str:
     stable_versions.sort(key=lambda x: parse_version(x), reverse=True)
     return stable_versions[0]
 
-# def get_rust_version(file_path: str) -> str:
-#     """Extract version string from Cargo.toml."""
-#     cargo_toml = toml.load(file_path)
-#     if 'package' in cargo_toml and 'version' in cargo_toml['package']:
-#         return cargo_toml['package']['version'].strip()
-#     raise RuntimeError("Unable to find version string in Cargo.toml.")
+def get_rust_version(file_path: str) -> str:
+    """Extract version string from Cargo.toml."""
+    import toml
+    cargo_toml = toml.load(file_path)
+    if 'package' in cargo_toml and 'version' in cargo_toml['package']:
+        return cargo_toml['package']['version'].strip()
+    raise RuntimeError("Unable to find version string in Cargo.toml.")
 
-# def get_crates_version(package_name: str) -> str:
-#     """Get latest version of Rust package from crates.io."""
-#     response = requests.get(f"https://crates.io/api/v1/crates/{package_name}")
-#     version = response.json()['crate']['newest_version']
-#     return version.strip()
+def get_crates_version(package_name: str) -> str:
+    """Get latest version of Rust package from crates.io."""
+    response = requests.get(
+        f"https://crates.io/api/v1/crates/{package_name}",
+        headers={"User-Agent": "firecrawl-version-check"}
+    )
+    if response.status_code == 404:
+        return "0.0.0"
+    response.raise_for_status()
+    version = response.json()['crate']['newest_version']
+    return version.strip()
 
 def is_version_incremented(local_version: str, published_version: str) -> bool:
     """Compare local and published versions."""
@@ -198,14 +205,14 @@ if __name__ == "__main__":
         current_version = get_php_version(os.path.join(package_path, 'src', 'Version.php'))
         # Get published version from Packagist
         published_version = get_packagist_version(package_name)
-    # if package_type == "rust":
-    #     # Get current version from Cargo.toml
-    #     current_version = get_rust_version(os.path.join(package_path, 'Cargo.toml'))
-    #     # Get published version from crates.io
-    #     published_version = get_crates_version(package_name)
+    elif package_type == "rust":
+        # Get current version from Cargo.toml
+        current_version = get_rust_version(os.path.join(package_path, 'Cargo.toml'))
+        # Get published version from crates.io
+        published_version = get_crates_version(package_name)
 
     else:
-        raise ValueError("Invalid package type. Use 'python', 'js', 'java', 'dotnet', or 'php'.")
+        raise ValueError("Invalid package type. Use 'python', 'js', 'java', 'rust', 'dotnet', or 'php'.")
 
     # Print versions for debugging
     # print(f"Local version: {current_version}")
