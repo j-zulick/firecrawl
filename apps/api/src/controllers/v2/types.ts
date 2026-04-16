@@ -403,6 +403,7 @@ type AttributesFormatWithOptions = z.output<typeof attributesFormatWithOptions>;
 const queryFormatWithOptions = z.strictObject({
   type: z.literal("query"),
   prompt: z.string().max(10000),
+  directQuote: z.boolean().optional().default(false),
 });
 
 type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
@@ -909,6 +910,7 @@ export const crawlerOptions = z.strictObject({
   allowExternalLinks: z.boolean().prefault(false),
   allowSubdomains: z.boolean().prefault(false),
   ignoreRobotsTxt: z.boolean().prefault(false),
+  robotsUserAgent: z.string().optional(),
   sitemap: z.enum(["skip", "include", "only"]).prefault("include"),
   deduplicateSimilarURLs: z.boolean().prefault(true),
   ignoreQueryParameters: z.boolean().prefault(false),
@@ -1298,7 +1300,7 @@ type Account = {
 };
 
 export type TeamFlags = {
-  ignoreRobots?: boolean;
+  ignoreRobots?: "disabled" | "allowed" | "forced";
   unblockedDomains?: string[];
   forceZDR?: boolean;
   allowZDR?: boolean;
@@ -1342,6 +1344,7 @@ export function toV0CrawlerOptions(x: CrawlerOptions) {
     allowExternalContentLinks: x.allowExternalLinks,
     allowSubdomains: x.allowSubdomains,
     ignoreRobotsTxt: x.ignoreRobotsTxt,
+    robotsUserAgent: x.robotsUserAgent,
     ignoreSitemap: x.sitemap === "skip",
     sitemapOnly: x.sitemap === "only",
     deduplicateSimilarURLs: x.deduplicateSimilarURLs,
@@ -1362,6 +1365,7 @@ export function toV2CrawlerOptions(x: any): CrawlerOptions {
     allowExternalLinks: x.allowExternalContentLinks,
     allowSubdomains: x.allowSubdomains,
     ignoreRobotsTxt: x.ignoreRobotsTxt,
+    robotsUserAgent: x.robotsUserAgent,
     sitemap: x.sitemapOnly ? "only" : x.ignoreSitemap ? "skip" : "include",
     deduplicateSimilarURLs: x.deduplicateSimilarURLs,
     ignoreQueryParameters: x.ignoreQueryParameters,
