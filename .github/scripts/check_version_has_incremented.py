@@ -93,6 +93,8 @@ def get_rubygems_version(package_name: str) -> str:
     if response.status_code == 404:
         return "0.0.0"
     version = response.json()['version']
+    if version == "unknown":
+        return "0.0.0"
     return version.strip()
 
 def get_maven_central_version(package_name: str) -> str:
