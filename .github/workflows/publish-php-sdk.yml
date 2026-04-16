@@ -27,7 +27,7 @@ jobs:
       - name: Run version check script
         id: version_check
         run: |
-          VERSION_INCREMENTED=$(python .github/scripts/check_version_has_incremented.py php ./apps/php-sdk firecrawl/firecrawl-php)
+          VERSION_INCREMENTED=$(python .github/scripts/check_version_has_incremented.py php ./apps/php-sdk firecrawl/firecrawl-sdk)
           echo "VERSION_INCREMENTED=$VERSION_INCREMENTED" >> $GITHUB_ENV
 
       - name: Set up PHP

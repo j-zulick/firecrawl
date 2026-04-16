@@ -27,7 +27,7 @@ python .github/scripts/check_version_has_incremented.py dotnet ./apps/.net-sdk/F
 Local version: 1.0.0
 Published version: 0.0.0  (0.0.0 means not yet published on NuGet)
 true
-python .github/scripts/check_version_has_incremented.py php ./apps/php-sdk firecrawl/firecrawl-php
+python .github/scripts/check_version_has_incremented.py php ./apps/php-sdk firecrawl/firecrawl-sdk
 Local version: 1.0.0
 Published version: 0.0.0  (0.0.0 means not yet published on Packagist)
 true
