@@ -320,10 +320,10 @@ The Go SDK lives in a monorepo subdirectory, so releases follow Go's
 **must** be prefixed with the module subdirectory path:
 
 ```
-apps/go-sdk/v2.0.0
+apps/go-sdk/v1.0.0
 ```
 
-A bare `v2.0.0` tag will not be resolvable by the Go module proxy.
+A bare `v1.0.0` tag will not be resolvable by the Go module proxy.
 
 ### Release workflow
 
@@ -331,7 +331,7 @@ The SDK version is the single source of truth in
 [`version.go`](./version.go):
 
 ```go
-const Version = "2.0.0"
+const Version = "1.0.0"
 ```
 
 To cut a release:
@@ -350,7 +350,7 @@ The workflow is idempotent: if the tag already exists, it is a no-op.
 ### Consuming a specific version
 
 ```bash
-go get github.com/firecrawl/firecrawl/apps/go-sdk@v2.0.0
+go get github.com/firecrawl/firecrawl/apps/go-sdk@v1.0.0
 ```
 
 Users pin via the semantic version suffix; they never reference the

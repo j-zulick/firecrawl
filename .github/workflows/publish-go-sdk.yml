@@ -11,7 +11,7 @@ on:
 
 # Go modules are "published" by pushing a git tag. For modules living in a
 # monorepo subdirectory, the tag MUST be prefixed with the subdir path —
-# e.g. apps/go-sdk/v2.0.0 — for the Go module proxy to resolve it.
+# e.g. apps/go-sdk/v1.0.0 — for the Go module proxy to resolve it.
 #
 # This workflow reads Version from apps/go-sdk/version.go, checks whether the
 # corresponding tag already exists, and if not creates+pushes it, then warms
