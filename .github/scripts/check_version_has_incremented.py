@@ -3,7 +3,7 @@ checks local versions against published versions.
 
 # Usage:
 
-python .github/scripts/check_version_has_incremented.py js ./apps/js-sdk/firecrawl @mendable/firecrawl-js 
+python .github/scripts/check_version_has_incremented.py js ./apps/js-sdk/firecrawl @mendable/firecrawl-js
 Local version: 0.0.22
 Published version: 0.0.21
 true
@@ -23,6 +23,10 @@ Local version: 1.0.0
 Published version: 0.0.0  (0.0.0 means not yet published on NuGet)
 true
 
+python .github/scripts/check_version_has_incremented.py php ./apps/php-sdk firecrawl/firecrawl-php
+Local version: 1.0.0
+Published version: 0.0.0  (0.0.0 means not yet published on Packagist)
+true
 """
 import json
 import os
@@ -107,6 +111,41 @@ def get_nuget_version(package_name: str) -> str:
         return versions[-1].strip()
     return "0.0.0"
 
+def get_php_version(file_path: str) -> str:
+    """Extract version string from PHP Version.php file."""
+    version_file = Path(file_path).read_text()
+    version_match = re.search(r"SDK_VERSION\s*=\s*['\"]([^'\"]*)['\"]", version_file)
+    if version_match:
+        return version_match.group(1).strip()
+    raise RuntimeError("Unable to find SDK_VERSION string in Version.php.")
+
+def get_packagist_version(package_name: str) -> str:
+    """Get latest version of PHP package from Packagist. package_name should be vendor/package."""
+    url = f"https://packagist.org/packages/{package_name}.json"
+    response = requests.get(url)
+    if response.status_code == 404:
+        return "0.0.0"
+    response.raise_for_status()
+    data = response.json()
+    package_data = data.get("package", {})
+    versions = package_data.get("versions", {})
+    # Filter out dev versions and find highest stable version
+    stable_versions = []
+    for v in versions:
+        normalized = v.lstrip("v")
+        if "dev" in v or not re.match(r"^\d", normalized):
+            continue
+        try:
+            parsed = parse_version(normalized)
+        except Exception:
+            continue
+        if not parsed.is_prerelease:
+            stable_versions.append(normalized)
+    if not stable_versions:
+        return "0.0.0"
+    stable_versions.sort(key=lambda x: parse_version(x), reverse=True)
+    return stable_versions[0]
+
 # def get_rust_version(file_path: str) -> str:
 #     """Extract version string from Cargo.toml."""
 #     cargo_toml = toml.load(file_path)
@@ -154,6 +193,11 @@ if __name__ == "__main__":
         current_version = get_csproj_version(str(csproj_files[0]))
         # Get published version from NuGet
         published_version = get_nuget_version(package_name)
+    elif package_type == "php":
+        # Get current version from src/Version.php
+        current_version = get_php_version(os.path.join(package_path, 'src', 'Version.php'))
+        # Get published version from Packagist
+        published_version = get_packagist_version(package_name)
     # if package_type == "rust":
     #     # Get current version from Cargo.toml
     #     current_version = get_rust_version(os.path.join(package_path, 'Cargo.toml'))
@@ -161,7 +205,7 @@ if __name__ == "__main__":
     #     published_version = get_crates_version(package_name)
 
     else:
-        raise ValueError("Invalid package type. Use 'python', 'js', 'java', or 'dotnet'.")
+        raise ValueError("Invalid package type. Use 'python', 'js', 'java', 'dotnet', or 'php'.")
 
     # Print versions for debugging
     # print(f"Local version: {current_version}")
