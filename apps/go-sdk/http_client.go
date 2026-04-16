@@ -77,7 +77,9 @@ func (h *httpClient) doJSON(ctx context.Context, method, url string, body interf
 	var lastErr error
 	for attempt := 0; attempt <= h.maxRetries; attempt++ {
 		if attempt > 0 {
-			h.sleepBackoff(attempt)
+			if err := h.sleepBackoff(ctx, attempt); err != nil {
+				return nil, err
+			}
 
 			// Reset the body reader for retries.
 			if body != nil {
@@ -104,6 +106,10 @@ func (h *httpClient) doJSON(ctx context.Context, method, url string, body interf
 
 		resp, err := h.client.Do(req)
 		if err != nil {
+			// If context is cancelled, return immediately instead of retrying.
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			lastErr = err
 			continue // Retry on transport errors.
 		}
@@ -151,9 +157,14 @@ func (h *httpClient) doJSON(ctx context.Context, method, url string, body interf
 	return nil, &FirecrawlError{Message: "request failed"}
 }
 
-func (h *httpClient) sleepBackoff(attempt int) {
-	delay := time.Duration(h.backoffFactor * 1000 * math.Pow(2, float64(attempt-1)))
-	time.Sleep(delay * time.Millisecond)
+func (h *httpClient) sleepBackoff(ctx context.Context, attempt int) error {
+	delay := time.Duration(h.backoffFactor*1000*math.Pow(2, float64(attempt-1))) * time.Millisecond
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(delay):
+		return nil
+	}
 }
 
 // extractError parses an API error response to get the message and error code.

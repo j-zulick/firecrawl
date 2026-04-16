@@ -1,5 +1,7 @@
 package firecrawl
 
+import "encoding/json"
+
 // Document represents a scraped web page.
 type Document struct {
 	Markdown       string                   `json:"markdown,omitempty"`
@@ -66,9 +68,36 @@ func (b *BatchScrapeJob) IsDone() bool {
 	return b.Status == "completed" || b.Status == "failed" || b.Status == "cancelled"
 }
 
+// LinkResult represents a discovered URL from a map request.
+// The API may return links as plain strings or as objects with url/title/description.
+type LinkResult struct {
+	URL         string `json:"url,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// UnmarshalJSON handles both string and object link elements from the API.
+func (l *LinkResult) UnmarshalJSON(data []byte) error {
+	// Try as a plain string first.
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		l.URL = s
+		return nil
+	}
+
+	// Otherwise unmarshal as an object.
+	type linkAlias LinkResult
+	var alias linkAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	*l = LinkResult(alias)
+	return nil
+}
+
 // MapData represents the result of a map (URL discovery) request.
 type MapData struct {
-	Links []map[string]interface{} `json:"links,omitempty"`
+	Links []LinkResult `json:"links,omitempty"`
 }
 
 // SearchData represents the result of a search request.
