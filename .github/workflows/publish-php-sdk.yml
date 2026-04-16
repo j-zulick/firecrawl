@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -47,9 +49,16 @@ jobs:
         working-directory: ./apps/php-sdk
         run: composer validate --strict
 
+      - name: Subtree split and push to firecrawl-php
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        run: |
+          git subtree split --prefix=apps/php-sdk -b php-sdk-split
+          git remote add php-sdk https://x-access-token:${{ secrets.PHP_SDK_GITHUB_TOKEN }}@github.com/firecrawl/firecrawl-php.git
+          git push php-sdk php-sdk-split:main --force
+
       - name: Notify Packagist
         if: ${{ env.VERSION_INCREMENTED == 'true' }}
         run: |
           curl -sfS -X POST "https://packagist.org/api/update-package?username=${{ secrets.PACKAGIST_USERNAME }}&apiToken=${{ secrets.PACKAGIST_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d '{"repository":{"url":"https://github.com/firecrawl/firecrawl"}}'
+            -d '{"repository":{"url":"https://github.com/firecrawl/firecrawl-php"}}'
