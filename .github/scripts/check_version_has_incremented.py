@@ -18,11 +18,15 @@ Local version: 1.0.0
 Published version: 0.0.0  (0.0.0 means not yet published on Maven Central)
 true
 
+python .github/scripts/check_version_has_incremented.py dotnet ./apps/.net-sdk/Firecrawl firecrawl-dotnet
+Local version: 1.0.0
+Published version: 0.0.0  (0.0.0 means not yet published on NuGet)
+true
+
 python .github/scripts/check_version_has_incremented.py php ./apps/php-sdk firecrawl/firecrawl-php
 Local version: 1.0.0
 Published version: 0.0.0  (0.0.0 means not yet published on Packagist)
 true
-
 """
 import json
 import os
@@ -85,6 +89,26 @@ def get_maven_central_version(package_name: str) -> str:
         version_match = re.search(r"<latest>(.*?)</latest>", response.text)
     if version_match:
         return version_match.group(1).strip()
+    return "0.0.0"
+
+def get_csproj_version(file_path: str) -> str:
+    """Extract version string from .csproj file."""
+    csproj_file = Path(file_path).read_text()
+    version_match = re.search(r'<Version>(.*?)</Version>', csproj_file)
+    if version_match:
+        return version_match.group(1).strip()
+    raise RuntimeError("Unable to find version string in .csproj file.")
+
+def get_nuget_version(package_name: str) -> str:
+    """Get latest version of .NET package from NuGet."""
+    url = f"https://api.nuget.org/v3-flatcontainer/{package_name.lower()}/index.json"
+    response = requests.get(url)
+    if response.status_code == 404:
+        return "0.0.0"
+    response.raise_for_status()
+    versions = response.json().get('versions', [])
+    if versions:
+        return versions[-1].strip()
     return "0.0.0"
 
 def get_php_version(file_path: str) -> str:
@@ -161,6 +185,14 @@ if __name__ == "__main__":
         current_version = get_gradle_version(os.path.join(package_path, 'build.gradle.kts'))
         # Get published version from Maven Central
         published_version = get_maven_central_version(package_name)
+    elif package_type == "dotnet":
+        # Get current version from .csproj file — look for any .csproj in the directory
+        csproj_files = list(Path(package_path).glob('*.csproj'))
+        if not csproj_files:
+            raise RuntimeError(f"No .csproj file found in {package_path}")
+        current_version = get_csproj_version(str(csproj_files[0]))
+        # Get published version from NuGet
+        published_version = get_nuget_version(package_name)
     elif package_type == "php":
         # Get current version from src/Version.php
         current_version = get_php_version(os.path.join(package_path, 'src', 'Version.php'))
@@ -173,7 +205,7 @@ if __name__ == "__main__":
     #     published_version = get_crates_version(package_name)
 
     else:
-        raise ValueError("Invalid package type. Use 'python', 'js', 'java', or 'php'.")
+        raise ValueError("Invalid package type. Use 'python', 'js', 'java', 'dotnet', or 'php'.")
 
     # Print versions for debugging
     # print(f"Local version: {current_version}")
