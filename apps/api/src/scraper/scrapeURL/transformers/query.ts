@@ -1,11 +1,18 @@
 import { generateText } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
 import * as marked from "marked";
 import { decode as decodeHtmlEntities } from "he";
 import { Document } from "../../../controllers/v2/types";
 import { Meta } from "..";
+import { config } from "../../../config";
 import { getModel } from "../../../lib/generic-ai";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { calculateCost } from "./llmExtract";
+
+const openrouter = createOpenAI({
+  apiKey: config.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
+});
 
 const PROMPT_TAGS = /(<\/?)(query|page|lines)([\s>])/gi;
 function escapePromptTags(text: string): string {
@@ -339,7 +346,10 @@ ${escapePromptTags(indexedLines)}
   const modelEntry =
     DIRECT_QUOTE_MODELS[experimentalModel] ?? DIRECT_QUOTE_MODELS[0];
   const modelName = modelEntry.id;
-  const model = getModel(modelName, modelEntry.provider);
+  const model =
+    modelEntry.provider === "openrouter"
+      ? openrouter(modelName)
+      : getModel(modelName, modelEntry.provider);
 
   const start = Date.now();
   try {
