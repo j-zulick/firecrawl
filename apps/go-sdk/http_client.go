@@ -95,6 +95,7 @@ func (h *httpClient) doJSON(ctx context.Context, method, url string, body interf
 
 		req.Header.Set("Authorization", "Bearer "+h.apiKey)
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", "firecrawl-go/"+Version)
 		// Apply client-level headers.
 		for k, v := range h.extraHeaders {
 			req.Header.Set(k, v)

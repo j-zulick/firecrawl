@@ -313,6 +313,49 @@ firecrawl.String("test") // *string
 firecrawl.Float64(0.5)   // *float64
 ```
 
+## Releases
+
+The Go SDK lives in a monorepo subdirectory, so releases follow Go's
+[nested module tagging](https://go.dev/ref/mod#vcs-version) convention. Tags
+**must** be prefixed with the module subdirectory path:
+
+```
+apps/go-sdk/v2.0.0
+```
+
+A bare `v2.0.0` tag will not be resolvable by the Go module proxy.
+
+### Release workflow
+
+The SDK version is the single source of truth in
+[`version.go`](./version.go):
+
+```go
+const Version = "2.0.0"
+```
+
+To cut a release:
+
+1. Bump the `Version` constant in `apps/go-sdk/version.go`
+2. Merge to `main`
+3. The [`publish-go-sdk`](../../.github/workflows/publish-go-sdk.yml) workflow
+   will automatically:
+   - create the `apps/go-sdk/v{Version}` tag on the merge commit,
+   - push it to the repository,
+   - warm `proxy.golang.org` to trigger indexing on
+     [pkg.go.dev](https://pkg.go.dev/github.com/firecrawl/firecrawl/apps/go-sdk).
+
+The workflow is idempotent: if the tag already exists, it is a no-op.
+
+### Consuming a specific version
+
+```bash
+go get github.com/firecrawl/firecrawl/apps/go-sdk@v2.0.0
+```
+
+Users pin via the semantic version suffix; they never reference the
+`apps/go-sdk/` tag prefix directly — Go's toolchain handles the translation.
+
 ## License
 
 MIT
