@@ -308,10 +308,9 @@ const DIRECT_QUOTE_MODELS: Record<
     provider: "fireworks",
   },
   1: {
-    id: "accounts/thomas-bfc570/deployments/lubbexi2",
+    id: "accounts/thomas-bfc570/deployments/gv0xgqxs",
     provider: "fireworks",
   },
-  2: { id: "qwen/qwen3.5-27b", provider: "openrouter" },
 };
 
 async function performDirectQuoteQuery(

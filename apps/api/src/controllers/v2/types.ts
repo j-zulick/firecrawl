@@ -405,7 +405,7 @@ const queryFormatWithOptions = z.strictObject({
   prompt: z.string().max(10000),
   directQuote: z.boolean().optional().default(false),
   __experimental_model: z
-    .union([z.literal(0), z.literal(1), z.literal(2)])
+    .union([z.literal(0), z.literal(1)])
     .optional()
     .default(0),
 });
