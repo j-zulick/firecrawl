@@ -307,7 +307,10 @@ const DIRECT_QUOTE_MODELS: Record<
     id: "accounts/thomas-bfc570/models/gpt-oss-20b-query-finetune-2026-04-15#accounts/thomas-bfc570/deployments/qdubugyl",
     provider: "fireworks",
   },
-  1: { id: "qwen/qwen3.5-9b", provider: "openrouter" },
+  1: {
+    id: "accounts/thomas-bfc570/deployments/lubbexi2",
+    provider: "fireworks",
+  },
   2: { id: "qwen/qwen3.5-27b", provider: "openrouter" },
 };
 
