@@ -69,4 +69,36 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Lockdown Mode", () => {
     },
     scrapeTimeout,
   );
+
+  test(
+    "should serve cache and skip audio fetch even when audio format is requested",
+    async () => {
+      const id = crypto.randomUUID();
+      const url = "https://firecrawl.dev/?testAudioGate=" + id;
+
+      const seed = await scrape({ url }, identity);
+      expect(seed).toBeDefined();
+      expect(seed.metadata.cacheState).toBe("miss");
+
+      await new Promise(resolve => setTimeout(resolve, 20000));
+
+      // Without the lockdown audio gate this would either throw
+      // AudioUnsupportedUrlError (firecrawl.dev is not an audio source) or
+      // POST to AVGRAB_SERVICE_URL with the target URL. Success here implies
+      // the gate short-circuited before any outbound call.
+      const data = await scrape(
+        {
+          url,
+          lockdown: true,
+          formats: ["markdown", "audio"],
+        },
+        identity,
+      );
+
+      expect(data).toBeDefined();
+      expect(data.metadata.cacheState).toBe("hit");
+      expect(data.audio).toBeUndefined();
+    },
+    scrapeTimeout * 2 + 20000,
+  );
 });

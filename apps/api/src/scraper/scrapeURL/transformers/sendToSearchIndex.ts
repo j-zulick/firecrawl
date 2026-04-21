@@ -27,6 +27,11 @@ function shouldIndexForSearch(meta: Meta, document: Document): boolean {
     return false;
   }
 
+  // Lockdown must not forward the target URL to any external service.
+  if (meta.options.lockdown) {
+    return false;
+  }
+
   const statusCode = document.metadata.statusCode;
   if (statusCode < 200 || statusCode >= 300) {
     return false;

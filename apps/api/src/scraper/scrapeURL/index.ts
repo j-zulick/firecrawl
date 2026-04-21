@@ -57,6 +57,7 @@ import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
 import { urlSpecificParams } from "./lib/urlSpecificParams";
+import { shouldCheckRobots } from "./shouldCheckRobots";
 import { loadMock, MockState } from "./lib/mock";
 import { CostTracking } from "../../lib/cost-tracking";
 import { getEngineForUrl } from "../WebScraper/utils/engine-forcing";
@@ -1052,7 +1053,7 @@ export async function scrapeURL(
       });
     }
 
-    if (internalOptions.teamFlags?.checkRobotsOnScrape) {
+    if (shouldCheckRobots(options, internalOptions)) {
       await withSpan("scrape.robots_check", async robotsSpan => {
         const urlToCheck = meta.rewrittenUrl || meta.url;
         meta.logger.info("Checking robots.txt", { url: urlToCheck });
