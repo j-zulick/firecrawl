@@ -67,6 +67,7 @@ const errorMap: Record<ErrorCodes, any> = {
   // Zod errors
   BAD_REQUEST: null,
   BAD_REQUEST_INVALID_JSON: null,
+  PARSE_UNSUPPORTED_OPTIONS: null,
 };
 
 export function serializeTransportableError(error: TransportableError) {
