@@ -40,6 +40,7 @@ import {
   PDFOCRRequiredError,
   IndexMissError,
   NoCachedDataError,
+  LockdownMissError,
   DNSResolutionError,
   ZDRViolationError,
   PDFPrefetchFailed,
@@ -146,6 +147,12 @@ function buildFeatureFlags(
   internalOptions: InternalOptions,
 ): Set<FeatureFlag> {
   const flags: Set<FeatureFlag> = new Set();
+
+  // Lockdown forces index-only engines and ignores every request-time feature.
+  // Return empty so the fallback threshold never filters index engines out.
+  if (options.lockdown) {
+    return flags;
+  }
 
   if (options.actions !== undefined && options.actions.length > 0) {
     flags.add("actions");
@@ -883,6 +890,9 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         "engine.no_engines_left": true,
         "engine.engines_attempted": enginesAttempted.join(","),
       });
+      if (meta.options.lockdown) {
+        throw new LockdownMissError();
+      }
       throw new NoEnginesLeftError(fallbackList.map(x => x.engine));
     }
 

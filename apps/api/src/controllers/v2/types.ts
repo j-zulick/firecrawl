@@ -574,6 +574,7 @@ const baseScrapeOptions = z.strictObject({
   maxAge: z.int().gte(0).optional(),
   minAge: z.int().gte(0).optional(),
   storeInCache: z.boolean().prefault(true),
+  lockdown: z.boolean().prefault(false),
 
   profile: z
     .object({
@@ -640,6 +641,10 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
     obj.timeout === 30000
   ) {
     result = { ...result, timeout: 120000 };
+  }
+
+  if (obj.lockdown && obj.maxAge === undefined) {
+    result = { ...result, maxAge: Number.MAX_SAFE_INTEGER };
   }
 
   return result as T extends undefined ? undefined : T;
