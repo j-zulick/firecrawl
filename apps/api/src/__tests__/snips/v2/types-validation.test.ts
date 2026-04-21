@@ -470,14 +470,14 @@ describe("V2 Types Validation", () => {
         expect(result.lockdown).toBe(true);
       });
 
-      it("should default maxAge to MAX_SAFE_INTEGER when lockdown is true and maxAge is unset", () => {
+      it("should default maxAge to ~2 years when lockdown is true and maxAge is unset", () => {
         const input: ScrapeRequestInput = {
           url: "https://example.com",
           lockdown: true,
         };
 
         const result = scrapeRequestSchema.parse(input);
-        expect(result.maxAge).toBe(Number.MAX_SAFE_INTEGER);
+        expect(result.maxAge).toBe(2 * 365 * 24 * 60 * 60 * 1000);
       });
 
       it("should preserve maxAge when lockdown is true and maxAge is provided", () => {
