@@ -49,6 +49,10 @@ export async function calculateCreditsToBeBilled(
     return creditsToBeBilled;
   }
 
+  if (options.lockdown) {
+    return 5;
+  }
+
   let creditsToBeBilled = 1; // Assuming 1 credit per document
   const changeTrackingFormat = hasFormatOfType(
     options.formats,
