@@ -41,7 +41,8 @@ export async function calculateCreditsToBeBilled(
     // Bill for DNS resolution errors
     if (
       error instanceof TransportableError &&
-      error.code === "SCRAPE_DNS_RESOLUTION_ERROR"
+      (error.code === "SCRAPE_DNS_RESOLUTION_ERROR" ||
+        error.code === "SCRAPE_LOCKDOWN_CACHE_MISS")
     ) {
       creditsToBeBilled = 1;
     }
@@ -49,11 +50,12 @@ export async function calculateCreditsToBeBilled(
     return creditsToBeBilled;
   }
 
+  let creditsToBeBilled = 1; // Assuming 1 credit per document
+
   if (options.lockdown) {
-    return 5;
+    creditsToBeBilled += 4;
   }
 
-  let creditsToBeBilled = 1; // Assuming 1 credit per document
   const changeTrackingFormat = hasFormatOfType(
     options.formats,
     "changeTracking",
