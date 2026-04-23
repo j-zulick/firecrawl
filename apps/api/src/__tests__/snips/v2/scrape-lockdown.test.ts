@@ -47,6 +47,7 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Lockdown Mode", () => {
       expect(data).toBeDefined();
       expect(data.metadata.cacheState).toBe("hit");
       expect(data.metadata.cachedAt).toBeDefined();
+      expect(data.metadata.creditsUsed).toBe(5);
     },
     scrapeTimeout * 2 + 20000,
   );
