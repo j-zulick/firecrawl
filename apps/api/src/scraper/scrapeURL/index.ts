@@ -325,6 +325,19 @@ async function buildMetaObject(
     }
   }
 
+  // HACK(hotfix): audio format should go through tlsclient.
+  if (
+    internalOptions.forceEngine === undefined &&
+    hasFormatOfType(options.formats, "audio")
+  ) {
+    internalOptions = Object.assign(internalOptions, {
+      forceEngine: [
+        "fire-engine;tlsclient",
+        "fire-engine;tlsclient;stealth",
+      ] as Engine[],
+    });
+  }
+
   const logger = _logger.child({
     module: "ScrapeURL",
     scrapeId: id,
