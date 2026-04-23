@@ -171,6 +171,10 @@ function buildFeatureFlags(
     flags.add("branding");
   }
 
+  if (hasFormatOfType(options.formats, "audio")) {
+    flags.add("audio");
+  }
+
   if (options.waitFor !== 0) {
     flags.add("waitFor");
   }
@@ -323,19 +327,6 @@ async function buildMetaObject(
         forceEngine: forcedEngine,
       });
     }
-  }
-
-  // HACK(hotfix): audio format should go through tlsclient.
-  if (
-    internalOptions.forceEngine === undefined &&
-    hasFormatOfType(options.formats, "audio")
-  ) {
-    internalOptions = Object.assign(internalOptions, {
-      forceEngine: [
-        "fire-engine;tlsclient",
-        "fire-engine;tlsclient;stealth",
-      ] as Engine[],
-    });
   }
 
   const logger = _logger.child({
