@@ -777,7 +777,12 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           break;
         } catch (error) {
           if (error instanceof WrappedEngineError) {
-            if (error.error instanceof EngineError) {
+            if (error.engine === "x-twitter") {
+              meta.logger.warn("X/Twitter scrape failed fatally.", {
+                error: error.error,
+              });
+              throw error.error;
+            } else if (error.error instanceof EngineError) {
               meta.logger.warn(
                 "Engine " + error.engine + " could not scrape the page.",
                 {

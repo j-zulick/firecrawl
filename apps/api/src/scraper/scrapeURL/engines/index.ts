@@ -579,7 +579,10 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
   }
 
-  if (!isXTwitterUrl(meta.url)) {
+  if (isXTwitterUrl(meta.url) && _engines.includes("x-twitter")) {
+    _engines.length = 0;
+    _engines.push("x-twitter");
+  } else if (!isXTwitterUrl(meta.url)) {
     const xTwitterIndex = _engines.indexOf("x-twitter");
     if (xTwitterIndex !== -1) {
       _engines.splice(xTwitterIndex, 1);
