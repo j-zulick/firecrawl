@@ -179,7 +179,10 @@ export class Watcher extends EventEmitter {
       } catch {
         // ignore
       }
-      if (timeoutMs && Date.now() - startTs > timeoutMs) this.close();
+      if (timeoutMs && Date.now() - startTs > timeoutMs) {
+        this.emit("error", { status: "failed", data: [], error: "Watcher timeout", id: this.jobId });
+        this.close();
+      }
     };
     ws.onerror = () => {
       this.emit("error", { status: "failed", data: [], error: "WebSocket error", id: this.jobId });
@@ -263,7 +266,11 @@ export class Watcher extends EventEmitter {
       } catch {
         // ignore polling errors
       }
-      if (timeoutMs && Date.now() - startTs > timeoutMs) break;
+      if (timeoutMs && Date.now() - startTs > timeoutMs) {
+        this.emit("error", { status: "failed", data: [], error: "Watcher timeout", id: this.jobId });
+        this.close();
+        break;
+      }
       await new Promise((r) => setTimeout(r, Math.max(1000, this.pollInterval * 1000)));
     }
   }
