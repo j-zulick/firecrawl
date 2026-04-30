@@ -72,7 +72,19 @@ SET (autovacuum_vacuum_scale_factor = 0.01,
 CREATE INDEX IF NOT EXISTS queue_scrape_active_locked_at_idx ON nuq.queue_scrape USING btree (locked_at) WHERE (status = 'active'::nuq.job_status);
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_queued_optimal_2_idx ON nuq.queue_scrape (priority ASC, created_at ASC, id) WHERE (status = 'queued'::nuq.job_status);
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_failed_created_at_idx ON nuq.queue_scrape USING btree (created_at) WHERE (status = 'failed'::nuq.job_status);
-CREATE INDEX IF NOT EXISTS nuq_queue_scrape_completed_created_at_idx ON nuq.queue_scrape USING btree (created_at) WHERE (status = 'completed'::nuq.job_status);
+
+-- Predicate-matching partial indexes for the standalone (group_id IS NULL)
+-- cleaners. In production virtually every row has a group_id, so these
+-- indexes stay tiny and turn the standalone cleaners into fast no-ops instead
+-- of seq scans over the whole 18M-row table.
+CREATE INDEX IF NOT EXISTS nuq_queue_scrape_completed_standalone_created_at_idx ON nuq.queue_scrape USING btree (created_at) WHERE (status = 'completed'::nuq.job_status AND group_id IS NULL);
+CREATE INDEX IF NOT EXISTS nuq_queue_scrape_failed_standalone_created_at_idx ON nuq.queue_scrape USING btree (created_at) WHERE (status = 'failed'::nuq.job_status AND group_id IS NULL);
+
+-- Plain group_id index for the cascading DELETE in nuq_group_crawl_clean.
+-- The other partial (group_id, ...) indexes are all filtered by mode or status
+-- so DELETE WHERE group_id IN (...) seq-scans the whole 18M-row table without
+-- this. EXPLAIN confirmed ~7s/100 group_ids before adding this.
+CREATE INDEX IF NOT EXISTS nuq_queue_scrape_group_id_idx ON nuq.queue_scrape (group_id) WHERE group_id IS NOT NULL;
 
 -- Indexes for crawl-status.ts queries
 -- For getGroupAnyJob: query by group_id, owner_id, and data->>'mode' = 'single_urls'
@@ -140,7 +152,6 @@ SELECT cron.schedule('nuq_reindex_queue_scrape_pkey',                   '0 2 * *
 SELECT cron.schedule('nuq_reindex_queue_scrape_active_locked_at',       '20 2 * * *', $$REINDEX INDEX CONCURRENTLY nuq.queue_scrape_active_locked_at_idx;$$);
 SELECT cron.schedule('nuq_reindex_queue_scrape_queued_optimal_2',       '40 2 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_queued_optimal_2_idx;$$);
 SELECT cron.schedule('nuq_reindex_queue_scrape_failed_created_at',      '0 3 * * *',  $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_failed_created_at_idx;$$);
-SELECT cron.schedule('nuq_reindex_queue_scrape_completed_created_at',   '20 3 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_completed_created_at_idx;$$);
 SELECT cron.schedule('nuq_reindex_queue_scrape_group_owner_mode',       '40 3 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_group_owner_mode_idx;$$);
 SELECT cron.schedule('nuq_reindex_queue_scrape_group_mode_status',      '0 4 * * *',  $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_group_mode_status_idx;$$);
 SELECT cron.schedule('nuq_reindex_queue_scrape_group_completed_listing','20 4 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_group_completed_listing_idx;$$);
@@ -151,6 +162,10 @@ SELECT cron.schedule('nuq_reindex_queue_scrape_backlog_owner_id',       '20 5 * 
 SELECT cron.schedule('nuq_reindex_queue_scrape_backlog_group_mode',     '40 5 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_backlog_group_mode_idx;$$);
 SELECT cron.schedule('nuq_reindex_queue_scrape_backlog_group_id',       '0 6 * * *',  $$REINDEX INDEX CONCURRENTLY nuq.idx_queue_scrape_backlog_group_id;$$);
 SELECT cron.schedule('nuq_reindex_queue_scrape_backlog_times_out_at',   '20 6 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_backlog_times_out_at_idx;$$);
+
+SELECT cron.schedule('nuq_reindex_queue_scrape_completed_standalone',   '40 6 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_completed_standalone_created_at_idx;$$);
+SELECT cron.schedule('nuq_reindex_queue_scrape_failed_standalone',      '40 8 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_failed_standalone_created_at_idx;$$);
+SELECT cron.schedule('nuq_reindex_queue_scrape_group_id',               '40 9 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_scrape_group_id_idx;$$);
 
 -- Watchdog: cancel any nuq REINDEX CONCURRENTLY that has been running > 18 min.
 -- Acts as the safety net since statement_timeout cannot be set inline with
@@ -195,6 +210,15 @@ CREATE INDEX IF NOT EXISTS nuq_queue_crawl_finished_queued_optimal_2_idx ON nuq.
 CREATE INDEX IF NOT EXISTS nuq_queue_crawl_finished_failed_created_at_idx ON nuq.queue_crawl_finished USING btree (created_at) WHERE (status = 'failed'::nuq.job_status);
 CREATE INDEX IF NOT EXISTS nuq_queue_crawl_finished_completed_created_at_idx ON nuq.queue_crawl_finished USING btree (created_at) WHERE (status = 'completed'::nuq.job_status);
 
+-- Predicate-matching partial indexes for the standalone (group_id IS NULL)
+-- cleaners; see note on queue_scrape above.
+CREATE INDEX IF NOT EXISTS nuq_queue_crawl_finished_completed_standalone_created_at_idx ON nuq.queue_crawl_finished USING btree (created_at) WHERE (status = 'completed'::nuq.job_status AND group_id IS NULL);
+CREATE INDEX IF NOT EXISTS nuq_queue_crawl_finished_failed_standalone_created_at_idx ON nuq.queue_crawl_finished USING btree (created_at) WHERE (status = 'failed'::nuq.job_status AND group_id IS NULL);
+
+-- Plain group_id index for the cascading DELETE in nuq_group_crawl_clean.
+-- See note on queue_scrape above.
+CREATE INDEX IF NOT EXISTS nuq_queue_crawl_finished_group_id_idx ON nuq.queue_crawl_finished (group_id) WHERE group_id IS NOT NULL;
+
 SELECT cron.schedule('nuq_queue_crawl_finished_clean_completed', '*/5 * * * *', $$
   DELETE FROM nuq.queue_crawl_finished WHERE nuq.queue_crawl_finished.status = 'completed'::nuq.job_status AND nuq.queue_crawl_finished.created_at < now() - interval '1 hour' AND group_id IS NULL;
 $$);
@@ -217,6 +241,11 @@ SELECT cron.schedule('nuq_reindex_queue_crawl_finished_queued_optimal_2',     '4
 SELECT cron.schedule('nuq_reindex_queue_crawl_finished_failed_created_at',    '0 8 * * *',  $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_crawl_finished_failed_created_at_idx;$$);
 SELECT cron.schedule('nuq_reindex_queue_crawl_finished_completed_created_at', '20 8 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_crawl_finished_completed_created_at_idx;$$);
 
+SELECT cron.schedule('nuq_reindex_queue_crawl_finished_completed_standalone', '0 9 * * *',   $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_crawl_finished_completed_standalone_created_at_idx;$$);
+SELECT cron.schedule('nuq_reindex_queue_crawl_finished_failed_standalone',    '20 9 * * *',  $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_crawl_finished_failed_standalone_created_at_idx;$$);
+SELECT cron.schedule('nuq_reindex_queue_crawl_finished_group_id',             '0 10 * * *',  $$REINDEX INDEX CONCURRENTLY nuq.nuq_queue_crawl_finished_group_id_idx;$$);
+SELECT cron.schedule('nuq_reindex_group_crawl_completed_expires_at',          '20 10 * * *', $$REINDEX INDEX CONCURRENTLY nuq.nuq_group_crawl_completed_expires_at_idx;$$);
+
 CREATE TABLE IF NOT EXISTS nuq.group_crawl (
   id uuid NOT NULL,
   status nuq.group_status NOT NULL DEFAULT 'active'::nuq.group_status,
@@ -229,6 +258,11 @@ CREATE TABLE IF NOT EXISTS nuq.group_crawl (
 
 -- Index for group finish cron to find active groups
 CREATE INDEX IF NOT EXISTS idx_group_crawl_status ON nuq.group_crawl (status) WHERE status = 'active'::nuq.group_status;
+
+-- Index for nuq_group_crawl_clean victim selection. The status='active'
+-- partial index above is the opposite predicate, so without this the cleaner
+-- seq-scans the whole group_crawl table every 5 min.
+CREATE INDEX IF NOT EXISTS nuq_group_crawl_completed_expires_at_idx ON nuq.group_crawl (expires_at) WHERE status = 'completed'::nuq.group_status;
 
 -- Index for backlog group_id lookups
 CREATE INDEX IF NOT EXISTS idx_queue_scrape_backlog_group_id ON nuq.queue_scrape_backlog (group_id);
@@ -255,13 +289,28 @@ SELECT cron.schedule('nuq_group_crawl_finished', '15 seconds', $$
   FROM finished_groups;
 $$);
 
-SELECT cron.schedule('nuq_group_crawl_clean', '*/5 * * * *', $$
-  SET statement_timeout = '4min';
-  WITH cleaned_groups AS (
+-- Batched group cleanup: small LIMIT, fast cadence. queue_scrape has 12
+-- indexes plus scattered heap pages, so per-row delete cost (~86 rows/s
+-- measured) dominates regardless of how the work is grouped. Bigger batches
+-- just made one heavy outlier group (max 8495 jobs vs p50 9) blow the
+-- statement_timeout. 500 groups/min: throughput is 30k/hr against a steady
+-- arrival of ~19k/hr, normal runs land in ~10s, worst case with a heavy
+-- group in the batch ~140s -- well under the 90s timeout, and if we ever do
+-- hit it the next minute's tick takes another swing rather than holding a
+-- 4min transaction. SKIP LOCKED keeps overlapping ticks from fighting.
+SELECT cron.schedule('nuq_group_crawl_clean', '* * * * *', $$
+  SET statement_timeout = '90s';
+  WITH victims AS (
+    SELECT id FROM nuq.group_crawl
+    WHERE status = 'completed'::nuq.group_status
+      AND expires_at < now()
+    ORDER BY expires_at
+    LIMIT 500
+    FOR UPDATE SKIP LOCKED
+  ), cleaned_groups AS (
     DELETE FROM nuq.group_crawl
-    WHERE nuq.group_crawl.status = 'completed'::nuq.group_status
-      AND nuq.group_crawl.expires_at < now()
-    RETURNING *
+    WHERE id IN (SELECT id FROM victims)
+    RETURNING id
   ), cleaned_jobs_queue_scrape AS (
     DELETE FROM nuq.queue_scrape
     WHERE nuq.queue_scrape.group_id IN (SELECT id FROM cleaned_groups)
