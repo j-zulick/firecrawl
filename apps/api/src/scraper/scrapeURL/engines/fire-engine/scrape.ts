@@ -19,6 +19,14 @@ import {
 import { Meta } from "../..";
 
 import { config } from "../../../../config";
+
+const browserCookieSchema = z
+  .object({
+    name: z.string(),
+    value: z.string(),
+  })
+  .passthrough();
+
 export type FireEngineScrapeRequestCommon = {
   url: string;
   scrapeId?: string;
@@ -123,6 +131,15 @@ const successSchema = z.object({
         result: z.object({
           link: z.string(),
         }),
+      }),
+      z.object({
+        idx: z.number(),
+        type: z.literal("getCookies"),
+        result: z
+          .object({
+            cookies: browserCookieSchema.array(),
+          })
+          .passthrough(),
       }),
     ])
     .array()
