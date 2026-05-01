@@ -63,6 +63,7 @@ export type FireEngineScrapeRequestChromeCDP = {
   mobile?: boolean;
   disableSmartWaitCache?: boolean;
   persistentStorage?: { uniqueId: string };
+  skipYouTubeTranscript?: boolean;
 };
 
 export type FireEngineScrapeRequestTLSClient = {
