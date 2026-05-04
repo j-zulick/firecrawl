@@ -266,6 +266,10 @@ export async function scrapeURLWithFireEngineChromeCDP(
     const hasBranding = hasFormatOfType(meta.options.formats, "branding");
     const hasAudio = hasFormatOfType(meta.options.formats, "audio");
     const onlyAudio = !!hasAudio && (meta.options.formats?.length ?? 0) === 1;
+    const shouldRunYoutubePostprocessor = youtubePostprocessor.shouldRun(
+      meta,
+      new URL(meta.rewrittenUrl ?? meta.url),
+    );
     const defaultWait = hasBranding ? BRANDING_DEFAULT_WAIT_MS : 0;
     const effectiveWait =
       meta.options.waitFor != null && meta.options.waitFor !== 0
@@ -318,7 +322,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
             },
           ]
         : []),
-      ...(hasAudio
+      ...(hasAudio || shouldRunYoutubePostprocessor
         ? ([
             {
               type: "getCookies",
@@ -335,10 +339,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
 
     const shouldAllowMedia =
       hasFormatOfType(meta.options.formats, "branding") ||
-      youtubePostprocessor.shouldRun(
-        meta,
-        new URL(meta.rewrittenUrl ?? meta.url),
-      );
+      shouldRunYoutubePostprocessor;
 
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestChromeCDP = {
@@ -364,7 +365,9 @@ export async function scrapeURLWithFireEngineChromeCDP(
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       ...(shouldAllowMedia ? { blockMedia: false } : {}),
-      ...(onlyAudio ? { skipYouTubeTranscript: true } : {}),
+      ...(onlyAudio || shouldRunYoutubePostprocessor
+        ? { skipYouTubeTranscript: true }
+        : {}),
       persistentStorage: meta.options.profile
         ? {
             uniqueId: `${createHash("sha256").update(meta.internalOptions.teamId).digest("hex").slice(0, 16)}_${meta.options.profile.name}`,
@@ -465,7 +468,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
       youtubeTranscriptContent: response.youtubeTranscriptContent,
       timezone: response.timezone,
-      ...(hasAudio ? { audioCookies } : {}),
+      ...(hasAudio || shouldRunYoutubePostprocessor ? { audioCookies } : {}),
     };
   });
 }
