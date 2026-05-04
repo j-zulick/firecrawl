@@ -265,7 +265,6 @@ export async function scrapeURLWithFireEngineChromeCDP(
     });
     const hasBranding = hasFormatOfType(meta.options.formats, "branding");
     const hasAudio = hasFormatOfType(meta.options.formats, "audio");
-    const onlyAudio = !!hasAudio && (meta.options.formats?.length ?? 0) === 1;
     const shouldRunYoutubePostprocessor = youtubePostprocessor.shouldRun(
       meta,
       new URL(meta.rewrittenUrl ?? meta.url),
@@ -365,9 +364,6 @@ export async function scrapeURLWithFireEngineChromeCDP(
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       ...(shouldAllowMedia ? { blockMedia: false } : {}),
-      ...(onlyAudio || shouldRunYoutubePostprocessor
-        ? { skipYouTubeTranscript: true }
-        : {}),
       persistentStorage: meta.options.profile
         ? {
             uniqueId: `${createHash("sha256").update(meta.internalOptions.teamId).digest("hex").slice(0, 16)}_${meta.options.profile.name}`,
