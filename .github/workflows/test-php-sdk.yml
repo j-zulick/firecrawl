@@ -19,7 +19,7 @@ jobs:
     name: Build and Test
     runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
-      FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+      HAS_API_KEY: ${{ secrets.FIRECRAWL_API_KEY != '' }}
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request' ||
@@ -64,6 +64,8 @@ jobs:
         run: vendor/bin/pest --ci
 
       - name: Run E2E tests
-        if: env.FIRECRAWL_API_KEY != ''
+        if: env.HAS_API_KEY == 'true'
         working-directory: ./apps/php-sdk
+        env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
         run: vendor/bin/pest --ci --group=e2e
