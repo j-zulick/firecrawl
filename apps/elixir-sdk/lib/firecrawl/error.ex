@@ -17,7 +17,12 @@ defmodule Firecrawl.Error do
 
   @impl true
   def message(%__MODULE__{status: status, body: body}) when is_map(body) do
-    error_msg = body["error"] || body["message"] || inspect(body)
+    error_msg =
+      case body["error"] || body["message"] do
+        msg when is_binary(msg) -> msg
+        _ -> inspect(body)
+      end
+
     "Firecrawl API error (HTTP #{status}): #{error_msg}"
   end
 

@@ -103,7 +103,9 @@ defmodule FirecrawlTest do
         retry: false
       )
 
-    assert {:error, _} = result
+    assert {:error, err} = result
+    refute match?(%NimbleOptions.ValidationError{}, err),
+      "Expected connection error, got validation error: #{inspect(err)}"
   end
 
   test "accepts string values for enum params (sitemap)" do
@@ -117,7 +119,9 @@ defmodule FirecrawlTest do
         retry: false
       )
 
-    assert {:error, _} = result
+    assert {:error, err} = result
+    refute match?(%NimbleOptions.ValidationError{}, err),
+      "Expected connection error, got validation error: #{inspect(err)}"
   end
 
   test "non-bang returns {:error, %Firecrawl.Error{}} for API errors" do
