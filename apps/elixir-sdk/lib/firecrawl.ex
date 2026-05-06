@@ -130,6 +130,29 @@ defmodule Firecrawl do
     Enum.join([first | Enum.map(rest, &String.capitalize/1)])
   end
 
+  defp fetch_file_field(file, key) do
+    case Keyword.fetch(file, key) do
+      {:ok, _value} = ok -> ok
+      :error -> {:error, %ArgumentError{message: "missing required file field: #{key}"}}
+    end
+  end
+
+  defp validate_filename(filename) do
+    if is_binary(filename) and filename != "" do
+      :ok
+    else
+      {:error, %ArgumentError{message: "filename cannot be empty"}}
+    end
+  end
+
+  defp validate_data(data) do
+    if is_nil(data) do
+      {:error, %ArgumentError{message: "file data cannot be empty"}}
+    else
+      :ok
+    end
+  end
+
   @doc """
   Cancel an agent job
 
@@ -950,18 +973,12 @@ defmodule Firecrawl do
   """
   @spec parse_file(keyword(), keyword(), keyword()) :: response()
   def parse_file(file, params \\ [], opts \\ []) do
-    with {:ok, params} <- NimbleOptions.validate(params, @parse_file_schema) do
-      filename = Keyword.fetch!(file, :filename)
-      data = Keyword.fetch!(file, :data)
+    with {:ok, params} <- NimbleOptions.validate(params, @parse_file_schema),
+         {:ok, filename} <- fetch_file_field(file, :filename),
+         :ok <- validate_filename(filename),
+         {:ok, data} <- fetch_file_field(file, :data),
+         :ok <- validate_data(data) do
       content_type = Keyword.get(file, :content_type)
-
-      if not is_binary(filename) or filename == "" do
-        raise ArgumentError, "filename cannot be empty"
-      end
-
-      if is_nil(data) do
-        raise ArgumentError, "file data cannot be empty"
-      end
 
       file_part =
         case content_type do

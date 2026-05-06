@@ -124,22 +124,24 @@ defmodule FirecrawlTest do
       "Expected connection error, got validation error: #{inspect(err)}"
   end
 
-  test "parse_file raises ArgumentError when filename is empty" do
+  test "parse_file returns error tuple when filename is empty" do
     Application.put_env(:firecrawl, :api_key, "test-key")
     on_exit(fn -> Application.delete_env(:firecrawl, :api_key) end)
 
-    assert_raise ArgumentError, ~r/filename cannot be empty/, fn ->
-      Firecrawl.parse_file([filename: "", data: "x"])
-    end
+    assert {:error, %ArgumentError{message: msg}} =
+             Firecrawl.parse_file([filename: "", data: "x"])
+
+    assert msg =~ "filename cannot be empty"
   end
 
-  test "parse_file raises ArgumentError when data is nil" do
+  test "parse_file returns error tuple when data is nil" do
     Application.put_env(:firecrawl, :api_key, "test-key")
     on_exit(fn -> Application.delete_env(:firecrawl, :api_key) end)
 
-    assert_raise ArgumentError, ~r/file data cannot be empty/, fn ->
-      Firecrawl.parse_file([filename: "doc.pdf", data: nil])
-    end
+    assert {:error, %ArgumentError{message: msg}} =
+             Firecrawl.parse_file([filename: "doc.pdf", data: nil])
+
+    assert msg =~ "file data cannot be empty"
   end
 
   test "parse_file rejects unknown options" do
