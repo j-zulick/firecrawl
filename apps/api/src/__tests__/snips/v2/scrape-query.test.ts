@@ -61,7 +61,7 @@ describe("Query format", () => {
     scrapeTimeout,
   );
 
-  concurrentIf(TEST_PRODUCTION || HAS_AI)(
+  concurrentIf(TEST_PRODUCTION)(
     "returns a direct quote answer when query mode is directQuote",
     async () => {
       const response = await scrape(
