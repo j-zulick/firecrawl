@@ -254,6 +254,37 @@ export async function markMonitorRunning(params: {
   throwIfError(error, "Failed to mark monitor running");
 }
 
+export async function dispatchScheduledMonitorCheck(params: {
+  monitor: MonitorRow;
+  checkId: string;
+}): Promise<boolean> {
+  const nextRunAt =
+    params.monitor.status === "active"
+      ? getNextMonitorRunAt(
+          params.monitor.schedule_cron,
+          new Date(),
+          params.monitor.schedule_timezone,
+        ).toISOString()
+      : null;
+
+  const { data, error } = await supabase_service
+    .from("monitors")
+    .update({
+      current_check_id: params.checkId,
+      locked_at: null,
+      locked_until: null,
+      next_run_at: nextRunAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", params.monitor.id)
+    .is("current_check_id", null)
+    .select("id")
+    .maybeSingle();
+
+  throwIfError(error, "Failed to dispatch scheduled monitor check");
+  return !!data;
+}
+
 export async function updateMonitorScheduleAfterRun(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
