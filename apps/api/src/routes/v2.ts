@@ -45,6 +45,7 @@ import {
   createX402RouteConfig,
   isX402Enabled,
 } from "../lib/x402";
+import { deprecationMiddleware } from "../lib/deprecations";
 import { agentController } from "../controllers/v2/agent";
 import { agentStatusController } from "../controllers/v2/agent-status";
 import { agentCancelController } from "../controllers/v2/agent-cancel";
@@ -381,6 +382,7 @@ v2Router.get(
 v2Router.post(
   "/extract",
   authMiddleware(RateLimiterMode.Extract),
+  deprecationMiddleware("v2_extract"),
   countryCheck,
   checkCreditsMiddleware(20),
   blocklistMiddleware,
@@ -390,6 +392,7 @@ v2Router.post(
 v2Router.get(
   "/extract/:jobId",
   authMiddleware(RateLimiterMode.ExtractStatus),
+  deprecationMiddleware("v2_extract_status"),
   validateJobIdParam,
   wrap(extractStatusController),
 );
