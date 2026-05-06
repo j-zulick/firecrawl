@@ -56,6 +56,7 @@ import {
   browserWebhookDestroyedController,
 } from "../controllers/v2/browser";
 import { activityController } from "../controllers/v1/activity";
+import { supportProxyController } from "../controllers/v2/support-proxy";
 import { agentSignupController } from "../controllers/v2/agent-signup";
 import {
   agentSignupConfirmController,
@@ -544,6 +545,18 @@ v2Router.delete(
 v2Router.post(
   "/browser/webhook/destroyed",
   wrap(browserWebhookDestroyedController),
+);
+
+// Support agent proxy — forwards to the support-agent service.
+v2Router.post(
+  "/support/ask",
+  authMiddleware(RateLimiterMode.SupportAsk),
+  wrap(supportProxyController),
+);
+v2Router.post(
+  "/support/docs-search",
+  authMiddleware(RateLimiterMode.SupportDocsSearch),
+  wrap(supportProxyController),
 );
 
 // Agent signup routes (public, no auth required — rate limiting is handled inside the controller)
