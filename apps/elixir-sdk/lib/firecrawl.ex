@@ -901,6 +901,111 @@ defmodule Firecrawl do
   end
 
 
+  @parse_file_schema NimbleOptions.new!([
+    block_ads: [type: :boolean, doc: "Enable ad and cookie popup blocking."],
+    exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
+    formats: [type: {:list, :any}, doc: "Output formats supported for `/parse` uploads. Browser-rendering formats and change tracking are not supported."],
+    headers: [type: :any, doc: "Headers to send when additional network requests are required."],
+    include_tags: [type: {:list, :string}, doc: "Tags to include in the output."],
+    integration: [type: :string, doc: "Optional integration identifier."],
+    only_main_content: [type: :boolean, doc: "Only return the main content of the page excluding headers, navs, footers, etc."],
+    origin: [type: :string, doc: "Origin identifier for analytics and logging."],
+    parsers: [type: {:list, :any}, doc: "Controls file parser behavior when relevant (for example PDF parser mode)."],
+    proxy: [type: {:or, [{:in, [:basic, :auto]}, :string]}, doc: "Proxy mode for parse uploads. `/parse` supports only `basic` and `auto`."],
+    remove_base64_images: [type: :boolean, doc: "Remove base64-encoded images from output and keep alt text placeholders."],
+    skip_tls_verification: [type: :boolean, doc: "Skip TLS certificate verification when making requests."],
+    timeout: [type: :integer, doc: "Timeout in milliseconds for the request. Default is 30000 (30 seconds). Maximum is 300000 (300 seconds)."],
+    zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this parse. To enable this feature, please contact help@firecrawl.dev"]
+  ])
+
+  @parse_file_key_mapping %{block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", integration: "integration", only_main_content: "onlyMainContent", origin: "origin", parsers: "parsers", proxy: "proxy", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", timeout: "timeout", zero_data_retention: "zeroDataRetention"}
+
+  @doc """
+  Upload and parse a file
+
+  `POST /parse`
+
+  Sends a `multipart/form-data` request.
+
+  Tag: Scraping
+
+  ## File
+
+  Pass `file` as a keyword list:
+
+    * `:filename` (required) - The filename to send.
+    * `:data` (required) - The file contents as a binary.
+    * `:content_type` (optional) - The MIME type of the file.
+
+  ## Parameters
+
+  Validated by `NimbleOptions`. Pass options as a keyword list with snake_case keys.
+  These are JSON-encoded and sent as the `options` multipart field.
+  See `@parse_file_schema` for the full schema.
+
+  ## Returns
+
+    * `{:ok, %Req.Response{}}` on success
+    * `{:error, exception}` on HTTP or validation failure
+  """
+  @spec parse_file(keyword(), keyword(), keyword()) :: response()
+  def parse_file(file, params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @parse_file_schema) do
+      filename = Keyword.fetch!(file, :filename)
+      data = Keyword.fetch!(file, :data)
+      content_type = Keyword.get(file, :content_type)
+
+      if not is_binary(filename) or filename == "" do
+        raise ArgumentError, "filename cannot be empty"
+      end
+
+      if is_nil(data) do
+        raise ArgumentError, "file data cannot be empty"
+      end
+
+      file_part =
+        case content_type do
+          nil -> {data, filename: filename}
+          ct -> {data, filename: filename, content_type: ct}
+        end
+
+      multipart = [{"options", Jason.encode!(to_body(params, @parse_file_key_mapping))}, {"file", file_part}]
+
+      Req.post(client(opts), url: "/parse", form_multipart: multipart)
+    end
+  end
+
+
+  @doc """
+  Bang variant of `parse_file`. Raises on error.
+  """
+  @spec parse_file!(keyword(), keyword(), keyword()) :: Req.Response.t()
+  def parse_file!(file, params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @parse_file_schema)
+    filename = Keyword.fetch!(file, :filename)
+    data = Keyword.fetch!(file, :data)
+    content_type = Keyword.get(file, :content_type)
+
+    if not is_binary(filename) or filename == "" do
+      raise ArgumentError, "filename cannot be empty"
+    end
+
+    if is_nil(data) do
+      raise ArgumentError, "file data cannot be empty"
+    end
+
+    file_part =
+      case content_type do
+        nil -> {data, filename: filename}
+        ct -> {data, filename: filename, content_type: ct}
+      end
+
+    multipart = [{"options", Jason.encode!(to_body(params, @parse_file_key_mapping))}, {"file", file_part}]
+
+    Req.post!(client(opts), url: "/parse", form_multipart: multipart)
+  end
+
+
   @scrape_and_extract_from_url_schema NimbleOptions.new!([
     url: [type: :string, required: true, doc: "The URL to scrape"],
     actions: [type: {:list, :any}, doc: "Actions to perform on the page before grabbing the content"],

@@ -124,6 +124,37 @@ defmodule FirecrawlTest do
       "Expected connection error, got validation error: #{inspect(err)}"
   end
 
+  test "parse_file raises ArgumentError when filename is empty" do
+    Application.put_env(:firecrawl, :api_key, "test-key")
+    on_exit(fn -> Application.delete_env(:firecrawl, :api_key) end)
+
+    assert_raise ArgumentError, ~r/filename cannot be empty/, fn ->
+      Firecrawl.parse_file([filename: "", data: "x"])
+    end
+  end
+
+  test "parse_file raises ArgumentError when data is nil" do
+    Application.put_env(:firecrawl, :api_key, "test-key")
+    on_exit(fn -> Application.delete_env(:firecrawl, :api_key) end)
+
+    assert_raise ArgumentError, ~r/file data cannot be empty/, fn ->
+      Firecrawl.parse_file([filename: "doc.pdf", data: nil])
+    end
+  end
+
+  test "parse_file rejects unknown options" do
+    Application.put_env(:firecrawl, :api_key, "test-key")
+    on_exit(fn -> Application.delete_env(:firecrawl, :api_key) end)
+
+    assert {:error, %NimbleOptions.ValidationError{message: msg}} =
+             Firecrawl.parse_file(
+               [filename: "doc.pdf", data: "x"],
+               typo_option: true
+             )
+
+    assert msg =~ "unknown options"
+  end
+
   test "non-bang returns {:error, %Firecrawl.Error{}} for API errors" do
     adapter = fn request ->
       resp = Req.Response.new(
@@ -199,7 +230,13 @@ defmodule FirecrawlTest do
       {:get_queue_status, 0},
       {:get_queue_status!, 0},
       {:cancel_crawl, 1},
-      {:cancel_crawl!, 1}
+      {:cancel_crawl!, 1},
+      {:parse_file, 1},
+      {:parse_file, 2},
+      {:parse_file, 3},
+      {:parse_file!, 1},
+      {:parse_file!, 2},
+      {:parse_file!, 3}
     ]
 
     for {name, arity} <- expected do
