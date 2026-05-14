@@ -1,13 +1,15 @@
 import gitDiff from "git-diff";
 import parseDiff from "parse-diff";
 
-type MonitoringDiffResult =
+type MonitorMarkdownDiffResult =
   | {
+      kind: "markdown";
       status: "same";
       text?: undefined;
       json?: undefined;
     }
   | {
+      kind: "markdown";
       status: "changed";
       text: string;
       json: {
@@ -31,6 +33,16 @@ type MonitoringDiffResult =
       };
     };
 
+type MonitorJsonDiffResult =
+  | { kind: "json"; status: "same"; json?: undefined }
+  | {
+      kind: "json";
+      status: "changed";
+      json: Record<string, { previous: unknown; current: unknown }>;
+    };
+
+type MonitoringDiffResult = MonitorMarkdownDiffResult;
+
 function normalizeMarkdownForChangeTracking(markdown: string): string {
   return [...markdown.replace(/\s+/g, "").replace(/\[iframe\]\(.+?\)/g, "")]
     .sort()
@@ -45,7 +57,7 @@ export function diffMonitorMarkdown(
     normalizeMarkdownForChangeTracking(previousMarkdown) ===
     normalizeMarkdownForChangeTracking(currentMarkdown)
   ) {
-    return { status: "same" };
+    return { kind: "markdown", status: "same" };
   }
 
   const text = gitDiff(previousMarkdown, currentMarkdown, {
@@ -55,6 +67,7 @@ export function diffMonitorMarkdown(
   const structured = parseDiff(text);
 
   return {
+    kind: "markdown",
     status: "changed",
     text,
     json: {
@@ -102,4 +115,131 @@ export function diffMonitorMarkdown(
       })),
     },
   };
+}
+
+function normalizeJsonValue(value: unknown): unknown {
+  if (typeof value === "string") return value.normalize("NFC");
+  return value;
+}
+
+function jsonValuesEqual(a: unknown, b: unknown): boolean {
+  const na = normalizeJsonValue(a);
+  const nb = normalizeJsonValue(b);
+  if (na === nb) return true;
+  if (typeof na !== typeof nb) return false;
+  if (na && nb && typeof na === "object") {
+    return JSON.stringify(na) === JSON.stringify(nb);
+  }
+  return false;
+}
+
+/**
+ * Diff two JSON snapshots (current vs previous scrape `doc.json`) for a
+ * monitor. Returns `same` if every field is unchanged after NFC
+ * normalization, otherwise `changed` with a per-field {previous, current}
+ * map containing only the fields that differ.
+ */
+export function diffMonitorJson(
+  previous: Record<string, unknown> | undefined,
+  current: Record<string, unknown> | undefined,
+): MonitorJsonDiffResult {
+  const prev = previous ?? {};
+  const curr = current ?? {};
+  const keys = new Set([...Object.keys(prev), ...Object.keys(curr)]);
+  const diff: Record<string, { previous: unknown; current: unknown }> = {};
+
+  for (const key of keys) {
+    if (!jsonValuesEqual(prev[key], curr[key])) {
+      diff[key] = { previous: prev[key], current: curr[key] };
+    }
+  }
+
+  if (Object.keys(diff).length === 0) {
+    return { kind: "json", status: "same" };
+  }
+  return { kind: "json", status: "changed", json: diff };
+}
+
+/**
+ * True iff the monitor's scrapeOptions.formats requests a git-diff style
+ * markdown diff via a `{type:"changeTracking", modes:[...,"git-diff",...]}`
+ * format. Plain `"markdown"` does not count — that's the default scrape
+ * output and the markdown-diff path runs whenever JSON extraction wasn't
+ * requested.
+ */
+export function formatsRequestGitDiff(formats: unknown): boolean {
+  if (!Array.isArray(formats)) return false;
+  for (const entry of formats) {
+    if (entry && typeof entry === "object") {
+      const obj = entry as { type?: unknown; modes?: unknown };
+      if (obj.type === "changeTracking") {
+        const modes = Array.isArray(obj.modes) ? obj.modes : [];
+        if (modes.includes("git-diff")) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * True iff the monitor's scrapeOptions.formats requests JSON extraction —
+ * either as a plain `{type:"json"}` format or as a change-tracking format
+ * with `"json"` in its modes.
+ */
+export function formatsRequestJsonExtraction(formats: unknown): boolean {
+  if (!Array.isArray(formats)) return false;
+  for (const entry of formats) {
+    if (typeof entry === "string" && entry === "json") return true;
+    if (entry && typeof entry === "object") {
+      const obj = entry as { type?: unknown; modes?: unknown };
+      if (obj.type === "json") return true;
+      if (obj.type === "changeTracking") {
+        const modes = Array.isArray(obj.modes) ? obj.modes : [];
+        if (modes.includes("json")) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Collapse monitor-level format shorthand into what the scrape engine
+ * understands. Today the runner owns history; we always want the scrape to
+ * return current values via the plain `{type:"json"}` format. A
+ * `{type:"changeTracking", modes:["json"], schema, prompt}` entry becomes
+ * `{type:"json", schema, prompt}`; if the user asked for `git-diff` mode in
+ * addition, that mode is dropped (markdown is already requested elsewhere).
+ */
+export function normalizeMonitorFormats(formats: unknown): unknown[] {
+  if (!Array.isArray(formats)) return [];
+  const out: unknown[] = [];
+  for (const entry of formats) {
+    if (
+      entry &&
+      typeof entry === "object" &&
+      (entry as { type?: unknown }).type === "changeTracking"
+    ) {
+      const obj = entry as {
+        type: "changeTracking";
+        modes?: unknown;
+        schema?: unknown;
+        prompt?: unknown;
+        tag?: unknown;
+      };
+      const modes = Array.isArray(obj.modes) ? obj.modes : [];
+      if (modes.includes("json")) {
+        out.push({
+          type: "json",
+          ...(typeof obj.prompt === "string" ? { prompt: obj.prompt } : {}),
+          ...(obj.schema && typeof obj.schema === "object"
+            ? { schema: obj.schema }
+            : {}),
+        });
+      }
+      // git-diff mode is implicit via the markdown format already added.
+      continue;
+    }
+    out.push(entry);
+  }
+  return out;
 }
