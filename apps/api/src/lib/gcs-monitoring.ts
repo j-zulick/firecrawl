@@ -85,15 +85,26 @@ export async function getMonitorDiffArtifact(
   const bucket = storage.bucket(config.GCS_BUCKET_NAME);
   try {
     const [contents] = await bucket.file(key).download();
-    const parsed = JSON.parse(
-      contents.toString(),
-    ) as Partial<MonitorDiffArtifact>;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(contents.toString());
+    } catch {
+      // Corrupt or truncated artifact — surface as "no diff" instead of
+      // letting JSON.parse throw and break the entire check response.
+      return null;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      // An unexpected payload shape (e.g. number, array, null) was written
+      // here; treat as missing rather than risk reading kind off a non-object.
+      return null;
+    }
+    const asPartial = parsed as Partial<MonitorDiffArtifact>;
     // Backwards compat: historical artifacts predate the `kind` field and
     // are always markdown.
-    if (!parsed.kind) {
-      return { ...(parsed as any), kind: "markdown" } as MonitorDiffArtifact;
+    if (!asPartial.kind) {
+      return { ...(asPartial as any), kind: "markdown" } as MonitorDiffArtifact;
     }
-    return parsed as MonitorDiffArtifact;
+    return asPartial as MonitorDiffArtifact;
   } catch (error) {
     const maybeGcsError = error as { code?: number; statusCode?: number };
     if (maybeGcsError.code === 404 || maybeGcsError.statusCode === 404) {

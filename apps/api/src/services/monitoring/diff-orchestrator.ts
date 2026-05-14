@@ -142,7 +142,11 @@ export async function computeAndPersistPageDiff(params: {
   const previousMarkdown = previousDoc?.markdown;
   const currentMarkdown = doc?.markdown;
 
-  if (!previousMarkdown || !currentMarkdown) {
+  // Only treat genuinely missing markdown as the fallback "changed" case.
+  // An empty string is a valid scrape result (e.g. a page that renders no
+  // textual content) and should still flow through diffMonitorMarkdown so
+  // we can correctly report "same" when both runs returned "".
+  if (previousMarkdown == null || currentMarkdown == null) {
     return {
       status: "changed",
       diffGcsKey: null,

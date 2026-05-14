@@ -128,7 +128,32 @@ function jsonValuesEqual(a: unknown, b: unknown): boolean {
   if (na === nb) return true;
   if (typeof na !== typeof nb) return false;
   if (na && nb && typeof na === "object") {
-    return JSON.stringify(na) === JSON.stringify(nb);
+    // Deep, key-order-independent equality. Using JSON.stringify here would
+    // report a spurious diff whenever the LLM returned the same fields in a
+    // different order between runs.
+    if (Array.isArray(na) || Array.isArray(nb)) {
+      if (!Array.isArray(na) || !Array.isArray(nb)) return false;
+      if (na.length !== nb.length) return false;
+      for (let i = 0; i < na.length; i++) {
+        if (!jsonValuesEqual(na[i], nb[i])) return false;
+      }
+      return true;
+    }
+    const aKeys = Object.keys(na as Record<string, unknown>);
+    const bKeys = Object.keys(nb as Record<string, unknown>);
+    if (aKeys.length !== bKeys.length) return false;
+    for (const k of aKeys) {
+      if (!Object.prototype.hasOwnProperty.call(nb, k)) return false;
+      if (
+        !jsonValuesEqual(
+          (na as Record<string, unknown>)[k],
+          (nb as Record<string, unknown>)[k],
+        )
+      ) {
+        return false;
+      }
+    }
+    return true;
   }
   return false;
 }
