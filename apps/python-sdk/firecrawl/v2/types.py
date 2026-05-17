@@ -931,6 +931,28 @@ class MonitorCheck(BaseModel):
     updated_at: str = Field(alias="updatedAt")
 
 
+class MonitorPageDiff(BaseModel):
+    """Diff payload returned alongside a monitor page.
+
+    Markdown-only monitors populate both `text` (unified diff) and `json`
+    (the parseDiff AST). JSON-extraction monitors populate `json` only,
+    where `json` is the per-field `{previous, current}` map. Mixed-mode
+    monitors (JSON + git-diff) populate both `json` (field diff) and
+    `text` (markdown sidecar).
+    """
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    text: Optional[str] = None
+    json: Optional[Any] = None  # markdown→parseDiff AST | json→field diff
+
+
+class MonitorPageSnapshot(BaseModel):
+    """Current JSON extraction at this run. JSON / mixed mode only."""
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    json: Optional[Dict[str, Any]] = None
+
+
 class MonitorCheckPage(BaseModel):
     model_config = {"populate_by_name": True, "extra": "allow"}
 
@@ -943,7 +965,8 @@ class MonitorCheckPage(BaseModel):
     status_code: Optional[int] = Field(default=None, alias="statusCode")
     error: Optional[str] = None
     metadata: Optional[Any] = None
-    diff: Optional[Any] = None
+    diff: Optional[MonitorPageDiff] = None
+    snapshot: Optional[MonitorPageSnapshot] = None
     created_at: str = Field(alias="createdAt")
 
 
