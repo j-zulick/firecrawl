@@ -41,7 +41,12 @@ export interface ScreenshotFormat {
 export interface ChangeTrackingFormat extends Format {
   type: "changeTracking";
   modes: ("git-diff" | "json")[];
-  schema?: Record<string, unknown>;
+  /**
+   * Either a JSON Schema object or a Zod schema. Zod schemas are
+   * auto-converted to JSON Schema by the SDK before being sent — see
+   * `utils/validation.ts`.
+   */
+  schema?: Record<string, unknown> | ZodTypeAny;
   prompt?: string;
   tag?: string;
 }
@@ -631,8 +636,21 @@ export interface MapOptions {
   location?: LocationConfig;
 }
 
+/**
+ * Schedule for a monitor.
+ *
+ * On create/update, provide exactly one of `cron` or `text`:
+ *  - `cron`: a 5-field cron expression (e.g. `"*\u002F30 * * * *"`).
+ *  - `text`: a natural-language schedule (e.g. `"every 30 minutes"`,
+ *    `"hourly"`, `"daily at 9:00"`). Firecrawl normalizes this to a cron
+ *    expression server-side.
+ *
+ * On read, the API always returns the normalized `cron` value, so `cron`
+ * is populated in responses even when the monitor was created with `text`.
+ */
 export interface MonitorSchedule {
-  cron: string;
+  cron?: string;
+  text?: string;
   timezone?: string;
 }
 

@@ -118,7 +118,29 @@ export function diffMonitorMarkdown(
 }
 
 function normalizeJsonValue(value: unknown): unknown {
-  if (typeof value === "string") return value.normalize("NFC");
+  if (typeof value === "string") {
+    // For JSON-extraction monitor diffs we treat strings as semantically
+    // equal when they differ only in whitespace. LLM extractions are
+    // routinely inconsistent about incidental whitespace between runs
+    // — extra spaces, trailing newlines, NBSP (U+00A0), BOM, zero-width
+    // characters from HTML rendering — and reporting those as changes
+    // drowns out the signal from real content changes (price, headline,
+    // status flag, etc.). Users who need whitespace fidelity should
+    // monitor markdown, not JSON.
+    //
+    // Steps:
+    //   1. NFC normalize so `é` and `e\u0301` compare equal.
+    //   2. Strip zero-width chars that `\s` doesn't match (ZWSP, ZWNJ,
+    //      ZWJ, BOM).
+    //   3. Collapse every run of whitespace (incl. \n, \t, NBSP) to a
+    //      single space.
+    //   4. Trim.
+    return value
+      .normalize("NFC")
+      .replace(/[\u200b-\u200d\ufeff]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
   return value;
 }
 

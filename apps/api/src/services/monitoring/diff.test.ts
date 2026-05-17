@@ -137,6 +137,53 @@ describe("diffMonitorJson", () => {
     });
   });
 
+  it("ignores whitespace-only differences in string values", () => {
+    // Regression: LLM extractions of the same content often differ only
+    // in incidental whitespace (extra spaces, trailing newlines, NBSP
+    // from HTML rendering, etc.). Those shouldn't be reported as field
+    // changes — they drown out real signal.
+    const previous = {
+      headline: "Power AI agents with  clean web data",
+      cta: "Start for free\n",
+      // Non-breaking space (U+00A0) instead of a regular space — common
+      // when scraping rendered HTML.
+      subhead: "The API\u00a0to scrape the web",
+      // BOM at the start of the string.
+      tagline: "\ufeffNo more brittle scrapers",
+    };
+    const current = {
+      headline: "Power AI agents with clean web data",
+      cta: "Start for free",
+      subhead: "The API to scrape the web",
+      tagline: "No more brittle scrapers",
+    };
+
+    expect(diffMonitorJson(previous, current)).toEqual({
+      kind: "json",
+      status: "same",
+    });
+  });
+
+  it("still detects real content changes after whitespace normalization", () => {
+    // Sanity check: the whitespace normalization shouldn't make every
+    // string look equal.
+    expect(
+      diffMonitorJson(
+        { headline: "Power AI agents with clean web data" },
+        { headline: "Power AI agents with structured web data" },
+      ),
+    ).toEqual({
+      kind: "json",
+      status: "changed",
+      json: {
+        headline: {
+          previous: "Power AI agents with clean web data",
+          current: "Power AI agents with structured web data",
+        },
+      },
+    });
+  });
+
   it("handles undefined inputs as empty objects", () => {
     expect(diffMonitorJson(undefined, undefined)).toEqual({
       kind: "json",
