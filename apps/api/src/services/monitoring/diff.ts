@@ -158,11 +158,64 @@ function jsonValuesEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function joinKey(parent: string, key: string): string {
+  return parent ? `${parent}.${key}` : key;
+}
+
+function joinIndex(parent: string, index: number): string {
+  return `${parent}[${index}]`;
+}
+
+/**
+ * Walk two JSON subtrees in parallel and append a `{previous, current}`
+ * entry to `out` for every leaf-level difference. Keys in `out` are
+ * dotted/bracketed JSON paths (e.g. `plans[0].price`, `metadata.title`).
+ *
+ * When both values at a node are objects (or both arrays) we recurse so
+ * unchanged sibling fields aren't reported as part of the diff. When the
+ * types diverge (object vs primitive, array vs null, …) we record the
+ * whole subtree as a single change at the current path — splitting it
+ * further would be lossy/misleading.
+ */
+function collectJsonFieldDiffs(
+  prev: unknown,
+  curr: unknown,
+  path: string,
+  out: Record<string, { previous: unknown; current: unknown }>,
+): void {
+  if (jsonValuesEqual(prev, curr)) return;
+
+  if (isPlainObject(prev) && isPlainObject(curr)) {
+    const keys = new Set([...Object.keys(prev), ...Object.keys(curr)]);
+    for (const key of keys) {
+      collectJsonFieldDiffs(prev[key], curr[key], joinKey(path, key), out);
+    }
+    return;
+  }
+
+  if (Array.isArray(prev) && Array.isArray(curr)) {
+    const len = Math.max(prev.length, curr.length);
+    for (let i = 0; i < len; i++) {
+      collectJsonFieldDiffs(prev[i], curr[i], joinIndex(path, i), out);
+    }
+    return;
+  }
+
+  out[path] = { previous: prev, current: curr };
+}
+
 /**
  * Diff two JSON snapshots (current vs previous scrape `doc.json`) for a
  * monitor. Returns `same` if every field is unchanged after NFC
- * normalization, otherwise `changed` with a per-field {previous, current}
- * map containing only the fields that differ.
+ * normalization, otherwise `changed` with a per-path `{previous, current}`
+ * map containing only the leaf-level fields that differ. Paths use
+ * dot/bracket notation, e.g. `plans[0].price` or `metadata.title`, so a
+ * single nested mutation doesn't render the entire parent object as
+ * changed in the UI.
  */
 export function diffMonitorJson(
   previous: Record<string, unknown> | undefined,
@@ -174,9 +227,7 @@ export function diffMonitorJson(
   const diff: Record<string, { previous: unknown; current: unknown }> = {};
 
   for (const key of keys) {
-    if (!jsonValuesEqual(prev[key], curr[key])) {
-      diff[key] = { previous: prev[key], current: curr[key] };
-    }
+    collectJsonFieldDiffs(prev[key], curr[key], key, diff);
   }
 
   if (Object.keys(diff).length === 0) {
