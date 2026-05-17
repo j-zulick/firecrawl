@@ -39,7 +39,7 @@
 
 # **🔥 Firecrawl**
 
-**Power AI agents with clean web data.** The API to search, scrape, and interact with the web at scale. Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
+**Search, scrape, and clean the web for AI agents.** The web context API to find sources, extract content, and turn it into clean Markdown or structured data your agents can ship with. Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
 
 _Pst. Hey, you, join our stargazers :)_
 
@@ -700,6 +700,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 **Agents & AI Tools**
 - [Firecrawl Skill](https://docs.firecrawl.dev/sdks/cli)
+- [Firecrawl CLI Skills](https://github.com/firecrawl/cli#agent-skills)
+- [Firecrawl Workflows](https://github.com/firecrawl/firecrawl-workflows)
 - [Firecrawl MCP](https://github.com/mendableai/firecrawl-mcp-server)
 
 **Platforms**

@@ -63,6 +63,12 @@ const configSchema = z.object({
   PREVIEW_TOKEN: z.string().optional(),
   SEARCH_PREVIEW_TOKEN: z.string().optional(),
   SEARCH_SERVICE_API_SECRET: z.string().optional(),
+  SEARCH_FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
+  SEARCH_FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(100),
+
+  // OAuth token introspection
+  OAUTH_INTROSPECT_URL: z.string().optional(),
+  OAUTH_INTROSPECT_SECRET: z.string().optional(),
 
   // Database & Storage
   POSTGRES_HOST: z.string().default("localhost"),
