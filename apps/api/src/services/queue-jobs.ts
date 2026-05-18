@@ -234,7 +234,7 @@ async function addScrapeJobRaw(
   listenable: boolean = false,
 ): Promise<NuQJob<ScrapeJobData> | null> {
   let concurrencyLimited: "yes" | "yes-crawl" | "no" | null = null;
-  let currentActiveConcurrency = 0;
+  let currentActiveConcurrency: number | null = null;
   let maxConcurrency = 0;
 
   // Bypass concurrency limits for self-hosted deployments
@@ -293,6 +293,21 @@ async function addScrapeJobRaw(
     if (concurrencyQueueJobs >= queueLimit) {
       throw new QueueFullError(concurrencyQueueJobs, queueLimit);
     }
+
+    if (currentActiveConcurrency === null) {
+      const now = Date.now();
+      await cleanOldConcurrencyLimitEntries(webScraperOptions.team_id, now);
+      currentActiveConcurrency = (
+        await getConcurrencyLimitActiveJobs(webScraperOptions.team_id, now)
+      ).length;
+    }
+
+    _logger.info("Adding scrape job to concurrency queue", {
+      teamId: webScraperOptions.team_id,
+      maxConcurrency,
+      currentConcurrency: currentActiveConcurrency,
+      jobId,
+    });
 
     if (concurrencyLimited === "yes") {
       // Detect if they hit their concurrent limit
@@ -474,6 +489,7 @@ export async function addScrapeJobs(
     let addToBull: typeof jobsPotentiallyInCQ;
     let addToCQ: typeof jobsPotentiallyInCQ;
     let maxConcurrency = 0;
+    let currentActiveConcurrency: number | null = null;
     let countCanBeDirectlyAdded = 0;
 
     if (isSelfHosted()) {
@@ -487,7 +503,7 @@ export async function addScrapeJobs(
           ?.concurrency ?? 2;
       await cleanOldConcurrencyLimitEntries(teamId, now);
 
-      const currentActiveConcurrency = (
+      currentActiveConcurrency = (
         await getConcurrencyLimitActiveJobs(teamId, now)
       ).length;
 
@@ -508,6 +524,23 @@ export async function addScrapeJobs(
           throw new QueueFullError(currentQueueSize, queueLimit);
         }
       }
+    }
+
+    if (addToCQ.length > 0) {
+      if (currentActiveConcurrency === null) {
+        const now = Date.now();
+        await cleanOldConcurrencyLimitEntries(teamId, now);
+        currentActiveConcurrency = (
+          await getConcurrencyLimitActiveJobs(teamId, now)
+        ).length;
+      }
+
+      _logger.info("Adding scrape jobs to concurrency queue", {
+        teamId,
+        maxConcurrency,
+        currentConcurrency: currentActiveConcurrency,
+        jobsCount: addToCQ.length,
+      });
     }
 
     // equals 2x the max concurrency (only check for non-self-hosted)
