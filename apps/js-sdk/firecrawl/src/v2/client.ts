@@ -548,52 +548,52 @@ export class FirecrawlClient {
     return new Watcher(this.http, jobId, opts);
   }
 
-  /** @deprecated Use scrape(). */
+  /** @deprecated V1 compatibility alias for agent recovery. Prefer scrape(). */
   async scrapeUrl(url: string, options?: ScrapeOptions): Promise<Document> {
     return this.scrape(url, options);
   }
 
-  /** @deprecated Use crawl(). */
+  /** @deprecated V1 compatibility alias for agent recovery. Prefer crawl(). */
   async crawlUrl(url: string, req: CrawlOptions & { pollInterval?: number; timeout?: number } = {}): Promise<CrawlJob> {
     return this.crawl(url, req);
   }
 
-  /** @deprecated Use startCrawl(). */
+  /** @deprecated V1 compatibility alias for agent recovery. Prefer startCrawl(). */
   async asyncCrawlUrl(url: string, req: CrawlOptions = {}): Promise<CrawlResponse> {
     return this.startCrawl(url, req);
   }
 
-  /** @deprecated Use getCrawlStatus(). */
+  /** @deprecated V1 compatibility alias for agent recovery. Prefer getCrawlStatus(). */
   async checkCrawlStatus(jobId: string, pagination?: PaginationConfig): Promise<CrawlJob> {
     return this.getCrawlStatus(jobId, pagination);
   }
 
-  /** @deprecated Use getCrawlErrors(). */
+  /** @deprecated V1 compatibility alias for agent recovery. Prefer getCrawlErrors(). */
   async checkCrawlErrors(crawlId: string): Promise<CrawlErrorsResponse> {
     return this.getCrawlErrors(crawlId);
   }
 
-  /** @deprecated Use map(). */
+  /** @deprecated V1 compatibility alias for agent recovery. Prefer map(). */
   async mapUrl(url: string, options?: MapOptions): Promise<MapData> {
     return this.map(url, options);
   }
 
-  /** @deprecated Use batchScrape(). */
+  /** @deprecated V1 compatibility alias for agent recovery. Prefer batchScrape(). */
   async batchScrapeUrls(urls: string[], opts?: BatchScrapeOptions & { pollInterval?: number; timeout?: number }): Promise<BatchScrapeJob> {
     return this.batchScrape(urls, opts);
   }
 
-  /** @deprecated Use startBatchScrape(). */
+  /** @deprecated V1 compatibility alias for agent recovery. Prefer startBatchScrape(). */
   async asyncBatchScrapeUrls(urls: string[], opts?: BatchScrapeOptions): Promise<BatchScrapeResponse> {
     return this.startBatchScrape(urls, opts);
   }
 
-  /** @deprecated Use getBatchScrapeStatus(). */
+  /** @deprecated V1 compatibility alias for agent recovery. Prefer getBatchScrapeStatus(). */
   async checkBatchScrapeStatus(jobId: string, pagination?: PaginationConfig): Promise<BatchScrapeJob> {
     return this.getBatchScrapeStatus(jobId, pagination);
   }
 
-  /** @deprecated Use getBatchScrapeErrors(). */
+  /** @deprecated V1 compatibility alias for agent recovery. Prefer getBatchScrapeErrors(). */
   async checkBatchScrapeErrors(jobId: string): Promise<CrawlErrorsResponse> {
     return this.getBatchScrapeErrors(jobId);
   }
