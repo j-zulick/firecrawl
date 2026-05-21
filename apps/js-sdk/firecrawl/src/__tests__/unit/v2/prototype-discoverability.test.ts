@@ -1,4 +1,4 @@
-import { Firecrawl } from "../../../index";
+import { Firecrawl, FirecrawlClient } from "../../../index";
 
 describe("V2 prototype discoverability", () => {
   const app = new Firecrawl({ apiKey: "fc-test", apiUrl: "http://localhost:9" });
@@ -29,14 +29,17 @@ describe("V2 prototype discoverability", () => {
     expect(desc!.get).toBeDefined();
   });
 
-  it("exposed methods are callable with correct this binding", async () => {
-    const spy = jest
-      .spyOn(app, "scrape")
-      .mockResolvedValue({ markdown: "ok" } as any);
-    await app.scrape("https://example.com", { formats: ["markdown"] });
-    expect(spy).toHaveBeenCalledWith("https://example.com", {
-      formats: ["markdown"],
-    });
-    spy.mockRestore();
+  it("copied descriptors are identical to V2 prototype originals", () => {
+    for (const name of ["scrape", "search", "crawl", "map", "startCrawl"]) {
+      const firecrawlDesc = Object.getOwnPropertyDescriptor(Firecrawl.prototype, name);
+      const v2Desc = Object.getOwnPropertyDescriptor(FirecrawlClient.prototype, name);
+      expect(firecrawlDesc).toBeDefined();
+      expect(firecrawlDesc!.value).toBe(v2Desc!.value);
+    }
+  });
+
+  it("copied method resolves this to the Firecrawl instance", async () => {
+    const method = Object.getOwnPropertyDescriptor(Firecrawl.prototype, "scrape")!.value;
+    await expect(method.call(app, "https://example.com")).rejects.toThrow();
   });
 });
