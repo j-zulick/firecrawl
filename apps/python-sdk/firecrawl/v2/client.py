@@ -67,13 +67,15 @@ from .methods import browser as browser_module
 from .methods import monitor as monitor_module
 from .watcher import Watcher
 
+# Kwargs that map to ScrapeOptions fields. Used by async crawl normalization
+# to extract scrape kwargs from **kwargs before building CrawlRequest.
+# Does not include "integration" (crawl-level param, not a scrape option).
 _SCRAPE_OPTION_KEYS = frozenset({
     "formats", "headers", "include_tags", "exclude_tags",
     "only_main_content", "timeout", "wait_for", "mobile",
     "parsers", "actions", "location", "skip_tls_verification",
     "remove_base64_images", "fast_mode", "use_mock", "block_ads",
     "proxy", "max_age", "store_in_cache", "lockdown", "profile",
-    "integration",
 })
 
 
@@ -548,6 +550,7 @@ class FirecrawlClient:
         include_tags: Optional[List[str]] = None,
         exclude_tags: Optional[List[str]] = None,
         only_main_content: Optional[bool] = None,
+        timeout: Optional[int] = None,
         wait_for: Optional[int] = None,
         mobile: Optional[bool] = None,
         parsers: Optional[Union[List[str], List[Union[str, PDFParser]]]] = None,
@@ -594,6 +597,7 @@ class FirecrawlClient:
             include_tags: HTML tags to include (convenience kwarg)
             exclude_tags: HTML tags to exclude (convenience kwarg)
             only_main_content: Restrict to main content (convenience kwarg)
+            timeout: Scrape timeout in milliseconds (convenience kwarg)
             wait_for: Wait condition in ms (convenience kwarg)
             mobile: Emulate mobile viewport (convenience kwarg)
             parsers: Parser list (convenience kwarg)
@@ -624,7 +628,8 @@ class FirecrawlClient:
             scrape_kwargs = {k: v for k, v in dict(
                 formats=formats, headers=headers, include_tags=include_tags,
                 exclude_tags=exclude_tags, only_main_content=only_main_content,
-                wait_for=wait_for, mobile=mobile, parsers=parsers, actions=actions,
+                timeout=timeout, wait_for=wait_for, mobile=mobile,
+                parsers=parsers, actions=actions,
                 location=location, skip_tls_verification=skip_tls_verification,
                 remove_base64_images=remove_base64_images, fast_mode=fast_mode,
                 use_mock=use_mock, block_ads=block_ads, proxy=proxy,

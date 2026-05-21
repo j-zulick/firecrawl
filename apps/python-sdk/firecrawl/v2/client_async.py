@@ -186,14 +186,13 @@ class AsyncFirecrawlClient:
         return await async_search.search(self.async_http_client, request)
 
     async def start_crawl(self, url: str, **kwargs) -> CrawlResponse:
-        _crawl_scrape_keys = _SCRAPE_OPTION_KEYS - {"integration"}
         if kwargs.get("scrape_options") is None:
-            scrape_kwargs = {k: kwargs.pop(k) for k in list(kwargs) if k in _crawl_scrape_keys and kwargs[k] is not None}
+            scrape_kwargs = {k: kwargs.pop(k) for k in list(kwargs) if k in _SCRAPE_OPTION_KEYS and kwargs[k] is not None}
             if scrape_kwargs:
                 kwargs["scrape_options"] = ScrapeOptions(**scrape_kwargs)
         else:
             for k in list(kwargs):
-                if k in _crawl_scrape_keys:
+                if k in _SCRAPE_OPTION_KEYS:
                     kwargs.pop(k)
 
         sitemap = kwargs.pop("sitemap", None)

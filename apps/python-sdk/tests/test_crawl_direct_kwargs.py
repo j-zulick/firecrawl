@@ -96,6 +96,38 @@ class TestSyncCrawlDirectKwargs:
         assert captured["scrape_options"] is not None
         assert captured["scrape_options"].only_main_content is True
 
+    def test_start_crawl_accepts_scrape_timeout(self, client, monkeypatch):
+        captured = {}
+
+        def fake_start_crawl(http, request):
+            captured["scrape_options"] = request.scrape_options
+            raise ConnectionError("captured")
+
+        monkeypatch.setattr(crawl_mod, "start_crawl", fake_start_crawl)
+
+        with pytest.raises(ConnectionError):
+            client.start_crawl("https://example.com", timeout=5000)
+
+        assert captured["scrape_options"] is not None
+        assert captured["scrape_options"].timeout == 5000
+
+    def test_crawl_timeout_is_poll_timeout_not_scrape(self, client, monkeypatch):
+        captured = {}
+
+        def fake_crawl(http, request, poll_interval=2, timeout=None, request_timeout=None):
+            captured["scrape_options"] = request.scrape_options
+            captured["poll_timeout"] = timeout
+            raise ConnectionError("captured")
+
+        monkeypatch.setattr(crawl_mod, "crawl", fake_crawl)
+
+        with pytest.raises(ConnectionError):
+            client.crawl("https://example.com", timeout=60, formats=["markdown"])
+
+        assert captured["poll_timeout"] == 60
+        assert captured["scrape_options"] is not None
+        assert captured["scrape_options"].timeout is None
+
 
 class TestAsyncCrawlDirectKwargs:
     def test_async_direct_kwargs_build_scrape_options(self, async_client, monkeypatch):
