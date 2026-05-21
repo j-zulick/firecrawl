@@ -280,6 +280,46 @@ class FirecrawlClient:
         """Deprecated alias for stop_interaction()."""
         return self.stop_interaction(job_id)
 
+    def scrape_url(self, url: str, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer scrape()."""
+        return self.scrape(url, **kwargs)
+
+    def crawl_url(self, url: str, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer crawl()."""
+        return self.crawl(url, **kwargs)
+
+    def map_url(self, url: str, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer map()."""
+        return self.map(url, **kwargs)
+
+    def async_crawl_url(self, url: str, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer start_crawl()."""
+        return self.start_crawl(url, **kwargs)
+
+    def check_crawl_status(self, id: str, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer get_crawl_status()."""
+        return self.get_crawl_status(id, **kwargs)
+
+    def check_crawl_errors(self, id: str):
+        """V1 compatibility alias for agent recovery. Prefer get_crawl_errors()."""
+        return self.get_crawl_errors(id)
+
+    def batch_scrape_urls(self, urls, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer batch_scrape()."""
+        return self.batch_scrape(urls, **kwargs)
+
+    def async_batch_scrape_urls(self, urls, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer start_batch_scrape()."""
+        return self.start_batch_scrape(urls, **kwargs)
+
+    def check_batch_scrape_status(self, id: str, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer get_batch_scrape_status()."""
+        return self.get_batch_scrape_status(id, **kwargs)
+
+    def check_batch_scrape_errors(self, id: str):
+        """V1 compatibility alias for agent recovery. Prefer get_batch_scrape_errors()."""
+        return self.get_batch_scrape_errors(id)
+
     def parse(
         self,
         file: Union[str, Path, bytes, bytearray, BinaryIO],
