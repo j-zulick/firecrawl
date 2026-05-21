@@ -280,6 +280,46 @@ class FirecrawlClient:
         """Deprecated alias for stop_interaction()."""
         return self.stop_interaction(job_id)
 
+    def scrape_url(self, url: str, **kwargs):
+        """Deprecated v1 alias for scrape()."""
+        return self.scrape(url, **kwargs)
+
+    def crawl_url(self, url: str, **kwargs):
+        """Deprecated v1 alias for crawl()."""
+        return self.crawl(url, **kwargs)
+
+    def map_url(self, url: str, **kwargs):
+        """Deprecated v1 alias for map()."""
+        return self.map(url, **kwargs)
+
+    def async_crawl_url(self, url: str, **kwargs):
+        """Deprecated v1 alias for start_crawl()."""
+        return self.start_crawl(url, **kwargs)
+
+    def check_crawl_status(self, crawl_id: str, **kwargs):
+        """Deprecated v1 alias for get_crawl_status()."""
+        return self.get_crawl_status(crawl_id, **kwargs)
+
+    def check_crawl_errors(self, crawl_id: str):
+        """Deprecated v1 alias for get_crawl_errors()."""
+        return self.get_crawl_errors(crawl_id)
+
+    def batch_scrape_urls(self, urls, **kwargs):
+        """Deprecated v1 alias for batch_scrape()."""
+        return self.batch_scrape(urls, **kwargs)
+
+    def async_batch_scrape_urls(self, urls, **kwargs):
+        """Deprecated v1 alias for start_batch_scrape()."""
+        return self.start_batch_scrape(urls, **kwargs)
+
+    def check_batch_scrape_status(self, job_id: str, **kwargs):
+        """Deprecated v1 alias for get_batch_scrape_status()."""
+        return self.get_batch_scrape_status(job_id, **kwargs)
+
+    def check_batch_scrape_errors(self, job_id: str):
+        """Deprecated v1 alias for get_batch_scrape_errors()."""
+        return self.get_batch_scrape_errors(job_id)
+
     def parse(
         self,
         file: Union[str, Path, bytes, bytearray, BinaryIO],

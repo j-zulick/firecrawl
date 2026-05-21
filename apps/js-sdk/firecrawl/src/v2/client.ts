@@ -547,6 +547,56 @@ export class FirecrawlClient {
   watcher(jobId: string, opts: WatcherOptions = {}): Watcher {
     return new Watcher(this.http, jobId, opts);
   }
+
+  /** @deprecated Use scrape(). */
+  async scrapeUrl(url: string, options?: ScrapeOptions): Promise<Document> {
+    return this.scrape(url, options);
+  }
+
+  /** @deprecated Use crawl(). */
+  async crawlUrl(url: string, req: CrawlOptions & { pollInterval?: number; timeout?: number } = {}): Promise<CrawlJob> {
+    return this.crawl(url, req);
+  }
+
+  /** @deprecated Use startCrawl(). */
+  async asyncCrawlUrl(url: string, req: CrawlOptions = {}): Promise<CrawlResponse> {
+    return this.startCrawl(url, req);
+  }
+
+  /** @deprecated Use getCrawlStatus(). */
+  async checkCrawlStatus(jobId: string, pagination?: PaginationConfig): Promise<CrawlJob> {
+    return this.getCrawlStatus(jobId, pagination);
+  }
+
+  /** @deprecated Use getCrawlErrors(). */
+  async checkCrawlErrors(crawlId: string): Promise<CrawlErrorsResponse> {
+    return this.getCrawlErrors(crawlId);
+  }
+
+  /** @deprecated Use map(). */
+  async mapUrl(url: string, options?: MapOptions): Promise<MapData> {
+    return this.map(url, options);
+  }
+
+  /** @deprecated Use batchScrape(). */
+  async batchScrapeUrls(urls: string[], opts?: BatchScrapeOptions & { pollInterval?: number; timeout?: number }): Promise<BatchScrapeJob> {
+    return this.batchScrape(urls, opts);
+  }
+
+  /** @deprecated Use startBatchScrape(). */
+  async asyncBatchScrapeUrls(urls: string[], opts?: BatchScrapeOptions): Promise<BatchScrapeResponse> {
+    return this.startBatchScrape(urls, opts);
+  }
+
+  /** @deprecated Use getBatchScrapeStatus(). */
+  async checkBatchScrapeStatus(jobId: string, pagination?: PaginationConfig): Promise<BatchScrapeJob> {
+    return this.getBatchScrapeStatus(jobId, pagination);
+  }
+
+  /** @deprecated Use getBatchScrapeErrors(). */
+  async checkBatchScrapeErrors(jobId: string): Promise<CrawlErrorsResponse> {
+    return this.getBatchScrapeErrors(jobId);
+  }
 }
 
 export default FirecrawlClient;
