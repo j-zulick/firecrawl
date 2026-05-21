@@ -296,13 +296,13 @@ class FirecrawlClient:
         """Deprecated v1 alias for start_crawl()."""
         return self.start_crawl(url, **kwargs)
 
-    def check_crawl_status(self, crawl_id: str, **kwargs):
+    def check_crawl_status(self, id: str, **kwargs):
         """Deprecated v1 alias for get_crawl_status()."""
-        return self.get_crawl_status(crawl_id, **kwargs)
+        return self.get_crawl_status(id, **kwargs)
 
-    def check_crawl_errors(self, crawl_id: str):
+    def check_crawl_errors(self, id: str):
         """Deprecated v1 alias for get_crawl_errors()."""
-        return self.get_crawl_errors(crawl_id)
+        return self.get_crawl_errors(id)
 
     def batch_scrape_urls(self, urls, **kwargs):
         """Deprecated v1 alias for batch_scrape()."""
@@ -312,13 +312,13 @@ class FirecrawlClient:
         """Deprecated v1 alias for start_batch_scrape()."""
         return self.start_batch_scrape(urls, **kwargs)
 
-    def check_batch_scrape_status(self, job_id: str, **kwargs):
+    def check_batch_scrape_status(self, id: str, **kwargs):
         """Deprecated v1 alias for get_batch_scrape_status()."""
-        return self.get_batch_scrape_status(job_id, **kwargs)
+        return self.get_batch_scrape_status(id, **kwargs)
 
-    def check_batch_scrape_errors(self, job_id: str):
+    def check_batch_scrape_errors(self, id: str):
         """Deprecated v1 alias for get_batch_scrape_errors()."""
-        return self.get_batch_scrape_errors(job_id)
+        return self.get_batch_scrape_errors(id)
 
     def parse(
         self,
