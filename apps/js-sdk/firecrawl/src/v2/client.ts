@@ -132,7 +132,7 @@ export class FirecrawlClient {
     const opts: FirecrawlClientOptions =
       typeof options === "string" ? { apiKey: options } : options;
 
-    const apiKey = opts.apiKey ?? process.env.FIRECRAWL_API_KEY ?? "";
+    const apiKey = (opts.apiKey ?? process.env.FIRECRAWL_API_KEY ?? "").trim();
     const apiUrl = (opts.apiUrl ?? process.env.FIRECRAWL_API_URL ?? "https://api.firecrawl.dev").replace(/\/$/, "");
 
     if (this.isCloudService(apiUrl) && !apiKey) {
