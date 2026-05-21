@@ -43,5 +43,16 @@ export class Firecrawl extends V2 {
   }
 }
 
+// Copy V2 method descriptors onto Firecrawl.prototype so that
+// Object.getOwnPropertyNames(Object.getPrototypeOf(app)) includes them.
+(function exposeV2MethodsOnTopLevel() {
+  for (const name of Object.getOwnPropertyNames(V2.prototype)) {
+    if (name === "constructor") continue;
+    if (Object.prototype.hasOwnProperty.call(Firecrawl.prototype, name)) continue;
+    const desc = Object.getOwnPropertyDescriptor(V2.prototype, name);
+    if (desc) Object.defineProperty(Firecrawl.prototype, name, desc);
+  }
+})();
+
 export default Firecrawl;
 
