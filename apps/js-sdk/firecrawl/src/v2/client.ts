@@ -110,6 +110,9 @@ export interface FirecrawlClientOptions {
   backoffFactor?: number;
 }
 
+/** Accepts a plain API key string or a full options object. */
+export type FirecrawlClientInput = FirecrawlClientOptions | string;
+
 /**
  * Firecrawl v2 client. Provides typed access to all v2 endpoints and utilities.
  */
@@ -123,11 +126,14 @@ export class FirecrawlClient {
 
   /**
    * Create a v2 client.
-   * @param options Transport configuration (API key, base URL, timeouts, retries).
+   * @param options API key string or transport configuration object.
    */
-  constructor(options: FirecrawlClientOptions = {}) {
-    const apiKey = options.apiKey ?? process.env.FIRECRAWL_API_KEY ?? "";
-    const apiUrl = (options.apiUrl ?? process.env.FIRECRAWL_API_URL ?? "https://api.firecrawl.dev").replace(/\/$/, "");
+  constructor(options: FirecrawlClientInput = {}) {
+    const opts: FirecrawlClientOptions =
+      typeof options === "string" ? { apiKey: options } : options;
+
+    const apiKey = opts.apiKey ?? process.env.FIRECRAWL_API_KEY ?? "";
+    const apiUrl = (opts.apiUrl ?? process.env.FIRECRAWL_API_URL ?? "https://api.firecrawl.dev").replace(/\/$/, "");
 
     if (this.isCloudService(apiUrl) && !apiKey) {
       throw new Error("API key is required for the cloud API. Set FIRECRAWL_API_KEY env or pass apiKey.");
@@ -136,9 +142,9 @@ export class FirecrawlClient {
     this.http = new HttpClient({
       apiKey,
       apiUrl,
-      timeoutMs: options.timeoutMs,
-      maxRetries: options.maxRetries,
-      backoffFactor: options.backoffFactor,
+      timeoutMs: opts.timeoutMs,
+      maxRetries: opts.maxRetries,
+      backoffFactor: opts.backoffFactor,
     });
   }
 
