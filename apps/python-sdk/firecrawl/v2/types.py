@@ -430,6 +430,7 @@ class Format(BaseModel):
 class JsonFormat(Format):
     """Configuration for JSON extraction."""
 
+    type: Literal["json"] = "json"
     prompt: Optional[str] = None
     schema: Optional[Any] = None
 
@@ -437,6 +438,7 @@ class JsonFormat(Format):
 class ChangeTrackingFormat(Format):
     """Configuration for change tracking."""
 
+    type: Literal["change_tracking", "changeTracking"] = "change_tracking"
     modes: List[Literal["git-diff", "json"]]
     schema: Optional[Dict[str, Any]] = None
     prompt: Optional[str] = None
