@@ -438,7 +438,7 @@ class JsonFormat(Format):
 class ChangeTrackingFormat(Format):
     """Configuration for change tracking."""
 
-    type: Literal["change_tracking"] = "change_tracking"
+    type: Literal["change_tracking", "changeTracking"] = "change_tracking"
     modes: List[Literal["git-diff", "json"]]
     schema: Optional[Dict[str, Any]] = None
     prompt: Optional[str] = None
