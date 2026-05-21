@@ -61,6 +61,7 @@ from .methods.aio import agent as async_agent  # type: ignore[attr-defined]
 from .methods.aio import browser as async_browser  # type: ignore[attr-defined]
 from .methods.aio import monitor as async_monitor  # type: ignore[attr-defined]
 
+from .client import _SCRAPE_OPTION_KEYS
 from .watcher_async import AsyncWatcher
 
 class AsyncFirecrawlClient:
@@ -185,6 +186,16 @@ class AsyncFirecrawlClient:
         return await async_search.search(self.async_http_client, request)
 
     async def start_crawl(self, url: str, **kwargs) -> CrawlResponse:
+        _crawl_scrape_keys = _SCRAPE_OPTION_KEYS - {"integration"}
+        if kwargs.get("scrape_options") is None:
+            scrape_kwargs = {k: kwargs.pop(k) for k in list(kwargs) if k in _crawl_scrape_keys and kwargs[k] is not None}
+            if scrape_kwargs:
+                kwargs["scrape_options"] = ScrapeOptions(**scrape_kwargs)
+        else:
+            for k in list(kwargs):
+                if k in _crawl_scrape_keys:
+                    kwargs.pop(k)
+
         sitemap = kwargs.pop("sitemap", None)
         ignore_sitemap = kwargs.pop("ignore_sitemap", None)
         if sitemap is None and ignore_sitemap is not None:
