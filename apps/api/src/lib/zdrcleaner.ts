@@ -6,7 +6,7 @@ import { config } from "../config";
 
 async function sendHeartbeat() {
   if (config.ZDRCLEANER_HEARTBEAT_URL) {
-    await fetch(config.ZDRCLEANER_HEARTBEAT_URL).catch(() => {});
+    fetch(config.ZDRCLEANER_HEARTBEAT_URL).catch(() => {});
   }
 }
 
