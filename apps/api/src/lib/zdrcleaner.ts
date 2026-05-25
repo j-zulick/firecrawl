@@ -14,7 +14,6 @@ export async function zdrcleaner() {
   const logger = _logger.child({
     module: "zdrcleaner",
     method: "zdrcleaner",
-    canonicalLog: "zdrcleaner",
   });
 
   const start = Date.now();
@@ -65,7 +64,10 @@ export async function zdrcleaner() {
           .flatMap(x => x.ids)
           .map(async blob_id => {
             try {
-              await removeJobFromGCS(blob_id);
+              await removeJobFromGCS(
+                blob_id,
+                logger.child({ zeroDataRetention: true }),
+              );
               successfulBlobs.add(blob_id);
             } catch (error) {
               deleteErrors.push(error);

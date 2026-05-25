@@ -438,7 +438,10 @@ export async function getJobFromGCS(jobId: string): Promise<Document[] | null> {
   });
 }
 
-export async function removeJobFromGCS(jobId: string): Promise<void> {
+export async function removeJobFromGCS(
+  jobId: string,
+  _logger: Logger = logger,
+): Promise<void> {
   return await withSpan("firecrawl-gcs-remove-job", async span => {
     setSpanAttributes(span, {
       "gcs.operation": "remove_job",
@@ -468,7 +471,7 @@ export async function removeJobFromGCS(jobId: string): Promise<void> {
         return;
       }
 
-      logger.error(`Error removing job from GCS`, {
+      _logger.error(`Error removing job from GCS`, {
         error,
         jobId,
         scrapeId: jobId,
