@@ -2,6 +2,13 @@ import "dotenv/config";
 import { supabase_service } from "../services/supabase";
 import { removeJobFromGCS } from "./gcs-jobs";
 import { logger as _logger } from "./logger";
+import { config } from "../config";
+
+async function sendHeartbeat() {
+  if (config.ZDRCLEANER_HEARTBEAT_URL) {
+    await fetch(config.ZDRCLEANER_HEARTBEAT_URL).catch(() => {});
+  }
+}
 
 export async function zdrcleaner() {
   const logger = _logger.child({
@@ -36,6 +43,7 @@ export async function zdrcleaner() {
         success: true,
         timeMs: Date.now() - start,
       });
+      await sendHeartbeat();
       await new Promise(resolve => setTimeout(resolve, 1000));
       return;
     }
@@ -96,6 +104,7 @@ export async function zdrcleaner() {
       }
     }
 
+    await sendHeartbeat();
     if (deleteErrors.length > 0 || updateErrors.length > 0) {
       logger.warn("zdrcleaner batch completed with errors", {
         canonicalLog: "zdrcleaner",

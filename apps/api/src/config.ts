@@ -283,6 +283,8 @@ const configSchema = z.object({
   AVGRAB_SERVICE_URL: z.string().optional(),
 
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
+
+  ZDRCLEANER_HEARTBEAT_URL: z.string().optional(),
 });
 
 export const config = configSchema.parse(process.env);
