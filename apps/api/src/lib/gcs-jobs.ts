@@ -24,6 +24,7 @@ const storageManualRetries = new Storage({
   retryOptions: {
     autoRetry: false,
     maxRetries: 0,
+    retryableErrorFn: () => false,
   },
 });
 
