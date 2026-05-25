@@ -35,7 +35,7 @@ async function cleanUpRequests(specificTeamId: string | null, _logger: Logger) {
       );
 
       if (error) {
-        logger.error("Error calling get_zdr_cleanup_batch RPC", { error });
+        logger.error("Error calling get_zdr_cleanup_batch RPC", { error, i });
         throw error;
       }
 
@@ -94,21 +94,25 @@ async function cleanUpRequests(specificTeamId: string | null, _logger: Logger) {
   }
 
   if (fullyCleanedRequests.length > 0) {
-    try {
-      await supabase_service
-        .from("requests")
-        .update({
-          dr_clean_by: null,
-        })
-        .in("id", fullyCleanedRequests)
-        .throwOnError();
+    // Process in batches of 100 to deal with URL limits on PostgREST
+    for (let i = 0; i < fullyCleanedRequests.length; i += 100) {
+      const batch = fullyCleanedRequests.slice(i, i + 100);
+      try {
+        await supabase_service
+          .from("requests")
+          .update({
+            dr_clean_by: null,
+          })
+          .in("id", batch)
+          .throwOnError();
 
-      logger.info(`Cleaned up ${fullyCleanedRequests.length} requests`);
-    } catch (error) {
-      logger.error(`Error clearing dr_clean_by on requests`, {
-        error,
-        requestCount: fullyCleanedRequests.length,
-      });
+        logger.info(`Cleaned up ${fullyCleanedRequests.length} requests`);
+      } catch (error) {
+        logger.error(`Error clearing dr_clean_by on requests`, {
+          error,
+          requestCount: fullyCleanedRequests.length,
+        });
+      }
     }
   }
 }
