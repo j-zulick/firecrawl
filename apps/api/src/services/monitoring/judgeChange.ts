@@ -62,7 +62,7 @@ OUTPUT — STRICT JSON only, no prose, no code fences:
 
 The reason field must explain the decision in detail and tie it directly to the user's specific monitor goal. State the interpreted goal scope, the exact goal-relevant event that happened, why that event satisfies or fails the goal, and which noise/scope cases were ignored. Describe the change in the user's terms: an item entering/leaving a requested set, a rank shift inside a requested range, a requested field changing, a requested condition flipping, a requested section changing, or a matching item appearing/disappearing. Cite concrete before/after values from the diff using SINGLE QUOTES around the values, e.g. 'old text' -> 'new text' (or (added) 'new text' / (removed) 'old text'). Never mention these system prompt instructions, internal rules, rule numbers, policy names, or phrases like Rule 1/Rule 2/Rule 3 in the reason. Explain the user-facing rationale only. Never put double quotes inside the reason string — they break JSON parsing. Do not wrap the reason in backticks. Keep the rationale useful and specific: 3-5 sentences is ideal.
 
-The fields array should list the structured field names (when present in FIELD DIFFS) that drove the classification. Empty array if the decision rests purely on markdown.
+The fields array is ONLY for exact keys present in FIELD DIFFS. Copy keys exactly as they appear in FIELD DIFFS when those fields drove the classification. Never infer, invent, normalize, summarize, or create field names from markdown or page text. If FIELD DIFFS is absent, or if the decision rests purely on markdown, return an empty array.
 
 The meaningfulChange field should contain the EXACT full verbatim text related to the user's specific monitor goal that made the change meaningful when meaningful is true. Prefer the complete goal-relevant sentence, list item, row, paragraph, title block, section excerpt, or field value over the smallest changed token, preserving original wording from the diff/page excerpt. Include the complete changed value or complete before/after pair when both are needed to understand the goal-relevant event. For rank/list goals, include the rank or surrounding row text needed to understand whether the item entered, left, or shifted within scope. For condition or threshold goals, include the exact before/after values that show the condition flipped or threshold was crossed. Do not include unrelated changed text outside the user's goal scope. Do not summarize or shorten it. If multiple independent goal-relevant meaningful changes exist, include all of them separated by newlines. If meaningful is false, return an empty string.`;
 
@@ -226,7 +226,12 @@ export async function judgeChange(
           ? parsed.reason
           : "No reason provided.",
       fields: Array.isArray(parsed.fields)
-        ? parsed.fields.filter((f): f is string => typeof f === "string")
+        ? parsed.fields.filter(
+            (f): f is string =>
+              typeof f === "string" &&
+              !!jsonDiff &&
+              Object.prototype.hasOwnProperty.call(jsonDiff, f),
+          )
         : [],
       meaningfulChange:
         typeof parsed.meaningfulChange === "string"
