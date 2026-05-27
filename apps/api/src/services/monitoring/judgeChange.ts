@@ -100,65 +100,12 @@ interface JudgeChangeArgs {
 
 const MARKDOWN_EXCERPT_CAP = 1500;
 const DIFF_TEXT_CAP = 3000;
-const MEANINGFUL_CHANGE_TEXT_CAP = 2000;
-const MEANINGFUL_CHANGE_REASON_CAP = 500;
-const MEANINGFUL_CHANGE_MAX_ITEMS = 5;
-const MEANINGFUL_CHANGE_TYPES = new Set(["added", "removed", "changed"]);
 
 function truncate(s: string, cap: number): string {
   if (s.length <= cap) return s;
   const head = s.slice(0, Math.floor(cap * 0.6));
   const tail = s.slice(-Math.floor(cap * 0.3));
   return `${head}\n…[${s.length - head.length - tail.length} chars truncated]…\n${tail}`;
-}
-
-function coerceMeaningfulChangeText(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  return value.length > MEANINGFUL_CHANGE_TEXT_CAP
-    ? value.slice(0, MEANINGFUL_CHANGE_TEXT_CAP)
-    : value;
-}
-
-function coerceMeaningfulChangeReason(value: unknown): string {
-  if (typeof value !== "string") return "";
-  return value.length > MEANINGFUL_CHANGE_REASON_CAP
-    ? value.slice(0, MEANINGFUL_CHANGE_REASON_CAP)
-    : value;
-}
-
-function inferMeaningfulChangeType(
-  type: unknown,
-  before: string | null,
-  after: string | null,
-): MeaningfulChangeEvent["type"] {
-  if (typeof type === "string" && MEANINGFUL_CHANGE_TYPES.has(type)) {
-    return type as MeaningfulChangeEvent["type"];
-  }
-  if (before && after) return "changed";
-  if (before) return "removed";
-  return "added";
-}
-
-function sanitizeMeaningfulChanges(
-  value: unknown,
-  meaningful: boolean,
-): MeaningfulChangeEvent[] {
-  if (!meaningful || !Array.isArray(value)) return [];
-  const out: MeaningfulChangeEvent[] = [];
-  for (const item of value.slice(0, MEANINGFUL_CHANGE_MAX_ITEMS)) {
-    if (!item || typeof item !== "object") continue;
-    const raw = item as Record<string, unknown>;
-    const before = coerceMeaningfulChangeText(raw.before);
-    const after = coerceMeaningfulChangeText(raw.after);
-    if (!before?.trim() && !after?.trim()) continue;
-    out.push({
-      type: inferMeaningfulChangeType(raw.type, before, after),
-      before,
-      after,
-      reason: coerceMeaningfulChangeReason(raw.reason),
-    });
-  }
-  return out;
 }
 
 const JUDGE_MODEL_NAME = "gemini-3-flash-preview";
@@ -287,10 +234,10 @@ export async function judgeChange(
         typeof parsed.reason === "string" && parsed.reason.length > 0
           ? parsed.reason
           : "No reason provided.",
-      meaningfulChanges: sanitizeMeaningfulChanges(
-        parsed.meaningfulChanges,
-        meaningful,
-      ),
+      meaningfulChanges:
+        meaningful && Array.isArray(parsed.meaningfulChanges)
+          ? parsed.meaningfulChanges
+          : [],
     };
   } catch (error) {
     logger.error("Judge call failed", { error });
