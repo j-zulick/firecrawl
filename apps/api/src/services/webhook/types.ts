@@ -124,6 +124,7 @@ interface MonitorPageJudgment {
   confidence: "high" | "medium" | "low";
   reason: string;
   fields: string[];
+  meaningfulChange: string;
 }
 
 interface MonitorPageDiff {

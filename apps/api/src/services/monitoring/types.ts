@@ -281,6 +281,7 @@ export type MonitorCheckPageInsert = {
     confidence: "high" | "medium" | "low";
     reason: string;
     fields: string[];
+    meaningfulChange: string;
   } | null;
 };
 

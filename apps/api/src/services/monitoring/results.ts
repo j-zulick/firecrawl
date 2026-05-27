@@ -32,6 +32,7 @@ interface PageJudgment {
   confidence: "high" | "medium" | "low";
   reason: string;
   fields: string[];
+  meaningfulChange: string;
 }
 
 async function sendMonitorPageWebhook(params: {
