@@ -46,6 +46,7 @@ Reason rules:
 meaningfulChanges rules:
 - Include only independent changes that directly matter to the user's goal.
 - Use exact verbatim text from the diff or page excerpt for before and after. Do not fabricate, paraphrase, or shorten the evidence.
+- Use the smallest complete verbatim span that proves the goal-relevant change; exclude adjacent rows, counters, or surrounding text that are not needed to understand it.
 - For "added", before must be null and after must be the full added text.
 - For "removed", before must be the full removed text and after must be null.
 - For "changed", before and after must both be present and refer to the same item, entity, field, status, condition, title, row, or rank.
