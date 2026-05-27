@@ -80,16 +80,6 @@ interface JudgeChangeArgs {
   };
 }
 
-const MARKDOWN_EXCERPT_CAP = 1500;
-const DIFF_TEXT_CAP = 3000;
-
-function truncate(s: string, cap: number): string {
-  if (s.length <= cap) return s;
-  const head = s.slice(0, Math.floor(cap * 0.6));
-  const tail = s.slice(-Math.floor(cap * 0.3));
-  return `${head}\n…[${s.length - head.length - tail.length} chars truncated]…\n${tail}`;
-}
-
 function isMeaningfulChangeEvent(
   value: unknown,
 ): value is MeaningfulChangeEvent {
@@ -172,17 +162,11 @@ export async function judgeChange(
   }
   if (markdownDiff) {
     if (markdownDiff.diffText) {
-      parts.push(
-        `PAGE DIFF (unified):\n${truncate(markdownDiff.diffText, DIFF_TEXT_CAP)}`,
-      );
+      parts.push(`PAGE DIFF (unified):\n${markdownDiff.diffText}`);
     }
     if (markdownDiff.previous || markdownDiff.current) {
-      parts.push(
-        `PREVIOUS PAGE (excerpt):\n${truncate(markdownDiff.previous ?? "", MARKDOWN_EXCERPT_CAP)}`,
-      );
-      parts.push(
-        `CURRENT PAGE (excerpt):\n${truncate(markdownDiff.current ?? "", MARKDOWN_EXCERPT_CAP)}`,
-      );
+      parts.push(`PREVIOUS PAGE:\n${markdownDiff.previous ?? ""}`);
+      parts.push(`CURRENT PAGE:\n${markdownDiff.current ?? ""}`);
     }
   }
   if (jsonDiff && Object.keys(jsonDiff).length > 0) {
