@@ -1,12 +1,19 @@
 import { NextFunction, Request, Response } from "express";
+import { Agent, fetch } from "undici";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { RequestWithMaybeACUC } from "../v1/types";
 
-const TIMEOUT_MS = 65_000;
+const TIMEOUT_MS = 120_000;
 
 const FORWARDED_REQUEST_HEADERS = ["content-type", "accept", "x-request-id"];
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
+
+const dispatcher = new Agent({
+  connectTimeout: TIMEOUT_MS,
+  headersTimeout: TIMEOUT_MS,
+  bodyTimeout: TIMEOUT_MS,
+});
 
 export function researchFlagMiddleware(
   req: RequestWithMaybeACUC<any, any, any>,
@@ -45,10 +52,11 @@ export async function researchProxyController(
     if (typeof v === "string") headers[h] = v;
   }
 
-  const init: RequestInit = {
+  const init: Parameters<typeof fetch>[1] = {
     method: req.method,
     headers,
     signal: AbortSignal.timeout(TIMEOUT_MS),
+    dispatcher,
   };
 
   if (req.method !== "GET" && req.method !== "HEAD") {
