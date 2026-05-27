@@ -122,7 +122,7 @@ function sanitizeMeaningfulChanges(
 }
 
 const JUDGE_MODEL_NAME = "gemini-3-flash-preview";
-const JUDGE_ATTEMPT_TIMEOUT_MS = 8_000;
+const JUDGE_ATTEMPT_TIMEOUT_MS = 30_000;
 const JUDGE_MAX_ATTEMPTS = 3;
 const JUDGE_BACKOFF_MS = [300, 800];
 const judgeModel = google(JUDGE_MODEL_NAME);
