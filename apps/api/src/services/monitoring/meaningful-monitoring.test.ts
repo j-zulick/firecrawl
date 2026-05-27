@@ -25,7 +25,12 @@ const FAKE_JUDGMENT = {
   confidence: "high" as const,
   reason: "test",
   meaningfulChanges: [
-    { type: "changed" as const, before: "old test", after: "new test" },
+    {
+      type: "changed" as const,
+      before: "old test",
+      after: "new test",
+      reason: "The tracked value changed.",
+    },
   ],
 };
 

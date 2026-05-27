@@ -124,9 +124,10 @@ interface MonitorPageJudgment {
   confidence: "high" | "medium" | "low";
   reason: string;
   meaningfulChanges: Array<{
-    type: "added" | "removed" | "changed" | "moved";
+    type: "added" | "removed" | "changed";
     before: string | null;
     after: string | null;
+    reason: string;
   }>;
 }
 
