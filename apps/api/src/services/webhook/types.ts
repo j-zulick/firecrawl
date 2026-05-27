@@ -123,8 +123,11 @@ interface MonitorPageJudgment {
   meaningful: boolean;
   confidence: "high" | "medium" | "low";
   reason: string;
-  fields: string[];
-  meaningfulChange: string;
+  meaningfulChanges: Array<{
+    type: "added" | "removed" | "changed" | "moved";
+    before: string | null;
+    after: string | null;
+  }>;
 }
 
 interface MonitorPageDiff {
