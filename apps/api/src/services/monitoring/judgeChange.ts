@@ -41,6 +41,8 @@ Field scope is literal: the named-field rule applies only to the SPECIFIC noun t
 
 A vote/point/score/comment counter ticking up on a list row is NEVER a Rule 4 trigger — it's Rule 1c. Even if the goal is about ranking or "new entries in the top N", a counter incrementing on an existing item does not count as a new entry. Only an actually different row appearing or disappearing counts.
 
+For ranked/list goals, do not confuse metadata changes with rank or membership changes. Use "moved" only when the same goal-relevant item/title appears before and after at a different explicit rank or position. If a row's title and rank are unchanged and only points, comments, timestamps, author metadata, or similar row metadata changed, treat it as noise unless the user's goal specifically asks for that metadata. If the user says to ignore points/comments/counters, a diff that only changes those values is not meaningful even when it occurs inside the requested top N.
+
 RULE 5 — DEFAULT NOISE (goal-silent, change looks like chrome):
 If the change does not match Rule 4, classify NOISE. This includes: numeric drift under ~1% on fields the goal does not name; bare label/badge/ticker swaps without sentence context; isolated token changes; anything that "looks like" Rule 1 but isn't an exact match.
 
@@ -66,7 +68,7 @@ The meaningfulChanges array should contain one object per independent goal-relev
 - type "added" for a pure addition where before is null and after contains the full verbatim added text.
 - type "removed" for a pure removal where before contains the full verbatim removed text and after is null.
 - type "changed" for a value/text/status/condition edit where before and after are paired versions of the same goal-relevant thing.
-- type "moved" for rank/order movement inside the user's requested scope where before and after are paired versions of the same item at different positions.
+- type "moved" only for rank/order movement inside the user's requested scope where before and after are paired versions of the same goal-relevant item/title at different explicit positions.
 
 For meaningful changes, prefer the complete goal-relevant sentence, list item, row, paragraph, title block, section excerpt, or field value over the smallest changed token, preserving original wording from the diff/page excerpt. Pair before/after values for the same logical item whenever possible; do not split a rank shift, price change, status flip, title edit, or similar modification into separate added and removed events. For rank/list goals, include the rank or surrounding row text needed to understand whether the item entered, left, or shifted within scope. For condition or threshold goals, include the exact before/after values that show the condition flipped or threshold was crossed. Do not include unrelated changed text outside the user's goal scope. Do not summarize, shorten, or fabricate evidence. If meaningful is false, return an empty array.`;
 
