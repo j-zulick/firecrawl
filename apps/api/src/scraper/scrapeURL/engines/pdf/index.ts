@@ -26,6 +26,7 @@ import {
   FIRE_PDF_MAX_FILE_SIZE,
   MAX_FILE_SIZE,
   MILLISECONDS_PER_PAGE,
+  PDF_DOWNLOAD_MAX_FILE_SIZE,
 } from "./types";
 import type { PDFProcessorResult } from "./types";
 import {
@@ -81,7 +82,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           headers: meta.options.headers,
           signal: meta.abort.asSignal(),
         },
-        FIRE_PDF_MAX_FILE_SIZE,
+        PDF_DOWNLOAD_MAX_FILE_SIZE,
       );
 
       if (!isPdfBuffer(file.buffer)) {
@@ -123,7 +124,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             headers: meta.options.headers,
             signal: meta.abort.asSignal(),
           },
-          FIRE_PDF_MAX_FILE_SIZE,
+          PDF_DOWNLOAD_MAX_FILE_SIZE,
         );
 
   try {
