@@ -960,7 +960,6 @@ class MonitorPageJudgment(BaseModel):
     meaningful: bool
     confidence: Literal["high", "medium", "low"]
     reason: str
-    fields: List[str]
     meaningful_changes: List[MonitorMeaningfulChange] = Field(default_factory=list, alias="meaningfulChanges")
 
 
