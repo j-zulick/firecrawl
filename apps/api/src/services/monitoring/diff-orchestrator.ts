@@ -21,6 +21,7 @@ type Judgment = {
   confidence: "high" | "medium" | "low";
   reason: string;
   fields: string[];
+  meaningfulChange: string;
 };
 
 type MonitorPageDiffResult = {
