@@ -229,7 +229,7 @@ export async function judgeChange(
         ? parsed.fields.filter((f): f is string => typeof f === "string")
         : [],
       meaningfulChange:
-        typeof parsed.meaningfulChange === "string"
+        meaningful && typeof parsed.meaningfulChange === "string"
           ? parsed.meaningfulChange
           : "",
     };
