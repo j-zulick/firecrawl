@@ -371,7 +371,7 @@ async function runCrawlTarget(params: {
   const body = crawlRequestSchema.parse({
     url: params.target.url,
     ...(params.target.crawlOptions ?? {}),
-    scrapeOptions: withMarkdownFormat(params.target.scrapeOptions ?? {}),
+    scrapeOptions: withMonitorScrapeDefaults(params.target.scrapeOptions ?? {}),
     origin: "monitor",
   }) as CrawlRequest;
 
@@ -755,7 +755,7 @@ async function enqueueMonitorCrawlTarget(params: {
   const body = crawlRequestSchema.parse({
     url: params.target.url,
     ...(params.target.crawlOptions ?? {}),
-    scrapeOptions: withMarkdownFormat(params.target.scrapeOptions ?? {}),
+    scrapeOptions: withMonitorScrapeDefaults(params.target.scrapeOptions ?? {}),
     origin: "monitor",
   }) as CrawlRequest;
 
