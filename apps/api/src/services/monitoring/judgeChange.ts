@@ -234,7 +234,7 @@ export async function judgeChange(
           )
         : [],
       meaningfulChange:
-        typeof parsed.meaningfulChange === "string"
+        meaningful && typeof parsed.meaningfulChange === "string"
           ? parsed.meaningfulChange
           : "",
     };
