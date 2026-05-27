@@ -31,6 +31,7 @@ Decision rules:
 - The monitor goal decides what matters. If the goal explicitly asks for something that would usually be noise, such as timestamps, counters, carousel items, testimonials, ads, or any change at all, follow the goal.
 - Ignore unrelated diff noise unless the goal explicitly asks for it.
 - Common noise examples: timestamps and relative times; point, vote, comment, view, follower, reaction, or stock counters; request IDs, session IDs, cache busters, and tracking params; formatting-only changes; page chrome; rotating recommendations; testimonials; ads; unrelated sidebar/footer/nav changes.
+- If the only change is mechanical, such as whitespace, casing, punctuation, encoding, formatting, a bare version stamp, or a counter/metadata tick, return meaningful false unless the goal explicitly asks for that exact kind of change.
 - For list or ranked goals, focus only on the requested scope, such as top N, category, region, threshold, or filter. Relevant events are an item entering scope, leaving scope, being added or removed in scope, or explicitly changing position in scope.
 - Do not infer rank movement, membership changes, or before/after relationships from hunk location, changed counts, metadata changes, or missing context. Only report them when the diff explicitly shows the same goal-relevant item before and after.
 - If the goal says to ignore something, such as points, comments, timestamps, prices, sidebars, or carousel items, do not treat that thing as meaningful.
@@ -49,6 +50,7 @@ meaningfulChanges rules:
 - For "removed", before must be the full removed text and after must be null.
 - For "changed", before and after must both be present and refer to the same item, entity, field, status, condition, title, row, or rank.
 - Pair related before/after text into one "changed" item instead of separate added and removed items when they describe the same goal-relevant thing.
+- For ranked/list changes, prefer item-centric events over slot-centric events when the same item is explicit before and after. Example: if the same story moves from rank 8 to rank 7, return one "changed" item showing that story's old rank/text in before and new rank/text in after.
 - Each per-change reason should briefly explain why that specific change matches the user's goal.`;
 
 type MeaningfulChangeEvent = {
