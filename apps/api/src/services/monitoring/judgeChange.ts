@@ -108,6 +108,37 @@ function truncate(s: string, cap: number): string {
   return `${head}\n…[${s.length - head.length - tail.length} chars truncated]…\n${tail}`;
 }
 
+function isMeaningfulChangeEvent(
+  value: unknown,
+): value is MeaningfulChangeEvent {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  if (
+    item.type !== "added" &&
+    item.type !== "removed" &&
+    item.type !== "changed"
+  ) {
+    return false;
+  }
+  if (typeof item.reason !== "string") return false;
+
+  if (item.type === "added") {
+    return item.before === null && typeof item.after === "string";
+  }
+  if (item.type === "removed") {
+    return typeof item.before === "string" && item.after === null;
+  }
+  return typeof item.before === "string" && typeof item.after === "string";
+}
+
+function sanitizeMeaningfulChanges(
+  value: unknown,
+  meaningful: boolean,
+): MeaningfulChangeEvent[] {
+  if (!meaningful || !Array.isArray(value)) return [];
+  return value.filter(isMeaningfulChangeEvent);
+}
+
 const JUDGE_MODEL_NAME = "gemini-3-flash-preview";
 const JUDGE_ATTEMPT_TIMEOUT_MS = 8_000;
 const JUDGE_MAX_ATTEMPTS = 3;
@@ -234,10 +265,10 @@ export async function judgeChange(
         typeof parsed.reason === "string" && parsed.reason.length > 0
           ? parsed.reason
           : "No reason provided.",
-      meaningfulChanges:
-        meaningful && Array.isArray(parsed.meaningfulChanges)
-          ? parsed.meaningfulChanges
-          : [],
+      meaningfulChanges: sanitizeMeaningfulChanges(
+        parsed.meaningfulChanges,
+        meaningful,
+      ),
     };
   } catch (error) {
     logger.error("Judge call failed", { error });
