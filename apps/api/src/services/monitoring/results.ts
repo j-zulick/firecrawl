@@ -231,6 +231,7 @@ export async function recordMonitorScrapeSuccess(
 export async function recordMonitorScrapeFailure(
   job: NuQJob<ScrapeJobData>,
   error: unknown,
+  creditsUsed?: number | null,
 ): Promise<void> {
   const monitoring = job.data.monitoring;
   if (!monitoring || job.data.mode !== "single_urls") return;
@@ -246,6 +247,9 @@ export async function recordMonitorScrapeFailure(
       status: "error",
       current_scrape_id: job.id,
       error: error instanceof Error ? error.message : String(error),
+      metadata: {
+        creditsUsed: creditsUsed ?? null,
+      },
     },
   ]);
 

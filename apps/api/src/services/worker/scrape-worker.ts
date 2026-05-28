@@ -849,7 +849,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       zeroDataRetention: job.data.zeroDataRetention,
     }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
 
-    await recordMonitorScrapeFailure(job, error);
+    await recordMonitorScrapeFailure(job, error, credits_billed);
 
     return data;
   } finally {

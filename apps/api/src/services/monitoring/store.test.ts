@@ -91,4 +91,14 @@ describe("monitoring store credit helpers", () => {
       ]),
     ).toBe(10);
   });
+
+  it("uses recorded scrape credits for error pages when present", () => {
+    expect(
+      calculateMonitorCheckActualCreditsFromPages([
+        { status: "error", metadata: { creditsUsed: 0 } },
+        { status: "error", metadata: { creditsUsed: 4 } },
+        { status: "error", metadata: {} },
+      ]),
+    ).toBe(5);
+  });
 });
