@@ -2,7 +2,6 @@ import { NuQJob } from "../worker/nuq";
 import { ScrapeJobData } from "../../types";
 import { logger as _logger } from "../../lib/logger";
 import { createWebhookSender, WebhookEvent } from "../webhook";
-import { billTeam } from "../billing/credit_billing";
 import { computeAndPersistPageDiff } from "./diff-orchestrator";
 import { derivePageIsMeaningful } from "./page-events";
 import {
@@ -12,8 +11,6 @@ import {
   insertMonitorCheckPages,
   upsertMonitorPage,
 } from "./store";
-
-const JUDGE_CREDIT_COST = 1;
 
 const logger = _logger.child({ module: "monitoring-results" });
 
@@ -174,6 +171,8 @@ export async function recordMonitorScrapeSuccess(
     metadata: {
       title: doc?.metadata?.title ?? null,
       statusCode: getDocumentStatusCode(doc),
+      contentType: doc?.metadata?.contentType ?? null,
+      numPages: doc?.metadata?.numPages ?? null,
       creditsUsed: doc?.metadata?.creditsUsed ?? null,
     },
   });
@@ -195,6 +194,8 @@ export async function recordMonitorScrapeSuccess(
       status_code: getDocumentStatusCode(doc),
       metadata: {
         title: doc?.metadata?.title ?? null,
+        contentType: doc?.metadata?.contentType ?? null,
+        numPages: doc?.metadata?.numPages ?? null,
         creditsUsed: doc?.metadata?.creditsUsed ?? null,
       },
       judgment: judgment ?? null,
@@ -212,25 +213,6 @@ export async function recordMonitorScrapeSuccess(
     diffGcsKey,
     judgmentMeaningful: judgment?.meaningful,
   });
-
-  if (judgment) {
-    try {
-      await billTeam(
-        job.data.team_id,
-        undefined,
-        JUDGE_CREDIT_COST,
-        job.data.apiKeyId ?? null,
-        { endpoint: "monitor", jobId: monitoring.checkId },
-        logger,
-      );
-    } catch (error) {
-      logger.warn("Failed to bill judge credit", {
-        error,
-        monitorId: monitoring.monitorId,
-        checkId: monitoring.checkId,
-      });
-    }
-  }
 
   await sendMonitorPageWebhook({
     teamId: job.data.team_id,

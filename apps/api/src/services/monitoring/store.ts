@@ -28,7 +28,96 @@ function ensureTargetIds(targets: Array<Record<string, any>>): MonitorTarget[] {
   })) as MonitorTarget[];
 }
 
-function estimateTargetCredits(target: MonitorTarget): number {
+const BASE_SCRAPE_CREDITS_PER_PAGE = 1;
+const JSON_SCRAPE_CREDITS_PER_PAGE = 5;
+const SCRAPE_OPTION_CREDIT_BONUS = 4;
+const JUDGE_CREDITS_PER_PAGE = 1;
+const REMOVED_PAGE_CREDITS = 0;
+const DEFAULT_CRAWL_LIMIT_FOR_ESTIMATE = 10000;
+const MONITOR_CHECK_PAGE_BATCH_SIZE = 1000;
+
+function formatType(format: unknown): string | null {
+  if (typeof format === "string") return format;
+  if (
+    format &&
+    typeof format === "object" &&
+    "type" in format &&
+    typeof format.type === "string"
+  ) {
+    return format.type;
+  }
+  return null;
+}
+
+function hasFormatOfType(formats: unknown, type: string): boolean {
+  return (
+    Array.isArray(formats) &&
+    formats.some(format => formatType(format) === type)
+  );
+}
+
+function hasAnyFormatOfType(formats: unknown, types: string[]): boolean {
+  return types.some(type => hasFormatOfType(formats, type));
+}
+
+function optionBonus(enabled: boolean): number {
+  return enabled ? SCRAPE_OPTION_CREDIT_BONUS : 0;
+}
+
+function requestsJsonChangeTracking(formats: unknown): boolean {
+  if (!Array.isArray(formats)) return false;
+  return formats.some(format => {
+    if (
+      !format ||
+      typeof format !== "object" ||
+      !("type" in format) ||
+      format.type !== "changeTracking"
+    ) {
+      return false;
+    }
+    const modes = "modes" in format ? format.modes : undefined;
+    return Array.isArray(modes) && modes.includes("json");
+  });
+}
+
+function estimateBaseCreditsPerPage(
+  options: MonitorTarget["scrapeOptions"],
+): number {
+  const formats = options?.formats;
+  const usesJsonCredits =
+    hasFormatOfType(formats, "json") || requestsJsonChangeTracking(formats);
+  const baseCredits = usesJsonCredits
+    ? JSON_SCRAPE_CREDITS_PER_PAGE
+    : BASE_SCRAPE_CREDITS_PER_PAGE + optionBonus(Boolean(options?.lockdown));
+  const formatBonusCount = [
+    hasAnyFormatOfType(formats, ["question", "query"]),
+    hasFormatOfType(formats, "highlights"),
+    hasFormatOfType(formats, "audio"),
+    hasFormatOfType(formats, "video"),
+  ].reduce((count, enabled) => count + (enabled ? 1 : 0), 0);
+  const proxyCredits = optionBonus(
+    options?.proxy === "stealth" || options?.proxy === "enhanced",
+  );
+
+  return (
+    baseCredits + formatBonusCount * SCRAPE_OPTION_CREDIT_BONUS + proxyCredits
+  );
+}
+
+function estimateTargetBaseCredits(target: MonitorTarget): number {
+  const creditsPerPage = estimateBaseCreditsPerPage(target.scrapeOptions);
+  if (target.type === "scrape") {
+    return target.urls.length * creditsPerPage;
+  }
+
+  const limit =
+    typeof target.crawlOptions?.limit === "number"
+      ? target.crawlOptions.limit
+      : DEFAULT_CRAWL_LIMIT_FOR_ESTIMATE;
+  return Math.max(1, limit) * creditsPerPage;
+}
+
+function estimateTargetPageCount(target: MonitorTarget): number {
   if (target.type === "scrape") {
     return target.urls.length;
   }
@@ -36,7 +125,7 @@ function estimateTargetCredits(target: MonitorTarget): number {
   const limit =
     typeof target.crawlOptions?.limit === "number"
       ? target.crawlOptions.limit
-      : 10000;
+      : DEFAULT_CRAWL_LIMIT_FOR_ESTIMATE;
   return Math.max(1, limit);
 }
 
@@ -44,11 +133,51 @@ export function estimateMonitorCreditsPerRun(
   targets: MonitorTarget[],
   judgeEnabled: boolean = false,
 ): number {
-  const scrapeCredits = targets.reduce(
-    (sum, target) => sum + estimateTargetCredits(target),
+  const baseCredits = targets.reduce(
+    (sum, target) => sum + estimateTargetBaseCredits(target),
     0,
   );
-  return judgeEnabled ? scrapeCredits * 2 : scrapeCredits;
+  const judgeCredits = judgeEnabled
+    ? targets.reduce(
+        (sum, target) =>
+          sum + estimateTargetPageCount(target) * JUDGE_CREDITS_PER_PAGE,
+        0,
+      )
+    : 0;
+  return baseCredits + judgeCredits;
+}
+
+export function calculateMonitorCheckActualCreditsFromPages(
+  pages: Array<{
+    target_id?: string | null;
+    metadata?: unknown;
+    judgment?: unknown;
+    status?: string;
+  }>,
+  targets: MonitorTarget[] = [],
+): number {
+  const baseCreditsByTarget = new Map(
+    targets.map(target => [
+      target.id,
+      estimateBaseCreditsPerPage(target.scrapeOptions),
+    ]),
+  );
+
+  return pages.reduce((total, page) => {
+    const metadata = page.metadata as { creditsUsed?: unknown } | null;
+    const recordedCredits = metadata?.creditsUsed;
+    const baseCredits =
+      typeof recordedCredits === "number" && Number.isFinite(recordedCredits)
+        ? recordedCredits
+        : page.status === "removed"
+          ? REMOVED_PAGE_CREDITS
+          : page.status === "error"
+            ? BASE_SCRAPE_CREDITS_PER_PAGE
+            : (baseCreditsByTarget.get(page.target_id ?? "") ??
+              BASE_SCRAPE_CREDITS_PER_PAGE);
+    const judgeCredits = page.judgment != null ? JUDGE_CREDITS_PER_PAGE : 0;
+    return total + baseCredits + judgeCredits;
+  }, 0);
 }
 
 function toMonitorSummary(check: MonitorCheckRow): MonitorSummary {
@@ -561,6 +690,32 @@ export async function countMonitorCheckPages(params: {
     total += batch.length;
     if (batch.length < pageSize) break;
     offset += pageSize;
+  }
+
+  return total;
+}
+
+export async function calculateMonitorCheckActualCredits(params: {
+  checkId: string;
+  targets: MonitorTarget[];
+}): Promise<number> {
+  let total = 0;
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await supabase_rr_service
+      .from("monitor_check_pages")
+      .select("target_id, metadata, judgment, status")
+      .eq("check_id", params.checkId)
+      .range(offset, offset + MONITOR_CHECK_PAGE_BATCH_SIZE - 1);
+
+    throwIfError(error, "Failed to calculate monitor check credits");
+
+    const batch = data ?? [];
+    total += calculateMonitorCheckActualCreditsFromPages(batch, params.targets);
+
+    if (batch.length < MONITOR_CHECK_PAGE_BATCH_SIZE) break;
+    offset += MONITOR_CHECK_PAGE_BATCH_SIZE;
   }
 
   return total;

@@ -23,11 +23,13 @@ import {
   type ScrapeOptions,
   crawlRequestSchema,
   scrapeRequestSchema,
+  shouldParsePDF,
   toV0CrawlerOptions,
 } from "../../controllers/v2/types";
 import { createWebhookSender, WebhookEvent } from "../webhook";
 import { sendMonitoringEmailSummary } from "../notification/monitoring_email";
 import {
+  calculateMonitorCheckActualCredits,
   getMonitorCheck,
   getMonitorForUpdate,
   getMonitorPage,
@@ -64,6 +66,10 @@ export { isMonitorCheckStale, MONITOR_CHECK_STALE_TIMEOUT_MS };
 
 const MONITOR_NOTIFY_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MONITOR_CHECK_PAGE_SCAN_LIMIT = 100_000;
+const BASE_SCRAPE_CREDITS_PER_DOCUMENT = 1;
+const JSON_SCRAPE_CREDITS_PER_DOCUMENT = 5;
+const SCRAPE_OPTION_CREDIT_BONUS = 4;
+const PDF_CREDITS_PER_PAGE = 1;
 const TERMINAL_CHECK_STATUSES = new Set([
   "completed",
   "partial",
@@ -211,15 +217,63 @@ function getDocumentStatusCode(doc: any): number | null {
     : null;
 }
 
-function estimateActualCredits(doc: any, options: any): number {
+function hasScrapeFormat(formats: unknown[], type: string): boolean {
+  return formats.some(format =>
+    typeof format === "string"
+      ? format === type
+      : (format as any)?.type === type,
+  );
+}
+
+function hasJsonChangeTracking(format: unknown): boolean {
+  return (
+    typeof format === "object" &&
+    format !== null &&
+    (format as any).type === "changeTracking" &&
+    Array.isArray((format as any).modes) &&
+    (format as any).modes.includes("json")
+  );
+}
+
+export function estimateActualCredits(doc: any, options: any): number {
   if (typeof doc?.metadata?.creditsUsed === "number") {
     return doc.metadata.creditsUsed;
   }
   const formats = Array.isArray(options?.formats) ? options.formats : [];
-  const hasJson = formats.some((format: any) =>
-    typeof format === "string" ? format === "json" : format?.type === "json",
+  const hasJson =
+    hasScrapeFormat(formats, "json") || formats.some(hasJsonChangeTracking);
+  const baseCredits = hasJson
+    ? JSON_SCRAPE_CREDITS_PER_DOCUMENT
+    : BASE_SCRAPE_CREDITS_PER_DOCUMENT +
+      (options?.lockdown ? SCRAPE_OPTION_CREDIT_BONUS : 0);
+  const formatBonusCount = [
+    hasScrapeFormat(formats, "question") || hasScrapeFormat(formats, "query"),
+    hasScrapeFormat(formats, "highlights"),
+    hasScrapeFormat(formats, "audio"),
+    hasScrapeFormat(formats, "video"),
+  ].reduce((count, enabled) => count + (enabled ? 1 : 0), 0);
+  const pdfPages =
+    typeof doc?.metadata?.numPages === "number" &&
+    Number.isFinite(doc.metadata.numPages)
+      ? Math.max(1, Math.ceil(doc.metadata.numPages))
+      : 1;
+  const pdfCredits =
+    shouldParsePDF(options?.parsers) && pdfPages > 1
+      ? PDF_CREDITS_PER_PAGE * (pdfPages - 1)
+      : 0;
+  const proxyCredits =
+    doc?.metadata?.proxyUsed === "stealth" ||
+    options?.proxy === "stealth" ||
+    options?.proxy === "enhanced"
+      ? SCRAPE_OPTION_CREDIT_BONUS
+      : 0;
+
+  return (
+    baseCredits +
+    formatBonusCount * SCRAPE_OPTION_CREDIT_BONUS +
+    pdfCredits +
+    proxyCredits
   );
-  return hasJson ? 5 : 1;
 }
 
 async function runSingleScrape(params: {
@@ -290,6 +344,7 @@ async function diffAndPersistPage(params: {
   scrapeId: string;
   doc: any;
   source: "explicit" | "discovered";
+  creditsUsed?: number;
 }): Promise<PageResult> {
   const previous = await getMonitorPage({
     monitorId: params.monitor.id,
@@ -333,6 +388,9 @@ async function diffAndPersistPage(params: {
     metadata: {
       title: params.doc?.metadata?.title ?? null,
       statusCode: getDocumentStatusCode(params.doc),
+      contentType: params.doc?.metadata?.contentType ?? null,
+      numPages: params.doc?.metadata?.numPages ?? null,
+      creditsUsed: params.creditsUsed ?? null,
     },
   });
 
@@ -352,6 +410,9 @@ async function diffAndPersistPage(params: {
     status_code: getDocumentStatusCode(params.doc),
     metadata: {
       title: params.doc?.metadata?.title ?? null,
+      contentType: params.doc?.metadata?.contentType ?? null,
+      numPages: params.doc?.metadata?.numPages ?? null,
+      creditsUsed: params.creditsUsed ?? null,
     },
     judgment,
     emailStatus: status,
@@ -388,6 +449,7 @@ async function runScrapeTarget(params: {
           scrapeId: result.scrapeId,
           doc: result.doc,
           source: "explicit",
+          creditsUsed: result.credits,
         }),
       );
     } catch (error) {
@@ -534,7 +596,8 @@ async function runCrawlTarget(params: {
     if (!doc) continue;
     const url = getDocumentUrl(doc, (job.data as any)?.url ?? body.url);
     seen.add(hashMonitorUrl(url));
-    credits += estimateActualCredits(doc, body.scrapeOptions);
+    const pageCredits = estimateActualCredits(doc, body.scrapeOptions);
+    credits += pageCredits;
     pages.push(
       await diffAndPersistPage({
         monitor: params.monitor,
@@ -544,6 +607,7 @@ async function runCrawlTarget(params: {
         scrapeId: job.id,
         doc,
         source: "discovered",
+        creditsUsed: pageCredits,
       }),
     );
   }
@@ -1331,7 +1395,10 @@ export async function reconcileRunningMonitorChecks(
         countMonitorCheckPages({ checkId: check.id, status: "error" }),
       ]);
       const totalPages = same + changed + newCount + removed + errorCount;
-      const actualCredits = totalPages;
+      const actualCredits = await calculateMonitorCheckActualCredits({
+        checkId: check.id,
+        targets: monitor.targets,
+      });
 
       let finalized = await updateMonitorCheck(check.id, {
         status: errorCount > 0 ? "partial" : "completed",
