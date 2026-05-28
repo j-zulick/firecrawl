@@ -10,23 +10,37 @@ import {
 
 describe("monitoring runner", () => {
   describe("estimateActualCredits", () => {
-    it("prefers scrape-reported credits when present", () => {
-      expect(estimateActualCredits({ metadata: { creditsUsed: 9 } }, {})).toBe(
-        9,
-      );
+    it("prefers scrape-reported credits when present", async () => {
+      await expect(
+        estimateActualCredits({
+          doc: { metadata: { creditsUsed: 9 } },
+          options: {},
+          internalOptions: { teamFlags: null },
+          teamId: "team-1",
+        }),
+      ).resolves.toBe(9);
     });
 
-    it("bills parsed PDFs by extracted page count", () => {
-      expect(estimateActualCredits({ metadata: { numPages: 4 } }, {})).toBe(4);
+    it("bills parsed PDFs by extracted page count", async () => {
+      await expect(
+        estimateActualCredits({
+          doc: { metadata: { numPages: 4 } },
+          options: {},
+          internalOptions: { teamFlags: null },
+          teamId: "team-1",
+        }),
+      ).resolves.toBe(4);
     });
 
-    it("adds PDF page credits on top of JSON scrape credits", () => {
-      expect(
-        estimateActualCredits(
-          { metadata: { numPages: 3 } },
-          { formats: ["json"] },
-        ),
-      ).toBe(7);
+    it("adds PDF page credits on top of JSON scrape credits", async () => {
+      await expect(
+        estimateActualCredits({
+          doc: { metadata: { numPages: 3 } },
+          options: { formats: [{ type: "json" }] },
+          internalOptions: { teamFlags: null },
+          teamId: "team-1",
+        }),
+      ).resolves.toBe(7);
     });
   });
 
