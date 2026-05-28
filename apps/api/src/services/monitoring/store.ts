@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { v7 as uuidv7 } from "uuid";
 import { supabase_rr_service, supabase_service } from "../supabase";
+import { shouldParsePDF } from "../../controllers/v2/types";
 import {
   getNextMonitorRunAt,
   estimateRunsPerMonth,
@@ -33,8 +34,16 @@ const JSON_SCRAPE_CREDITS_PER_PAGE = 5;
 const SCRAPE_OPTION_CREDIT_BONUS = 4;
 const JUDGE_CREDITS_PER_PAGE = 1;
 const REMOVED_PAGE_CREDITS = 0;
+const X_TWITTER_POSTPROCESSOR_CREDIT_BONUS = 29;
 const DEFAULT_CRAWL_LIMIT_FOR_ESTIMATE = 10000;
 const MONITOR_CHECK_PAGE_BATCH_SIZE = 1000;
+
+type MonitorCreditMetadata = {
+  creditsUsed?: unknown;
+  numPages?: unknown;
+  proxyUsed?: unknown;
+  postprocessorsUsed?: unknown;
+};
 
 function formatType(format: unknown): string | null {
   if (typeof format === "string") return format;
@@ -173,6 +182,7 @@ export function calculateMonitorCheckActualCreditsFromPages(
       estimateBaseCreditsPerPage(target.scrapeOptions),
     ]),
   );
+  const targetsById = new Map(targets.map(target => [target.id, target]));
 
   function fallbackBaseCreditsForPage(page: (typeof pages)[number]): number {
     if (page.status === "removed") {
@@ -183,12 +193,40 @@ export function calculateMonitorCheckActualCreditsFromPages(
       return BASE_SCRAPE_CREDITS_PER_PAGE;
     }
 
-    // Successful new monitor pages should carry scrape-computed credits in
-    // metadata. This is only for older rows or unusual missing-metadata paths.
-    return (
+    const metadata = page.metadata as MonitorCreditMetadata | null;
+    const target = targetsById.get(page.target_id ?? "");
+    let credits =
       baseCreditsByTarget.get(page.target_id ?? "") ??
-      BASE_SCRAPE_CREDITS_PER_PAGE
-    );
+      BASE_SCRAPE_CREDITS_PER_PAGE;
+
+    // Monitor-specific fallback only: new rows should prefer metadata.creditsUsed
+    // when the scrape path provides it. If it is missing, use retained monitor
+    // metadata to avoid obvious undercounts for PDFs and special postprocessors.
+    if (
+      target &&
+      shouldParsePDF(target.scrapeOptions?.parsers as any) &&
+      typeof metadata?.numPages === "number" &&
+      metadata.numPages > 1
+    ) {
+      credits += metadata.numPages - 1;
+    }
+
+    if (
+      metadata?.proxyUsed === "stealth" &&
+      target?.scrapeOptions?.proxy !== "stealth" &&
+      target?.scrapeOptions?.proxy !== "enhanced"
+    ) {
+      credits += SCRAPE_OPTION_CREDIT_BONUS;
+    }
+
+    if (
+      Array.isArray(metadata?.postprocessorsUsed) &&
+      metadata.postprocessorsUsed.includes("x-twitter")
+    ) {
+      credits += X_TWITTER_POSTPROCESSOR_CREDIT_BONUS;
+    }
+
+    return credits;
   }
 
   function judgeCreditsForPage(page: (typeof pages)[number]): number {
@@ -202,7 +240,7 @@ export function calculateMonitorCheckActualCreditsFromPages(
   }
 
   return pages.reduce((total, page) => {
-    const metadata = page.metadata as { creditsUsed?: unknown } | null;
+    const metadata = page.metadata as MonitorCreditMetadata | null;
     const recordedCredits = metadata?.creditsUsed;
     let baseCredits = fallbackBaseCreditsForPage(page);
 

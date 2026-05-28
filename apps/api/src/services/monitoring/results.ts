@@ -173,6 +173,8 @@ export async function recordMonitorScrapeSuccess(
       statusCode: getDocumentStatusCode(doc),
       contentType: doc?.metadata?.contentType ?? null,
       numPages: doc?.metadata?.numPages ?? null,
+      proxyUsed: doc?.metadata?.proxyUsed ?? null,
+      postprocessorsUsed: doc?.metadata?.postprocessorsUsed ?? null,
       creditsUsed: doc?.metadata?.creditsUsed ?? null,
     },
   });
@@ -196,6 +198,8 @@ export async function recordMonitorScrapeSuccess(
         title: doc?.metadata?.title ?? null,
         contentType: doc?.metadata?.contentType ?? null,
         numPages: doc?.metadata?.numPages ?? null,
+        proxyUsed: doc?.metadata?.proxyUsed ?? null,
+        postprocessorsUsed: doc?.metadata?.postprocessorsUsed ?? null,
         creditsUsed: doc?.metadata?.creditsUsed ?? null,
       },
       judgment: judgment ?? null,

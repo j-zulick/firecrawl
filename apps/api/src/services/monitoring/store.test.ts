@@ -70,6 +70,57 @@ describe("monitoring store credit helpers", () => {
     ).toBe(10);
   });
 
+  it("uses monitor metadata for fallback PDF credits when recorded usage is missing", () => {
+    const targets: MonitorTarget[] = [
+      {
+        id: "target-1",
+        type: "scrape",
+        urls: ["https://example.com/sample.pdf"],
+        scrapeOptions: {},
+      },
+    ];
+
+    expect(
+      calculateMonitorCheckActualCreditsFromPages(
+        [
+          {
+            target_id: "target-1",
+            metadata: { numPages: 5 },
+            status: "same",
+          },
+        ],
+        targets,
+      ),
+    ).toBe(5);
+  });
+
+  it("uses monitor metadata for fallback proxy and postprocessor credits", () => {
+    const targets: MonitorTarget[] = [
+      {
+        id: "target-1",
+        type: "scrape",
+        urls: ["https://x.com/firecrawl"],
+        scrapeOptions: {},
+      },
+    ];
+
+    expect(
+      calculateMonitorCheckActualCreditsFromPages(
+        [
+          {
+            target_id: "target-1",
+            metadata: {
+              proxyUsed: "stealth",
+              postprocessorsUsed: ["x-twitter"],
+            },
+            status: "same",
+          },
+        ],
+        targets,
+      ),
+    ).toBe(34);
+  });
+
   it("prefers recorded page usage and does not bill removed pages", () => {
     expect(
       calculateMonitorCheckActualCreditsFromPages([

@@ -334,6 +334,8 @@ async function diffAndPersistPage(params: {
       statusCode: getDocumentStatusCode(params.doc),
       contentType: params.doc?.metadata?.contentType ?? null,
       numPages: params.doc?.metadata?.numPages ?? null,
+      proxyUsed: params.doc?.metadata?.proxyUsed ?? null,
+      postprocessorsUsed: params.doc?.metadata?.postprocessorsUsed ?? null,
       creditsUsed: params.creditsUsed ?? null,
     },
   });
@@ -356,6 +358,8 @@ async function diffAndPersistPage(params: {
       title: params.doc?.metadata?.title ?? null,
       contentType: params.doc?.metadata?.contentType ?? null,
       numPages: params.doc?.metadata?.numPages ?? null,
+      proxyUsed: params.doc?.metadata?.proxyUsed ?? null,
+      postprocessorsUsed: params.doc?.metadata?.postprocessorsUsed ?? null,
       creditsUsed: params.creditsUsed ?? null,
     },
     judgment,
