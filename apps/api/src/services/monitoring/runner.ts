@@ -179,6 +179,13 @@ async function recoverTargetRunsFromRecordedPages(params: {
     });
   }
 
+  const recoveredTargetIds = new Set(recovered.map(target => target.targetId));
+  if (
+    !params.monitor.targets.every(target => recoveredTargetIds.has(target.id))
+  ) {
+    return [];
+  }
+
   return recovered;
 }
 
