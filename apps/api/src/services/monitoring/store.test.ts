@@ -80,4 +80,15 @@ describe("monitoring store credit helpers", () => {
       ]),
     ).toBe(9);
   });
+
+  it("adds judge credits only when a judgment was persisted", () => {
+    expect(
+      calculateMonitorCheckActualCreditsFromPages([
+        { metadata: { creditsUsed: 2 }, judgment: undefined },
+        { metadata: { creditsUsed: 2 }, judgment: null },
+        { metadata: { creditsUsed: 2 }, judgment: { meaningful: false } },
+        { metadata: { creditsUsed: 2 }, judgment: { meaningful: true } },
+      ]),
+    ).toBe(10);
+  });
 });

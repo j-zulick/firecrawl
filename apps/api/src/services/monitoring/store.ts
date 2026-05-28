@@ -191,6 +191,16 @@ export function calculateMonitorCheckActualCreditsFromPages(
     );
   }
 
+  function judgeCreditsForPage(page: (typeof pages)[number]): number {
+    if (page.judgment == null) {
+      return 0;
+    }
+
+    // A persisted judgment means the judge ran for this page. Charge for that
+    // invocation whether the verdict was meaningful or not.
+    return JUDGE_CREDITS_PER_PAGE;
+  }
+
   return pages.reduce((total, page) => {
     const metadata = page.metadata as { creditsUsed?: unknown } | null;
     const recordedCredits = metadata?.creditsUsed;
@@ -203,7 +213,7 @@ export function calculateMonitorCheckActualCreditsFromPages(
       baseCredits = recordedCredits;
     }
 
-    const judgeCredits = page.judgment != null ? JUDGE_CREDITS_PER_PAGE : 0;
+    const judgeCredits = judgeCreditsForPage(page);
     return total + baseCredits + judgeCredits;
   }, 0);
 }
