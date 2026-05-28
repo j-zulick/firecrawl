@@ -8,6 +8,7 @@ import { derivePageIsMeaningful } from "./page-events";
 import {
   getMonitorForUpdate,
   getMonitorPage,
+  ensureMonitorCheckCrawlTargetRun,
   hashMonitorUrl,
   insertMonitorCheckPages,
   upsertMonitorPage,
@@ -112,6 +113,22 @@ export async function recordMonitorScrapeSuccess(
 ): Promise<void> {
   const monitoring = job.data.monitoring;
   if (!monitoring || job.data.mode !== "single_urls") return;
+
+  if (job.data.crawl_id) {
+    await ensureMonitorCheckCrawlTargetRun({
+      checkId: monitoring.checkId,
+      targetId: monitoring.targetId,
+      crawlId: job.data.crawl_id,
+    }).catch(error => {
+      logger.warn("Failed to repair monitor crawl target run", {
+        error,
+        monitorId: monitoring.monitorId,
+        checkId: monitoring.checkId,
+        targetId: monitoring.targetId,
+        crawlId: job.data.crawl_id,
+      });
+    });
+  }
 
   const url = getDocumentUrl(doc, job.data.url);
   const previous = await getMonitorPage({
@@ -252,6 +269,22 @@ export async function recordMonitorScrapeFailure(
 ): Promise<void> {
   const monitoring = job.data.monitoring;
   if (!monitoring || job.data.mode !== "single_urls") return;
+
+  if (job.data.crawl_id) {
+    await ensureMonitorCheckCrawlTargetRun({
+      checkId: monitoring.checkId,
+      targetId: monitoring.targetId,
+      crawlId: job.data.crawl_id,
+    }).catch(repairError => {
+      logger.warn("Failed to repair monitor crawl target run after failure", {
+        error: repairError,
+        monitorId: monitoring.monitorId,
+        checkId: monitoring.checkId,
+        targetId: monitoring.targetId,
+        crawlId: job.data.crawl_id,
+      });
+    });
+  }
 
   await insertMonitorCheckPages([
     {
