@@ -17,6 +17,8 @@ import type {
   UpdateMonitorRequest,
 } from "./types";
 
+const DEFAULT_MONITOR_CRAWL_LIMIT = 10_000;
+
 export function hashMonitorUrl(url: string): string {
   return `\\x${createHash("sha256").update(url).digest("hex")}`;
 }
@@ -36,7 +38,7 @@ function estimateTargetCredits(target: MonitorTarget): number {
   const limit =
     typeof target.crawlOptions?.limit === "number"
       ? target.crawlOptions.limit
-      : 10000;
+      : DEFAULT_MONITOR_CRAWL_LIMIT;
   return Math.max(1, limit);
 }
 
@@ -485,6 +487,54 @@ export async function updateMonitorCheck(
 
   throwIfError(error, "Failed to update monitor check");
   return data as MonitorCheckRow;
+}
+
+export async function ensureMonitorCheckCrawlTargetRun(params: {
+  checkId: string;
+  targetId: string;
+  crawlId: string;
+}): Promise<void> {
+  const { data, error } = await supabase_service
+    .from("monitor_checks")
+    .select("target_results")
+    .eq("id", params.checkId)
+    .maybeSingle();
+
+  throwIfError(error, "Failed to load monitor check target runs");
+  if (!data) return;
+
+  const targetResults = Array.isArray(data.target_results)
+    ? data.target_results
+    : [];
+  const existing = targetResults.find(
+    (target: any) =>
+      target?.type === "crawl" &&
+      target.targetId === params.targetId &&
+      target.crawlId === params.crawlId,
+  );
+  if (existing) return;
+
+  const withoutStaleTarget = targetResults.filter(
+    (target: any) =>
+      !(target?.type === "crawl" && target.targetId === params.targetId),
+  );
+
+  const { error: updateError } = await supabase_service
+    .from("monitor_checks")
+    .update({
+      target_results: [
+        ...withoutStaleTarget,
+        {
+          targetId: params.targetId,
+          type: "crawl",
+          crawlId: params.crawlId,
+        },
+      ],
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", params.checkId);
+
+  throwIfError(updateError, "Failed to repair monitor check target runs");
 }
 
 export async function insertMonitorCheckPages(

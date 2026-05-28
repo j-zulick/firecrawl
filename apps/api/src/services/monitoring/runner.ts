@@ -63,6 +63,7 @@ const poll = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export { isMonitorCheckStale, MONITOR_CHECK_STALE_TIMEOUT_MS };
 
 const MONITOR_NOTIFY_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
+const MONITOR_CHECK_PAGE_SCAN_LIMIT = 100_000;
 const TERMINAL_CHECK_STATUSES = new Set([
   "completed",
   "partial",
@@ -137,7 +138,7 @@ async function recoverTargetRunsFromRecordedPages(params: {
     teamId: params.monitor.team_id,
     monitorId: params.monitor.id,
     checkId: params.check.id,
-    limit: 100000,
+    limit: MONITOR_CHECK_PAGE_SCAN_LIMIT,
     skip: 0,
   });
   const recovered = [...scrapeRuns];
@@ -1040,7 +1041,7 @@ async function processRemovedPagesForCompletedCrawls(params: {
       teamId: params.monitor.team_id,
       monitorId: params.monitor.id,
       checkId: params.check.id,
-      limit: 100000,
+      limit: MONITOR_CHECK_PAGE_SCAN_LIMIT,
       skip: 0,
     });
     const seen = new Set(
