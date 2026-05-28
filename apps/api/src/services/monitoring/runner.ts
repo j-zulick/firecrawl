@@ -1283,10 +1283,6 @@ export async function reconcileRunningMonitorChecks(
         continue;
       }
 
-      if (check.status === "queued" && !isMonitorCheckStale(check)) {
-        continue;
-      }
-
       if (await failStaleMonitorCheck({ monitor, check })) continue;
 
       let targetResults = Array.isArray(check.target_results)
