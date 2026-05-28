@@ -17,8 +17,6 @@ import type {
   UpdateMonitorRequest,
 } from "./types";
 
-const DEFAULT_MONITOR_CRAWL_LIMIT = 10_000;
-
 export function hashMonitorUrl(url: string): string {
   return `\\x${createHash("sha256").update(url).digest("hex")}`;
 }
@@ -38,7 +36,7 @@ function estimateTargetCredits(target: MonitorTarget): number {
   const limit =
     typeof target.crawlOptions?.limit === "number"
       ? target.crawlOptions.limit
-      : DEFAULT_MONITOR_CRAWL_LIMIT;
+      : 10000;
   return Math.max(1, limit);
 }
 
