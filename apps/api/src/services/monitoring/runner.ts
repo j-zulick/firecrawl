@@ -7,6 +7,9 @@ import { processJobInternal } from "../worker/scrape-worker";
 import { NuQJob, crawlGroup, scrapeQueue } from "../worker/nuq";
 import { ScrapeJobData } from "../../types";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
+import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
+import { CostTracking } from "../../lib/cost-tracking";
+import { getACUCTeam } from "../../controllers/auth";
 import { computeAndPersistPageDiff } from "./diff-orchestrator";
 import { normalizeMonitorFormats } from "./diff";
 import { autumnService } from "../autumn/autumn.service";
@@ -23,7 +26,6 @@ import {
   type ScrapeOptions,
   crawlRequestSchema,
   scrapeRequestSchema,
-  shouldParsePDF,
   toV0CrawlerOptions,
 } from "../../controllers/v2/types";
 import { createWebhookSender, WebhookEvent } from "../webhook";
@@ -66,10 +68,6 @@ export { isMonitorCheckStale, MONITOR_CHECK_STALE_TIMEOUT_MS };
 
 const MONITOR_NOTIFY_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MONITOR_CHECK_PAGE_SCAN_LIMIT = 100_000;
-const BASE_SCRAPE_CREDITS_PER_DOCUMENT = 1;
-const JSON_SCRAPE_CREDITS_PER_DOCUMENT = 5;
-const SCRAPE_OPTION_CREDIT_BONUS = 4;
-const PDF_CREDITS_PER_PAGE = 1;
 const TERMINAL_CHECK_STATUSES = new Set([
   "completed",
   "partial",
@@ -217,62 +215,23 @@ function getDocumentStatusCode(doc: any): number | null {
     : null;
 }
 
-function hasScrapeFormat(formats: unknown[], type: string): boolean {
-  return formats.some(format =>
-    typeof format === "string"
-      ? format === type
-      : (format as any)?.type === type,
-  );
-}
-
-function hasJsonChangeTracking(format: unknown): boolean {
-  return (
-    typeof format === "object" &&
-    format !== null &&
-    (format as any).type === "changeTracking" &&
-    Array.isArray((format as any).modes) &&
-    (format as any).modes.includes("json")
-  );
-}
-
-export function estimateActualCredits(doc: any, options: any): number {
+export async function estimateActualCredits(params: {
+  doc: any;
+  options: any;
+  internalOptions: any;
+  teamId: string;
+}): Promise<number> {
+  const { doc, options, internalOptions, teamId } = params;
   if (typeof doc?.metadata?.creditsUsed === "number") {
     return doc.metadata.creditsUsed;
   }
-  const formats = Array.isArray(options?.formats) ? options.formats : [];
-  const hasJson =
-    hasScrapeFormat(formats, "json") || formats.some(hasJsonChangeTracking);
-  const baseCredits = hasJson
-    ? JSON_SCRAPE_CREDITS_PER_DOCUMENT
-    : BASE_SCRAPE_CREDITS_PER_DOCUMENT +
-      (options?.lockdown ? SCRAPE_OPTION_CREDIT_BONUS : 0);
-  const formatBonusCount = [
-    hasScrapeFormat(formats, "question") || hasScrapeFormat(formats, "query"),
-    hasScrapeFormat(formats, "highlights"),
-    hasScrapeFormat(formats, "audio"),
-    hasScrapeFormat(formats, "video"),
-  ].reduce((count, enabled) => count + (enabled ? 1 : 0), 0);
-  const pdfPages =
-    typeof doc?.metadata?.numPages === "number" &&
-    Number.isFinite(doc.metadata.numPages)
-      ? Math.max(1, Math.ceil(doc.metadata.numPages))
-      : 1;
-  const pdfCredits =
-    shouldParsePDF(options?.parsers) && pdfPages > 1
-      ? PDF_CREDITS_PER_PAGE * (pdfPages - 1)
-      : 0;
-  const proxyCredits =
-    doc?.metadata?.proxyUsed === "stealth" ||
-    options?.proxy === "stealth" ||
-    options?.proxy === "enhanced"
-      ? SCRAPE_OPTION_CREDIT_BONUS
-      : 0;
 
-  return (
-    baseCredits +
-    formatBonusCount * SCRAPE_OPTION_CREDIT_BONUS +
-    pdfCredits +
-    proxyCredits
+  return await calculateCreditsToBeBilled(
+    options,
+    internalOptions,
+    doc,
+    new CostTracking(),
+    internalOptions?.teamFlags ?? (await getACUCTeam(teamId))?.flags ?? null,
   );
 }
 
@@ -302,6 +261,13 @@ async function runSingleScrape(params: {
     api_key_id: null,
   });
 
+  const internalOptions = {
+    teamId: params.monitor.team_id,
+    saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
+    bypassBilling: true,
+    zeroDataRetention: false,
+    teamFlags: (await getACUCTeam(params.monitor.team_id))?.flags ?? null,
+  };
   const job: NuQJob<ScrapeJobData> = {
     id: scrapeId,
     status: "active",
@@ -312,12 +278,7 @@ async function runSingleScrape(params: {
       url: params.url,
       team_id: params.monitor.team_id,
       scrapeOptions,
-      internalOptions: {
-        teamId: params.monitor.team_id,
-        saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
-        bypassBilling: true,
-        zeroDataRetention: false,
-      },
+      internalOptions,
       skipNuq: true,
       origin: "monitor",
       integration: null,
@@ -332,7 +293,12 @@ async function runSingleScrape(params: {
   return {
     scrapeId,
     doc,
-    credits: estimateActualCredits(doc, scrapeOptions),
+    credits: await estimateActualCredits({
+      doc,
+      options: scrapeOptions,
+      internalOptions,
+      teamId: params.monitor.team_id,
+    }),
   };
 }
 
