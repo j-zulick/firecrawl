@@ -60,10 +60,6 @@ function hasAnyFormatOfType(formats: unknown, types: string[]): boolean {
   return types.some(type => hasFormatOfType(formats, type));
 }
 
-function optionBonus(enabled: boolean): number {
-  return enabled ? SCRAPE_OPTION_CREDIT_BONUS : 0;
-}
-
 function requestsJsonChangeTracking(formats: unknown): boolean {
   if (!Array.isArray(formats)) return false;
   return formats.some(format => {
@@ -86,22 +82,37 @@ function estimateBaseCreditsPerPage(
   const formats = options?.formats;
   const usesJsonCredits =
     hasFormatOfType(formats, "json") || requestsJsonChangeTracking(formats);
-  const baseCredits = usesJsonCredits
-    ? JSON_SCRAPE_CREDITS_PER_PAGE
-    : BASE_SCRAPE_CREDITS_PER_PAGE + optionBonus(Boolean(options?.lockdown));
-  const formatBonusCount = [
-    hasAnyFormatOfType(formats, ["question", "query"]),
-    hasFormatOfType(formats, "highlights"),
-    hasFormatOfType(formats, "audio"),
-    hasFormatOfType(formats, "video"),
-  ].reduce((count, enabled) => count + (enabled ? 1 : 0), 0);
-  const proxyCredits = optionBonus(
-    options?.proxy === "stealth" || options?.proxy === "enhanced",
-  );
+  let credits = BASE_SCRAPE_CREDITS_PER_PAGE;
 
-  return (
-    baseCredits + formatBonusCount * SCRAPE_OPTION_CREDIT_BONUS + proxyCredits
-  );
+  if (options?.lockdown) {
+    credits += SCRAPE_OPTION_CREDIT_BONUS;
+  }
+
+  if (usesJsonCredits) {
+    credits = JSON_SCRAPE_CREDITS_PER_PAGE;
+  }
+
+  if (hasAnyFormatOfType(formats, ["question", "query"])) {
+    credits += SCRAPE_OPTION_CREDIT_BONUS;
+  }
+
+  if (hasFormatOfType(formats, "highlights")) {
+    credits += SCRAPE_OPTION_CREDIT_BONUS;
+  }
+
+  if (hasFormatOfType(formats, "audio")) {
+    credits += SCRAPE_OPTION_CREDIT_BONUS;
+  }
+
+  if (hasFormatOfType(formats, "video")) {
+    credits += SCRAPE_OPTION_CREDIT_BONUS;
+  }
+
+  if (options?.proxy === "stealth" || options?.proxy === "enhanced") {
+    credits += SCRAPE_OPTION_CREDIT_BONUS;
+  }
+
+  return credits;
 }
 
 function estimateTargetBaseCredits(target: MonitorTarget): number {

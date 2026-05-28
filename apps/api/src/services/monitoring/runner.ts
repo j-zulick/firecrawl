@@ -7,9 +7,6 @@ import { processJobInternal } from "../worker/scrape-worker";
 import { NuQJob, crawlGroup, scrapeQueue } from "../worker/nuq";
 import { ScrapeJobData } from "../../types";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
-import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
-import { CostTracking } from "../../lib/cost-tracking";
-import { getACUCTeam } from "../../controllers/auth";
 import { computeAndPersistPageDiff } from "./diff-orchestrator";
 import { normalizeMonitorFormats } from "./diff";
 import { autumnService } from "../autumn/autumn.service";
@@ -215,29 +212,11 @@ function getDocumentStatusCode(doc: any): number | null {
     : null;
 }
 
-export async function estimateActualCredits(params: {
-  doc: any;
-  options: any;
-  internalOptions: any;
-  teamId: string;
-}): Promise<number> {
-  const { doc, options, internalOptions, teamId } = params;
-  if (typeof doc?.metadata?.creditsUsed === "number") {
-    return doc.metadata.creditsUsed;
-  }
-
-  const flags =
-    internalOptions && "teamFlags" in internalOptions
-      ? internalOptions.teamFlags
-      : ((await getACUCTeam(teamId))?.flags ?? null);
-
-  return await calculateCreditsToBeBilled(
-    options,
-    internalOptions,
-    doc,
-    new CostTracking(),
-    flags,
-  );
+export function estimateActualCredits(doc: any): number {
+  const creditsUsed = doc?.metadata?.creditsUsed;
+  return typeof creditsUsed === "number" && Number.isFinite(creditsUsed)
+    ? creditsUsed
+    : 1;
 }
 
 async function runSingleScrape(params: {
@@ -271,7 +250,6 @@ async function runSingleScrape(params: {
     saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
     bypassBilling: true,
     zeroDataRetention: false,
-    teamFlags: (await getACUCTeam(params.monitor.team_id))?.flags ?? null,
   };
   const job: NuQJob<ScrapeJobData> = {
     id: scrapeId,
@@ -298,12 +276,7 @@ async function runSingleScrape(params: {
   return {
     scrapeId,
     doc,
-    credits: await estimateActualCredits({
-      doc,
-      options: scrapeOptions,
-      internalOptions,
-      teamId: params.monitor.team_id,
-    }),
+    credits: estimateActualCredits(doc),
   };
 }
 
@@ -496,7 +469,6 @@ async function runCrawlTarget(params: {
       saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
       zeroDataRetention: false,
       bypassBilling: true,
-      teamFlags: (await getACUCTeam(params.monitor.team_id))?.flags ?? null,
     },
     team_id: params.monitor.team_id,
     createdAt: Date.now(),
@@ -568,12 +540,7 @@ async function runCrawlTarget(params: {
     if (!doc) continue;
     const url = getDocumentUrl(doc, (job.data as any)?.url ?? body.url);
     seen.add(hashMonitorUrl(url));
-    const pageCredits = await estimateActualCredits({
-      doc,
-      options: body.scrapeOptions,
-      internalOptions: sc.internalOptions,
-      teamId: params.monitor.team_id,
-    });
+    const pageCredits = estimateActualCredits(doc);
     credits += pageCredits;
     pages.push(
       await diffAndPersistPage({

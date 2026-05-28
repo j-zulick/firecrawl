@@ -107,7 +107,14 @@ async function billScrapeJob(
   error?: Error | null,
   unsupportedFeatures?: Set<FeatureFlag>,
 ) {
-  let creditsToBeBilled: number | null = null;
+  const creditsToBeBilled = await calculateScrapeJobCredits(
+    job,
+    document,
+    costTracking,
+    flags,
+    error,
+    unsupportedFeatures,
+  );
   const billing = resolveBillingMetadata({
     billing: job.data.billing,
     crawlId: job.data.crawl_id,
@@ -120,81 +127,91 @@ async function billScrapeJob(
   };
   let trackedInRequest = false;
 
-  if (job.data.is_scrape !== true && !job.data.internalOptions?.bypassBilling) {
-    creditsToBeBilled = await calculateCreditsToBeBilled(
-      job.data.scrapeOptions,
-      job.data.internalOptions,
-      document,
-      costTracking,
-      flags,
-      error,
-      unsupportedFeatures,
-    );
+  if (creditsToBeBilled === null || job.data.internalOptions?.bypassBilling) {
+    return creditsToBeBilled;
+  }
 
-    if (
-      job.data.team_id !== config.BACKGROUND_INDEX_TEAM_ID! &&
-      config.USE_DB_AUTHENTICATION
-    ) {
-      try {
-        trackedInRequest = await autumnService.trackCredits({
+  if (
+    job.data.team_id !== config.BACKGROUND_INDEX_TEAM_ID! &&
+    config.USE_DB_AUTHENTICATION
+  ) {
+    try {
+      trackedInRequest = await autumnService.trackCredits({
+        teamId: job.data.team_id,
+        value: creditsToBeBilled,
+        properties: autumnProperties,
+        requestScoped: true,
+      });
+      const billingJobId = uuidv7();
+      logger.debug(`Adding billing job to queue for team ${job.data.team_id}`, {
+        billingJobId,
+        billing,
+        credits: creditsToBeBilled,
+        is_extract: false,
+      });
+
+      // Add directly to the billing queue - the billing worker will handle the rest
+      await getBillingQueue().add(
+        "bill_team",
+        {
+          team_id: job.data.team_id,
+          subscription_id: undefined,
+          credits: creditsToBeBilled,
+          billing,
+          is_extract: false,
+          timestamp: new Date().toISOString(),
+          originating_job_id: job.id,
+          api_key_id: job.data.apiKeyId,
+          autumnTrackInRequest: trackedInRequest,
+        },
+        {
+          jobId: billingJobId,
+          priority: 10,
+        },
+      );
+
+      return creditsToBeBilled;
+    } catch (error) {
+      logger.error(
+        `Failed to add billing job to queue for team ${job.data.team_id} for ${creditsToBeBilled} credits`,
+        { error },
+      );
+      if (trackedInRequest && creditsToBeBilled !== null) {
+        await autumnService.refundCredits({
           teamId: job.data.team_id,
           value: creditsToBeBilled,
           properties: autumnProperties,
-          requestScoped: true,
         });
-        const billingJobId = uuidv7();
-        logger.debug(
-          `Adding billing job to queue for team ${job.data.team_id}`,
-          {
-            billingJobId,
-            billing,
-            credits: creditsToBeBilled,
-            is_extract: false,
-          },
-        );
-
-        // Add directly to the billing queue - the billing worker will handle the rest
-        await getBillingQueue().add(
-          "bill_team",
-          {
-            team_id: job.data.team_id,
-            subscription_id: undefined,
-            credits: creditsToBeBilled,
-            billing,
-            is_extract: false,
-            timestamp: new Date().toISOString(),
-            originating_job_id: job.id,
-            api_key_id: job.data.apiKeyId,
-            autumnTrackInRequest: trackedInRequest,
-          },
-          {
-            jobId: billingJobId,
-            priority: 10,
-          },
-        );
-
-        return creditsToBeBilled;
-      } catch (error) {
-        logger.error(
-          `Failed to add billing job to queue for team ${job.data.team_id} for ${creditsToBeBilled} credits`,
-          { error },
-        );
-        if (trackedInRequest && creditsToBeBilled !== null) {
-          await autumnService.refundCredits({
-            teamId: job.data.team_id,
-            value: creditsToBeBilled,
-            properties: autumnProperties,
-          });
-        }
-        captureExceptionWithZdrCheck(error, {
-          extra: { zeroDataRetention: job.data.zeroDataRetention ?? false },
-        });
-        return creditsToBeBilled;
       }
+      captureExceptionWithZdrCheck(error, {
+        extra: { zeroDataRetention: job.data.zeroDataRetention ?? false },
+      });
+      return creditsToBeBilled;
     }
   }
 
   return creditsToBeBilled;
+}
+
+export async function calculateScrapeJobCredits(
+  job: NuQJob<any>,
+  document: Document | null,
+  costTracking: CostTracking,
+  flags: TeamFlags,
+  error?: Error | null,
+  unsupportedFeatures?: Set<FeatureFlag>,
+): Promise<number | null> {
+  if (job.data.is_scrape === true) return null;
+
+  return await calculateCreditsToBeBilled(
+    job.data.scrapeOptions,
+    job.data.internalOptions ?? { teamId: job.data.team_id },
+    document,
+    costTracking,
+    flags,
+    error,
+    unsupportedFeatures,
+  );
 }
 
 async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
