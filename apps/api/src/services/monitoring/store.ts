@@ -174,18 +174,35 @@ export function calculateMonitorCheckActualCreditsFromPages(
     ]),
   );
 
+  function fallbackBaseCreditsForPage(page: (typeof pages)[number]): number {
+    if (page.status === "removed") {
+      return REMOVED_PAGE_CREDITS;
+    }
+
+    if (page.status === "error") {
+      return BASE_SCRAPE_CREDITS_PER_PAGE;
+    }
+
+    // Successful new monitor pages should carry scrape-computed credits in
+    // metadata. This is only for older rows or unusual missing-metadata paths.
+    return (
+      baseCreditsByTarget.get(page.target_id ?? "") ??
+      BASE_SCRAPE_CREDITS_PER_PAGE
+    );
+  }
+
   return pages.reduce((total, page) => {
     const metadata = page.metadata as { creditsUsed?: unknown } | null;
     const recordedCredits = metadata?.creditsUsed;
-    const baseCredits =
-      typeof recordedCredits === "number" && Number.isFinite(recordedCredits)
-        ? recordedCredits
-        : page.status === "removed"
-          ? REMOVED_PAGE_CREDITS
-          : page.status === "error"
-            ? BASE_SCRAPE_CREDITS_PER_PAGE
-            : (baseCreditsByTarget.get(page.target_id ?? "") ??
-              BASE_SCRAPE_CREDITS_PER_PAGE);
+    let baseCredits = fallbackBaseCreditsForPage(page);
+
+    if (
+      typeof recordedCredits === "number" &&
+      Number.isFinite(recordedCredits)
+    ) {
+      baseCredits = recordedCredits;
+    }
+
     const judgeCredits = page.judgment != null ? JUDGE_CREDITS_PER_PAGE : 0;
     return total + baseCredits + judgeCredits;
   }, 0);
