@@ -113,21 +113,72 @@ function createMonitorTargetRun(target: MonitorTarget): MonitorTargetRun {
   };
 }
 
-function recoverScrapeTargetRunsFromMonitor(
-  monitor: MonitorRow,
-): MonitorTargetRun[] | null {
-  if (!monitor.targets.every(target => target.type === "scrape")) {
-    return null;
+async function recoverTargetRunsFromRecordedPages(params: {
+  monitor: MonitorRow;
+  check: MonitorCheckRow;
+}): Promise<MonitorTargetRun[]> {
+  const scrapeRuns: MonitorTargetRun[] = params.monitor.targets
+    .filter((target): target is Extract<MonitorTarget, { type: "scrape" }> => {
+      return target.type === "scrape";
+    })
+    .map(target => ({
+      targetId: target.id,
+      type: "scrape" as const,
+      expectedJobs: target.urls.map(
+        (_, index) => `recovered:${target.id}:${index}`,
+      ),
+    }));
+  const crawlTargets = params.monitor.targets.filter(
+    target => target.type === "crawl",
+  );
+  if (crawlTargets.length === 0) return scrapeRuns;
+
+  const pages = await listMonitorCheckPages({
+    teamId: params.monitor.team_id,
+    monitorId: params.monitor.id,
+    checkId: params.check.id,
+    limit: 100000,
+    skip: 0,
+  });
+  const recovered = [...scrapeRuns];
+
+  for (const target of crawlTargets) {
+    const page = pages.find(
+      candidate =>
+        candidate.target_id === target.id &&
+        typeof candidate.current_scrape_id === "string",
+    );
+    if (!page?.current_scrape_id) continue;
+
+    const scrapeJob = await scrapeQueue
+      .getJob(page.current_scrape_id, logger)
+      .catch(error => {
+        logger.warn(
+          "Failed to recover monitor crawl target run from page job",
+          {
+            error,
+            monitorId: params.monitor.id,
+            checkId: params.check.id,
+            targetId: target.id,
+            scrapeId: page.current_scrape_id,
+          },
+        );
+        return null;
+      });
+    const crawlId =
+      scrapeJob?.data?.mode === "single_urls"
+        ? (scrapeJob.data.crawl_id ?? scrapeJob.groupId)
+        : scrapeJob?.groupId;
+    if (!crawlId) continue;
+
+    recovered.push({
+      targetId: target.id,
+      type: "crawl",
+      crawlId,
+    });
   }
 
-  return monitor.targets.map(target => ({
-    targetId: target.id,
-    type: "scrape" as const,
-    expectedJobs:
-      target.type === "scrape"
-        ? target.urls.map((_, index) => `recovered:${target.id}:${index}`)
-        : [],
-  }));
+  return recovered;
 }
 
 function withMonitorScrapeDefaults(
@@ -1045,7 +1096,10 @@ async function isMonitorCheckComplete(
   if (targetResults.length === 0) {
     if (!monitor) return false;
 
-    targetResults = recoverScrapeTargetRunsFromMonitor(monitor) ?? [];
+    targetResults = await recoverTargetRunsFromRecordedPages({
+      monitor,
+      check,
+    });
     if (targetResults.length === 0) return false;
   }
 
@@ -1188,7 +1242,49 @@ export async function reconcileRunningMonitorChecks(
         check.team_id,
         check.monitor_id,
       );
-      if (!monitor) continue;
+      if (!monitor) {
+        if (check.autumn_lock_id) {
+          await autumnService
+            .finalizeCreditsLock({
+              lockId: check.autumn_lock_id,
+              action: "release",
+              properties: {
+                source: "monitorCheck",
+                endpoint: "monitor",
+                jobId: check.id,
+              },
+            })
+            .catch(error => {
+              logger.warn(
+                "Failed to release orphaned monitor check credit lock",
+                {
+                  error,
+                  monitorId: check.monitor_id,
+                  checkId: check.id,
+                  lockId: check.autumn_lock_id,
+                },
+              );
+            });
+        }
+
+        await updateMonitorCheck(check.id, {
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          actual_credits: 0,
+          billing_status: check.autumn_lock_id ? "released" : "not_applicable",
+          error: "Monitor no longer exists.",
+        });
+
+        logger.warn("Failed orphaned monitor check", {
+          monitorId: check.monitor_id,
+          checkId: check.id,
+        });
+        continue;
+      }
+
+      if (check.status === "queued" && !isMonitorCheckStale(check)) {
+        continue;
+      }
 
       if (await failStaleMonitorCheck({ monitor, check })) continue;
 
@@ -1196,7 +1292,10 @@ export async function reconcileRunningMonitorChecks(
         ? ([...check.target_results] as any[])
         : [];
       if (targetResults.length === 0) {
-        targetResults = recoverScrapeTargetRunsFromMonitor(monitor) ?? [];
+        targetResults = await recoverTargetRunsFromRecordedPages({
+          monitor,
+          check,
+        });
       }
 
       await processRemovedPagesForCompletedCrawls({
@@ -1214,7 +1313,9 @@ export async function reconcileRunningMonitorChecks(
           monitor,
         ))
       ) {
-        await updateMonitorCheck(check.id, { target_results: targetResults });
+        if (targetResults.length > 0) {
+          await updateMonitorCheck(check.id, { target_results: targetResults });
+        }
         continue;
       }
 
