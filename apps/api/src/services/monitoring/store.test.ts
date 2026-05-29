@@ -121,6 +121,32 @@ describe("monitoring store credit helpers", () => {
     ).toBe(34);
   });
 
+  it("treats enhanced proxy metadata as premium for fallback billing", () => {
+    const targets: MonitorTarget[] = [
+      {
+        id: "target-1",
+        type: "scrape",
+        urls: ["https://example.com"],
+        scrapeOptions: {},
+      },
+    ];
+
+    expect(
+      calculateMonitorCheckActualCreditsFromPages(
+        [
+          {
+            target_id: "target-1",
+            metadata: {
+              proxyUsed: "enhanced",
+            },
+            status: "same",
+          },
+        ],
+        targets,
+      ),
+    ).toBe(5);
+  });
+
   it("does not add fallback proxy credits when runtime metadata says basic was used", () => {
     const targets: MonitorTarget[] = [
       {

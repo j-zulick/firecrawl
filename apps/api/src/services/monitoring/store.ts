@@ -221,8 +221,10 @@ export function calculateMonitorCheckActualCreditsFromPages(
     const requestedPremiumProxy =
       target?.scrapeOptions?.proxy === "stealth" ||
       target?.scrapeOptions?.proxy === "enhanced";
+    const usedPremiumProxy =
+      metadata?.proxyUsed === "stealth" || metadata?.proxyUsed === "enhanced";
     if (
-      metadata?.proxyUsed === "stealth" ||
+      usedPremiumProxy ||
       (metadata?.proxyUsed == null && requestedPremiumProxy)
     ) {
       credits += SCRAPE_OPTION_CREDIT_BONUS;
