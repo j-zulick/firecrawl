@@ -87,8 +87,10 @@ function requestsJsonChangeTracking(formats: unknown): boolean {
 
 function estimateBaseCreditsPerPage(
   options: MonitorTarget["scrapeOptions"],
+  params: { includeProxy?: boolean } = {},
 ): number {
   const formats = options?.formats;
+  const includeProxy = params.includeProxy ?? true;
   const usesJsonCredits =
     hasFormatOfType(formats, "json") || requestsJsonChangeTracking(formats);
   let credits = BASE_SCRAPE_CREDITS_PER_PAGE;
@@ -117,7 +119,10 @@ function estimateBaseCreditsPerPage(
     credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 
-  if (options?.proxy === "stealth" || options?.proxy === "enhanced") {
+  if (
+    includeProxy &&
+    (options?.proxy === "stealth" || options?.proxy === "enhanced")
+  ) {
     credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 
@@ -179,7 +184,9 @@ export function calculateMonitorCheckActualCreditsFromPages(
   const baseCreditsByTarget = new Map(
     targets.map(target => [
       target.id,
-      estimateBaseCreditsPerPage(target.scrapeOptions),
+      estimateBaseCreditsPerPage(target.scrapeOptions, {
+        includeProxy: false,
+      }),
     ]),
   );
   const targetsById = new Map(targets.map(target => [target.id, target]));
@@ -211,10 +218,12 @@ export function calculateMonitorCheckActualCreditsFromPages(
       credits += metadata.numPages - 1;
     }
 
+    const requestedPremiumProxy =
+      target?.scrapeOptions?.proxy === "stealth" ||
+      target?.scrapeOptions?.proxy === "enhanced";
     if (
-      metadata?.proxyUsed === "stealth" &&
-      target?.scrapeOptions?.proxy !== "stealth" &&
-      target?.scrapeOptions?.proxy !== "enhanced"
+      metadata?.proxyUsed === "stealth" ||
+      (metadata?.proxyUsed == null && requestedPremiumProxy)
     ) {
       credits += SCRAPE_OPTION_CREDIT_BONUS;
     }

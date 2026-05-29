@@ -121,6 +121,36 @@ describe("monitoring store credit helpers", () => {
     ).toBe(34);
   });
 
+  it("does not add fallback proxy credits when runtime metadata says basic was used", () => {
+    const targets: MonitorTarget[] = [
+      {
+        id: "target-1",
+        type: "scrape",
+        urls: ["https://example.com/sample.pdf"],
+        scrapeOptions: {
+          formats: [{ type: "changeTracking", modes: ["json"] }],
+          proxy: "stealth",
+        },
+      },
+    ];
+
+    expect(
+      calculateMonitorCheckActualCreditsFromPages(
+        [
+          {
+            target_id: "target-1",
+            metadata: {
+              numPages: 10,
+              proxyUsed: "basic",
+            },
+            status: "same",
+          },
+        ],
+        targets,
+      ),
+    ).toBe(14);
+  });
+
   it("prefers recorded page usage and does not bill removed pages", () => {
     expect(
       calculateMonitorCheckActualCreditsFromPages([
