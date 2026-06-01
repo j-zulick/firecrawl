@@ -186,21 +186,14 @@ export async function x402SearchController(
   res: Response<SearchResponse & { request?: any }>,
 ) {
   const jobId = uuidv7();
+  const zeroDataRetention = getSearchZDR(req.acuc?.flags) === "forced";
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
     module: "x402-search",
     method: "x402SearchController",
-    zeroDataRetention: getSearchZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention,
   });
-
-  if (getSearchZDR(req.acuc?.flags) === "forced") {
-    return res.status(400).json({
-      success: false,
-      error:
-        "Your team has zero data retention enabled. This is not supported on x402/search. Please contact support@firecrawl.com to unblock this feature.",
-    });
-  }
 
   let responseData: SearchResponse = {
     success: true,
@@ -234,7 +227,7 @@ export async function x402SearchController(
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
       target_hint: req.body.query,
-      zeroDataRetention: false, // not supported for x402 search
+      zeroDataRetention,
       api_key_id: req.acuc?.api_key_id ?? null,
     });
 
@@ -351,7 +344,7 @@ export async function x402SearchController(
         team_id: req.auth.team_id,
         options: { ...req.body, scrapeOptions: undefined, query: undefined },
         credits_cost: responseData.data.length,
-        zeroDataRetention: false, // not supported
+        zeroDataRetention,
       },
       false,
     );
@@ -367,7 +360,7 @@ export async function x402SearchController(
     }
 
     captureExceptionWithZdrCheck(error, {
-      extra: { zeroDataRetention: false },
+      extra: { zeroDataRetention },
     });
     logger.error("Unhandled error occurred in search [x402]", { error });
     return res.status(500).json({

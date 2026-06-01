@@ -206,21 +206,15 @@ export async function x402SearchController(
   res: Response<SearchResponse>,
 ) {
   const jobId = uuidv7();
+  const searchZDRMode = getSearchZDR(req.acuc?.flags);
+  const zeroDataRetention = searchZDRMode === "forced";
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "x402SearchController",
-    zeroDataRetention: getSearchZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention,
   });
-
-  if (getSearchZDR(req.acuc?.flags) === "forced") {
-    return res.status(400).json({
-      success: false,
-      error:
-        "Your team has zero data retention enabled. This is not supported on search. Please contact support@firecrawl.com to unblock this feature.",
-    });
-  }
 
   const startTime = new Date().getTime();
   const isSearchPreview =
@@ -247,8 +241,7 @@ export async function x402SearchController(
     const isZDR = req.body.enterprise?.includes("zdr");
     const isAnon = req.body.enterprise?.includes("anon");
     if (isZDR || isAnon) {
-      const searchMode = getSearchZDR(req.acuc?.flags);
-      if (searchMode !== "allowed" && searchMode !== "forced") {
+      if (searchZDRMode !== "allowed" && searchZDRMode !== "forced") {
         return res.status(403).json({
           success: false,
           error:
@@ -265,7 +258,7 @@ export async function x402SearchController(
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
       target_hint: req.body.query,
-      zeroDataRetention: false, // not supported for x402 search
+      zeroDataRetention,
       api_key_id: req.acuc?.api_key_id ?? null,
     });
 
@@ -558,7 +551,7 @@ export async function x402SearchController(
               scrapeOptions: undefined,
             },
             credits_cost: credits_billed,
-            zeroDataRetention: false,
+            zeroDataRetention,
           },
           false,
         );
@@ -643,7 +636,7 @@ export async function x402SearchController(
         team_id: req.auth.team_id,
         options: { ...req.body, scrapeOptions: undefined, query: undefined },
         credits_cost: credits_billed,
-        zeroDataRetention: false, // not supported
+        zeroDataRetention,
       },
       false,
     );
@@ -674,7 +667,7 @@ export async function x402SearchController(
     }
 
     captureExceptionWithZdrCheck(error, {
-      extra: { zeroDataRetention: false },
+      extra: { zeroDataRetention },
     });
     logger.error("Unhandled error occurred in search [x402]", { error });
     return res.status(500).json({

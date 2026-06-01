@@ -86,22 +86,15 @@ export async function searchController(
   const controllerStartTime = new Date().getTime();
 
   const jobId = uuidv7();
+  const zeroDataRetention = getSearchZDR(req.acuc?.flags) === "forced";
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
     module: "search",
     method: "searchController",
-    zeroDataRetention: getSearchZDR(req.acuc?.flags) === "forced",
+    zeroDataRetention,
     searchQuery: req.body.query.slice(0, 100),
   });
-
-  if (getSearchZDR(req.acuc?.flags) === "forced") {
-    return res.status(400).json({
-      success: false,
-      error:
-        "Your team has zero data retention enabled. This is not supported on search. Please contact support@firecrawl.com to unblock this feature.",
-    });
-  }
 
   let responseData: SearchResponse = {
     success: true,
@@ -130,7 +123,7 @@ export async function searchController(
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
       target_hint: req.body.query,
-      zeroDataRetention: false,
+      zeroDataRetention,
       api_key_id: req.acuc?.api_key_id ?? null,
     });
 
@@ -169,7 +162,7 @@ export async function searchController(
         jobId,
         apiVersion: "v1",
         bypassBilling: false,
-        zeroDataRetention: false,
+        zeroDataRetention,
         agentIndexOnly: (req as any).agentIndexOnly ?? false,
       },
       logger,
@@ -235,7 +228,7 @@ export async function searchController(
           scrapeOptions: undefined,
         },
         credits_cost: result.searchCredits,
-        zeroDataRetention: false,
+        zeroDataRetention,
       },
       false,
     );
@@ -276,7 +269,7 @@ export async function searchController(
     }
 
     captureExceptionWithZdrCheck(error, {
-      extra: { zeroDataRetention: false },
+      extra: { zeroDataRetention },
     });
     logger.error("Unhandled error occurred in search", {
       version: "v1",
