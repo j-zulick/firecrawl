@@ -27,7 +27,7 @@ import {
   captureExceptionWithZdrCheck,
 } from "../../services/sentry";
 import { getJobPriority } from "../../lib/job-priority";
-import { getSearchZDR } from "../../lib/zdr-helpers";
+import { getSearchForcedKind } from "../../lib/zdr-helpers";
 
 interface DocumentWithCostTracking {
   document: Document;
@@ -52,7 +52,7 @@ async function scrapeX402SearchResult(
 
   const costTracking = new CostTracking();
 
-  const zeroDataRetention = getSearchZDR(flags) === "forced";
+  const zeroDataRetention = getSearchForcedKind(flags) !== null;
   applyZdrScope(zeroDataRetention);
 
   try {
@@ -186,13 +186,15 @@ export async function x402SearchController(
   res: Response<SearchResponse & { request?: any }>,
 ) {
   const jobId = uuidv7();
-  const zeroDataRetention = getSearchZDR(req.acuc?.flags) === "forced";
+  const teamForcedKind = getSearchForcedKind(req.acuc?.flags);
+  const zeroDataRetention = teamForcedKind !== null;
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
     module: "x402-search",
     method: "x402SearchController",
     zeroDataRetention,
+    teamForcedKind,
   });
 
   let responseData: SearchResponse = {

@@ -19,7 +19,7 @@ import {
 } from "../../services/sentry";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
-import { getSearchZDR } from "../../lib/zdr-helpers";
+import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -31,13 +31,14 @@ export async function searchController(
 
   const jobId = uuidv7();
   const searchZDRMode = getSearchZDR(req.acuc?.flags);
-  const teamForcedZDR = searchZDRMode === "forced";
+  const teamForcedKind = getSearchForcedKind(req.acuc?.flags);
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "searchController",
-    zeroDataRetention: teamForcedZDR,
+    zeroDataRetention: teamForcedKind !== null,
+    teamForcedKind,
   });
 
   const middlewareTime = controllerStartTime - middlewareStartTime;
@@ -45,7 +46,7 @@ export async function searchController(
     config.SEARCH_PREVIEW_TOKEN !== undefined &&
     config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
 
-  let zeroDataRetention = teamForcedZDR;
+  let zeroDataRetention = teamForcedKind !== null;
 
   try {
     req.body = searchRequestSchema.parse(req.body);
@@ -78,15 +79,25 @@ export async function searchController(
       origin: req.body.origin,
     });
 
+    // Inject the team-forced enterprise mode so downstream billing,
+    // upstream routing, and ZDR cleanup all see it.
+    if (teamForcedKind) {
+      const existing = req.body.enterprise ?? [];
+      if (!existing.includes(teamForcedKind)) {
+        req.body.enterprise = [...existing, teamForcedKind];
+      }
+    }
+
     const isZDR = req.body.enterprise?.includes("zdr");
     const isAnon = req.body.enterprise?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
-    zeroDataRetention = teamForcedZDR || (isZDROrAnon ?? false);
+    zeroDataRetention = isZDROrAnon ?? false;
+    logger = logger.child({ zeroDataRetention });
     applyZdrScope(zeroDataRetention);
 
     // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
-    if (isZDROrAnon) {
-      if (searchZDRMode !== "allowed" && searchZDRMode !== "forced") {
+    if (isZDROrAnon && !teamForcedKind) {
+      if (searchZDRMode !== "allowed") {
         return res.status(403).json({
           success: false,
           error:

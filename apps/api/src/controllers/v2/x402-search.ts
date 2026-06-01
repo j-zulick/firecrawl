@@ -32,7 +32,7 @@ import {
   applyZdrScope,
   captureExceptionWithZdrCheck,
 } from "../../services/sentry";
-import { getSearchZDR } from "../../lib/zdr-helpers";
+import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
 
 interface DocumentWithCostTracking {
   document: Document;
@@ -62,7 +62,7 @@ async function startX420ScrapeJob(
 ): Promise<string> {
   const jobId = uuidv7();
 
-  const zeroDataRetention = getSearchZDR(flags) === "forced";
+  const zeroDataRetention = getSearchForcedKind(flags) !== null;
   applyZdrScope(zeroDataRetention);
 
   logger.info("Adding scrape job [x402]", {
@@ -207,13 +207,15 @@ export async function x402SearchController(
 ) {
   const jobId = uuidv7();
   const searchZDRMode = getSearchZDR(req.acuc?.flags);
-  const zeroDataRetention = searchZDRMode === "forced";
+  const teamForcedKind = getSearchForcedKind(req.acuc?.flags);
+  let zeroDataRetention = teamForcedKind !== null;
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "x402SearchController",
     zeroDataRetention,
+    teamForcedKind,
   });
 
   const startTime = new Date().getTime();
@@ -237,11 +239,20 @@ export async function x402SearchController(
       origin: req.body.origin,
     });
 
+    // Inject the team-forced enterprise mode so downstream billing,
+    // upstream routing, and ZDR cleanup all see it.
+    if (teamForcedKind) {
+      const existing = req.body.enterprise ?? [];
+      if (!existing.includes(teamForcedKind)) {
+        req.body.enterprise = [...existing, teamForcedKind];
+      }
+    }
+
     // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
     const isZDR = req.body.enterprise?.includes("zdr");
     const isAnon = req.body.enterprise?.includes("anon");
-    if (isZDR || isAnon) {
-      if (searchZDRMode !== "allowed" && searchZDRMode !== "forced") {
+    if ((isZDR || isAnon) && !teamForcedKind) {
+      if (searchZDRMode !== "allowed") {
         return res.status(403).json({
           success: false,
           error:
@@ -249,6 +260,10 @@ export async function x402SearchController(
         });
       }
     }
+    zeroDataRetention =
+      teamForcedKind !== null || isZDR === true || isAnon === true;
+    logger = logger.child({ zeroDataRetention });
+    applyZdrScope(zeroDataRetention);
 
     await logRequest({
       id: jobId,

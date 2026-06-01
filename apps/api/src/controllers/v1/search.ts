@@ -26,7 +26,7 @@ import {
   filterDocumentsWithContent,
 } from "../../search/transform";
 import { fromV1ScrapeOptions } from "../v2/types";
-import { getSearchZDR } from "../../lib/zdr-helpers";
+import { getSearchForcedKind } from "../../lib/zdr-helpers";
 
 // Used for deep research
 export async function searchAndScrapeSearchResult(
@@ -86,13 +86,16 @@ export async function searchController(
   const controllerStartTime = new Date().getTime();
 
   const jobId = uuidv7();
-  const zeroDataRetention = getSearchZDR(req.acuc?.flags) === "forced";
+  const teamForcedKind = getSearchForcedKind(req.acuc?.flags);
+  const zeroDataRetention = teamForcedKind !== null;
+  const teamEnterprise = teamForcedKind ? [teamForcedKind] : undefined;
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
     module: "search",
     method: "searchController",
     zeroDataRetention,
+    teamForcedKind,
     searchQuery: req.body.query.slice(0, 100),
   });
 
@@ -152,6 +155,7 @@ export async function searchController(
         sources: [{ type: "web" }], // v1 only supports web
         scrapeOptions: shouldScrape ? scrapeOptions : undefined,
         timeout: req.body.timeout,
+        enterprise: teamEnterprise,
       },
       {
         teamId: req.auth.team_id,
