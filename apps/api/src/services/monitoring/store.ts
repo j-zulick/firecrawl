@@ -794,6 +794,7 @@ export async function calculateMonitorCheckActualCredits(params: {
       .from("monitor_check_pages")
       .select("target_id, metadata, judgment, status")
       .eq("check_id", params.checkId)
+      .order("id", { ascending: true })
       .range(offset, offset + MONITOR_CHECK_PAGE_BATCH_SIZE - 1);
 
     throwIfError(error, "Failed to calculate monitor check credits");
