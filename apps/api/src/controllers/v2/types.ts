@@ -692,17 +692,6 @@ const waitForRefineOpts = {
   path: ["waitFor"],
 };
 
-const redactPIIRefine = (
-  obj?: Pick<ScrapeOptionsBase, "redactPII" | "formats">,
-): boolean => {
-  if (!obj || !obj.redactPII) return true;
-  return !!obj.formats?.some(f => f.type === "pii");
-};
-const redactPIIRefineOpts = {
-  message: "redactPII requires `pii` to be included in formats",
-  path: ["redactPII"],
-};
-
 // Base transform function that handles both nullable and non-nullable cases
 // Uses generic type to preserve all fields from extended schemas
 const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
@@ -776,7 +765,6 @@ export const scrapeOptions = strictWithMessage(baseScrapeOptions)
     },
   )
   .refine(waitForRefine, waitForRefineOpts)
-  .refine(redactPIIRefine, redactPIIRefineOpts)
   .transform(extractTransformRequired);
 
 export type BaseScrapeOptions = z.infer<typeof baseScrapeOptions>;
@@ -860,10 +848,6 @@ const extractOptions = z
     x => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
     waitForRefineOpts,
   )
-  .refine(
-    x => (x.scrapeOptions ? redactPIIRefine(x.scrapeOptions) : true),
-    redactPIIRefineOpts,
-  )
   .transform(x => ({
     ...x,
     scrapeOptions: extractTransform(x.scrapeOptions),
@@ -934,7 +918,6 @@ const scrapeRequestSchemaBase = baseScrapeOptions.extend({
 
 export const scrapeRequestSchema = strictWithMessage(scrapeRequestSchemaBase)
   .refine(waitForRefine, waitForRefineOpts)
-  .refine(redactPIIRefine, redactPIIRefineOpts)
   .transform(extractTransformRequired);
 
 export type ScrapeRequest = z.infer<typeof scrapeRequestSchema>;
@@ -992,7 +975,6 @@ const parseRequestSchemaBase = baseScrapeOptions.extend({
 
 export const parseRequestSchema = strictWithMessage(parseRequestSchemaBase)
   .refine(waitForRefine, waitForRefineOpts)
-  .refine(redactPIIRefine, redactPIIRefineOpts)
   .transform(x => {
     const { file, ...scrapeLike } = x;
     return {
@@ -1026,7 +1008,6 @@ export const batchScrapeRequestSchema = strictWithMessage(
   batchScrapeRequestSchemaBase,
 )
   .refine(waitForRefine, waitForRefineOpts)
-  .refine(redactPIIRefine, redactPIIRefineOpts)
   .transform(extractTransformRequired);
 
 const batchScrapeRequestSchemaNoURLValidationBase = baseScrapeOptions.extend({
@@ -1051,7 +1032,6 @@ export const batchScrapeRequestSchemaNoURLValidation = strictWithMessage(
   batchScrapeRequestSchemaNoURLValidationBase,
 )
   .refine(waitForRefine, waitForRefineOpts)
-  .refine(redactPIIRefine, redactPIIRefineOpts)
   .transform(extractTransformRequired);
 
 export type BatchScrapeRequest = z.infer<typeof batchScrapeRequestSchema>;
@@ -1116,7 +1096,6 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
 
 export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
-  .refine(x => redactPIIRefine(x.scrapeOptions), redactPIIRefineOpts)
   .transform(x => {
     const scrapeOptionsValue = x.scrapeOptions ?? baseScrapeOptions.parse({});
     return {

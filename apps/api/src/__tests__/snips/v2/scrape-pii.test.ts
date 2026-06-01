@@ -1,12 +1,5 @@
 import { ALLOW_TEST_SUITE_WEBSITE, describeIf, TEST_PRODUCTION } from "../lib";
-import {
-  Identity,
-  idmux,
-  scrape,
-  scrapeRaw,
-  scrapeTimeout,
-  scrapeWithFailure,
-} from "./lib";
+import { Identity, idmux, scrape, scrapeRaw, scrapeTimeout } from "./lib";
 
 let identity: Identity;
 
@@ -20,9 +13,9 @@ beforeAll(async () => {
 
 describeIf(ALLOW_TEST_SUITE_WEBSITE)("V2 Scrape redactPII (schema)", () => {
   it.concurrent(
-    "rejects redactPII: true when `pii` is not in formats",
+    "accepts redactPII: true when `pii` is not in formats",
     async () => {
-      const res = await scrapeWithFailure(
+      const res = await scrapeRaw(
         {
           url: "https://firecrawl.dev",
           formats: ["markdown"],
@@ -31,8 +24,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("V2 Scrape redactPII (schema)", () => {
         identity,
       );
 
-      expect(res.success).toBe(false);
-      expect(res.error).toMatch(/redactPII requires `pii`/);
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.pii).toBeUndefined();
     },
     scrapeTimeout,
   );

@@ -5,10 +5,10 @@ describe("v2 scrapeRequestSchema — redactPII", () => {
 
   // ---- boolean form -------------------------------------------------------
 
-  it("accepts redactPII: true with `pii` in formats", () => {
+  it("accepts redactPII: true without requiring `pii` in formats", () => {
     const result = scrapeRequestSchema.safeParse({
       url: baseUrl,
-      formats: ["markdown", "pii"],
+      formats: ["markdown"],
       redactPII: true,
     });
     expect(result.success).toBe(true);
@@ -44,16 +44,18 @@ describe("v2 scrapeRequestSchema — redactPII", () => {
     }
   });
 
-  it("rejects redactPII: true without `pii` in formats", () => {
+  it("accepts redactPII: true with default formats", () => {
     const result = scrapeRequestSchema.safeParse({
       url: baseUrl,
-      formats: ["markdown"],
       redactPII: true,
     });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const messages = result.error.issues.map(i => i.message).join("\n");
-      expect(messages).toMatch(/redactPII requires `pii`/);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.formats).toEqual([{ type: "markdown" }]);
+      expect(result.data.redactPII).toMatchObject({
+        mode: "accurate",
+        replaceStyle: "tag",
+      });
     }
   });
 
@@ -141,16 +143,18 @@ describe("v2 scrapeRequestSchema — redactPII", () => {
     expect(result.success).toBe(false);
   });
 
-  it("requires `pii` in formats even with the object form", () => {
+  it("accepts the object form without requiring `pii` in formats", () => {
     const result = scrapeRequestSchema.safeParse({
       url: baseUrl,
       formats: ["markdown"],
       redactPII: { mode: "aggressive" },
     });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const messages = result.error.issues.map(i => i.message).join("\n");
-      expect(messages).toMatch(/redactPII requires `pii`/);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.redactPII).toMatchObject({
+        mode: "aggressive",
+        replaceStyle: "tag",
+      });
     }
   });
 
@@ -179,7 +183,7 @@ describe("v2 scrapeRequestSchema — redactPII", () => {
   it("preserves explicit onlyMainContent: false when redactPII is enabled", () => {
     const result = scrapeRequestSchema.safeParse({
       url: baseUrl,
-      formats: ["markdown", "pii"],
+      formats: ["markdown"],
       redactPII: true,
       onlyMainContent: false,
     });
@@ -192,7 +196,6 @@ describe("v2 scrapeRequestSchema — redactPII", () => {
   it("keeps the default onlyMainContent: true when redactPII is enabled", () => {
     const result = scrapeRequestSchema.safeParse({
       url: baseUrl,
-      formats: ["markdown", "pii"],
       redactPII: true,
     });
     expect(result.success).toBe(true);

@@ -54,6 +54,29 @@ describe("performRedactPII", () => {
     expect(document.pii?.redactedMarkdown).toBe("Hello <PERSON>");
   });
 
+  it("runs when redactPII is enabled without the pii format", async () => {
+    mockedRedactText.mockResolvedValue({
+      status: "ok",
+      redactedMarkdown: "Hello <PERSON>",
+      spans: [],
+      counts: {},
+    });
+
+    const meta = baseMeta();
+    meta.options.formats = [{ type: "markdown" }];
+
+    const document = await performRedactPII(
+      meta,
+      baseDocument({
+        markdown: "Hello Alice",
+      }),
+    );
+
+    expect(mockedRedactText).toHaveBeenCalledTimes(1);
+    expect(document.markdown).toBe("Hello <PERSON>");
+    expect(document.pii?.redactedMarkdown).toBe("Hello <PERSON>");
+  });
+
   it("keeps markdown as an empty string when redaction cannot produce safe output", async () => {
     mockedRedactText.mockResolvedValue({
       status: "failed",
