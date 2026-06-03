@@ -12,6 +12,13 @@ async function execRows<T = Record<string, any>>(
   return (res.rows ?? []) as T[];
 }
 
+// The pg driver returns bigint/numeric columns as strings (to avoid precision
+// loss), and raw db.execute() bypasses the schema's mode: "number" mapping.
+// Coerce known-numeric columns back to JS numbers at this boundary.
+function toNum(v: unknown): number | null {
+  return v == null ? null : Number(v);
+}
+
 // ============================================================================
 // Main database RPCs
 // ============================================================================
@@ -21,15 +28,22 @@ export type AuthCreditUsageChunkRow = Record<string, any> & {
   api_key: string;
 };
 
-export function authCreditUsageChunk(
+export async function authCreditUsageChunk(
   database: DB,
   input_key: string,
   i_is_extract: boolean,
 ): Promise<AuthCreditUsageChunkRow[]> {
-  return execRows(
+  const rows = await execRows<AuthCreditUsageChunkRow>(
     database,
     sql`select * from auth_credit_usage_chunk_47(input_key => ${input_key}, i_is_extract => ${i_is_extract}, tally_untallied_credits => ${true})`,
   );
+  // api_key_id is a bigint column, so the pg driver hands it back as a string.
+  for (const row of rows) {
+    if (row.api_key_id != null) {
+      row.api_key_id = toNum(row.api_key_id);
+    }
+  }
+  return rows;
 }
 
 export function authCreditUsageChunkFromTeam(
