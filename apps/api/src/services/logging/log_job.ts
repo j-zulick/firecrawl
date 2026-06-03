@@ -225,6 +225,7 @@ export type LoggedScrape = {
   options: ScrapeOptions;
   cost_tracking?: ReturnType<typeof CostTracking.prototype.toJSON>;
   pdf_num_pages?: number;
+  content_type?: string | null;
   credits_cost: number;
   skipNuq: boolean;
   zeroDataRetention: boolean;
@@ -273,6 +274,7 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
         : {
             monitor_id: scrape.monitor_id ?? null,
             monitor_check_id: scrape.monitor_check_id ?? null,
+            content_type: scrape.content_type ?? null,
           }),
     },
     force,

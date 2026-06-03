@@ -426,6 +426,7 @@ export const scrapes = pgTable("scrapes", {
   created_at: ts("created_at").notNull().defaultNow(),
   monitor_id: uuid("monitor_id"),
   monitor_check_id: uuid("monitor_check_id"),
+  content_type: text("content_type"),
 });
 
 export const search_feedback = pgTable("search_feedback", {
