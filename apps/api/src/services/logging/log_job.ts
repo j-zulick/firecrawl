@@ -294,7 +294,8 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
     !scrape.is_parse &&
     scrape.is_successful &&
     !scrape.zeroDataRetention &&
-    config.USE_DB_AUTHENTICATION
+    config.USE_DB_AUTHENTICATION &&
+    !scrape.team_id.startsWith("preview_")
   ) {
     const hasMarkdown = hasFormatOfType(scrape.options.formats, "markdown");
     const hasChangeTracking = hasFormatOfType(
