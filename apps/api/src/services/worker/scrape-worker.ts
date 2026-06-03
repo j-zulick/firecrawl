@@ -756,6 +756,23 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             : new Error(JSON.stringify(error)),
     };
 
+    try {
+      // Ensure the parent `requests` row is committed before any child
+      // `scrapes`/`parses` insert, to avoid a request_id FK violation. Runs on
+      // both the crawl and single-scrape paths; only single scrapes actually
+      // carry a logRequestPromise.
+      if (job.data.logRequestPromise) {
+        const start = Date.now();
+        await job.data.logRequestPromise;
+        const waited = Date.now() - start;
+        if (waited > 0) {
+          logger.warn("Had to wait for log request promise to complete", {
+            timeMs: waited,
+          });
+        }
+      }
+    } catch {}
+
     if (job.data.crawl_id) {
       const sender = await createWebhookSender({
         teamId: job.data.team_id,
