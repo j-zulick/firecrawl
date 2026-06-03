@@ -95,27 +95,16 @@ async function robustInsert(
     }
 
     if (attempts.length === 1 && attempts[0].error === null) {
-      logger.debug(
-        "Inserted into database successfully (" + table + ", " + data.id + ")",
-        { attempts },
-      );
+      logger.debug("Inserted into database successfully", { attempts });
     } else if (
       attempts.length > 1 &&
       attempts[attempts.length - 1].error === null
     ) {
-      logger.warn(
-        "Inserted into database successfully with retries (" +
-          table +
-          ", " +
-          data.id +
-          ")",
-        { attempts },
-      );
+      logger.warn("Inserted into database successfully with retries", {
+        attempts,
+      });
     } else {
-      logger.error(
-        "Failed to insert into database (" + table + ", " + data.id + ")",
-        { attempts },
-      );
+      logger.error("Failed to insert into database", { attempts });
       // Report to Sentry with context
       Sentry.captureException(
         attempts[attempts.length - 1]?.error ||
@@ -141,16 +130,10 @@ async function robustInsert(
     try {
       await db.insert(target).values(data);
       attempts.push({ error: null, timeMs: Date.now() - start, backoffMs: 0 });
-      logger.debug(
-        "Inserted into database successfully (" + table + ", " + data.id + ")",
-        { attempts },
-      );
+      logger.debug("Inserted into database successfully", { attempts });
     } catch (error) {
       attempts.push({ error, timeMs: Date.now() - start, backoffMs: 0 });
-      logger.error(
-        "Failed to insert into database (" + table + ", " + data.id + ")",
-        { attempts },
-      );
+      logger.error("Failed to insert into database", { attempts });
       // Report to Sentry
       Sentry.captureException(error, {
         tags: {
