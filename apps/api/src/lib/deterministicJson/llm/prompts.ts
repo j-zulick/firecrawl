@@ -50,7 +50,8 @@ Selectors:
 - Only standard CSS selectors work. To match by visible text, select structurally then filter in JS, e.g. \`[...doc.querySelectorAll('tr')].find(r => r.textContent.includes('Total'))\`.
 
 askLlm:
-- Use it for what selectors cannot do - summarize, classify, translate, disambiguate by meaning. It transforms the text you pass it (no outside lookups like currency conversion; returns null when the text lacks the answer), so pass the DOM text it needs - for a summary, the article body, not a bare title or label. If a field has a fixed value set, include it in the prompt.
+- If the data is already structured (a JSON body, a <script type="application/ld+json">, an inline state blob), JSON.parse it and read the field directly. Never ask askLlm to parse JSON you could parse deterministically.
+- Use it for what selectors and parsing cannot do - summarize, classify, translate, disambiguate by meaning. It transforms the text you pass it (no outside lookups like currency conversion; returns null when the text lacks the answer), so pass the DOM text it needs - for a summary, the article body, not a bare title or label. If a field has a fixed value set, include it in the prompt.
 - When you call askLlm once per item over a list, issue the calls concurrently with Promise.all rather than awaiting one at a time.
 
 Return only the function source, beginning with \`async function extract\`.`;
