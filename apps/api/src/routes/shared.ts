@@ -8,6 +8,7 @@ import {
 } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authenticateUser } from "../controllers/auth";
+import { applyAgentAuthDiscoveryHeader } from "../lib/agent-auth-discovery";
 import { createIdempotencyKey } from "../services/idempotency/create";
 import { validateIdempotencyKey } from "../services/idempotency/validate";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
@@ -22,7 +23,7 @@ import { isSelfHosted } from "../lib/deployment";
 import { validate as isUuid } from "uuid";
 
 import { config } from "../config";
-import { supabase_service } from "../services/supabase";
+import { getAgentFreeRequestsLeft } from "../db/rpc";
 import { autumnService } from "../services/autumn/autumn.service";
 
 export function checkCreditsMiddleware(
@@ -98,22 +99,16 @@ export function checkCreditsMiddleware(
 
       if (req.path.startsWith("/agent")) {
         if (config.USE_DB_AUTHENTICATION) {
-          const { data, error: freeRequestError } = await supabase_service.rpc(
-            "get_agent_free_requests_left",
-            {
-              i_team_id: req.auth.team_id,
-            },
-          );
-
-          if (freeRequestError) {
+          try {
+            const data = await getAgentFreeRequestsLeft(req.auth.team_id);
+            if (data?.[0]?.free_requests_left !== 0) {
+              return next();
+            }
+          } catch (freeRequestError) {
             logger.warn("Failed to get agent free requests left", {
               error: freeRequestError,
               teamId: req.auth.team_id,
             });
-          } else {
-            if (data?.[0]?.free_requests_left !== 0) {
-              return next();
-            }
           }
         }
       }
@@ -215,6 +210,7 @@ export function authMiddleware(
 
       if (!auth.success) {
         if (!res.headersSent) {
+          if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
           return res
             .status(auth.status)
             .json({ success: false, error: auth.error });

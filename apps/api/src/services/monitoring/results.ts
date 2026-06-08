@@ -138,6 +138,7 @@ export async function recordMonitorScrapeSuccess(
     judgment,
     diffText,
     diffJson,
+    error,
   } = await computeAndPersistPageDiff({
     teamId: job.data.team_id,
     monitorId: monitoring.monitorId,
@@ -194,6 +195,7 @@ export async function recordMonitorScrapeSuccess(
       diff_text_bytes: diffTextBytes,
       diff_json_bytes: diffJsonBytes,
       status_code: getDocumentStatusCode(doc),
+      ...(error ? { error } : {}),
       metadata: {
         title: doc?.metadata?.title ?? null,
         contentType: doc?.metadata?.contentType ?? null,

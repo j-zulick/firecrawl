@@ -350,6 +350,25 @@ const jsonFormatWithOptions = z.strictObject({
 
 export type JsonFormatWithOptions = z.output<typeof jsonFormatWithOptions>;
 
+// "Deterministic JSON" — same shape as json mode, but extraction is performed by
+// reusable-json-mode (a cached, reusable JS extractor run in the code-sandbox)
+// rather than a per-request LLM call. Populates document.json like json mode.
+const deterministicJsonFormatWithOptions = z.strictObject({
+  type: z.literal("deterministicJson"),
+  schema: z
+    .any()
+    .optional()
+    .transform(val => normalizeSchemaForOpenAI(val))
+    .refine(val => validateSchemaForOpenAI(val), {
+      message: OPENAI_SCHEMA_ERROR_MESSAGE,
+    }),
+  prompt: z.string().max(10000).optional(),
+});
+
+type DeterministicJsonFormatWithOptions = z.output<
+  typeof deterministicJsonFormatWithOptions
+>;
+
 const changeTrackingFormatWithOptions = z.strictObject({
   type: z.literal("changeTracking"),
   prompt: z.string().optional(),
@@ -431,6 +450,7 @@ export type FormatObject =
   | { type: "images" }
   | { type: "summary" }
   | JsonFormatWithOptions
+  | DeterministicJsonFormatWithOptions
   | ChangeTrackingFormatWithOptions
   | ScreenshotFormatWithOptions
   | AttributesFormatWithOptions
@@ -439,7 +459,8 @@ export type FormatObject =
   | QueryFormatWithOptions
   | { type: "branding" }
   | { type: "audio" }
-  | { type: "video" };
+  | { type: "video" }
+  | { type: "pii" };
 
 const pdfModeSchema = z.enum(["fast", "auto", "ocr"]);
 
@@ -538,6 +559,51 @@ const locationSchema = z
   })
   .optional();
 
+// Unified entity taxonomy exposed to callers. Maps to fire-privacy's
+// internal span kinds (PRIVATE_PERSON / EMAIL_ADDRESS / ACCOUNT_NUMBER /
+// etc.) inside the fire-privacy client. Names chosen to match the public
+// surface; if a caller asks for "EMAIL" they get email-shaped spans
+// regardless of which recognizer found them.
+const REDACT_PII_ENTITIES = [
+  "PERSON",
+  "EMAIL",
+  "PHONE",
+  "LOCATION",
+  "FINANCIAL",
+  "SECRET",
+] as const;
+const redactPIIEntitySchema = z.enum(REDACT_PII_ENTITIES);
+export type RedactPIIEntity = z.infer<typeof redactPIIEntitySchema>;
+
+// Public mode names. Mapped to fire-privacy internal modes
+// (model / both / heuristics) inside the client; the internal "precise"
+// mode is intentionally not exposed.
+//
+// - accurate (default): model only. Best precision (0.87), F1 (0.73).
+//   Cleanest redacted output.
+// - aggressive: model + Presidio + spaCy. Higher recall (0.73) at the
+//   cost of precision (0.68). Compliance use cases.
+// - fast: Presidio only, no model call. ~2x throughput, lower F1.
+const redactPIIOptionsSchema = z.strictObject({
+  mode: z.enum(["accurate", "aggressive", "fast"]).default("accurate"),
+  entities: z.array(redactPIIEntitySchema).optional(),
+  replaceStyle: z.enum(["tag", "mask", "remove"]).default("tag"),
+});
+export type RedactPIIOptions = z.infer<typeof redactPIIOptionsSchema>;
+
+// Boolean is the common case. Object form is for callers who want to
+// tune. After parse: `true` normalizes to defaults; `false` / unset
+// → `undefined`. Downstream code only has to check truthiness.
+const redactPIISchema = z
+  .union([z.boolean(), redactPIIOptionsSchema])
+  .optional()
+  .transform(v => {
+    if (v === undefined || v === false) return undefined;
+    if (v === true) return redactPIIOptionsSchema.parse({});
+    return v;
+  });
+// inferred shape: RedactPIIOptions | undefined after the transform
+
 const baseScrapeOptions = z.strictObject({
   formats: z
     .preprocess(
@@ -559,6 +625,7 @@ const baseScrapeOptions = z.strictObject({
           z.strictObject({ type: z.literal("images") }),
           z.strictObject({ type: z.literal("summary") }),
           jsonFormatWithOptions,
+          deterministicJsonFormatWithOptions,
           changeTrackingFormatWithOptions,
           screenshotFormatWithOptions,
           attributesFormatWithOptions,
@@ -568,6 +635,7 @@ const baseScrapeOptions = z.strictObject({
           queryFormatWithOptions,
           z.strictObject({ type: z.literal("audio") }),
           z.strictObject({ type: z.literal("video") }),
+          z.strictObject({ type: z.literal("pii") }),
         ])
         .array()
         .optional()
@@ -580,7 +648,14 @@ const baseScrapeOptions = z.strictObject({
       const hasChangeTracking = x.find(f => f.type === "changeTracking");
       const hasMarkdown = x.find(f => f.type === "markdown");
       return !hasChangeTracking || hasMarkdown;
-    }, "The changeTracking format requires the markdown format to be specified as well"),
+    }, "The changeTracking format requires the markdown format to be specified as well")
+    .refine(x => {
+      // Both json and deterministicJson populate the `json` field, so one would
+      // just clobber the other. Require choosing one.
+      const hasJson = x.some(f => f.type === "json");
+      const hasDeterministicJson = x.some(f => f.type === "deterministicJson");
+      return !(hasJson && hasDeterministicJson);
+    }, "Cannot specify both json and deterministicJson formats"),
   headers: z.record(z.string(), z.string()).optional(),
   includeTags: z
     .string()
@@ -612,6 +687,7 @@ const baseScrapeOptions = z.strictObject({
   minAge: z.int().gte(0).optional(),
   storeInCache: z.boolean().prefault(true),
   lockdown: z.boolean().prefault(false),
+  redactPII: redactPIISchema,
 
   profile: z
     .object({
@@ -1019,7 +1095,14 @@ export const crawlerOptions = z.strictObject({
   deduplicateSimilarURLs: z.boolean().prefault(true),
   ignoreQueryParameters: z.boolean().prefault(false),
   regexOnFullURL: z.boolean().prefault(false),
-  delay: z.number().positive().optional(),
+  delay: z
+    .number()
+    .positive()
+    .max(
+      60,
+      "The delay parameter is measured in seconds and cannot exceed 60 seconds.",
+    )
+    .optional(),
 });
 
 // export type CrawlerOptions = {
@@ -1104,6 +1187,58 @@ export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
 export type MapRequest = z.infer<typeof mapRequestSchema>;
 export type MapRequestInput = z.input<typeof mapRequestSchema>;
 
+export type PIISource = "model" | "heuristics" | "unknown";
+
+export type PIISpan = {
+  start: number;
+  end: number;
+  // Unified entity bucket. Present when `kind` maps onto one of the public
+  // entity buckets; omitted when fire-privacy returned a recognizer kind we
+  // don't expose (e.g. ORGANIZATION, DATE_TIME). Spans without an entity
+  // are dropped under any `entities` allowlist.
+  entity?: RedactPIIEntity;
+  // Granular recognizer label from fire-privacy (e.g. PRIVATE_PERSON,
+  // EMAIL_ADDRESS, ACCOUNT_NUMBER). Useful for audit / debugging; prefer
+  // `entity` for taxonomy-level checks.
+  kind: string;
+  source: PIISource;
+  // Confidence in [0, 1] when fire-privacy returned a score. Omitted when
+  // the recognizer didn't supply one.
+  score?: number;
+};
+
+// `ok`      — redaction completed; redactedMarkdown is the result.
+// `skipped` — redaction was not performed; see `reason` for why.
+//             redactedMarkdown may be the original text or null.
+// `failed`  — redaction was attempted but did not produce a usable result;
+//             see `reason`. redactedMarkdown is null.
+type PIIStatus = "ok" | "skipped" | "failed";
+
+// Why redaction was skipped or failed. Always set when status !== "ok".
+//   empty_input         — no markdown to redact, or markdown was whitespace
+//   too_large           — input exceeded the redaction-side byte ceiling
+//   upstream_skipped    — fire-privacy reported model_status: "skipped"
+//   service_unavailable — fire-privacy returned 503
+//   timeout             — request exceeded the redaction timeout budget
+//   error               — any other failure (5xx, invalid JSON, network)
+export type PIIReason =
+  | "empty_input"
+  | "too_large"
+  | "upstream_skipped"
+  | "service_unavailable"
+  | "timeout"
+  | "error";
+
+export type PIIBlock = {
+  status: PIIStatus;
+  reason?: PIIReason;
+  redactedMarkdown: string | null;
+  spans: PIISpan[];
+  // Count of spans per public entity bucket. Spans whose `kind` doesn't
+  // map onto a bucket are not counted. Only non-zero entries are present.
+  counts: Partial<Record<RedactPIIEntity, number>>;
+};
+
 export type Document = {
   title?: string;
   description?: string;
@@ -1123,6 +1258,7 @@ export type Document = {
   highlights?: string;
   branding?: BrandingProfile;
   warning?: string;
+  pii?: PIIBlock;
   attributes?: {
     selector: string;
     attribute: string;
@@ -1412,7 +1548,7 @@ export type TeamFlags = {
   forceZDR?: boolean;
   allowZDR?: boolean;
   scrapeZDR?: "disabled" | "allowed" | "forced";
-  searchZDR?: "disabled" | "allowed" | "forced";
+  searchZDR?: "disabled" | "allowed" | "forced" | "forced-zdr" | "forced-anon";
   zdrCost?: number;
   checkRobotsOnScrape?: boolean;
   crawlTtlHours?: number;

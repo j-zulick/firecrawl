@@ -27,27 +27,20 @@ jest.mock("../client", () => ({
   },
 }));
 
-jest.mock("../../supabase", () => ({
-  get supabase_rr_service() {
+jest.mock("../../../db/connection", () => ({
+  get dbRr() {
     return {
-      from: (table: string) => ({
-        select: () => {
-          if (table === "teams") {
-            return {
-              eq: () => ({
-                single: () => Promise.resolve(teamLookup),
-              }),
-            };
-          }
-
-          if (table === "api_keys") {
-            return {
-              in: () => Promise.resolve({ data: apiKeysData, error: null }),
-            };
-          }
-
-          return {};
-        },
+      select: () => ({
+        from: () => ({
+          where: () => {
+            // api_keys path awaits the builder directly; teams path calls .limit(1)
+            const apiKeysPromise = Promise.resolve(apiKeysData);
+            return Object.assign(apiKeysPromise, {
+              limit: () =>
+                Promise.resolve(teamLookup.data ? [teamLookup.data] : []),
+            });
+          },
+        }),
       }),
     };
   },
@@ -710,6 +703,38 @@ describe("getTeamBalance", () => {
     expect(result!.unlimited).toBe(true);
     expect(result!.usage).toBe(12345);
   });
+
+  // Autumn caps `balance.remaining` at 0, so the raw field can't show
+  // negative balances for teams in overage. We derive the signed value from
+  // granted - usage instead.
+  it("returns a negative remaining when usage exceeds granted (overage)", async () => {
+    mockEntitiesGet.mockResolvedValue({
+      balances: {
+        CREDITS: {
+          remaining: 0,
+          granted: 25250000,
+          usage: 29688178,
+          unlimited: false,
+          overage_allowed: false,
+          breakdown: [{ planId: "enterprise", includedGrant: 10000000 }],
+        },
+      },
+      subscriptions: [
+        {
+          status: "active",
+          currentPeriodStart: 1712444524000,
+          currentPeriodEnd: 1715036524000,
+        },
+      ],
+    });
+
+    const result = await getTeamBalance("team-1");
+
+    expect(result).not.toBeNull();
+    expect(result!.remaining).toBe(-4438178);
+    expect(result!.granted).toBe(25250000);
+    expect(result!.usage).toBe(29688178);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -885,6 +910,33 @@ describe("getTeamHistoricalUsageByApiKey", () => {
         groupBy: "properties.apiKeyId",
       }),
     );
+  });
+
+  it("labels unresolvable apiKeyIds as 'Unknown' instead of echoing raw values", async () => {
+    apiKeysData = [];
+
+    mockAggregate.mockResolvedValue({
+      list: [
+        {
+          period: Date.parse("2026-04-15T00:00:00.000Z"),
+          grouped_values: {
+            CREDITS: {
+              ba9045fffbd34fc8aabc2597df6ba044: 11,
+              "99999999": 7,
+            },
+          },
+        },
+      ],
+    });
+
+    await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
+      {
+        startDate: "2026-04-01T00:00:00.000Z",
+        endDate: null,
+        apiKey: "Unknown",
+        creditsUsed: 18,
+      },
+    ]);
   });
 
   it("uses the next calendar month as endDate for grouped data when a month has zero usage", async () => {

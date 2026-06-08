@@ -1,6 +1,9 @@
 import { createHash } from "crypto";
 import { v7 as uuidv7 } from "uuid";
-import { supabase_rr_service, supabase_service } from "../supabase";
+import { and, asc, count, desc, eq, isNull, ne } from "drizzle-orm";
+import { db, dbRr } from "../../db/connection";
+import * as schema from "../../db/schema";
+import { monitoringClaimDueMonitors } from "../../db/rpc";
 import { shouldParsePDF } from "../../controllers/v2/types";
 import {
   getNextMonitorRunAt,
@@ -18,8 +21,8 @@ import type {
   UpdateMonitorRequest,
 } from "./types";
 
-export function hashMonitorUrl(url: string): string {
-  return `\\x${createHash("sha256").update(url).digest("hex")}`;
+export function hashMonitorUrl(url: string): Buffer {
+  return createHash("sha256").update(url).digest();
 }
 
 function ensureTargetIds(targets: Array<Record<string, any>>): MonitorTarget[] {
@@ -31,6 +34,7 @@ function ensureTargetIds(targets: Array<Record<string, any>>): MonitorTarget[] {
 
 const BASE_SCRAPE_CREDITS_PER_PAGE = 1;
 const JSON_SCRAPE_CREDITS_PER_PAGE = 5;
+const DETERMINISTIC_JSON_SCRAPE_CREDITS_PER_PAGE = 7;
 const SCRAPE_OPTION_CREDIT_BONUS = 4;
 const JUDGE_CREDITS_PER_PAGE = 1;
 const REMOVED_PAGE_CREDITS = 0;
@@ -91,6 +95,7 @@ function estimateBaseCreditsPerPage(
 ): number {
   const formats = options?.formats;
   const includeProxy = params.includeProxy ?? true;
+  const usesDeterministicJson = hasFormatOfType(formats, "deterministicJson");
   const usesJsonCredits =
     hasFormatOfType(formats, "json") || requestsJsonChangeTracking(formats);
   let credits = BASE_SCRAPE_CREDITS_PER_PAGE;
@@ -99,7 +104,11 @@ function estimateBaseCreditsPerPage(
     credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 
-  if (usesJsonCredits) {
+  // Deterministic JSON generates a reusable extractor and costs more than plain
+  // JSON; both override the base scrape credit (mirrors estimateActualCredits).
+  if (usesDeterministicJson) {
+    credits = DETERMINISTIC_JSON_SCRAPE_CREDITS_PER_PAGE;
+  } else if (usesJsonCredits) {
     credits = JSON_SCRAPE_CREDITS_PER_PAGE;
   }
 
@@ -278,9 +287,13 @@ function toMonitorSummary(check: MonitorCheckRow): MonitorSummary {
   };
 }
 
-function throwIfError(error: any, message: string): void {
-  if (error) {
-    throw new Error(`${message}: ${error.message ?? JSON.stringify(error)}`);
+async function run<T>(fn: () => Promise<T>, message: string): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    throw new Error(
+      `${message}: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+    );
   }
 }
 
@@ -309,7 +322,7 @@ export async function createMonitor(params: {
 
   // Omit goal/judge_enabled keys when undefined so a pre-migration DB
   // doesn't reject the insert. Migration lives in a separate repo.
-  const insert: Record<string, unknown> = {
+  const insert: typeof schema.monitors.$inferInsert = {
     id: uuidv7(),
     team_id: params.teamId,
     name: params.input.name,
@@ -328,13 +341,11 @@ export async function createMonitor(params: {
   if (params.input.judgeEnabled !== undefined) {
     insert.judge_enabled = params.input.judgeEnabled;
   }
-  const { data, error } = await supabase_service
-    .from("monitors")
-    .insert(insert)
-    .select("*")
-    .single();
+  const [data] = await run(
+    () => db.insert(schema.monitors).values(insert).returning(),
+    "Failed to create monitor",
+  );
 
-  throwIfError(error, "Failed to create monitor");
   return data as MonitorRow;
 }
 
@@ -343,48 +354,67 @@ export async function listMonitors(params: {
   limit: number;
   offset: number;
 }): Promise<MonitorRow[]> {
-  const { data, error } = await supabase_rr_service
-    .from("monitors")
-    .select("*")
-    .eq("team_id", params.teamId)
-    .neq("status", "deleted")
-    .order("created_at", { ascending: false })
-    .range(params.offset, params.offset + params.limit - 1);
-
-  throwIfError(error, "Failed to list monitors");
-  return (data ?? []) as MonitorRow[];
+  const data = await run(
+    () =>
+      dbRr
+        .select()
+        .from(schema.monitors)
+        .where(
+          and(
+            eq(schema.monitors.team_id, params.teamId),
+            ne(schema.monitors.status, "deleted"),
+          ),
+        )
+        .orderBy(desc(schema.monitors.created_at))
+        .limit(params.limit)
+        .offset(params.offset),
+    "Failed to list monitors",
+  );
+  return data as MonitorRow[];
 }
 
 export async function getMonitor(
   teamId: string,
   monitorId: string,
 ): Promise<MonitorRow | null> {
-  const { data, error } = await supabase_rr_service
-    .from("monitors")
-    .select("*")
-    .eq("id", monitorId)
-    .eq("team_id", teamId)
-    .neq("status", "deleted")
-    .maybeSingle();
-
-  throwIfError(error, "Failed to get monitor");
-  return data as MonitorRow | null;
+  const [data] = await run(
+    () =>
+      dbRr
+        .select()
+        .from(schema.monitors)
+        .where(
+          and(
+            eq(schema.monitors.id, monitorId),
+            eq(schema.monitors.team_id, teamId),
+            ne(schema.monitors.status, "deleted"),
+          ),
+        )
+        .limit(1),
+    "Failed to get monitor",
+  );
+  return (data ?? null) as MonitorRow | null;
 }
 
 export async function getMonitorForUpdate(
   teamId: string,
   monitorId: string,
 ): Promise<MonitorRow | null> {
-  const { data, error } = await supabase_service
-    .from("monitors")
-    .select("*")
-    .eq("id", monitorId)
-    .eq("team_id", teamId)
-    .neq("status", "deleted")
-    .maybeSingle();
-
-  throwIfError(error, "Failed to get monitor");
-  return data as MonitorRow | null;
+  const [data] = await run(
+    () =>
+      db
+        .select()
+        .from(schema.monitors)
+        .where(
+          and(
+            eq(schema.monitors.id, monitorId),
+            eq(schema.monitors.team_id, teamId),
+            ne(schema.monitors.status, "deleted"),
+          ),
+        )
+        .limit(1),
+    "Failed to get monitor",
+  );
+  return (data ?? null) as MonitorRow | null;
 }
 
 export async function updateMonitor(params: {
@@ -394,7 +424,7 @@ export async function updateMonitor(params: {
   nextRunAt?: Date;
   intervalMs?: number;
 }): Promise<MonitorRow | null> {
-  const patch: Record<string, unknown> = {
+  const patch: Partial<typeof schema.monitors.$inferInsert> = {
     updated_at: new Date().toISOString(),
   };
 
@@ -459,39 +489,49 @@ export async function updateMonitor(params: {
     }
   }
 
-  const { data, error } = await supabase_service
-    .from("monitors")
-    .update(patch)
-    .eq("id", params.monitorId)
-    .eq("team_id", params.teamId)
-    .neq("status", "deleted")
-    .select("*")
-    .maybeSingle();
-
-  throwIfError(error, "Failed to update monitor");
-  return data as MonitorRow | null;
+  const [data] = await run(
+    () =>
+      db
+        .update(schema.monitors)
+        .set(patch)
+        .where(
+          and(
+            eq(schema.monitors.id, params.monitorId),
+            eq(schema.monitors.team_id, params.teamId),
+            ne(schema.monitors.status, "deleted"),
+          ),
+        )
+        .returning(),
+    "Failed to update monitor",
+  );
+  return (data ?? null) as MonitorRow | null;
 }
 
 export async function deleteMonitor(params: {
   teamId: string;
   monitorId: string;
 }): Promise<boolean> {
-  const { data, error } = await supabase_service
-    .from("monitors")
-    .update({
-      status: "deleted",
-      deleted_at: new Date().toISOString(),
-      next_run_at: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", params.monitorId)
-    .eq("team_id", params.teamId)
-    .neq("status", "deleted")
-    .select("id")
-    .maybeSingle();
-
-  throwIfError(error, "Failed to delete monitor");
-  return !!data;
+  const data = await run(
+    () =>
+      db
+        .update(schema.monitors)
+        .set({
+          status: "deleted",
+          deleted_at: new Date().toISOString(),
+          next_run_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .where(
+          and(
+            eq(schema.monitors.id, params.monitorId),
+            eq(schema.monitors.team_id, params.teamId),
+            ne(schema.monitors.status, "deleted"),
+          ),
+        )
+        .returning({ id: schema.monitors.id }),
+    "Failed to delete monitor",
+  );
+  return data.length > 0;
 }
 
 export async function createMonitorCheck(params: {
@@ -504,21 +544,22 @@ export async function createMonitorCheck(params: {
     params.monitor.targets,
     Boolean(params.monitor.judge_enabled) && Boolean(params.monitor.goal),
   );
-  const { data, error } = await supabase_service
-    .from("monitor_checks")
-    .insert({
-      id: uuidv7(),
-      monitor_id: params.monitor.id,
-      team_id: params.monitor.team_id,
-      trigger: params.trigger,
-      status: params.status ?? "queued",
-      scheduled_for: params.scheduledFor ?? null,
-      estimated_credits: estimated,
-    })
-    .select("*")
-    .single();
-
-  throwIfError(error, "Failed to create monitor check");
+  const [data] = await run(
+    () =>
+      db
+        .insert(schema.monitor_checks)
+        .values({
+          id: uuidv7(),
+          monitor_id: params.monitor.id,
+          team_id: params.monitor.team_id,
+          trigger: params.trigger,
+          status: params.status ?? "queued",
+          scheduled_for: params.scheduledFor ?? null,
+          estimated_credits: estimated,
+        })
+        .returning(),
+    "Failed to create monitor check",
+  );
   return data as MonitorCheckRow;
 }
 
@@ -526,16 +567,22 @@ export async function markMonitorRunning(params: {
   monitorId: string;
   checkId: string;
 }): Promise<void> {
-  const { error } = await supabase_service
-    .from("monitors")
-    .update({
-      current_check_id: params.checkId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", params.monitorId)
-    .is("current_check_id", null);
-
-  throwIfError(error, "Failed to mark monitor running");
+  await run(
+    () =>
+      db
+        .update(schema.monitors)
+        .set({
+          current_check_id: params.checkId,
+          updated_at: new Date().toISOString(),
+        })
+        .where(
+          and(
+            eq(schema.monitors.id, params.monitorId),
+            isNull(schema.monitors.current_check_id),
+          ),
+        ),
+    "Failed to mark monitor running",
+  );
 }
 
 export async function dispatchScheduledMonitorCheck(params: {
@@ -551,22 +598,27 @@ export async function dispatchScheduledMonitorCheck(params: {
         ).toISOString()
       : null;
 
-  const { data, error } = await supabase_service
-    .from("monitors")
-    .update({
-      current_check_id: params.checkId,
-      locked_at: null,
-      locked_until: null,
-      next_run_at: nextRunAt,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", params.monitor.id)
-    .is("current_check_id", null)
-    .select("id")
-    .maybeSingle();
-
-  throwIfError(error, "Failed to dispatch scheduled monitor check");
-  return !!data;
+  const data = await run(
+    () =>
+      db
+        .update(schema.monitors)
+        .set({
+          current_check_id: params.checkId,
+          locked_at: null,
+          locked_until: null,
+          next_run_at: nextRunAt,
+          updated_at: new Date().toISOString(),
+        })
+        .where(
+          and(
+            eq(schema.monitors.id, params.monitor.id),
+            isNull(schema.monitors.current_check_id),
+          ),
+        )
+        .returning({ id: schema.monitors.id }),
+    "Failed to dispatch scheduled monitor check",
+  );
+  return data.length > 0;
 }
 
 export async function updateMonitorScheduleAfterRun(params: {
@@ -582,21 +634,23 @@ export async function updateMonitorScheduleAfterRun(params: {
           params.monitor.schedule_timezone,
         ).toISOString()
       : null;
-  const { error } = await supabase_service
-    .from("monitors")
-    .update({
-      current_check_id: null,
-      locked_at: null,
-      locked_until: null,
-      last_run_at: params.check.finished_at ?? new Date().toISOString(),
-      last_check_id: params.check.id,
-      next_run_at: nextRunAt,
-      last_check_summary: params.summary ?? toMonitorSummary(params.check),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", params.monitor.id);
-
-  throwIfError(error, "Failed to update monitor after run");
+  await run(
+    () =>
+      db
+        .update(schema.monitors)
+        .set({
+          current_check_id: null,
+          locked_at: null,
+          locked_until: null,
+          last_run_at: params.check.finished_at ?? new Date().toISOString(),
+          last_check_id: params.check.id,
+          next_run_at: nextRunAt,
+          last_check_summary: params.summary ?? toMonitorSummary(params.check),
+          updated_at: new Date().toISOString(),
+        })
+        .where(eq(schema.monitors.id, params.monitor.id)),
+    "Failed to update monitor after run",
+  );
 }
 
 export async function advanceMonitorAfterSkippedCheck(params: {
@@ -611,20 +665,22 @@ export async function advanceMonitorAfterSkippedCheck(params: {
           params.monitor.schedule_timezone,
         ).toISOString()
       : null;
-  const { error } = await supabase_service
-    .from("monitors")
-    .update({
-      locked_at: null,
-      locked_until: null,
-      last_run_at: params.check.finished_at ?? new Date().toISOString(),
-      last_check_id: params.check.id,
-      next_run_at: nextRunAt,
-      last_check_summary: toMonitorSummary(params.check),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", params.monitor.id);
-
-  throwIfError(error, "Failed to advance monitor after skipped check");
+  await run(
+    () =>
+      db
+        .update(schema.monitors)
+        .set({
+          locked_at: null,
+          locked_until: null,
+          last_run_at: params.check.finished_at ?? new Date().toISOString(),
+          last_check_id: params.check.id,
+          next_run_at: nextRunAt,
+          last_check_summary: toMonitorSummary(params.check),
+          updated_at: new Date().toISOString(),
+        })
+        .where(eq(schema.monitors.id, params.monitor.id)),
+    "Failed to advance monitor after skipped check",
+  );
 }
 
 export async function getMonitorCheck(
@@ -632,30 +688,38 @@ export async function getMonitorCheck(
   monitorId: string,
   checkId: string,
 ): Promise<MonitorCheckRow | null> {
-  const { data, error } = await supabase_rr_service
-    .from("monitor_checks")
-    .select("*")
-    .eq("id", checkId)
-    .eq("monitor_id", monitorId)
-    .eq("team_id", teamId)
-    .maybeSingle();
-
-  throwIfError(error, "Failed to get monitor check");
-  return data as MonitorCheckRow | null;
+  const [data] = await run(
+    () =>
+      dbRr
+        .select()
+        .from(schema.monitor_checks)
+        .where(
+          and(
+            eq(schema.monitor_checks.id, checkId),
+            eq(schema.monitor_checks.monitor_id, monitorId),
+            eq(schema.monitor_checks.team_id, teamId),
+          ),
+        )
+        .limit(1),
+    "Failed to get monitor check",
+  );
+  return (data ?? null) as MonitorCheckRow | null;
 }
 
 export async function listRunningMonitorChecks(
   limit: number = 100,
 ): Promise<MonitorCheckRow[]> {
-  const { data, error } = await supabase_service
-    .from("monitor_checks")
-    .select("*")
-    .eq("status", "running")
-    .order("created_at", { ascending: true })
-    .limit(limit);
-
-  throwIfError(error, "Failed to list running monitor checks");
-  return (data ?? []) as MonitorCheckRow[];
+  const data = await run(
+    () =>
+      db
+        .select()
+        .from(schema.monitor_checks)
+        .where(eq(schema.monitor_checks.status, "running"))
+        .orderBy(asc(schema.monitor_checks.created_at))
+        .limit(limit),
+    "Failed to list running monitor checks",
+  );
+  return data as MonitorCheckRow[];
 }
 
 export async function listMonitorChecks(params: {
@@ -665,41 +729,44 @@ export async function listMonitorChecks(params: {
   offset: number;
   status?: MonitorCheckRow["status"];
 }): Promise<MonitorCheckRow[]> {
-  let query = supabase_rr_service
-    .from("monitor_checks")
-    .select("*")
-    .eq("monitor_id", params.monitorId)
-    .eq("team_id", params.teamId)
-    .order("created_at", { ascending: false });
-
+  const conditions = [
+    eq(schema.monitor_checks.monitor_id, params.monitorId),
+    eq(schema.monitor_checks.team_id, params.teamId),
+  ];
   if (params.status) {
-    query = query.eq("status", params.status);
+    conditions.push(eq(schema.monitor_checks.status, params.status));
   }
 
-  const { data, error } = await query.range(
-    params.offset,
-    params.offset + params.limit - 1,
+  const data = await run(
+    () =>
+      dbRr
+        .select()
+        .from(schema.monitor_checks)
+        .where(and(...conditions))
+        .orderBy(desc(schema.monitor_checks.created_at))
+        .limit(params.limit)
+        .offset(params.offset),
+    "Failed to list monitor checks",
   );
-
-  throwIfError(error, "Failed to list monitor checks");
-  return (data ?? []) as MonitorCheckRow[];
+  return data as MonitorCheckRow[];
 }
 
 export async function updateMonitorCheck(
   checkId: string,
   patch: Partial<MonitorCheckRow>,
 ): Promise<MonitorCheckRow> {
-  const { data, error } = await supabase_service
-    .from("monitor_checks")
-    .update({
-      ...patch,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", checkId)
-    .select("*")
-    .single();
-
-  throwIfError(error, "Failed to update monitor check");
+  const [data] = await run(
+    () =>
+      db
+        .update(schema.monitor_checks)
+        .set({
+          ...patch,
+          updated_at: new Date().toISOString(),
+        })
+        .where(eq(schema.monitor_checks.id, checkId))
+        .returning(),
+    "Failed to update monitor check",
+  );
   return data as MonitorCheckRow;
 }
 
@@ -708,15 +775,17 @@ export async function insertMonitorCheckPages(
 ): Promise<void> {
   if (pages.length === 0) return;
 
-  const { error } = await supabase_service.from("monitor_check_pages").insert(
-    pages.map(page => ({
-      id: uuidv7(),
-      ...page,
-      url_hash: page.url_hash ?? hashMonitorUrl(page.url),
-    })),
+  await run(
+    () =>
+      db.insert(schema.monitor_check_pages).values(
+        pages.map(page => ({
+          id: uuidv7(),
+          ...page,
+          url_hash: page.url_hash ?? hashMonitorUrl(page.url),
+        })),
+      ),
+    "Failed to insert monitor check pages",
   );
-
-  throwIfError(error, "Failed to insert monitor check pages");
 }
 
 export async function listMonitorCheckPages(params: {
@@ -727,25 +796,27 @@ export async function listMonitorCheckPages(params: {
   skip: number;
   status?: string;
 }): Promise<any[]> {
-  let query = supabase_rr_service
-    .from("monitor_check_pages")
-    .select("*")
-    .eq("check_id", params.checkId)
-    .eq("monitor_id", params.monitorId)
-    .eq("team_id", params.teamId)
-    .order("created_at", { ascending: true });
-
+  const conditions = [
+    eq(schema.monitor_check_pages.check_id, params.checkId),
+    eq(schema.monitor_check_pages.monitor_id, params.monitorId),
+    eq(schema.monitor_check_pages.team_id, params.teamId),
+  ];
   if (params.status) {
-    query = query.eq("status", params.status);
+    conditions.push(eq(schema.monitor_check_pages.status, params.status));
   }
 
-  const { data, error } = await query.range(
-    params.skip,
-    params.skip + params.limit - 1,
+  const data = await run(
+    () =>
+      dbRr
+        .select()
+        .from(schema.monitor_check_pages)
+        .where(and(...conditions))
+        .orderBy(asc(schema.monitor_check_pages.created_at))
+        .limit(params.limit)
+        .offset(params.skip),
+    "Failed to list monitor check pages",
   );
-
-  throwIfError(error, "Failed to list monitor check pages");
-  return data ?? [];
+  return data;
 }
 
 export async function countMonitorCheckPages(params: {
@@ -753,33 +824,24 @@ export async function countMonitorCheckPages(params: {
   targetId?: string;
   status?: string;
 }): Promise<number> {
-  const pageSize = 1000;
-  let total = 0;
-  let offset = 0;
-
-  while (true) {
-    let query = supabase_rr_service
-      .from("monitor_check_pages")
-      .select("id")
-      .eq("check_id", params.checkId);
-
-    if (params.targetId) {
-      query = query.eq("target_id", params.targetId);
-    }
-    if (params.status) {
-      query = query.eq("status", params.status);
-    }
-
-    const { data, error } = await query.range(offset, offset + pageSize - 1);
-    throwIfError(error, "Failed to count monitor check pages");
-
-    const batch = data ?? [];
-    total += batch.length;
-    if (batch.length < pageSize) break;
-    offset += pageSize;
+  const conditions = [eq(schema.monitor_check_pages.check_id, params.checkId)];
+  if (params.targetId) {
+    conditions.push(eq(schema.monitor_check_pages.target_id, params.targetId));
+  }
+  if (params.status) {
+    conditions.push(eq(schema.monitor_check_pages.status, params.status));
   }
 
-  return total;
+  const [row] = await run(
+    () =>
+      dbRr
+        .select({ value: count() })
+        .from(schema.monitor_check_pages)
+        .where(and(...conditions)),
+    "Failed to count monitor check pages",
+  );
+
+  return row?.value ?? 0;
 }
 
 export async function calculateMonitorCheckActualCredits(params: {
@@ -790,16 +852,23 @@ export async function calculateMonitorCheckActualCredits(params: {
   let offset = 0;
 
   while (true) {
-    const { data, error } = await supabase_rr_service
-      .from("monitor_check_pages")
-      .select("target_id, metadata, judgment, status")
-      .eq("check_id", params.checkId)
-      .order("id", { ascending: true })
-      .range(offset, offset + MONITOR_CHECK_PAGE_BATCH_SIZE - 1);
+    const batch = await run(
+      () =>
+        dbRr
+          .select({
+            target_id: schema.monitor_check_pages.target_id,
+            metadata: schema.monitor_check_pages.metadata,
+            judgment: schema.monitor_check_pages.judgment,
+            status: schema.monitor_check_pages.status,
+          })
+          .from(schema.monitor_check_pages)
+          .where(eq(schema.monitor_check_pages.check_id, params.checkId))
+          .orderBy(asc(schema.monitor_check_pages.id))
+          .limit(MONITOR_CHECK_PAGE_BATCH_SIZE)
+          .offset(offset),
+      "Failed to calculate monitor check credits",
+    );
 
-    throwIfError(error, "Failed to calculate monitor check credits");
-
-    const batch = data ?? [];
     total += calculateMonitorCheckActualCreditsFromPages(batch, params.targets);
 
     if (batch.length < MONITOR_CHECK_PAGE_BATCH_SIZE) break;
@@ -814,16 +883,22 @@ export async function getMonitorPage(params: {
   targetId: string;
   url: string;
 }): Promise<MonitorPageRow | null> {
-  const { data, error } = await supabase_rr_service
-    .from("monitor_pages")
-    .select("*")
-    .eq("monitor_id", params.monitorId)
-    .eq("target_id", params.targetId)
-    .eq("url_hash", hashMonitorUrl(params.url))
-    .maybeSingle();
-
-  throwIfError(error, "Failed to get monitor page");
-  return data as MonitorPageRow | null;
+  const [data] = await run(
+    () =>
+      dbRr
+        .select()
+        .from(schema.monitor_pages)
+        .where(
+          and(
+            eq(schema.monitor_pages.monitor_id, params.monitorId),
+            eq(schema.monitor_pages.target_id, params.targetId),
+            eq(schema.monitor_pages.url_hash, hashMonitorUrl(params.url)),
+          ),
+        )
+        .limit(1),
+    "Failed to get monitor page",
+  );
+  return (data ?? null) as MonitorPageRow | null;
 }
 
 export async function upsertMonitorPage(params: {
@@ -846,34 +921,36 @@ export async function upsertMonitorPage(params: {
   });
 
   if (!existing) {
-    const { error } = await supabase_service.from("monitor_pages").insert({
-      monitor_id: params.monitorId,
-      team_id: params.teamId,
-      target_id: params.targetId,
-      url: params.url,
-      url_hash: hashMonitorUrl(params.url),
-      source: params.source,
-      first_seen_check_id: params.checkId,
-      last_seen_check_id:
-        params.status === "removed" ? undefined : params.checkId,
-      last_changed_check_id:
-        params.status === "changed" || params.status === "new"
-          ? params.checkId
-          : undefined,
-      last_scrape_id: params.scrapeId,
-      last_status: params.status,
-      is_removed: params.status === "removed",
-      removed_at: params.status === "removed" ? now : null,
-      metadata: params.metadata ?? null,
-      created_at: now,
-      updated_at: now,
-    });
-
-    throwIfError(error, "Failed to insert monitor page");
+    await run(
+      () =>
+        db.insert(schema.monitor_pages).values({
+          monitor_id: params.monitorId,
+          team_id: params.teamId,
+          target_id: params.targetId,
+          url: params.url,
+          url_hash: hashMonitorUrl(params.url),
+          source: params.source,
+          first_seen_check_id: params.checkId,
+          last_seen_check_id:
+            params.status === "removed" ? undefined : params.checkId,
+          last_changed_check_id:
+            params.status === "changed" || params.status === "new"
+              ? params.checkId
+              : undefined,
+          last_scrape_id: params.scrapeId,
+          last_status: params.status,
+          is_removed: params.status === "removed",
+          removed_at: params.status === "removed" ? now : null,
+          metadata: params.metadata ?? null,
+          created_at: now,
+          updated_at: now,
+        }),
+      "Failed to insert monitor page",
+    );
     return;
   }
 
-  const patch: Record<string, unknown> = {
+  const patch: Partial<typeof schema.monitor_pages.$inferInsert> = {
     last_status: params.status,
     is_removed: params.status === "removed",
     removed_at: params.status === "removed" ? now : null,
@@ -888,40 +965,36 @@ export async function upsertMonitorPage(params: {
     patch.last_changed_check_id = params.checkId;
   }
 
-  const { error } = await supabase_service
-    .from("monitor_pages")
-    .update(patch)
-    .eq("id", existing.id);
-
-  throwIfError(error, "Failed to update monitor page");
+  await run(
+    () =>
+      db
+        .update(schema.monitor_pages)
+        .set(patch)
+        .where(eq(schema.monitor_pages.id, existing.id)),
+    "Failed to update monitor page",
+  );
 }
 
 export async function listActiveMonitorPages(params: {
   monitorId: string;
   targetId: string;
 }): Promise<MonitorPageRow[]> {
-  const pageSize = 1000;
-  const pages: MonitorPageRow[] = [];
-  let offset = 0;
-
-  while (true) {
-    const { data, error } = await supabase_rr_service
-      .from("monitor_pages")
-      .select("*")
-      .eq("monitor_id", params.monitorId)
-      .eq("target_id", params.targetId)
-      .eq("is_removed", false)
-      .order("created_at", { ascending: true })
-      .range(offset, offset + pageSize - 1);
-
-    throwIfError(error, "Failed to list active monitor pages");
-    const batch = (data ?? []) as MonitorPageRow[];
-    pages.push(...batch);
-    if (batch.length < pageSize) break;
-    offset += pageSize;
-  }
-
-  return pages;
+  const data = await run(
+    () =>
+      dbRr
+        .select()
+        .from(schema.monitor_pages)
+        .where(
+          and(
+            eq(schema.monitor_pages.monitor_id, params.monitorId),
+            eq(schema.monitor_pages.target_id, params.targetId),
+            eq(schema.monitor_pages.is_removed, false),
+          ),
+        )
+        .orderBy(asc(schema.monitor_pages.created_at)),
+    "Failed to list active monitor pages",
+  );
+  return data as MonitorPageRow[];
 }
 
 export async function claimDueMonitors(params: {
@@ -929,31 +1002,27 @@ export async function claimDueMonitors(params: {
   limit: number;
   leaseSeconds: number;
 }): Promise<MonitorRow[]> {
-  const { data, error } = await supabase_service.rpc(
-    "monitoring_claim_due_monitors",
-    {
-      p_worker_id: params.workerId,
-      p_limit: params.limit,
-      p_lease_seconds: params.leaseSeconds,
-    },
+  const data = await run(
+    () => monitoringClaimDueMonitors<MonitorRow>(params),
+    "Failed to claim due monitors",
   );
-
-  throwIfError(error, "Failed to claim due monitors");
-  return (data ?? []) as MonitorRow[];
+  return data;
 }
 
 export async function deferMonitorClaim(
   monitorId: string,
   until: Date,
 ): Promise<void> {
-  const { error } = await supabase_service
-    .from("monitors")
-    .update({
-      locked_until: until.toISOString(),
-      locked_at: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", monitorId);
-
-  throwIfError(error, "Failed to defer monitor claim");
+  await run(
+    () =>
+      db
+        .update(schema.monitors)
+        .set({
+          locked_until: until.toISOString(),
+          locked_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .where(eq(schema.monitors.id, monitorId)),
+    "Failed to defer monitor claim",
+  );
 }

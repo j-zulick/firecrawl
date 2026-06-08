@@ -1,9 +1,12 @@
-import { supabase_service } from "../supabase";
+import { db } from "../../db/connection";
+import * as schema from "../../db/schema";
+import { changeTrackingInsertScrape } from "../../db/rpc";
 import { config } from "../../config";
 import "dotenv/config";
 import { logger as _logger } from "../../lib/logger";
 import { configDotenv } from "dotenv";
 import * as Sentry from "@sentry/node";
+import type { PgTable } from "drizzle-orm/pg-core";
 import {
   saveDeepResearchToGCS,
   saveExtractToGCS,
@@ -20,6 +23,7 @@ import { saveExtractResult } from "../../lib/extract/extract-redis";
 configDotenv();
 
 const previewTeamId = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
+const nullByteRegex = /\u0000/g;
 
 /**
  * Sanitize string fields by removing null bytes (\u0000)
@@ -29,61 +33,82 @@ const previewTeamId = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
 function sanitizeString(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
 
-  return value.replace(/\u0000/g, "");
+  return value.replace(nullByteRegex, "");
 }
+
+const tableMap: Record<string, PgTable> = {
+  requests: schema.requests,
+  scrapes: schema.scrapes,
+  parses: schema.parses,
+  crawls: schema.crawls,
+  batch_scrapes: schema.batch_scrapes,
+  searches: schema.searches,
+  extracts: schema.extracts,
+  maps: schema.maps,
+  llmstxts: schema.llmstxts,
+  deep_researches: schema.deep_researches,
+};
 
 async function robustInsert(
   table: string,
   data: any,
   force: boolean,
-  logger: Logger,
+  _logger: Logger,
 ) {
+  const logger = _logger.child({
+    module: "log_job",
+    method: "robustInsert",
+    table,
+    canonicalLog: "log_job/robustInsert",
+  });
+
   if (config.USE_DB_AUTHENTICATION !== true) {
     logger.info(
       "Skipping database insertion due to USE_DB_AUTHENTICATION being off",
-      { table },
     );
     return;
   }
 
+  const target = tableMap[table];
+
+  const attempts: { error: any; timeMs: number; backoffMs: number }[] = [];
+
   if (force) {
-    let i = 0,
-      done = false;
-    let lastError: any = null;
-    while (i++ <= 10) {
+    for (let i = 0; i < 10; i++) {
+      const start = Date.now();
       try {
-        const { error } = await supabase_service.from(table).insert(data);
-        if (error) {
-          lastError = error;
-          logger.error(
-            "Error inserting into database due to Supabase error, trying again",
-            { error, table, attempt: i },
-          );
-          await new Promise(resolve => setTimeout(resolve, 75));
-        } else {
-          done = true;
-          break;
-        }
+        await db.insert(target).values(data);
+        attempts.push({
+          error: null,
+          timeMs: Date.now() - start,
+          backoffMs: i === 0 ? 0 : 75,
+        });
+        break;
       } catch (error) {
-        lastError = error;
-        logger.error(
-          "Error inserting into database due to unknown error, trying again",
-          { error, table, attempt: i },
-        );
+        attempts.push({
+          error,
+          timeMs: Date.now() - start,
+          backoffMs: i === 0 ? 0 : 75,
+        });
         await new Promise(resolve => setTimeout(resolve, 75));
       }
     }
 
-    if (done) {
-      logger.info("Inserted into database successfully", { table });
-    } else {
-      logger.error("Failed to insert into database after 10 attempts", {
-        table,
-        lastError,
+    if (attempts.length === 1 && attempts[0].error === null) {
+      logger.debug("Inserted into database successfully", { attempts });
+    } else if (
+      attempts.length > 1 &&
+      attempts[attempts.length - 1].error === null
+    ) {
+      logger.warn("Inserted into database successfully with retries", {
+        attempts,
       });
+    } else {
+      logger.error("Failed to insert into database", { attempts });
       // Report to Sentry with context
       Sentry.captureException(
-        lastError || new Error("Database insert failed after 10 attempts"),
+        attempts[attempts.length - 1]?.error ||
+          new Error("Database insert failed after 10 attempts"),
         {
           tags: {
             table,
@@ -93,40 +118,22 @@ async function robustInsert(
             table,
             data: JSON.stringify(data).substring(0, 500), // Limit size
             attempts: 10,
-            lastError: lastError ? JSON.stringify(lastError) : null,
+            lastError: attempts[attempts.length - 1]?.error
+              ? JSON.stringify(attempts[attempts.length - 1].error)
+              : null,
           },
         },
       );
     }
   } else {
+    const start = Date.now();
     try {
-      const { error } = await supabase_service.from(table).insert(data);
-      if (error) {
-        logger.error("Error inserting into database due to Supabase error", {
-          error,
-          table,
-        });
-        // Report to Sentry
-        Sentry.captureException(error, {
-          tags: {
-            table,
-            operation: "robustInsert",
-            force: "false",
-          },
-          extra: {
-            table,
-            error: JSON.stringify(error),
-            data: JSON.stringify(data).substring(0, 500), // Limit size
-          },
-        });
-      } else {
-        logger.info("Inserted into database successfully", { table });
-      }
+      await db.insert(target).values(data);
+      attempts.push({ error: null, timeMs: Date.now() - start, backoffMs: 0 });
+      logger.debug("Inserted into database successfully", { attempts });
     } catch (error) {
-      logger.error("Error inserting into database due to unknown error", {
-        error,
-        table,
-      });
+      attempts.push({ error, timeMs: Date.now() - start, backoffMs: 0 });
+      logger.error("Failed to insert into database", { attempts });
       // Report to Sentry
       Sentry.captureException(error, {
         tags: {
@@ -218,6 +225,7 @@ export type LoggedScrape = {
   options: ScrapeOptions;
   cost_tracking?: ReturnType<typeof CostTracking.prototype.toJSON>;
   pdf_num_pages?: number;
+  content_type?: string | null;
   credits_cost: number;
   skipNuq: boolean;
   zeroDataRetention: boolean;
@@ -266,6 +274,7 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
         : {
             monitor_id: scrape.monitor_id ?? null,
             monitor_check_id: scrape.monitor_check_id ?? null,
+            content_type: scrape.content_type ?? null,
           }),
     },
     force,
@@ -285,7 +294,8 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
     !scrape.is_parse &&
     scrape.is_successful &&
     !scrape.zeroDataRetention &&
-    config.USE_DB_AUTHENTICATION
+    config.USE_DB_AUTHENTICATION &&
+    !scrape.team_id.startsWith("preview_")
   ) {
     const hasMarkdown = hasFormatOfType(scrape.options.formats, "markdown");
     const hasChangeTracking = hasFormatOfType(
@@ -294,27 +304,21 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
     );
 
     if (hasMarkdown || hasChangeTracking) {
-      const { error } = await supabase_service.rpc(
-        "change_tracking_insert_scrape",
-        {
-          p_team_id: scrape.team_id,
-          p_url: scrape.url,
-          p_job_id: scrape.id,
-          p_change_tracking_tag: hasChangeTracking
-            ? hasChangeTracking.tag
-            : null,
-          p_date_added: new Date().toISOString(),
-        },
-      );
-
-      if (error) {
+      try {
+        await changeTrackingInsertScrape({
+          team_id: scrape.team_id,
+          url: scrape.url,
+          job_id: scrape.id,
+          change_tracking_tag: hasChangeTracking ? hasChangeTracking.tag : null,
+          date_added: new Date().toISOString(),
+        });
+        _logger.debug("Change tracking record inserted successfully");
+      } catch (error) {
         _logger.warn("Error inserting into change_tracking_scrapes", {
           error,
           scrapeId: scrape.id,
           teamId: scrape.team_id,
         });
-      } else {
-        _logger.debug("Change tracking record inserted successfully");
       }
     }
   }
@@ -435,6 +439,11 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
     zeroDataRetention: search.zeroDataRetention,
   });
 
+  const options =
+    search.zeroDataRetention || typeof search.options?.query !== "string"
+      ? search.options
+      : { ...search.options, query: sanitizeString(search.options.query) };
+
   await robustInsert(
     "searches",
     {
@@ -442,14 +451,14 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
       request_id: search.request_id,
       query: search.zeroDataRetention
         ? "<redacted due to zero data retention>"
-        : search.query,
+        : sanitizeString(search.query),
       team_id:
         search.team_id === "preview" || search.team_id?.startsWith("preview_")
           ? previewTeamId
           : search.team_id,
       options: search.zeroDataRetention
         ? { enterprise: search.options?.enterprise }
-        : search.options,
+        : options,
       credits_cost: search.credits_cost,
       is_successful: search.is_successful,
       error: search.zeroDataRetention ? null : (search.error ?? null),

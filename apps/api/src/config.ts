@@ -70,27 +70,26 @@ const configSchema = z.object({
   OAUTH_INTROSPECT_URL: z.string().optional(),
   OAUTH_INTROSPECT_SECRET: z.string().optional(),
 
+  // Agent auth discovery (RFC 9728 WWW-Authenticate on 401)
+  AGENT_AUTH_RESOURCE_METADATA_URL: z
+    .url()
+    .default("https://www.firecrawl.dev/.well-known/oauth-protected-resource"),
+
   // Database & Storage
   POSTGRES_HOST: z.string().default("localhost"),
   POSTGRES_PORT: z.string().default("5432"),
   POSTGRES_DB: z.string().default("postgres"),
   POSTGRES_USER: z.string().default("postgres"),
   POSTGRES_PASSWORD: z.string().default("postgres"),
+  DATABASE_URL: z.string().optional(),
+  DATABASE_REPLICA_URL: z.string().optional(),
+  INDEX_DATABASE_URL: z.string().optional(),
   REDIS_URL: z.string().optional(),
   REDIS_EVICT_URL: z.string().optional(),
   REDIS_RATE_LIMIT_URL: z.string().optional(),
   NUQ_DATABASE_URL: z.string().optional(),
   NUQ_DATABASE_URL_LISTEN: z.string().optional(),
   NUQ_RABBITMQ_URL: z.string().optional(),
-
-  // Supabase
-  SUPABASE_URL: z.string().optional(),
-  SUPABASE_ANON_TOKEN: z.string().optional(),
-  SUPABASE_SERVICE_TOKEN: z.string().optional(),
-  SUPABASE_REPLICA_URL: z.string().optional(),
-  INDEX_SUPABASE_URL: z.string().optional(),
-  INDEX_SUPABASE_SERVICE_TOKEN: z.string().optional(),
-  SEARCH_INDEX_SUPABASE_URL: z.string().optional(),
 
   // Google Cloud Storage
   GCS_BUCKET_NAME: z.string().optional(),
@@ -263,6 +262,7 @@ const configSchema = z.object({
   GITHUB_REF_NAME: z.string().optional(),
   RESTRICTED_COUNTRIES: delimitedList(",").optional(),
   DISABLE_ENGPICKER: z.stringbool().optional(),
+  DISABLE_MONITORING: z.stringbool().default(false),
 
   EXTRACT_V3_BETA_URL: z.string().optional(),
   AGENT_INTEROP_SECRET: z.string().optional(),
@@ -279,9 +279,19 @@ const configSchema = z.object({
   // Audio (avgrab)
   AVGRAB_SERVICE_URL: z.string().optional(),
 
+  // PII Redaction (fire-privacy)
+  FIRE_PRIVACY_URL: z.string().optional(),
+  FIRE_PRIVACY_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
 
   ZDRCLEANER_HEARTBEAT_URL: z.string().optional(),
+
+  // Deterministic JSON extraction (reusable-json-mode)
+  EXTRACT_CODEGEN_MODEL: z.string().default("gemini-3.1-flash-lite"),
+  EXTRACT_ANCHOR_MODEL: z.string().default("openai/gpt-oss-120b"),
+  EXTRACT_LIGHT_MODEL: z.string().default("openai/gpt-oss-20b"),
+  CODE_SANDBOX_URL: z.string().default("ws://code-sandbox:3001"),
 });
 
 export const config = configSchema.parse(process.env);

@@ -10,8 +10,8 @@ import {
   performSummary,
   performCleanContent,
 } from "./llmExtract";
+import { performDeterministicJson } from "./deterministicJson";
 import { performQuery } from "./query";
-import { uploadScreenshot } from "./uploadScreenshot";
 import { removeBase64Images } from "./removeBase64Images";
 import { performAgent } from "./agent";
 import { performAttributes } from "./performAttributes";
@@ -19,6 +19,7 @@ import { performAttributes } from "./performAttributes";
 import { deriveDiff } from "./diff";
 import { fetchAudio } from "./audio";
 import { fetchVideo } from "./video";
+import { performRedactPII } from "./redactPII";
 import { useIndex, useSearchIndex } from "../../../services/index";
 import { sendDocumentToIndex } from "../engines/index/index";
 import { sendDocumentToSearchIndex } from "./sendToSearchIndex";
@@ -85,16 +86,22 @@ async function deriveMarkdownFromHTML(
   // - json format requires markdown (for LLM extraction)
   // - summary format requires markdown (for summarization)
   // - question/highlights/query formats require markdown (for page-level answers)
+  // - redactPII needs markdown as its source text (spans are markdown char offsets)
   const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
   const hasChangeTracking = hasFormatOfType(
     meta.options.formats,
     "changeTracking",
   );
-  const hasJson = hasFormatOfType(meta.options.formats, "json");
+  // deterministicJson populates document.json just like json, so treat it the
+  // same here (derive markdown for it; keep the field it produced).
+  const hasJson =
+    hasFormatOfType(meta.options.formats, "json") ||
+    hasFormatOfType(meta.options.formats, "deterministicJson");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
   const hasQuestion = hasFormatOfType(meta.options.formats, "question");
   const hasHighlights = hasFormatOfType(meta.options.formats, "highlights");
   const hasQuery = hasFormatOfType(meta.options.formats, "query");
+  const hasRedactPII = !!meta.options.redactPII;
   if (
     !hasMarkdown &&
     !hasChangeTracking &&
@@ -103,6 +110,7 @@ async function deriveMarkdownFromHTML(
     !hasQuestion &&
     !hasHighlights &&
     !hasQuery &&
+    !hasRedactPII &&
     !meta.options.onlyCleanContent
   ) {
     return document;
@@ -318,7 +326,11 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     meta.options.formats,
     "changeTracking",
   );
-  const hasJson = hasFormatOfType(meta.options.formats, "json");
+  // deterministicJson populates document.json just like json, so treat it the
+  // same here (derive markdown for it; keep the field it produced).
+  const hasJson =
+    hasFormatOfType(meta.options.formats, "json") ||
+    hasFormatOfType(meta.options.formats, "deterministicJson");
   const hasScreenshot = hasFormatOfType(meta.options.formats, "screenshot");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
   const hasBranding = hasFormatOfType(meta.options.formats, "branding");
@@ -494,6 +506,18 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     );
   }
 
+  // Redaction itself is controlled by redactPII. Keep internal redaction
+  // details only when explicitly requested.
+  const hasPii = hasFormatOfType(meta.options.formats, "pii");
+  const wantPii = !!(hasPii && meta.options.redactPII);
+  if (!wantPii && document.pii !== undefined) {
+    delete document.pii;
+  } else if (wantPii && document.pii === undefined) {
+    meta.logger.warn(
+      "Redaction details were requested, but there was no pii field in the result.",
+    );
+  }
+
   if (!hasChangeTracking && document.changeTracking !== undefined) {
     meta.logger.warn(
       "Removed changeTracking from Document because it wasn't in formats -- this is extremely wasteful and indicates a bug.",
@@ -553,14 +577,15 @@ const transformerStack: Transformer[] = [
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
   performCleanContent,
+  performRedactPII,
   deriveLinksFromHTML,
   deriveImagesFromHTML,
   deriveBrandingFromActions,
   deriveMetadataFromRawHTML,
-  uploadScreenshot,
   ...(useIndex ? [sendDocumentToIndex] : []),
   ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
   performLLMExtract,
+  performDeterministicJson,
   performSummary,
   performQuery,
   performAttributes,

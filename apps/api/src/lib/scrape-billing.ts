@@ -15,6 +15,10 @@ const creditsPerPDFPage = 1;
 const stealthProxyCostBonus = 4;
 const unblockedDomainCostBonus = 4;
 const xTwitterCostBonus = 29;
+const redactPIICostBonus = 4;
+// Each additional PDF page also gets redacted through fire-privacy, so
+// the per-page surcharge mirrors the +4 base — same tier as lockdown.
+const redactPIIPdfPageCostBonus = 4;
 
 export async function calculateCreditsToBeBilled(
   options: ScrapeOptions,
@@ -68,6 +72,10 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled = 5;
   }
 
+  if (hasFormatOfType(options.formats, "deterministicJson")) {
+    creditsToBeBilled = 7;
+  }
+
   if (
     internalOptions.v1Agent?.model === "fire-1" ||
     internalOptions.v1JSONAgent?.model?.toLowerCase() === "fire-1"
@@ -103,12 +111,25 @@ export async function calculateCreditsToBeBilled(
   }
 
   const shouldParse = shouldParsePDF(options.parsers);
-  if (
+  const extraPdfPages =
     shouldParse &&
     document.metadata?.numPages !== undefined &&
     document.metadata.numPages > 1
-  ) {
-    creditsToBeBilled += creditsPerPDFPage * (document.metadata.numPages - 1);
+      ? document.metadata.numPages - 1
+      : 0;
+  if (extraPdfPages > 0) {
+    creditsToBeBilled += creditsPerPDFPage * extraPdfPages;
+  }
+
+  if (options.redactPII) {
+    // Flat +4 to match lockdown / audio / video / stealth — fire-privacy
+    // is a peer premium feature, not a cost-based one. PDF pages all
+    // pass through redaction too, so each additional page picks up
+    // another +4 on top of the +1 page parse cost.
+    creditsToBeBilled += redactPIICostBonus;
+    if (extraPdfPages > 0) {
+      creditsToBeBilled += redactPIIPdfPageCostBonus * extraPdfPages;
+    }
   }
 
   if (
