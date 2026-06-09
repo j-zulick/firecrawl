@@ -15,7 +15,12 @@ import {
   verdictToDecision,
   windowToMs,
 } from "./judge";
-import { resolveEvent, summarizeRun, type KnownEvent } from "./llm";
+import {
+  judgeMaterialDevelopment,
+  resolveEvent,
+  summarizeRun,
+  type KnownEvent,
+} from "./llm";
 
 // Unified schedule/window step → Firecrawl tbs window.
 function windowToTbs(window: string): string {
@@ -28,7 +33,7 @@ type SearchTargetInput = {
   id: string;
   queries: string[];
   searchWindow: string;
-  alertMode: "first_match" | "every_new_result";
+  alertMode: "first_match" | "every_new_result" | "material_dev";
   includeDomains?: string[];
   excludeDomains?: string[];
   // Re-judge a still-live result (last status alert/watching) when its last check is older than
@@ -291,8 +296,23 @@ export async function runSearchTarget(params: {
       ? matched.label
       : resolution.label || effectiveVerdict.concept;
 
-    const alreadySatisfied =
-      target.alertMode === "first_match" && satisfied.has(eventKey);
+    // Suppression by mode. first_match: alert once per event. material_dev: alert once, then
+    // re-alert only when a later result adds materially-new info to the known event.
+    // every_new_result: never event-suppressed (alerts each new URL).
+    let alreadySatisfied = false;
+    if (satisfied.has(eventKey)) {
+      if (target.alertMode === "first_match") {
+        alreadySatisfied = true;
+      } else if (target.alertMode === "material_dev") {
+        const dev = await judgeMaterialDevelopment({
+          goal,
+          subject,
+          eventLabel,
+          result: { title: c.title, evidence: effectiveVerdict.rationale },
+        });
+        alreadySatisfied = !dev.material;
+      }
+    }
     const eventMeta = { ...baseMeta, eventKey, eventLabel };
 
     if (alreadySatisfied) {

@@ -58,7 +58,7 @@ const searchTargetSchema = z
       .optional()
       .default("24h"),
     alertMode: z
-      .enum(["first_match", "every_new_result"])
+      .enum(["first_match", "every_new_result", "material_dev"])
       .optional()
       .default("first_match"),
     includeDomains: z.array(monitorDomainSchema).max(50).optional(),

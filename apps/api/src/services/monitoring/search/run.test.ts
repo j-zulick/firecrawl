@@ -16,9 +16,11 @@ jest.mock("../../../search", () => ({
 jest.mock("../../../scraper/scrapeURL", () => ({
   scrapeURL: (...a: unknown[]) => scrapeURLMock(...a),
 }));
+const materialDevMock = jest.fn();
 jest.mock("./llm", () => ({
   resolveEvent: (...a: unknown[]) => resolveEventMock(...a),
   summarizeRun: (...a: unknown[]) => summarizeRunMock(...a),
+  judgeMaterialDevelopment: (...a: unknown[]) => materialDevMock(...a),
 }));
 
 import { runSearchTarget, type KnownPage } from "./run";
@@ -82,7 +84,7 @@ function run(
       ? never
       : { key: string; label: string }[];
     goalVersion?: string;
-    alertMode?: "first_match" | "every_new_result";
+    alertMode?: "first_match" | "every_new_result" | "material_dev";
   } = {},
 ) {
   return runSearchTarget({
@@ -112,6 +114,7 @@ beforeEach(() => {
     label: "meaningful",
     summary: "OpenAI filed for IPO.",
   });
+  materialDevMock.mockResolvedValue({ material: false, reason: "" });
 });
 
 describe("runSearchTarget orchestration", () => {
@@ -326,6 +329,49 @@ describe("runSearchTarget orchestration", () => {
 
     expect(out.resultCount).toBe(1);
     expect(scrapeURLMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("material_dev alert mode", () => {
+  const serp = [
+    {
+      url: "https://reuters.com/openai",
+      title: "OpenAI prices IPO",
+      description: "priced",
+    },
+  ];
+  beforeEach(() => {
+    setSearchResults(serp);
+    setVerdictsByUrl({ "https://reuters.com/openai": verdict() });
+    resolveEventMock.mockResolvedValue({
+      matchedKey: "evt-1",
+      isNew: false,
+      label: "OpenAI IPO",
+      reason: "same",
+    });
+  });
+
+  it("re-alerts on a material development of a known event", async () => {
+    materialDevMock.mockResolvedValue({ material: true, reason: "now priced" });
+    const out = await run({
+      alertMode: "material_dev",
+      knownEvents: [{ key: "evt-1", label: "OpenAI IPO" }],
+    });
+    expect(out.matches).toBe(1);
+    expect(out.sources[0].status).toBe("alert");
+  });
+
+  it("suppresses a non-material retelling of a known event", async () => {
+    materialDevMock.mockResolvedValue({
+      material: false,
+      reason: "just a retelling",
+    });
+    const out = await run({
+      alertMode: "material_dev",
+      knownEvents: [{ key: "evt-1", label: "OpenAI IPO" }],
+    });
+    expect(out.matches).toBe(0);
+    expect(out.sources[0].status).toBe("already_seen");
   });
 });
 

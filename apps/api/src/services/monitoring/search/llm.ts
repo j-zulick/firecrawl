@@ -66,6 +66,41 @@ export async function resolveEvent(params: {
   };
 }
 
+const materialDevSchema = z.object({
+  material: z.boolean(),
+  reason: z.string(),
+});
+
+// For alertMode "material_dev": does this new result add materially-new information to an
+// already-alerted event (e.g. IPO filed → priced → traded), vs just another retelling?
+export async function judgeMaterialDevelopment(params: {
+  goal: string;
+  subject: string;
+  eventLabel: string;
+  result: { title: string; evidence: string };
+}): Promise<{ material: boolean; reason: string }> {
+  const { object } = await generateObject({
+    model: google(EVENT_MODEL),
+    schema: materialDevSchema,
+    system:
+      "You decide whether a new search result represents a MATERIAL development of an already-known, already-alerted event, versus a duplicate retelling that adds nothing new. Material = a concrete new stage, fact, or change in the event's status. A different outlet covering the same already-known facts is NOT material. Return structured JSON only.",
+    prompt: JSON.stringify({
+      monitor: { goal: params.goal, subject: params.subject },
+      knownEvent: params.eventLabel,
+      newResult: {
+        title: params.result.title,
+        evidence: (params.result.evidence || "").slice(0, 500),
+      },
+      instructions: [
+        "Set material true only when the new result reports a genuinely new development of the known event.",
+        "Set material false when it restates already-known facts, even from a new source or headline.",
+      ],
+    }),
+    temperature: 0,
+  });
+  return { material: object.material === true, reason: object.reason ?? "" };
+}
+
 const runSummarySchema = z.object({
   label: z.enum(["meaningful", "already_satisfied", "not_meaningful"]),
   summary: z.string(),
