@@ -1,6 +1,7 @@
 import { v7 as uuidv7 } from "uuid";
 import type { Logger } from "winston";
 import { search } from "../../../search";
+import { buildSearchQuery } from "../../../lib/search-query-builder";
 import { scrapeURL } from "../../../scraper/scrapeURL";
 import { scrapeOptions } from "../../../controllers/v2/types";
 import { CostTracking } from "../../../lib/cost-tracking";
@@ -37,6 +38,7 @@ type SearchTargetInput = {
   searchWindow: string;
   alertMode: "first_match" | "every_new_result";
   includeDomains?: string[];
+  excludeDomains?: string[];
   maxResults: number;
 };
 
@@ -115,8 +117,13 @@ export async function runSearchTarget(params: {
   const candidates: Array<{ url: string; title: string; description: string }> =
     [];
   for (const query of target.queries) {
+    // Scope to domains the same way the v2 search API does (site:/-site: operators).
+    const { query: scopedQuery } = buildSearchQuery(query, undefined, {
+      includeDomains: target.includeDomains,
+      excludeDomains: target.excludeDomains,
+    });
     const results = await search({
-      query,
+      query: scopedQuery,
       logger,
       num_results: target.maxResults,
       tbs,
