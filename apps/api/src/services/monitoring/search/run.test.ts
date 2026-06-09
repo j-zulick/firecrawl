@@ -332,6 +332,31 @@ describe("runSearchTarget orchestration", () => {
   });
 });
 
+describe("scrape payload validity (real validator, no mocks)", () => {
+  // Proves the exact scrape options run.ts sends survive the real v2 validator and yield a
+  // json format carrying our verdict schema + prompt — the one integration not covered by
+  // matching the scrape/crawl path.
+  it("scrapeOptions.parse accepts the verdict json format", () => {
+    const { scrapeOptions } = require("../../../controllers/v2/types");
+    const { verdictJsonSchema, buildJudgePrompt } = require("./judge");
+    const parsed = scrapeOptions.parse({
+      formats: [
+        {
+          type: "json",
+          schema: verdictJsonSchema,
+          prompt: buildJudgePrompt("goal", "subject", "24h"),
+        },
+      ],
+      timeout: 20000,
+    });
+    const jsonFormat = (parsed.formats as Array<{ type: string }>).find(
+      f => f.type === "json",
+    );
+    expect(jsonFormat).toBeTruthy();
+    expect((jsonFormat as { prompt?: string }).prompt).toContain("goal");
+  });
+});
+
 describe("material_dev alert mode", () => {
   const serp = [
     {
