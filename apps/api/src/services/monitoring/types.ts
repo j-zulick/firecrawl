@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   crawlerOptions,
-  searchDomainSchema,
   URL as urlSchema,
   type ScrapeOptions,
 } from "../../controllers/v2/types";
@@ -37,33 +36,33 @@ const crawlTargetSchema = z.strictObject({
   scrapeOptions: scrapeOptionsSchema,
 });
 
-// Search monitor target. Instead of watching fixed URLs (scrape/crawl), this runs a set
-// of web-search queries on the monitor's schedule, judges each result against the goal,
-// dedupes by URL and by real-world event, and alerts on genuinely-new meaningful matches.
-// Search-specific state rides existing jsonb columns (config here; URL dedup memory in
-// monitor_pages.metadata; event index in monitors.last_check_summary jsonb for v1) — no
-// new tables/columns required to ship.
+const monitorDomainSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .refine(
+    value =>
+      /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/.test(
+        value,
+      ),
+    "Domain must be a valid hostname without protocol or path",
+  );
+
 const searchTargetSchema = z
   .strictObject({
     id: z.string().uuid().optional(),
     type: z.literal("search"),
-    // The web-search queries. (v1: caller/LLM-supplied; see search/queries.ts.)
     queries: z.array(z.string().min(1).max(256)).min(1).max(10),
-    // Unified schedule/window step → mapped to a Firecrawl `tbs` window in search/run.ts.
     searchWindow: z
       .enum(["5m", "15m", "1h", "6h", "24h", "7d"])
       .optional()
       .default("24h"),
-    // first_match = alert once per real-world event; every_new_result = alert on each new URL.
     alertMode: z
       .enum(["first_match", "every_new_result"])
       .optional()
       .default("first_match"),
-    // Domain scoping → site:/-site: operators (search/run.ts). Mirrors the v2 search API:
-    // reuse searchDomainSchema and keep include/exclude mutually exclusive.
-    includeDomains: z.array(searchDomainSchema).max(50).optional(),
-    excludeDomains: z.array(searchDomainSchema).max(50).optional(),
-    // Max results judged per run (caps Firecrawl scrape + LLM cost).
+    includeDomains: z.array(monitorDomainSchema).max(50).optional(),
+    excludeDomains: z.array(monitorDomainSchema).max(50).optional(),
     maxResults: z.number().int().min(1).max(50).optional().default(10),
     scrapeOptions: scrapeOptionsSchema,
   })

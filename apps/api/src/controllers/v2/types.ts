@@ -1879,7 +1879,7 @@ const pdfCategoryOptions = z.strictObject({
   type: z.literal("pdf"),
 });
 
-export const searchDomainSchema = z
+const searchDomainSchema = z
   .string()
   .trim()
   .toLowerCase()
