@@ -143,6 +143,9 @@ function estimateTargetBaseCredits(target: MonitorTarget): number {
   if (target.type === "scrape") {
     return target.urls.length * creditsPerPage;
   }
+  if (target.type === "search") {
+    return target.maxResults * creditsPerPage;
+  }
 
   const limit =
     typeof target.crawlOptions?.limit === "number"
@@ -154,6 +157,9 @@ function estimateTargetBaseCredits(target: MonitorTarget): number {
 function estimateTargetPageCount(target: MonitorTarget): number {
   if (target.type === "scrape") {
     return target.urls.length;
+  }
+  if (target.type === "search") {
+    return target.maxResults;
   }
 
   const limit =
