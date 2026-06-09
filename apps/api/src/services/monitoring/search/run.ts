@@ -42,8 +42,6 @@ type SearchTargetInput = {
   maxResults: number;
 };
 
-// Per-URL dedup memory, reconstructed from monitor_pages.metadata by the runner. Stale-goal
-// rows are ignored (goalVersion gate) so a changed goal re-evaluates instead of staying quiet.
 export type KnownPage = {
   fingerprint: string;
   goalVersion: string;
@@ -71,9 +69,6 @@ type SearchTargetRunResult = {
   matches: number; // new alerts this run
   summary: string;
   sources: SearchSource[];
-  // → upsert into monitor_pages; metadata carries fingerprint, goalVersion, verdict, and
-  // (for alert/already_seen) eventKey+eventLabel. The event index is reconstructed from
-  // these page rows — no separate event table/column.
   pageUpserts: Array<{
     url: string;
     urlHash: Buffer;
@@ -86,7 +81,6 @@ export async function runSearchTarget(params: {
   monitor: { id: string; teamId: string; goal: string | null; subject: string };
   target: SearchTargetInput;
   goalVersion: string;
-  // Same-goalVersion dedup memory + events, derived from monitor_pages by the runner.
   knownPages: Map<string, KnownPage>;
   knownEvents: KnownEvent[];
   zeroDataRetention: boolean;
@@ -94,7 +88,6 @@ export async function runSearchTarget(params: {
 }): Promise<SearchTargetRunResult> {
   const { target, knownPages, goalVersion, logger } = params;
 
-  // P0(#4): a search monitor cannot judge without a goal.
   const goal = params.monitor.goal?.trim();
   if (!goal) {
     throw new Error("search monitor target requires a non-empty monitor goal");
@@ -151,7 +144,6 @@ export async function runSearchTarget(params: {
       snippet: c.description,
     });
     const known = knownPages.get(canonical);
-    // P0(#1): a page judged under a different goal is stale — treat it as new.
     const knownCurrent =
       known && known.goalVersion === goalVersion ? known : undefined;
     const isNewOrChanged =
@@ -169,8 +161,7 @@ export async function runSearchTarget(params: {
       continue;
     }
 
-    // Judge the page INSIDE the scrape via the `json` format — Firecrawl runs the extraction
-    // (the page judge), the verdict comes back on document.json. No separate Gemini call.
+    // Judge in-scrape via the json format; verdict returns on document.json.
     let res;
     try {
       res = await scrapeURL(
@@ -196,7 +187,6 @@ export async function runSearchTarget(params: {
       continue;
     }
 
-    // P0(#2): scrapeURL returns a discriminated result — handle the failure arm.
     if (!res.success) {
       logger.warn("search monitor scrape failed", { url: c.url });
       skipped += 1;

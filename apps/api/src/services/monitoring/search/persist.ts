@@ -2,9 +2,7 @@ import { canonicalizeUrl } from "./dedupe";
 import type { KnownPage } from "./run";
 import type { KnownEvent } from "./llm";
 
-// Search verdict status → the monitor page-status enum the reconciler counts.
-// alert = a genuinely-new meaningful match (new); seen/watching/ignored = no new alert (same);
-// a failed scrape = error. This keeps search runs visible in the same new/same/error tallies.
+// Search verdict status → the page-status enum the reconciler tallies (new/same/error).
 export function searchStatusToPageStatus(
   status: string,
 ): "same" | "new" | "changed" | "removed" | "error" {
@@ -13,8 +11,7 @@ export function searchStatusToPageStatus(
   return "same";
 }
 
-// A scraped search result ran a json verdict extraction; already-seen results skip the scrape.
-// The runner maps these flags onto the canonical credit estimator (no new constants here).
+// True for statuses that came from a successful scrape+judge (used for credit attribution).
 export function searchPageWasScraped(status: string): boolean {
   return status === "alert" || status === "watching" || status === "ignored";
 }
