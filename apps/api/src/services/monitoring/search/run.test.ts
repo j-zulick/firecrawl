@@ -280,3 +280,36 @@ describe("runSearchTarget orchestration", () => {
     expect(scrapeURLMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("domain scoping", () => {
+  beforeEach(() => setSearchResults([]));
+
+  it("includeDomains → site: OR filter appended to the query", async () => {
+    await runSearchTarget({
+      monitor: baseMonitor,
+      target: { ...baseTarget, includeDomains: ["sec.gov", "reuters.com"] },
+      goalVersion: "gv1",
+      knownPages: new Map(),
+      knownEvents: [],
+      zeroDataRetention: false,
+      logger,
+    });
+    const sentQuery = searchMock.mock.calls[0][0].query as string;
+    expect(sentQuery).toContain("openai ipo");
+    expect(sentQuery).toContain("(site:sec.gov OR site:reuters.com)");
+  });
+
+  it("excludeDomains → -site: filter appended to the query", async () => {
+    await runSearchTarget({
+      monitor: baseMonitor,
+      target: { ...baseTarget, excludeDomains: ["pinterest.com"] },
+      goalVersion: "gv1",
+      knownPages: new Map(),
+      knownEvents: [],
+      zeroDataRetention: false,
+      logger,
+    });
+    const sentQuery = searchMock.mock.calls[0][0].query as string;
+    expect(sentQuery).toContain("-site:pinterest.com");
+  });
+});

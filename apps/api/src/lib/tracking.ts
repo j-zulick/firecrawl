@@ -136,6 +136,12 @@ function monitorTargetSignature(target: MonitorTarget): string {
       queries: [...target.queries].sort(),
       searchWindow: target.searchWindow,
       alertMode: target.alertMode,
+      includeDomains: target.includeDomains
+        ? [...target.includeDomains].sort()
+        : [],
+      excludeDomains: target.excludeDomains
+        ? [...target.excludeDomains].sort()
+        : [],
     });
   }
 
