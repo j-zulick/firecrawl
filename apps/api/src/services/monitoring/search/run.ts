@@ -24,16 +24,6 @@ function windowToTbs(window: string): string {
   return "qdr:w"; // 7d
 }
 
-function slugifyEvent(label: string): string {
-  return (
-    label
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 64) || "event"
-  );
-}
-
 type SearchTargetInput = {
   id: string;
   queries: string[];
@@ -280,22 +270,26 @@ export async function runSearchTarget(params: {
       continue;
     }
 
-    // notify → resolve the real-world event against recent known events.
+    // notify → resolve the real-world event against the known events (small list, handed straight
+    // to the LLM). Matches reuse the existing stable key; new events mint one.
     const resolution = await resolveEvent({
       goal,
       subject,
-      result: { title: c.title, url: c.url, evidence: verdict.rationale },
+      result: {
+        title: c.title,
+        url: c.url,
+        evidence: effectiveVerdict.rationale,
+      },
       candidates: events,
     });
-    const eventKey =
-      resolution.matchedKey ??
-      (resolution.label
-        ? slugifyEvent(resolution.label)
-        : slugifyEvent(verdict.concept));
-    const eventLabel =
-      events.find(e => e.key === eventKey)?.label ||
-      resolution.label ||
-      verdict.concept;
+    const matched =
+      resolution.matchedKey &&
+      events.find(e => e.key === resolution.matchedKey);
+    // New event → mint a stable, content-independent key so a future relabel can't drift it.
+    const eventKey = matched ? matched.key : uuidv7();
+    const eventLabel = matched
+      ? matched.label
+      : resolution.label || effectiveVerdict.concept;
 
     const alreadySatisfied =
       target.alertMode === "first_match" && satisfied.has(eventKey);

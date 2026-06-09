@@ -213,7 +213,7 @@ describe("runSearchTarget orchestration", () => {
         reason: "",
       })
       .mockResolvedValueOnce({
-        matchedKey: undefined,
+        matchedKey: "00000000-0000-7000-8000-000000000000",
         isNew: false,
         label: "OpenAI IPO",
         reason: "same",
@@ -225,6 +225,54 @@ describe("runSearchTarget orchestration", () => {
     expect(statuses).toContain("alert");
     expect(statuses).toContain("already_seen");
     expect(out.matches).toBe(1);
+  });
+
+  it("mints a stable opaque key for new events (not a label slug)", async () => {
+    setSearchResults([
+      {
+        url: "https://sec.gov/openai",
+        title: "OpenAI S-1",
+        description: "filing",
+      },
+    ]);
+    setVerdictsByUrl({ "https://sec.gov/openai": verdict() });
+    resolveEventMock.mockResolvedValue({
+      matchedKey: null,
+      isNew: true,
+      label: "OpenAI's IPO Filing!!!",
+      reason: "",
+    });
+    const out = await run();
+    // Key is the uuid (mocked constant here), not slugify("OpenAI's IPO Filing!!!").
+    expect(out.sources[0].eventKey).toBe(
+      "00000000-0000-7000-8000-000000000000",
+    );
+    expect(out.pageUpserts[0].metadata.eventLabel).toBe(
+      "OpenAI's IPO Filing!!!",
+    );
+  });
+
+  it("reuses a matched event's key even when the new label differs (no drift)", async () => {
+    setSearchResults([
+      {
+        url: "https://reuters.com/openai",
+        title: "Reuters: OpenAI IPO",
+        description: "report",
+      },
+    ]);
+    setVerdictsByUrl({ "https://reuters.com/openai": verdict() });
+    resolveEventMock.mockResolvedValue({
+      matchedKey: "evt-stable-123",
+      isNew: false,
+      label: "A completely reworded label",
+      reason: "same event",
+    });
+    const out = await run({
+      knownEvents: [{ key: "evt-stable-123", label: "OpenAI IPO" }],
+    });
+    expect(out.sources[0].eventKey).toBe("evt-stable-123");
+    // Reuses the stored label, ignoring the drifted one from this run.
+    expect(out.pageUpserts[0].metadata.eventLabel).toBe("OpenAI IPO");
   });
 
   it("downgrades a stale-but-alert verdict to watch (no notify)", async () => {
