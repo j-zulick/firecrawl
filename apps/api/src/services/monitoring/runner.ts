@@ -946,8 +946,8 @@ async function enqueueMonitorCrawlTarget(params: {
   return params.targetRun;
 }
 
-// Reuse the canonical credit logic (no new constants): a search result that was scraped ran a
-// json verdict extraction (5 credits); already-seen results skip the scrape (0); failures bill base.
+// Credit attribution via the canonical estimator: scraped results ran a json extraction,
+// already-seen results skip the scrape, failures bill the base scrape credit.
 const SEARCH_JSON_DOC = { json: {} } as const;
 const SEARCH_JSON_OPTS = { formats: [{ type: "json" }] } as const;
 function searchPageCredits(status: string): number {
@@ -955,12 +955,11 @@ function searchPageCredits(status: string): number {
   if (searchPageWasScraped(status)) {
     return estimateActualCredits(SEARCH_JSON_DOC, SEARCH_JSON_OPTS);
   }
-  return estimateActualCredits({}, SEARCH_JSON_OPTS); // skipped/other → base scrape credit
+  return estimateActualCredits({}, SEARCH_JSON_OPTS);
 }
 
-// Search targets run inline (they own their search + scrape + judge). We reconstruct the dedup
-// memory from prior monitor_pages, run the target, then persist results onto the same
-// monitor_pages / monitor_check_pages tables the reconciler tallies — no new storage.
+// Runs inline (owns its search + scrape + judge), then persists onto the same
+// monitor_pages / monitor_check_pages tables the reconciler tallies.
 async function runMonitorSearchTarget(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;

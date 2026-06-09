@@ -18,9 +18,8 @@ export function searchPageWasScraped(status: string): boolean {
 
 type PriorPage = { url: string; metadata: unknown | null };
 
-// Rebuild the per-URL dedup memory and the event index from prior monitor_pages of this target.
-// Stale-goal fingerprints are still loaded (the runner's goalVersion gate decides freshness),
-// but the event index only carries events from the CURRENT goalVersion so a goal change starts clean.
+// Rebuild dedup memory + event index from prior pages. Fingerprints load regardless of
+// goalVersion (the runner gates freshness); events only carry the current goalVersion.
 export function reconstructKnownState(
   priorPages: PriorPage[],
   goalVersion: string,
