@@ -1000,6 +1000,7 @@ async function runMonitorSearchTarget(params: {
       alertMode: target.alertMode,
       includeDomains: target.includeDomains,
       excludeDomains: target.excludeDomains,
+      recheckAfter: target.recheckAfter,
       maxResults: target.maxResults,
     },
     goalVersion,

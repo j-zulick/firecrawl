@@ -63,6 +63,7 @@ const searchTargetSchema = z
       .default("first_match"),
     includeDomains: z.array(monitorDomainSchema).max(50).optional(),
     excludeDomains: z.array(monitorDomainSchema).max(50).optional(),
+    recheckAfter: z.enum(["1h", "6h", "24h", "7d"]).optional(),
     maxResults: z.number().int().min(1).max(50).optional().default(10),
     scrapeOptions: scrapeOptionsSchema,
   })

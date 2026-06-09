@@ -13,6 +13,7 @@ import {
   parseVerdict,
   verdictJsonSchema,
   verdictToDecision,
+  windowToMs,
 } from "./judge";
 import { resolveEvent, summarizeRun, type KnownEvent } from "./llm";
 
@@ -40,12 +41,17 @@ type SearchTargetInput = {
   alertMode: "first_match" | "every_new_result";
   includeDomains?: string[];
   excludeDomains?: string[];
+  // Re-judge a still-live result (last status alert/watching) when its last check is older than
+  // this window, even if the SERP snippet is unchanged — catches content updates SERP text misses.
+  recheckAfter?: string;
   maxResults: number;
 };
 
 export type KnownPage = {
   fingerprint: string;
   goalVersion: string;
+  lastCheckedAt?: string;
+  lastStatus?: string;
 };
 
 type SearchSource = {
@@ -147,8 +153,21 @@ export async function runSearchTarget(params: {
     const known = knownPages.get(canonical);
     const knownCurrent =
       known && known.goalVersion === goalVersion ? known : undefined;
+    // Re-judge a still-live result on a cadence even if its SERP snippet is unchanged.
+    const recheckMs = target.recheckAfter ? windowToMs(target.recheckAfter) : 0;
+    const isLive =
+      knownCurrent?.lastStatus === "alert" ||
+      knownCurrent?.lastStatus === "watching";
+    const dueForRecheck = Boolean(
+      recheckMs &&
+        isLive &&
+        knownCurrent?.lastCheckedAt &&
+        Date.now() - Date.parse(knownCurrent.lastCheckedAt) > recheckMs,
+    );
     const isNewOrChanged =
-      !knownCurrent || knownCurrent.fingerprint !== fingerprint;
+      !knownCurrent ||
+      knownCurrent.fingerprint !== fingerprint ||
+      dueForRecheck;
 
     // Already-seen + unchanged under the current goal → reuse, no scrape/judge/LLM.
     if (!isNewOrChanged) {

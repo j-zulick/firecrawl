@@ -16,7 +16,12 @@ export function searchPageWasScraped(status: string): boolean {
   return status === "alert" || status === "watching" || status === "ignored";
 }
 
-type PriorPage = { url: string; metadata: unknown | null };
+type PriorPage = {
+  url: string;
+  metadata: unknown | null;
+  updated_at?: string;
+  last_status?: string;
+};
 
 // Rebuild dedup memory + event index from prior pages. Fingerprints load regardless of
 // goalVersion (the runner gates freshness); events only carry the current goalVersion.
@@ -35,6 +40,8 @@ export function reconstructKnownState(
       knownPages.set(canonicalizeUrl(page.url), {
         fingerprint: meta.fingerprint,
         goalVersion: meta.goalVersion,
+        lastCheckedAt: page.updated_at,
+        lastStatus: page.last_status,
       });
     }
     if (

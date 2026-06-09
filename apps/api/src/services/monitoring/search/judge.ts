@@ -94,6 +94,10 @@ const WINDOW_MS: Record<string, number> = {
   "7d": 7 * 24 * 60 * 60_000,
 };
 
+export function windowToMs(window: string): number {
+  return WINDOW_MS[window] ?? WINDOW_MS["24h"];
+}
+
 // Freshness from a real publish date vs the search window. Returns null when no usable date
 // exists, so the caller can fall back to the LLM's freshness guess. Future-dated → fresh.
 export function freshnessFromDate(

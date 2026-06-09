@@ -76,7 +76,7 @@ const baseMonitor = {
 
 function run(
   over: {
-    target?: Partial<typeof baseTarget>;
+    target?: Partial<typeof baseTarget> & { recheckAfter?: string };
     knownPages?: Map<string, KnownPage>;
     knownEvents?: EventResolution[] extends never
       ? never
@@ -278,6 +278,75 @@ describe("runSearchTarget orchestration", () => {
 
     expect(out.resultCount).toBe(1);
     expect(scrapeURLMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("re-judge cadence", () => {
+  const url = "https://sec.gov/openai";
+  const fp = stableSerpFingerprint({
+    url,
+    title: "OpenAI S-1",
+    snippet: "filing",
+  });
+  const serp = [{ url, title: "OpenAI S-1", description: "filing" }];
+  const old = new Date(Date.now() - 48 * 3600_000).toISOString();
+  const recent = new Date(Date.now() - 1000).toISOString();
+
+  it("re-judges a live page whose last check is older than recheckAfter (SERP unchanged)", async () => {
+    setSearchResults(serp);
+    setVerdictsByUrl({ [url]: verdict() });
+    const knownPages = new Map<string, KnownPage>([
+      [
+        canonicalizeUrl(url),
+        {
+          fingerprint: fp,
+          goalVersion: "gv1",
+          lastCheckedAt: old,
+          lastStatus: "watching",
+        },
+      ],
+    ]);
+    const out = await run({ target: { recheckAfter: "24h" }, knownPages });
+    expect(scrapeURLMock).toHaveBeenCalledTimes(1);
+    expect(out.sources[0].status).toBe("alert");
+  });
+
+  it("does NOT re-judge when the last check is within recheckAfter", async () => {
+    setSearchResults(serp);
+    setVerdictsByUrl({ [url]: verdict() });
+    const knownPages = new Map<string, KnownPage>([
+      [
+        canonicalizeUrl(url),
+        {
+          fingerprint: fp,
+          goalVersion: "gv1",
+          lastCheckedAt: recent,
+          lastStatus: "watching",
+        },
+      ],
+    ]);
+    const out = await run({ target: { recheckAfter: "24h" }, knownPages });
+    expect(scrapeURLMock).not.toHaveBeenCalled();
+    expect(out.sources[0].status).toBe("already_seen");
+  });
+
+  it("does NOT re-judge a non-live (ignored) page even when stale", async () => {
+    setSearchResults(serp);
+    setVerdictsByUrl({ [url]: verdict() });
+    const knownPages = new Map<string, KnownPage>([
+      [
+        canonicalizeUrl(url),
+        {
+          fingerprint: fp,
+          goalVersion: "gv1",
+          lastCheckedAt: old,
+          lastStatus: "ignored",
+        },
+      ],
+    ]);
+    const out = await run({ target: { recheckAfter: "24h" }, knownPages });
+    expect(scrapeURLMock).not.toHaveBeenCalled();
+    expect(out.sources[0].status).toBe("already_seen");
   });
 });
 
