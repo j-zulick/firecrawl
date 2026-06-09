@@ -9,6 +9,7 @@ import { hashMonitorUrl } from "../store";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
 import {
   buildJudgePrompt,
+  freshnessFromDate,
   parseVerdict,
   verdictJsonSchema,
   verdictToDecision,
@@ -202,15 +203,31 @@ export async function runSearchTarget(params: {
       continue;
     }
 
-    const decision = verdictToDecision(verdict);
+    // Prefer a real publish date over the LLM's freshness guess (freshness is an alert veto).
+    const realDate =
+      res.document.metadata?.publishedTime ??
+      res.document.metadata?.modifiedTime ??
+      null;
+    const dateFreshness = freshnessFromDate(
+      realDate,
+      target.searchWindow,
+      Date.now(),
+    );
+    const effectiveVerdict = dateFreshness
+      ? { ...verdict, freshness: dateFreshness }
+      : verdict;
+
+    const decision = verdictToDecision(effectiveVerdict);
     const baseMeta = {
       fingerprint,
       goalVersion,
-      alertAction: verdict.alertAction,
-      freshness: verdict.freshness,
-      sourceQuality: verdict.sourceQuality,
-      concept: verdict.concept,
-      rationale: verdict.rationale,
+      alertAction: effectiveVerdict.alertAction,
+      freshness: effectiveVerdict.freshness,
+      freshnessSource: dateFreshness ? "date" : "llm",
+      publishedAt: realDate,
+      sourceQuality: effectiveVerdict.sourceQuality,
+      concept: effectiveVerdict.concept,
+      rationale: effectiveVerdict.rationale,
     };
 
     if (decision === "ignore") {

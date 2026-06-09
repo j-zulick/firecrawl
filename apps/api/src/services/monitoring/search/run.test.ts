@@ -281,6 +281,50 @@ describe("runSearchTarget orchestration", () => {
   });
 });
 
+describe("date-based freshness", () => {
+  it("a real stale publish date vetoes an LLM fresh+alert verdict", async () => {
+    setSearchResults([
+      {
+        url: "https://news.com/openai",
+        title: "OpenAI files S-1",
+        description: "x",
+      },
+    ]);
+    // LLM says fresh+alert, but the page's real publishedTime is ~2 years old.
+    scrapeURLMock.mockResolvedValue({
+      success: true,
+      document: {
+        json: verdict({ freshness: "fresh", alertAction: "alert" }),
+        metadata: { publishedTime: "2024-01-01T00:00:00Z" },
+      },
+    });
+    const out = await run();
+    expect(out.matches).toBe(0);
+    expect(out.sources[0].status).toBe("watching");
+    expect(out.sources[0].freshness).toBe("stale");
+  });
+
+  it("a real fresh date keeps an alert and is recorded as date-sourced", async () => {
+    setSearchResults([
+      {
+        url: "https://news.com/openai",
+        title: "OpenAI files S-1",
+        description: "x",
+      },
+    ]);
+    scrapeURLMock.mockResolvedValue({
+      success: true,
+      document: {
+        json: verdict({ freshness: "fresh", alertAction: "alert" }),
+        metadata: { publishedTime: new Date().toISOString() },
+      },
+    });
+    const out = await run();
+    expect(out.matches).toBe(1);
+    expect(out.pageUpserts[0].metadata.freshnessSource).toBe("date");
+  });
+});
+
 describe("domain scoping", () => {
   beforeEach(() => setSearchResults([]));
 

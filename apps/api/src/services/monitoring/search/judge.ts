@@ -85,6 +85,29 @@ export function parseVerdict(json: unknown): SearchVerdict | null {
   };
 }
 
+const WINDOW_MS: Record<string, number> = {
+  "5m": 5 * 60_000,
+  "15m": 15 * 60_000,
+  "1h": 60 * 60_000,
+  "6h": 6 * 60 * 60_000,
+  "24h": 24 * 60 * 60_000,
+  "7d": 7 * 24 * 60 * 60_000,
+};
+
+// Freshness from a real publish date vs the search window. Returns null when no usable date
+// exists, so the caller can fall back to the LLM's freshness guess. Future-dated → fresh.
+export function freshnessFromDate(
+  dateIso: string | null | undefined,
+  searchWindow: string,
+  nowMs: number,
+): "fresh" | "stale" | null {
+  if (!dateIso) return null;
+  const t = Date.parse(dateIso);
+  if (Number.isNaN(t)) return null;
+  const window = WINDOW_MS[searchWindow] ?? WINDOW_MS["24h"];
+  return nowMs - t <= window ? "fresh" : "stale";
+}
+
 // "alert" only when relevant, fresh, trusted-enough, and the judge asked to alert.
 export function verdictToDecision(
   v: SearchVerdict,
