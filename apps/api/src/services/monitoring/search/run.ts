@@ -31,7 +31,7 @@ function slugifyEvent(label: string): string {
   );
 }
 
-export type SearchTargetInput = {
+type SearchTargetInput = {
   id: string;
   queries: string[];
   searchWindow: string;
@@ -47,7 +47,7 @@ export type KnownPage = {
   goalVersion: string;
 };
 
-export type SearchSource = {
+type SearchSource = {
   url: string;
   title: string;
   status: "alert" | "already_seen" | "watching" | "ignored" | "skipped";
@@ -59,7 +59,7 @@ export type SearchSource = {
   rationale?: string;
 };
 
-export type SearchTargetRunResult = {
+type SearchTargetRunResult = {
   targetId: string;
   type: "search";
   resultCount: number;
@@ -126,7 +126,11 @@ export async function runSearchTarget(params: {
       const canonical = canonicalizeUrl(r.url);
       if (seenThisRun.has(canonical)) continue;
       seenThisRun.add(canonical);
-      candidates.push({ url: r.url, title: r.title, description: r.description });
+      candidates.push({
+        url: r.url,
+        title: r.title,
+        description: r.description,
+      });
     }
   }
   resultCount = candidates.length;
@@ -141,7 +145,8 @@ export async function runSearchTarget(params: {
     });
     const known = knownPages.get(canonical);
     // P0(#1): a page judged under a different goal is stale — treat it as new.
-    const knownCurrent = known && known.goalVersion === goalVersion ? known : undefined;
+    const knownCurrent =
+      known && known.goalVersion === goalVersion ? known : undefined;
     const isNewOrChanged =
       !knownCurrent || knownCurrent.fingerprint !== fingerprint;
 
@@ -212,13 +217,33 @@ export async function runSearchTarget(params: {
     };
 
     if (decision === "ignore") {
-      sources.push({ url: c.url, title: c.title, status: "ignored", ...baseMeta });
-      pageUpserts.push({ url: canonical, urlHash: hashMonitorUrl(canonical), status: "ignored", metadata: baseMeta });
+      sources.push({
+        url: c.url,
+        title: c.title,
+        status: "ignored",
+        ...baseMeta,
+      });
+      pageUpserts.push({
+        url: canonical,
+        urlHash: hashMonitorUrl(canonical),
+        status: "ignored",
+        metadata: baseMeta,
+      });
       continue;
     }
     if (decision === "watch") {
-      sources.push({ url: c.url, title: c.title, status: "watching", ...baseMeta });
-      pageUpserts.push({ url: canonical, urlHash: hashMonitorUrl(canonical), status: "watching", metadata: baseMeta });
+      sources.push({
+        url: c.url,
+        title: c.title,
+        status: "watching",
+        ...baseMeta,
+      });
+      pageUpserts.push({
+        url: canonical,
+        urlHash: hashMonitorUrl(canonical),
+        status: "watching",
+        metadata: baseMeta,
+      });
       continue;
     }
 
@@ -231,7 +256,9 @@ export async function runSearchTarget(params: {
     });
     const eventKey =
       resolution.matchedKey ??
-      (resolution.label ? slugifyEvent(resolution.label) : slugifyEvent(verdict.concept));
+      (resolution.label
+        ? slugifyEvent(resolution.label)
+        : slugifyEvent(verdict.concept));
     const eventLabel =
       events.find(e => e.key === eventKey)?.label ||
       resolution.label ||
@@ -242,8 +269,19 @@ export async function runSearchTarget(params: {
     const eventMeta = { ...baseMeta, eventKey, eventLabel };
 
     if (alreadySatisfied) {
-      sources.push({ url: c.url, title: c.title, status: "already_seen", eventKey, ...baseMeta });
-      pageUpserts.push({ url: canonical, urlHash: hashMonitorUrl(canonical), status: "already_seen", metadata: eventMeta });
+      sources.push({
+        url: c.url,
+        title: c.title,
+        status: "already_seen",
+        eventKey,
+        ...baseMeta,
+      });
+      pageUpserts.push({
+        url: canonical,
+        urlHash: hashMonitorUrl(canonical),
+        status: "already_seen",
+        metadata: eventMeta,
+      });
       continue;
     }
 
@@ -253,8 +291,19 @@ export async function runSearchTarget(params: {
     if (!events.some(e => e.key === eventKey)) {
       events.push({ key: eventKey, label: eventLabel });
     }
-    sources.push({ url: c.url, title: c.title, status: "alert", eventKey, ...baseMeta });
-    pageUpserts.push({ url: canonical, urlHash: hashMonitorUrl(canonical), status: "alert", metadata: eventMeta });
+    sources.push({
+      url: c.url,
+      title: c.title,
+      status: "alert",
+      eventKey,
+      ...baseMeta,
+    });
+    pageUpserts.push({
+      url: canonical,
+      urlHash: hashMonitorUrl(canonical),
+      status: "alert",
+      metadata: eventMeta,
+    });
   }
 
   const meaningful = sources.filter(
@@ -268,7 +317,11 @@ export async function runSearchTarget(params: {
       subject,
       evidence: sources
         .filter(s => s.status === "alert")
-        .map(s => ({ title: s.title, url: s.url, rationale: s.rationale ?? "" })),
+        .map(s => ({
+          title: s.title,
+          url: s.url,
+          rationale: s.rationale ?? "",
+        })),
     });
     summary = out.summary;
   }
