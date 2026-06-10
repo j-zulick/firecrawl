@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { redisEvictConnection } from "./redis";
 import { dbRr } from "../db/connection";
 import * as schema from "../db/schema";
@@ -90,7 +90,9 @@ async function resolveDistinctId(
       .select({ email: schema.users.email })
       .from(schema.api_keys)
       .leftJoin(schema.users, eq(schema.users.id, schema.api_keys.owner_id))
-      .where(eq(schema.api_keys.id, apiKeyId))
+      // Scope to the team so a stale/mismatched apiKeyId can't attribute this
+      // team's milestone to another team's owner email — falls back to teamId.
+      .where(and(eq(schema.api_keys.id, apiKeyId), eq(schema.api_keys.team_id, teamId)))
       .limit(1);
     return rows[0]?.email || teamId;
   } catch {
@@ -122,6 +124,11 @@ export function trackFirstSurfaceUse(args: {
   apiKeyId?: number | null;
 }): void {
   const { teamId, origin, kind, apiVersion, apiKeyId } = args;
+
+  // No PostHog key → capture is a no-op. Bail BEFORE the Redis SETNX so we don't
+  // burn the dedup marker without emitting (which would lose the milestone for
+  // good once PostHog is enabled).
+  if (!POSTHOG_API_KEY) return;
 
   // Skip anonymous / preview traffic — not a real team milestone.
   if (!teamId || teamId === "preview" || teamId.startsWith("preview_")) return;

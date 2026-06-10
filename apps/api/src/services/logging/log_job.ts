@@ -186,13 +186,16 @@ export async function logRequest(request: LoggedRequest) {
 
   // Emit a one-time PostHog milestone the first time this team uses each
   // surface (playground / sdk / mcp / cli / api / ...). Fire-and-forget.
-  trackFirstSurfaceUse({
-    teamId: request.team_id,
-    origin: request.origin,
-    kind: request.kind,
-    apiVersion: request.api_version,
-    apiKeyId: request.api_key_id,
-  });
+  // Skip zero-data-retention requests — don't send their metadata to PostHog.
+  if (!request.zeroDataRetention) {
+    trackFirstSurfaceUse({
+      teamId: request.team_id,
+      origin: request.origin,
+      kind: request.kind,
+      apiVersion: request.api_version,
+      apiKeyId: request.api_key_id,
+    });
+  }
 
   // Sanitize user-provided fields (most likely sources of null bytes)
   const sanitizedOrigin = sanitizeString(request.origin);
