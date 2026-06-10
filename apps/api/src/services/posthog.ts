@@ -1,4 +1,7 @@
+import { eq } from "drizzle-orm";
 import { redisEvictConnection } from "./redis";
+import { dbRr } from "../db/connection";
+import * as schema from "../db/schema";
 import { logger as _logger } from "../lib/logger";
 
 /**
@@ -70,6 +73,32 @@ export function originToSurface(origin?: string | null): RequestSurface {
 }
 
 /**
+ * Resolve the PostHog distinct_id for a request. firecrawl-web identifies
+ * persons by email (`posthog.identify(user.email)`), so to attribute backend
+ * events to the same person we key on the API key owner's email. Falls back to
+ * the team_id (team-level) when the owner/email can't be resolved.
+ *
+ * Only called on the rare gated-first event, so the extra read is cheap.
+ */
+async function resolveDistinctId(
+  teamId: string,
+  apiKeyId?: number | null,
+): Promise<string> {
+  if (!apiKeyId) return teamId;
+  try {
+    const rows = await dbRr
+      .select({ email: schema.users.email })
+      .from(schema.api_keys)
+      .leftJoin(schema.users, eq(schema.users.id, schema.api_keys.owner_id))
+      .where(eq(schema.api_keys.id, apiKeyId))
+      .limit(1);
+    return rows[0]?.email || teamId;
+  } catch {
+    return teamId;
+  }
+}
+
+/**
  * Emit a one-time `api_surface_first_used` event the first time a team makes a
  * request from a given surface (playground / sdk / mcp / cli / api / ...).
  *
@@ -90,8 +119,9 @@ export function trackFirstSurfaceUse(args: {
   origin?: string | null;
   kind: string;
   apiVersion: string;
+  apiKeyId?: number | null;
 }): void {
-  const { teamId, origin, kind, apiVersion } = args;
+  const { teamId, origin, kind, apiVersion, apiKeyId } = args;
 
   // Skip anonymous / preview traffic — not a real team milestone.
   if (!teamId || teamId === "preview" || teamId.startsWith("preview_")) return;
@@ -104,7 +134,11 @@ export function trackFirstSurfaceUse(args: {
       const isFirst = await redisEvictConnection.set(key, "1", "NX");
       if (isFirst !== "OK") return;
 
-      capturePostHog("api_surface_first_used", teamId, {
+      // Key to the person (api-key owner email) so the event attributes to the
+      // same PostHog person the dashboard identifies, e.g. for experiments.
+      const distinctId = await resolveDistinctId(teamId, apiKeyId);
+
+      capturePostHog("api_surface_first_used", distinctId, {
         surface,
         raw_origin: origin ?? null,
         kind,

@@ -191,6 +191,7 @@ export async function logRequest(request: LoggedRequest) {
     origin: request.origin,
     kind: request.kind,
     apiVersion: request.api_version,
+    apiKeyId: request.api_key_id,
   });
 
   // Sanitize user-provided fields (most likely sources of null bytes)
