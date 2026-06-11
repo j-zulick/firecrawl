@@ -23,7 +23,13 @@ export function verifyAlertCandidate(params: {
   const { criteria, evidence } = params;
   const failures: VerificationFailure[] = [];
 
-  const pageBackedText = [evidence.titleText, evidence.claimText]
+  const pageBackedText = [
+    evidence.titleText,
+    evidence.claimText,
+    // The subject often appears only in the body (e.g. a headline that uses a
+    // product name); cap the slice so containment stays cheap on huge pages.
+    String(evidence.pageText ?? "").slice(0, 20000),
+  ]
     .filter(Boolean)
     .join(" ");
   const conceptText = String(params.concept ?? "");

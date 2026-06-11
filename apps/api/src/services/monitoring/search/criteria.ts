@@ -16,10 +16,13 @@ export type GoalCriteria = {
 };
 
 export function tokenizeContent(text: string | null | undefined): string[] {
-  return String(text ?? "")
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter(token => token.length > 2);
+  return (
+    String(text ?? "")
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      // Keep 2-char tokens: acronyms like AI, EU, or Go are real content terms.
+      .filter(token => token.length >= 2)
+  );
 }
 
 function normalizeForContainment(text: string | null | undefined): string {
@@ -110,7 +113,8 @@ export function mergeCompiledCriteria(
                 .toLowerCase()
                 .replace(/^https?:\/\//, "")
                 .replace(/^www\./, "")
-                .split("/")[0],
+                .split("/")[0]
+                .split(":")[0],
           )
           .filter(Boolean),
       ),

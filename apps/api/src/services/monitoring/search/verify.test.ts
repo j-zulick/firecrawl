@@ -1,6 +1,7 @@
 import {
   compileGoalCriteria,
   mergeCompiledCriteria,
+  tokenizeContent,
   type GoalCriteria,
 } from "./criteria";
 import { verifyAlertCandidate } from "./verify";
@@ -45,6 +46,38 @@ describe("criteria", () => {
     expect(merged.ownedHosts).toEqual(["firecrawl.dev"]);
     expect(merged.subjectAliases).toContain("FIRE-1");
   });
+
+  it("strips ports when normalizing ownedHosts", () => {
+    const deterministic = compileGoalCriteria({
+      goal: "Alert me when Firecrawl launches a new product",
+      subject: "Firecrawl",
+      goalVersion: "v1",
+    });
+    const merged = mergeCompiledCriteria(deterministic, {
+      subjectAliases: ["Firecrawl"],
+      mustConcern: [],
+      excludedSubjects: [],
+      ownedHosts: ["https://firecrawl.dev:3000/blog", "localhost:8080"],
+      thirdPartyOnly: true,
+    });
+    expect(merged.ownedHosts).toEqual(["firecrawl.dev", "localhost"]);
+  });
+
+  it("tokenizeContent keeps 2-char acronyms (AI, EU, Go) and drops 1-char noise", () => {
+    expect(
+      tokenizeContent("Go 1.0 released in the EU under the AI Act"),
+    ).toEqual([
+      "go",
+      "released",
+      "in",
+      "the",
+      "eu",
+      "under",
+      "the",
+      "ai",
+      "act",
+    ]);
+  });
 });
 
 describe("verifyAlertCandidate", () => {
@@ -65,9 +98,23 @@ describe("verifyAlertCandidate", () => {
       evidence: evidence({
         titleText: "A company shipped something",
         claimText: "Some launch happened.",
+        pageText: "Some company shipped something today. Details follow.",
       }),
     });
     expect(result.failures.map(f => f.check)).toContain("subject_missing");
+  });
+
+  it("passes subject containment when the subject appears only in the page body", () => {
+    const result = verifyAlertCandidate({
+      criteria: baseCriteria(),
+      concept: "Firecrawl product launch",
+      evidence: evidence({
+        titleText: "A scraping startup shipped something",
+        claimText: "A new product launched today.",
+        pageText: "The company behind Firecrawl announced a new product.",
+      }),
+    });
+    expect(result.failures.map(f => f.check)).not.toContain("subject_missing");
   });
 
   it("skips subject containment for snippet-only results (no page content)", () => {
