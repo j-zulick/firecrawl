@@ -22,17 +22,13 @@ export function buildJudgePrompt(
   subject: string,
   searchWindow: string,
 ): string {
-  return [
-    `Monitor goal: ${goal}`,
-    subject ? `Monitored subject: ${subject}.` : "",
-    `Search window: ${searchWindow}.`,
-    "Judge ONLY this page's visible content against the goal, not the query wording.",
-    "Set relevant true and alertAction alert only when the page materially satisfies the exact goal, is recent for the search window, and comes from a source credible for this kind of claim — the subject itself or established reporting. Rumors, content farms, syndicated rewrites, competitors, look-alikes, listings, and old or unconfirmed pages are watch/ignore.",
-    "concept: a short reusable label naming the real-world event (company/product/event).",
-    "rationale: state only the concrete facts visible on the page that justify your action. Never reference the monitor, goal, or criteria themselves. If the page lacks direct evidence, alertAction must be watch or ignore.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const subjectLine = subject ? `Monitored subject: ${subject}.\n` : "";
+  return `Monitor goal: ${goal}
+${subjectLine}Search window: ${searchWindow}.
+Judge ONLY this page's visible content against the goal, not the query wording.
+Set relevant true and alertAction alert only when the page materially satisfies the exact goal, is recent for the search window, and comes from a source credible for this kind of claim — the subject itself or established reporting. Rumors, content farms, syndicated rewrites, competitors, look-alikes, listings, and old or unconfirmed pages are watch/ignore.
+concept: a short reusable label naming the real-world event (company/product/event).
+rationale: state only the concrete facts visible on the page that justify your action. Never reference the monitor, goal, or criteria themselves. If the page lacks direct evidence, alertAction must be watch or ignore.`;
 }
 
 export function parseVerdict(json: unknown): SearchVerdict | null {
