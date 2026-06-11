@@ -51,7 +51,7 @@ const monitorDomainSchema = z
 const searchTargetSchema = z.strictObject({
   id: z.string().uuid().optional(),
   type: z.literal("search"),
-  queries: z.array(z.string().min(1).max(256)).min(1).max(10),
+  queries: z.array(z.string().min(1).max(256)).min(1).max(12),
   searchWindow: z
     .enum(["5m", "15m", "1h", "6h", "24h", "7d"])
     .optional()
