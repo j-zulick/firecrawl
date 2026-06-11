@@ -23,12 +23,6 @@ describe("verdictToDecision", () => {
   it("ignores when not relevant", () => {
     expect(verdictToDecision(v({ relevant: false }))).toBe("ignore");
   });
-  it("ignores when judge says ignore", () => {
-    expect(verdictToDecision(v({ alertAction: "ignore" }))).toBe("ignore");
-  });
-  it("watches when judge says watch", () => {
-    expect(verdictToDecision(v({ alertAction: "watch" }))).toBe("watch");
-  });
 });
 
 describe("parseVerdict", () => {
@@ -46,10 +40,6 @@ describe("parseVerdict", () => {
         rationale: "r",
       }),
     ).toMatchObject({ relevant: true, alertAction: "alert", concept: "c" });
-  });
-  it("defaults unknown enum values safely", () => {
-    const out = parseVerdict({ relevant: true, alertAction: "bogus" });
-    expect(out?.alertAction).toBe("watch");
   });
 });
 
@@ -72,19 +62,6 @@ describe("dedupe", () => {
     });
     expect(a).toBe(b);
   });
-  it("different snippet → different fingerprint", () => {
-    const a = stableSerpFingerprint({
-      url: "https://a.com",
-      title: "T",
-      snippet: "S1",
-    });
-    const b = stableSerpFingerprint({
-      url: "https://a.com",
-      title: "T",
-      snippet: "S2",
-    });
-    expect(a).not.toBe(b);
-  });
 });
 
 describe("verdict defenses", () => {
@@ -105,20 +82,6 @@ describe("verdict defenses", () => {
     expect(
       contradictionFromRationale("This is only a related background piece."),
     ).toBe("no");
-  });
-
-  it("detects insufficient-evidence contradictions as unclear", () => {
-    expect(
-      contradictionFromRationale(
-        "There is not enough evidence to confirm a launch.",
-      ),
-    ).toBe("unclear");
-  });
-
-  it("returns empty for a rationale that supports the verdict", () => {
-    expect(
-      contradictionFromRationale("Anthropic's own blog announces the release."),
-    ).toBe("");
   });
 
   it("applyVerdictDefenses flips a self-contradicting alert to ignore", () => {

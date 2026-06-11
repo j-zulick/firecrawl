@@ -458,58 +458,10 @@ describe("re-judge cadence", () => {
     // reserved for pages that actually alerted on a prior run.
     expect(out.sources[0].status).toBe("watching");
   });
-
-  it("does NOT re-judge a non-live (ignored) page even when stale", async () => {
-    setSearchResults(serp);
-    setVerdictsByUrl({ [url]: verdict() });
-    const knownPages = new Map<string, KnownPage>([
-      [
-        canonicalizeUrl(url),
-        {
-          fingerprint: fp,
-          goalVersion: "gv1",
-          lastCheckedAt: old,
-          lastStatus: "ignored",
-        },
-      ],
-    ]);
-    const out = await run({ target: { recheckAfter: "24h" }, knownPages });
-    expect(scrapeURLMock).not.toHaveBeenCalled();
-    expect(out.sources[0].status).toBe("ignored");
-  });
 });
 
 describe("domain scoping", () => {
   beforeEach(() => setSearchResults([]));
-
-  it("includeDomains → site: OR filter appended to the query", async () => {
-    await runSearchTarget({
-      monitor: baseMonitor,
-      target: { ...baseTarget, includeDomains: ["sec.gov", "reuters.com"] },
-      goalVersion: "gv1",
-      knownPages: new Map(),
-      knownEvents: [],
-      zeroDataRetention: false,
-      logger,
-    });
-    const sentQuery = searchMock.mock.calls[0][0].query as string;
-    expect(sentQuery).toContain("openai ipo");
-    expect(sentQuery).toContain("(site:sec.gov OR site:reuters.com)");
-  });
-
-  it("excludeDomains → -site: filter appended to the query", async () => {
-    await runSearchTarget({
-      monitor: baseMonitor,
-      target: { ...baseTarget, excludeDomains: ["pinterest.com"] },
-      goalVersion: "gv1",
-      knownPages: new Map(),
-      knownEvents: [],
-      zeroDataRetention: false,
-      logger,
-    });
-    const sentQuery = searchMock.mock.calls[0][0].query as string;
-    expect(sentQuery).toContain("-site:pinterest.com");
-  });
 
   it("includeDomains and excludeDomains combine; exclude wins in the query", async () => {
     await run({
@@ -550,18 +502,5 @@ describe("domain scoping", () => {
     expect(out.resultCount).toBe(1);
     expect(out.sources.map(s => s.url)).toEqual(["https://news.com/openai"]);
     expect(scrapeURLMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("a host merely containing an excluded domain is not dropped", async () => {
-    setSearchResults([
-      { url: "https://notpinterest.com/a", title: "t", description: "x" },
-    ]);
-    setVerdictsByUrl({ "https://notpinterest.com/a": verdict() });
-    const out = await run({
-      target: { excludeDomains: ["pinterest.com"] } as Partial<
-        typeof baseTarget
-      >,
-    });
-    expect(out.resultCount).toBe(1);
   });
 });

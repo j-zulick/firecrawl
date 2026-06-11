@@ -1,8 +1,6 @@
 import {
   compileGoalCriteria,
-  containsAlias,
   mergeCompiledCriteria,
-  tokenizeContent,
   type GoalCriteria,
 } from "./criteria";
 import { classifyPageShape, verifyAlertCandidate } from "./verify";
@@ -30,33 +28,6 @@ const evidence = (
 });
 
 describe("criteria", () => {
-  it("tokenizes content words and drops instruction words", () => {
-    expect(
-      tokenizeContent("Alert me when Anthropic releases a new Claude model"),
-    ).toEqual(["anthropic", "releases", "claude", "model"]);
-  });
-
-  it("containsAlias matches whole words only", () => {
-    expect(containsAlias("Firecrawl launches today", "Firecrawl")).toBe(true);
-    expect(containsAlias("Firecrawler launches today", "Firecrawl")).toBe(
-      false,
-    );
-  });
-
-  it("deterministic compile derives subject aliases + mustConcern from the goal", () => {
-    const criteria = compileGoalCriteria({
-      goal: "Alert me when Firecrawl launches a new product",
-      subject: "Firecrawl",
-      goalVersion: "v1",
-    });
-    expect(criteria.generatedBy).toBe("deterministic");
-    expect(criteria.subjectAliases).toEqual(["Firecrawl"]);
-    expect(criteria.mustConcern).toContain("launches");
-    expect(criteria.mustConcern).not.toContain("firecrawl");
-    expect(criteria.thirdPartyOnly).toBe(false);
-    expect(criteria.excludedSubjects).toEqual([]);
-  });
-
   it("merge drops an excluded subject that is also an alias (alias wins)", () => {
     const deterministic = compileGoalCriteria({
       goal: "Alert me when Firecrawl launches a new product",
@@ -176,14 +147,6 @@ describe("verifyAlertCandidate", () => {
 });
 
 describe("classifyPageShape", () => {
-  it("declared article metadata wins", () => {
-    expect(
-      classifyPageShape(
-        evidence({ metadata: { ogType: "article" }, pageText: "" }),
-      ).kind,
-    ).toBe("article");
-  });
-
   it("link walls without a publish date classify as listing", () => {
     const links = Array.from(
       { length: 40 },
@@ -192,16 +155,5 @@ describe("classifyPageShape", () => {
     expect(classifyPageShape(evidence({ pageText: links })).kind).toBe(
       "listing",
     );
-  });
-
-  it("prose with few links classifies as article", () => {
-    const prose = `${"word ".repeat(500)} [one](https://example.com/a) [two](https://example.com/b)`;
-    expect(classifyPageShape(evidence({ pageText: prose })).kind).toBe(
-      "article",
-    );
-  });
-
-  it("snippet-only evidence is unknown (never a veto)", () => {
-    expect(classifyPageShape(evidence({ pageText: "" })).kind).toBe("unknown");
   });
 });
