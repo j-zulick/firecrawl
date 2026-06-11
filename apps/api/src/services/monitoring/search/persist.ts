@@ -10,10 +10,6 @@ export function searchStatusToPageStatus(
   return "same";
 }
 
-export function searchPageWasScraped(status: string): boolean {
-  return status === "alert" || status === "watching" || status === "ignored";
-}
-
 type PriorPage = {
   url: string;
   metadata: unknown | null;

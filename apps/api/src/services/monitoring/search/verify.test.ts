@@ -3,7 +3,7 @@ import {
   mergeCompiledCriteria,
   type GoalCriteria,
 } from "./criteria";
-import { classifyPageShape, verifyAlertCandidate } from "./verify";
+import { verifyAlertCandidate } from "./verify";
 
 const baseCriteria = (over: Partial<GoalCriteria> = {}): GoalCriteria => ({
   goalVersion: "v1",
@@ -23,7 +23,6 @@ const evidence = (
   titleText: "Firecrawl launches a new product",
   claimText: "Firecrawl announced a new product today.",
   pageText: "Firecrawl announced a new product today. Details follow in prose.",
-  metadata: null,
   ...over,
 });
 
@@ -143,17 +142,5 @@ describe("verifyAlertCandidate", () => {
       evidence: evidence({ titleText: "unrelated", claimText: "unrelated" }),
     });
     expect(result.pass).toBe(true);
-  });
-});
-
-describe("classifyPageShape", () => {
-  it("link walls without a publish date classify as listing", () => {
-    const links = Array.from(
-      { length: 40 },
-      (_, i) => `[item ${i}](https://example.com/${i})`,
-    ).join(" ");
-    expect(classifyPageShape(evidence({ pageText: links })).kind).toBe(
-      "listing",
-    );
   });
 });

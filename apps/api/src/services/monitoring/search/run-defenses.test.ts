@@ -273,23 +273,6 @@ describe("alert boundary", () => {
     const result = await runSearchTarget(runParams());
     expect(result.matches).toBe(1);
   });
-
-  it("self-contradicting verdict is corrected before alerting", async () => {
-    scrapeURLMock.mockResolvedValue({
-      success: true,
-      document: {
-        json: verdict({
-          rationale: "The page does not mention Firecrawl anywhere.",
-        }),
-        markdown: "Unrelated prose about something else entirely.",
-        metadata: {},
-      },
-    });
-
-    const result = await runSearchTarget(runParams());
-    expect(result.matches).toBe(0);
-    expect(result.sources[0].status).toBe("ignored");
-  });
 });
 
 describe("event state stamps + judgment on alert pages", () => {

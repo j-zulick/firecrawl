@@ -144,7 +144,15 @@ function estimateTargetBaseCredits(target: MonitorTarget): number {
     return target.urls.length * creditsPerPage;
   }
   if (target.type === "search") {
-    return target.maxResults * creditsPerPage;
+    if (target.depth === "standard") {
+      return Math.max(1, target.queries.length);
+    }
+    return (
+      target.maxResults *
+      estimateBaseCreditsPerPage({
+        formats: [{ type: "json" }],
+      } as MonitorTarget["scrapeOptions"])
+    );
   }
 
   const limit =

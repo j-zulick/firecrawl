@@ -1,7 +1,6 @@
 import { generateObject } from "ai";
-import { google } from "@ai-sdk/google";
 import { z } from "zod";
-import { googleProviderOptions } from "./tuning";
+import { googleModel, googleProviderOptions } from "./tuning";
 
 const CRITERIA_MODEL =
   process.env.SEARCH_MONITOR_CRITERIA_MODEL ?? "gemini-flash-latest";
@@ -16,101 +15,11 @@ export type GoalCriteria = {
   thirdPartyOnly: boolean;
 };
 
-const INSTRUCTION_WORDS = new Set([
-  "about",
-  "alert",
-  "alerts",
-  "all",
-  "any",
-  "anything",
-  "are",
-  "article",
-  "articles",
-  "because",
-  "been",
-  "between",
-  "blog",
-  "blogs",
-  "can",
-  "confirm",
-  "could",
-  "each",
-  "every",
-  "evidence",
-  "for",
-  "fresh",
-  "from",
-  "get",
-  "has",
-  "have",
-  "her",
-  "his",
-  "how",
-  "into",
-  "its",
-  "know",
-  "let",
-  "may",
-  "mention",
-  "mentioned",
-  "mentions",
-  "monitor",
-  "new",
-  "news",
-  "not",
-  "notify",
-  "now",
-  "online",
-  "only",
-  "our",
-  "out",
-  "page",
-  "pages",
-  "post",
-  "posts",
-  "related",
-  "requested",
-  "result",
-  "results",
-  "see",
-  "should",
-  "site",
-  "sites",
-  "some",
-  "tell",
-  "that",
-  "the",
-  "their",
-  "them",
-  "then",
-  "there",
-  "these",
-  "they",
-  "this",
-  "those",
-  "track",
-  "want",
-  "watch",
-  "web",
-  "websites",
-  "what",
-  "when",
-  "whenever",
-  "where",
-  "which",
-  "who",
-  "will",
-  "with",
-  "would",
-  "you",
-  "your",
-]);
-
 export function tokenizeContent(text: string | null | undefined): string[] {
   return String(text ?? "")
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter(token => token.length > 2 && !INSTRUCTION_WORDS.has(token));
+    .filter(token => token.length > 2);
 }
 
 function normalizeForContainment(text: string | null | undefined): string {
@@ -135,18 +44,11 @@ export function compileGoalCriteria(params: {
   goalVersion: string;
 }): GoalCriteria {
   const subject = params.subject.trim();
-  const subjectAliases = subject ? [subject] : [];
-  const subjectTokens = new Set(tokenizeContent(subject));
-  const mustConcern = [
-    ...new Set(
-      tokenizeContent(params.goal).filter(token => !subjectTokens.has(token)),
-    ),
-  ];
   return {
     goalVersion: params.goalVersion,
     generatedBy: "deterministic",
-    subjectAliases,
-    mustConcern,
+    subjectAliases: subject ? [subject] : [],
+    mustConcern: [],
     excludedSubjects: [],
     ownedHosts: [],
     thirdPartyOnly: false,
@@ -194,12 +96,7 @@ export function mergeCompiledCriteria(
         ...llm.subjectAliases.map(s => s.trim()).filter(Boolean),
       ]),
     ],
-    mustConcern: [
-      ...new Set([
-        ...deterministic.mustConcern,
-        ...llm.mustConcern.flatMap(tokenizeContent),
-      ]),
-    ],
+    mustConcern: [...new Set(llm.mustConcern.flatMap(tokenizeContent))],
     excludedSubjects: [
       ...new Set(llm.excludedSubjects.map(s => s.trim()).filter(Boolean)),
     ],
@@ -237,7 +134,7 @@ export async function compileGoalCriteriaWithLlm(params: {
 }): Promise<GoalCriteria> {
   const deterministic = compileGoalCriteria(params);
   const { object } = await generateObject({
-    model: google(CRITERIA_MODEL),
+    model: googleModel(CRITERIA_MODEL),
     schema: criteriaSchema,
     system:
       "You compile a web-monitoring goal into machine-checkable criteria. The criteria are evaluated with exact string containment and set membership — no interpretation happens later, so be complete (list product names, abbreviations, obvious competitors). Only include entries you are confident about; an empty list disables that check, which is always safe.",
@@ -247,7 +144,7 @@ export async function compileGoalCriteriaWithLlm(params: {
       queries: params.queries,
     }),
     temperature: 0,
-    ...googleProviderOptions(CRITERIA_MODEL),
+    ...googleProviderOptions(),
   });
   return mergeCompiledCriteria(deterministic, object);
 }

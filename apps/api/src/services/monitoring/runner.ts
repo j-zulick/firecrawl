@@ -65,7 +65,6 @@ import { computeGoalVersion } from "./search/dedupe";
 import {
   reconstructKnownState,
   searchStatusToPageStatus,
-  searchPageWasScraped,
 } from "./search/persist";
 
 const logger = _logger.child({ module: "monitoring-runner" });
@@ -951,12 +950,12 @@ async function enqueueMonitorCrawlTarget(params: {
 // already-seen results skip the scrape, failures bill the base scrape credit.
 const SEARCH_JSON_DOC = { json: {} } as const;
 const SEARCH_JSON_OPTS = { formats: [{ type: "json" }] } as const;
-function searchPageCredits(status: string): number {
+function searchPageCredits(status: string, scraped: boolean): number {
   if (status === "already_seen") return 0;
-  if (searchPageWasScraped(status)) {
+  if (scraped) {
     return estimateActualCredits(SEARCH_JSON_DOC, SEARCH_JSON_OPTS);
   }
-  return estimateActualCredits({}, SEARCH_JSON_OPTS);
+  return 0;
 }
 
 // Runs inline (owns its search + scrape + judge), then persists onto the same
@@ -1009,13 +1008,20 @@ async function runMonitorSearchTarget(params: {
     knownPages,
     knownEvents,
     zeroDataRetention: false,
-    logger,
+    logger: logger.child({
+      monitorId: monitor.id,
+      checkId: check.id,
+      targetId: target.id,
+    }),
   });
 
   const pages: PageResult[] = [];
   for (const upsert of result.pageUpserts) {
     const status = searchStatusToPageStatus(upsert.status);
-    const creditsUsed = searchPageCredits(upsert.status);
+    const creditsUsed = searchPageCredits(
+      upsert.status,
+      upsert.scraped ?? false,
+    );
     const metadata = { ...upsert.metadata, creditsUsed };
     await upsertMonitorPage({
       monitorId: monitor.id,

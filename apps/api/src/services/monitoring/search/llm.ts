@@ -1,7 +1,6 @@
 import { generateObject } from "ai";
-import { google } from "@ai-sdk/google";
 import { z } from "zod";
-import { googleProviderOptions } from "./tuning";
+import { googleModel, googleProviderOptions } from "./tuning";
 import type { GoalCriteria } from "./criteria";
 
 const EVENT_MODEL =
@@ -41,7 +40,7 @@ export async function resolveEvent(params: {
   candidates: KnownEvent[];
 }): Promise<EventResolution> {
   const { object } = await generateObject({
-    model: google(EVENT_MODEL),
+    model: googleModel(EVENT_MODEL),
     schema: eventResolverSchema,
     system:
       "You deduplicate real-world events for a monitoring product. Given a new meaningful result and a list of already-known events, decide if the result describes the SAME underlying event as one of them (a different outlet, headline, or wording still counts as the same event) or a genuinely NEW event. Match to an existing event whenever it is the same development. Return structured JSON only.",
@@ -63,7 +62,7 @@ export async function resolveEvent(params: {
       ],
     }),
     temperature: 0,
-    ...googleProviderOptions(EVENT_MODEL),
+    ...googleProviderOptions(),
   });
 
   return {
@@ -86,7 +85,7 @@ export async function judgeMaterialDevelopment(params: {
   result: { title: string; evidence: string };
 }): Promise<{ material: boolean; reason: string }> {
   const { object } = await generateObject({
-    model: google(EVENT_MODEL),
+    model: googleModel(EVENT_MODEL),
     schema: materialDevSchema,
     system:
       "You decide whether a new search result represents a MATERIAL development of an already-known, already-alerted event, versus a duplicate retelling that adds nothing new. Material = a concrete new stage, fact, or change in the event's status. A different outlet covering the same already-known facts is NOT material. Return structured JSON only.",
@@ -103,7 +102,7 @@ export async function judgeMaterialDevelopment(params: {
       ],
     }),
     temperature: 0,
-    ...googleProviderOptions(EVENT_MODEL),
+    ...googleProviderOptions(),
   });
   return { material: object.material === true, reason: object.reason ?? "" };
 }
@@ -116,6 +115,7 @@ const alertSkepticSchema = z.object({
     "not_completed",
     "adjacent_event",
     "query_echo",
+    "self_contradiction",
     "other",
     "none",
   ]),
@@ -137,10 +137,10 @@ export async function reviewAlert(params: {
   };
 }): Promise<SkepticVerdict> {
   const { object } = await generateObject({
-    model: google(SKEPTIC_MODEL),
+    model: googleModel(SKEPTIC_MODEL),
     schema: alertSkepticSchema,
     system:
-      "You are the adversarial reviewer for a web-monitoring alert that is about to be sent to a paying user. Try to REFUTE it. Refute when any of these hold: (1) wrong_subject — the story's protagonist is a different entity than the monitored subject; the subject being name-dropped, compared against, or listed among others is NOT coverage of the subject; (2) listing_surface — the page is an aggregator, directory, category, calendar, homepage, or feed surface rather than a single story; (3) not_completed — the goal asks for a completed event but this is upcoming, rumored, or planned; (4) adjacent_event — a related-but-different event type (funding news on a release monitor, a partnership on a lawsuit monitor); (5) query_echo — the only evidence is the search query's own wording reflected back in a snippet. UPHOLD the alert (refuted=false, failureMode=none) when the result directly and concretely satisfies the goal — do not refute clear matches on technicalities. The subject's OWN official announcement satisfies an event goal (release, launch, filing, pricing change); never refute an official primary source unless the goal explicitly asks for third-party coverage. Return structured JSON only.",
+      "You are the adversarial reviewer for a web-monitoring alert that is about to be sent to a paying user. Try to REFUTE it. Refute when any of these hold: (1) wrong_subject — the story's protagonist is a different entity than the monitored subject; the subject being name-dropped, compared against, or listed among others is NOT coverage of the subject; (2) listing_surface — the page is an aggregator, directory, category, calendar, homepage, or feed surface rather than a single story; (3) not_completed — the goal asks for a completed event but this is upcoming, rumored, or planned; (4) adjacent_event — a related-but-different event type (funding news on a release monitor, a partnership on a lawsuit monitor); (5) query_echo — the only evidence is the search query's own wording reflected back in a snippet; (6) self_contradiction — the judge's own rationale undercuts the alert (admits the evidence is missing, insufficient, unconfirmed, or merely related). UPHOLD the alert (refuted=false, failureMode=none) when the result directly and concretely satisfies the goal — do not refute clear matches on technicalities. The subject's OWN official announcement satisfies an event goal (release, launch, filing, pricing change); never refute an official primary source unless the goal explicitly asks for third-party coverage. Return structured JSON only.",
     prompt: JSON.stringify({
       monitor: {
         goal: params.goal,
@@ -162,7 +162,7 @@ export async function reviewAlert(params: {
       },
     }),
     temperature: 0,
-    ...googleProviderOptions(SKEPTIC_MODEL),
+    ...googleProviderOptions(),
   });
   return object;
 }
@@ -200,7 +200,7 @@ export async function routeSearchResults(params: {
 }): Promise<RouteDecision[]> {
   const candidates = params.candidates.slice(0, 50);
   const { object } = await generateObject({
-    model: google(ROUTER_MODEL),
+    model: googleModel(ROUTER_MODEL),
     schema: routerSchema,
     system:
       "You route search results for a monitoring product. Decide which indexed results are worth spending scrape/judge credits on. Use only the SERP title, URL, snippet, query, monitor goal, and search window. Return structured JSON only.",
@@ -217,7 +217,7 @@ export async function routeSearchResults(params: {
       candidates,
     }),
     temperature: 0,
-    ...googleProviderOptions(ROUTER_MODEL),
+    ...googleProviderOptions(),
   });
   const validIds = new Set(candidates.map(c => c.id));
   return object.decisions
@@ -260,17 +260,17 @@ export async function judgeSnippets(params: {
 }): Promise<SnippetVerdict[]> {
   if (params.candidates.length === 0) return [];
   const { object } = await generateObject({
-    model: google(ROUTER_MODEL),
+    model: googleModel(ROUTER_MODEL),
     schema: snippetVerdictSchema,
     system:
-      "You judge search results for a monitoring product using ONLY each result's SERP title, URL, and snippet — you cannot see the page. Be conservative: a snippet is thin evidence, so alertAction alert requires the snippet itself to concretely state a completed, recent event satisfying the goal, from a source credible for that claim (the subject itself or established reporting). Query wording echoed in a snippet is not evidence. Rumors, content farms, competitors, look-alikes, listings, and old or unconfirmed results are watch/ignore. concept: a short reusable label naming the real-world event. Return one verdict per candidate id. Structured JSON only.",
+      "You judge search results for a monitoring product using ONLY each result's SERP title, URL, and snippet — you cannot see the page. Be conservative: a snippet is thin evidence, so alertAction alert requires the snippet itself to concretely state a completed, recent event satisfying the goal, from a source credible for that claim (the subject itself or established reporting). Query wording echoed in a snippet is not evidence. Rumors, content farms, competitors, look-alikes, listings, and old or unconfirmed results are watch/ignore. concept: a short reusable label naming the real-world event. rationale: concrete snippet facts only, never references to the monitor or goal. Return one verdict per candidate id. Structured JSON only.",
     prompt: JSON.stringify({
       monitor: { goal: params.goal, subject: params.subject },
       searchWindow: params.searchWindow,
       candidates: params.candidates.slice(0, 50),
     }),
     temperature: 0,
-    ...googleProviderOptions(ROUTER_MODEL),
+    ...googleProviderOptions(),
   });
   const validIds = new Set(params.candidates.map(c => c.id));
   return object.verdicts.filter(v => validIds.has(v.id));
@@ -287,7 +287,7 @@ export async function summarizeRun(params: {
   evidence: Array<{ title: string; url: string; rationale: string }>;
 }): Promise<{ label: string; summary: string }> {
   const { object } = await generateObject({
-    model: google(SUMMARY_MODEL),
+    model: googleModel(SUMMARY_MODEL),
     schema: runSummarySchema,
     system:
       "You write concise user-facing search-monitor check summaries. Use only the provided monitor goal and meaningful source evidence. Do not introduce facts not present in the evidence. Return structured JSON only.",
@@ -300,7 +300,7 @@ export async function summarizeRun(params: {
       ],
     }),
     temperature: 0,
-    ...googleProviderOptions(SUMMARY_MODEL),
+    ...googleProviderOptions(),
   });
 
   return { label: object.label, summary: object.summary };

@@ -1,8 +1,4 @@
-import {
-  reconstructKnownState,
-  searchStatusToPageStatus,
-  searchPageWasScraped,
-} from "./persist";
+import { reconstructKnownState, searchStatusToPageStatus } from "./persist";
 import { canonicalizeUrl } from "./dedupe";
 
 describe("searchStatusToPageStatus", () => {
@@ -15,15 +11,7 @@ describe("searchStatusToPageStatus", () => {
   });
 });
 
-describe("searchPageWasScraped", () => {
-  it("true only for statuses produced by a successful scrape+judge", () => {
-    expect(searchPageWasScraped("alert")).toBe(true);
-    expect(searchPageWasScraped("watching")).toBe(true);
-    expect(searchPageWasScraped("ignored")).toBe(true);
-    expect(searchPageWasScraped("already_seen")).toBe(false);
-    expect(searchPageWasScraped("skipped")).toBe(false);
-  });
-});
+describe("searchPageWasScraped", () => {});
 
 describe("reconstructKnownState", () => {
   it("rebuilds the dedup map keyed by canonical URL", () => {

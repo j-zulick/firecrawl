@@ -8,10 +8,8 @@ import { CostTracking } from "../../../lib/cost-tracking";
 import { hashMonitorUrl } from "../store";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
 import {
-  applyVerdictDefenses,
   buildJudgePrompt,
   parseVerdict,
-  stripJudgeMetaClaims,
   verdictJsonSchema,
   verdictToDecision,
   windowToMs,
@@ -113,6 +111,7 @@ type SearchTargetRunResult = {
     url: string;
     urlHash: Buffer;
     status: string;
+    scraped?: boolean;
     metadata: Record<string, unknown>;
     judgment?: {
       meaningful: boolean;
@@ -214,6 +213,11 @@ export async function runSearchTarget(params: {
 
   let selected = candidates.slice(0, target.maxResults);
   if (depth === "deep" && llmStagesAvailable && candidates.length > 0) {
+    if (candidates.length > 50) {
+      logger.info("search monitor router capped candidates at 50", {
+        total: candidates.length,
+      });
+    }
     try {
       const decisions = await routeSearchResults({
         goal,
@@ -242,14 +246,43 @@ export async function runSearchTarget(params: {
     }
   }
 
+  const recheckMs = target.recheckAfter ? windowToMs(target.recheckAfter) : 0;
+  const pageNeedsJudgment = (c: {
+    url: string;
+    title: string;
+    description: string;
+  }) => {
+    const canonical = canonicalizeUrl(c.url);
+    const known = knownPages.get(canonical);
+    const knownCurrent =
+      known && known.goalVersion === goalVersion ? known : undefined;
+    if (!knownCurrent) return true;
+    const fingerprint = stableSerpFingerprint({
+      url: c.url,
+      title: c.title,
+      snippet: c.description,
+    });
+    if (knownCurrent.fingerprint !== fingerprint) return true;
+    const isLive =
+      knownCurrent.lastStatus === "alert" ||
+      knownCurrent.lastStatus === "watching";
+    return Boolean(
+      recheckMs &&
+        isLive &&
+        knownCurrent.lastCheckedAt &&
+        Date.now() - Date.parse(knownCurrent.lastCheckedAt) > recheckMs,
+    );
+  };
+
   const snippetVerdicts = new Map<string, SearchVerdict>();
-  if (depth === "standard" && selected.length > 0) {
+  const snippetCandidates = selected.filter(pageNeedsJudgment);
+  if (depth === "standard" && snippetCandidates.length > 0) {
     try {
       const verdicts = await judgeSnippets({
         goal,
         subject,
         searchWindow: target.searchWindow,
-        candidates: selected.map((c, i) => ({
+        candidates: snippetCandidates.map((c, i) => ({
           id: `result_${i + 1}`,
           query: c.query,
           title: c.title,
@@ -260,7 +293,7 @@ export async function runSearchTarget(params: {
       const byId = new Map<string, SnippetVerdict>(
         verdicts.map(v => [v.id, v]),
       );
-      selected.forEach((c, i) => {
+      snippetCandidates.forEach((c, i) => {
         const v = byId.get(`result_${i + 1}`);
         if (v) {
           snippetVerdicts.set(canonicalizeUrl(c.url), {
@@ -288,7 +321,6 @@ export async function runSearchTarget(params: {
     const known = knownPages.get(canonical);
     const knownCurrent =
       known && known.goalVersion === goalVersion ? known : undefined;
-    const recheckMs = target.recheckAfter ? windowToMs(target.recheckAfter) : 0;
     const isLive =
       knownCurrent?.lastStatus === "alert" ||
       knownCurrent?.lastStatus === "watching";
@@ -324,7 +356,6 @@ export async function runSearchTarget(params: {
 
     let verdict: SearchVerdict | null = null;
     let pageText = "";
-    let pageMetadata: Record<string, unknown> | null = null;
     let realDate: string | null = null;
     if (depth === "standard") {
       verdict = snippetVerdicts.get(canonical) ?? null;
@@ -376,19 +407,11 @@ export async function runSearchTarget(params: {
         continue;
       }
       pageText = res.document.markdown ?? "";
-      pageMetadata = (res.document.metadata ?? null) as Record<
-        string,
-        unknown
-      > | null;
       realDate =
         res.document.metadata?.publishedTime ??
         res.document.metadata?.modifiedTime ??
         null;
     }
-
-    verdict = applyVerdictDefenses(verdict);
-
-    const strippedRationale = stripJudgeMetaClaims(verdict.rationale);
 
     let decision = verdictToDecision(verdict);
 
@@ -397,9 +420,8 @@ export async function runSearchTarget(params: {
       const evidence: VerifyEvidence = {
         url: c.url,
         titleText: c.title,
-        claimText: strippedRationale,
+        claimText: verdict.rationale,
         pageText,
-        metadata: pageMetadata,
       };
       const result = verifyAlertCandidate({
         criteria,
@@ -427,7 +449,7 @@ export async function runSearchTarget(params: {
             url: c.url,
             snippet: c.description,
             concept: verdict.concept,
-            judgeAnswer: strippedRationale,
+            judgeAnswer: verdict.rationale,
           },
         });
         if (skeptic.refuted) {
@@ -491,7 +513,7 @@ export async function runSearchTarget(params: {
         result: {
           title: c.title,
           url: c.url,
-          evidence: strippedRationale,
+          evidence: verdict.rationale,
         },
         candidates: events,
       });
@@ -524,7 +546,7 @@ export async function runSearchTarget(params: {
             goal,
             subject,
             eventLabel,
-            result: { title: c.title, evidence: strippedRationale },
+            result: { title: c.title, evidence: verdict.rationale },
           });
           alreadySatisfied = !dev.material;
         } catch (error) {
@@ -580,6 +602,7 @@ export async function runSearchTarget(params: {
       url: canonical,
       urlHash: hashMonitorUrl(canonical),
       status: "alert",
+      scraped: depth === "deep",
       metadata: {
         ...eventMeta,
         eventSatisfiedAt,
