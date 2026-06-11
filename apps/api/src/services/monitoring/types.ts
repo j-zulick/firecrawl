@@ -66,11 +66,7 @@ const searchTargetSchema = z
     recheckAfter: z.enum(["1h", "6h", "24h", "7d"]).optional(),
     maxResults: z.number().int().min(1).max(50).optional().default(10),
     scrapeOptions: scrapeOptionsSchema,
-  })
-  .refine(
-    t => !(t.includeDomains?.length && t.excludeDomains?.length),
-    "includeDomains and excludeDomains cannot both be specified",
-  );
+  });
 
 const monitorTargetSchema = z.union([
   scrapeTargetSchema,

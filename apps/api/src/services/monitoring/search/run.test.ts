@@ -544,4 +544,42 @@ describe("domain scoping", () => {
     const sentQuery = searchMock.mock.calls[0][0].query as string;
     expect(sentQuery).toContain("-site:pinterest.com");
   });
+
+  it("includeDomains and excludeDomains combine; exclude wins in the query", async () => {
+    await run({
+      target: {
+        includeDomains: ["reuters.com", "spam.example"],
+        excludeDomains: ["spam.example"],
+      } as Partial<typeof baseTarget>,
+    });
+    const sentQuery = searchMock.mock.calls[0][0].query as string;
+    expect(sentQuery).toContain("(site:reuters.com OR site:spam.example)");
+    expect(sentQuery).toContain("-site:spam.example");
+  });
+
+  it("excluded hosts returned by the provider are dropped before judging", async () => {
+    setSearchResults([
+      { url: "https://www.pinterest.com/pin/1", title: "pin", description: "x" },
+      { url: "https://boards.pinterest.com/pin/2", title: "pin", description: "x" },
+      { url: "https://news.com/openai", title: "OpenAI files S-1", description: "x" },
+    ]);
+    setVerdictsByUrl({ "https://news.com/openai": verdict() });
+    const out = await run({
+      target: { excludeDomains: ["pinterest.com"] } as Partial<typeof baseTarget>,
+    });
+    expect(out.resultCount).toBe(1);
+    expect(out.sources.map(s => s.url)).toEqual(["https://news.com/openai"]);
+    expect(scrapeURLMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a host merely containing an excluded domain is not dropped", async () => {
+    setSearchResults([
+      { url: "https://notpinterest.com/a", title: "t", description: "x" },
+    ]);
+    setVerdictsByUrl({ "https://notpinterest.com/a": verdict() });
+    const out = await run({
+      target: { excludeDomains: ["pinterest.com"] } as Partial<typeof baseTarget>,
+    });
+    expect(out.resultCount).toBe(1);
+  });
 });

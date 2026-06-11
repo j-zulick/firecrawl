@@ -106,6 +106,24 @@ describe("reconstructKnownState", () => {
     expect(knownEvents).toEqual([{ key: "e1", label: "e1" }]);
   });
 
+  it("orders events most-recently-seen first (resolver window holds active stories)", () => {
+    const page = (url: string, eventKey: string, updated_at: string) => ({
+      url,
+      metadata: { fingerprint: "f", goalVersion: "gv1", eventKey, eventLabel: eventKey },
+      updated_at,
+    });
+    const { knownEvents } = reconstructKnownState(
+      [
+        page("https://a.com", "old-story", "2026-01-01T00:00:00Z"),
+        page("https://b.com", "active-story", "2026-01-02T00:00:00Z"),
+        // a newer article re-touches the old story — it should outrank active-story
+        page("https://c.com", "old-story", "2026-06-01T00:00:00Z"),
+      ],
+      "gv1",
+    );
+    expect(knownEvents.map(e => e.key)).toEqual(["old-story", "active-story"]);
+  });
+
   it("ignores pages with no usable metadata", () => {
     const { knownPages, knownEvents } = reconstructKnownState(
       [

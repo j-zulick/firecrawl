@@ -29,6 +29,29 @@ function windowToTbs(window: string): string {
   return "qdr:w"; // 7d
 }
 
+// Exclude wins over include (Exa/Parallel semantics). The -site: operators in
+// the scoped query are advisory — not every search provider honors them — so
+// the blocklist is also enforced here on the returned results.
+export function isExcludedDomain(
+  url: string,
+  excludeDomains: string[] | undefined,
+): boolean {
+  if (!excludeDomains?.length) return false;
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return false;
+  }
+  return excludeDomains.some(domain => {
+    const normalized = domain.trim().toLowerCase().replace(/^www\./, "");
+    return (
+      normalized.length > 0 &&
+      (host === normalized || host.endsWith(`.${normalized}`))
+    );
+  });
+}
+
 type SearchTargetInput = {
   id: string;
   queries: string[];
@@ -125,6 +148,7 @@ export async function runSearchTarget(params: {
     });
     for (const r of results) {
       if (!r.url) continue;
+      if (isExcludedDomain(r.url, target.excludeDomains)) continue;
       const canonical = canonicalizeUrl(r.url);
       if (seenThisRun.has(canonical)) continue;
       seenThisRun.add(canonical);
@@ -336,7 +360,9 @@ export async function runSearchTarget(params: {
     matches += 1;
     satisfied.add(eventKey);
     if (!events.some(e => e.key === eventKey)) {
-      events.push({ key: eventKey, label: eventLabel });
+      // Newest first: the resolver only sees the first ~20 candidates, and an
+      // event minted earlier in this same run must be visible to later results.
+      events.unshift({ key: eventKey, label: eventLabel });
     }
     sources.push({
       url: c.url,

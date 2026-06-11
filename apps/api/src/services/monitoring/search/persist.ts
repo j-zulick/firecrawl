@@ -30,7 +30,7 @@ export function reconstructKnownState(
   goalVersion: string,
 ): { knownPages: Map<string, KnownPage>; knownEvents: KnownEvent[] } {
   const knownPages = new Map<string, KnownPage>();
-  const eventsByKey = new Map<string, KnownEvent>();
+  const eventsByKey = new Map<string, KnownEvent & { lastSeenAt: string }>();
   for (const page of priorPages) {
     const meta = (page.metadata ?? {}) as Record<string, unknown>;
     if (
@@ -44,17 +44,28 @@ export function reconstructKnownState(
         lastStatus: page.last_status,
       });
     }
-    if (
-      meta.goalVersion === goalVersion &&
-      typeof meta.eventKey === "string" &&
-      !eventsByKey.has(meta.eventKey)
-    ) {
-      eventsByKey.set(meta.eventKey, {
-        key: meta.eventKey,
-        label:
-          typeof meta.eventLabel === "string" ? meta.eventLabel : meta.eventKey,
-      });
+    if (meta.goalVersion === goalVersion && typeof meta.eventKey === "string") {
+      const existing = eventsByKey.get(meta.eventKey);
+      const seenAt = page.updated_at ?? "";
+      if (!existing) {
+        eventsByKey.set(meta.eventKey, {
+          key: meta.eventKey,
+          label:
+            typeof meta.eventLabel === "string"
+              ? meta.eventLabel
+              : meta.eventKey,
+          lastSeenAt: seenAt,
+        });
+      } else if (seenAt > existing.lastSeenAt) {
+        existing.lastSeenAt = seenAt;
+      }
     }
   }
-  return { knownPages, knownEvents: [...eventsByKey.values()] };
+  // Most-recently-seen first: the event resolver truncates this list to ~20
+  // candidates, and active stories must stay inside that window or every new
+  // article about them mints a duplicate event (and a duplicate alert).
+  const knownEvents = [...eventsByKey.values()]
+    .sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1))
+    .map(({ key, label }) => ({ key, label }));
+  return { knownPages, knownEvents };
 }
