@@ -1,10 +1,3 @@
-// Page judge runs INSIDE the Firecrawl scrape (the `json` format) — the verdict comes back
-// on document.json. No separate Gemini call: Gemini is only for event-resolution + summary.
-
-// Deliberately minimal: recency and source credibility are folded into the
-// judge's single alertAction decision (see buildJudgePrompt) instead of being
-// separate gateable fields — fewer fields means fewer self-contradictions and
-// a simpler contract. The skeptic remains the independent safety net.
 export type SearchVerdict = {
   relevant: boolean;
   alertAction: "alert" | "watch" | "ignore";
@@ -12,7 +5,6 @@ export type SearchVerdict = {
   rationale: string;
 };
 
-// JSON schema passed to the scrape `json` format (Firecrawl runs the extraction internally).
 export const verdictJsonSchema = {
   type: "object",
   additionalProperties: false,
@@ -42,7 +34,6 @@ export function buildJudgePrompt(
     .join("\n");
 }
 
-// Validate/coerce the scrape's document.json into a verdict.
 export function parseVerdict(json: unknown): SearchVerdict | null {
   if (!json || typeof json !== "object") return null;
   const v = json as Record<string, unknown>;
@@ -70,10 +61,6 @@ export function windowToMs(window: string): number {
   return WINDOW_MS[window] ?? WINDOW_MS["24h"];
 }
 
-// "alert" only when relevant, concept-labeled, and the judge asked to alert.
-// Recency and credibility live inside the judge's alertAction (see the prompt);
-// a notify without a concept can't be event-deduped, so it would re-alert
-// forever — concept stays a mechanical requirement.
 export function verdictToDecision(
   v: SearchVerdict,
 ): "notify" | "watch" | "ignore" {
@@ -83,16 +70,6 @@ export function verdictToDecision(
   return "notify";
 }
 
-// ── Verdict defenses (ported from the POC's assessment.js) ──────────────────
-// The judge's own prose is evidence for downstream stages (event resolver,
-// verifier, skeptic). Two failure modes need mechanical correction before any
-// of that runs: (1) the verdict's boolean contradicts its rationale, and
-// (2) the rationale is self-referential meta-claims ("aligns with the monitor
-// goal") instead of page facts.
-
-// Does the rationale text negate the verdict? Returns the corrected stance:
-// "no" (evidence absent → not relevant), "unclear" (insufficient evidence →
-// never alert), or "" (no contradiction).
 export function contradictionFromRationale(
   rationale: string,
 ): "no" | "unclear" | "" {
@@ -141,8 +118,6 @@ export function contradictionFromRationale(
   return "";
 }
 
-// Apply contradiction correction to a parsed verdict. A "no" contradiction
-// flips relevant off (→ ignore); an "unclear" one caps the action at watch.
 export function applyVerdictDefenses(v: SearchVerdict): SearchVerdict {
   const contradiction = contradictionFromRationale(v.rationale);
   if (contradiction === "no" && v.relevant) {
@@ -154,10 +129,6 @@ export function applyVerdictDefenses(v: SearchVerdict): SearchVerdict {
   return v;
 }
 
-// Strip the judge's self-referential meta-claims and field boilerplate from its
-// rationale so downstream stages see page facts, not the judge grading itself.
-// ("…which aligns with the monitor goal" is not evidence; LLM-side chrome like
-// "Related topics: …" is page furniture, not a story.)
 export function stripJudgeMetaClaims(text: string): string {
   return String(text ?? "")
     .replace(

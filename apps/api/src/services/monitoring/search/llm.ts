@@ -4,10 +4,6 @@ import { z } from "zod";
 import { googleProviderOptions } from "./tuning";
 import type { GoalCriteria } from "./criteria";
 
-// Gemini LLM calls for the search monitor (mirrors services/monitoring/judgeChange.ts).
-// Every call runs with thinking suppressed (see tuning.ts) — reasoning tokens measured
-// at ~85% of output spend on these structured tasks with no accuracy gain.
-
 const EVENT_MODEL =
   process.env.SEARCH_MONITOR_EVENT_MODEL ?? "gemini-3-flash-preview";
 const SUMMARY_MODEL =
@@ -17,9 +13,6 @@ const SKEPTIC_MODEL =
 const ROUTER_MODEL =
   process.env.SEARCH_MONITOR_ROUTER_MODEL ?? "gemini-3-flash-preview";
 
-// Event state rides page-row metadata (no dedicated table): satisfiedAt is the
-// first alert time, alertCount the number of alerts — reconstructed per run by
-// persist.ts from the stamps run.ts writes on alerting pages.
 export type KnownEvent = {
   key: string;
   label: string;
@@ -86,8 +79,6 @@ const materialDevSchema = z.object({
   reason: z.string(),
 });
 
-// For alertMode "material_dev": does this new result add materially-new information to an
-// already-alerted event (e.g. IPO filed → priced → traded), vs just another retelling?
 export async function judgeMaterialDevelopment(params: {
   goal: string;
   subject: string;
@@ -133,11 +124,6 @@ const alertSkepticSchema = z.object({
 
 export type SkepticVerdict = z.infer<typeof alertSkepticSchema>;
 
-// Adversarial review of an alert candidate — runs ONLY on results the judge
-// already marked alert-worthy, so its cost is bounded by the (rare) alert rate.
-// The judge that produced a verdict cannot be the one defending it; this is the
-// independent second opinion. Callers must fail OPEN: a skeptic outage must not
-// silently drop real alerts.
 export async function reviewAlert(params: {
   goal: string;
   subject: string;
@@ -199,10 +185,6 @@ export type RouteDecision = {
   reason: string;
 };
 
-// SERP router: decides which results are worth scrape + judge spend, from the
-// SERP row alone. The single biggest cost lever on a deep run — every skipped
-// candidate saves a full extract-tier scrape. Callers must fail OPEN to
-// deterministic top-K routing when this throws.
 export async function routeSearchResults(params: {
   goal: string;
   subject: string;
@@ -264,10 +246,6 @@ export type SnippetVerdict = z.infer<
   typeof snippetVerdictSchema
 >["verdicts"][number];
 
-// Standard-depth judging: one batched call over SERP rows, no page fetches.
-// (The POC's standard tier judges snippets deterministically; a single batched
-// flash call is the backend-appropriate equivalent — same verdict contract as
-// the in-scrape judge, ~free, and strictly better than keyword heuristics.)
 export async function judgeSnippets(params: {
   goal: string;
   subject: string;

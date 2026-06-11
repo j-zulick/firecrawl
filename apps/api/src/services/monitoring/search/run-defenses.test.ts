@@ -1,7 +1,6 @@
 import type { Logger } from "winston";
 import type { SearchVerdict } from "./judge";
 
-// --- Mock the external boundaries; the orchestration logic in run.ts runs for real. ---
 const searchMock = jest.fn();
 const scrapeURLMock = jest.fn();
 const resolveEventMock = jest.fn();
@@ -27,7 +26,6 @@ jest.mock("./llm", () => ({
   routeSearchResults: (...a: unknown[]) => routeMock(...a),
   judgeSnippets: (...a: unknown[]) => snippetsMock(...a),
 }));
-// LLM stages on: these tests exercise the router / skeptic / verifier wiring.
 jest.mock("./tuning", () => ({
   hasGeminiKey: () => true,
   googleProviderOptions: () => ({}),
@@ -207,7 +205,7 @@ describe("alert boundary", () => {
     const result = await runSearchTarget(runParams());
     expect(result.matches).toBe(0);
     expect(result.sources[0].status).toBe("watching");
-    expect(reviewAlertMock).not.toHaveBeenCalled(); // refuted before the skeptic spends tokens
+    expect(reviewAlertMock).not.toHaveBeenCalled();
   });
 
   it("skeptic refutation downgrades to watching", async () => {

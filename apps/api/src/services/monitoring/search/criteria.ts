@@ -3,30 +3,19 @@ import { google } from "@ai-sdk/google";
 import { z } from "zod";
 import { googleProviderOptions } from "./tuning";
 
-// Compile a monitor goal into a structured criteria artifact that the alert
-// verifier can evaluate mechanically. ALL goal-specific knowledge lives in this
-// artifact (data); the verifier has no per-goal-type code paths. The artifact is
-// keyed to goalVersion, so editing the goal recompiles it automatically.
-// Ported from the POC's goal-criteria.js.
-
 const CRITERIA_MODEL =
   process.env.SEARCH_MONITOR_CRITERIA_MODEL ?? "gemini-flash-latest";
 
 export type GoalCriteria = {
   goalVersion: string;
   generatedBy: "deterministic" | "llm";
-  // Entity names (and product names, when LLM-compiled) that anchor an alert; empty = not enforced.
   subjectAliases: string[];
-  // Content tokens an alert's concept/evidence must overlap; empty = not enforced.
   mustConcern: string[];
-  // Entities that must NOT be the story's subject (LLM only — e.g. competitors); empty = not enforced.
   excludedSubjects: string[];
-  // Hosts whose own pages should not alert on mention feeds (LLM only); empty = not enforced.
   ownedHosts: string[];
   thirdPartyOnly: boolean;
 };
 
-// Words that describe the *instruction*, not the *content* — never criteria.
 const INSTRUCTION_WORDS = new Set([
   "about",
   "alert",
@@ -140,8 +129,6 @@ export function containsAlias(
   return needle.length > 0 && haystack.includes(` ${needle} `);
 }
 
-// Pure, synchronous, no-network compile. Always available; the LLM compile
-// below only ever ADDS knowledge (product aliases, competitors, owned hosts).
 export function compileGoalCriteria(params: {
   goal: string;
   subject: string;
@@ -162,8 +149,6 @@ export function compileGoalCriteria(params: {
     mustConcern,
     excludedSubjects: [],
     ownedHosts: [],
-    // Never assume a goal excludes the subject's own sources without the
-    // compiler explicitly saying so — vetoing official sources is recall loss.
     thirdPartyOnly: false,
   };
 }
@@ -235,8 +220,6 @@ export function mergeCompiledCriteria(
     ],
     thirdPartyOnly: llm.thirdPartyOnly === true,
   };
-  // An alias that is also an excluded subject would make every alert
-  // contradictory — the alias wins (the compiler over-reached).
   merged.excludedSubjects = merged.excludedSubjects.filter(
     excluded =>
       !merged.subjectAliases.some(
@@ -246,8 +229,6 @@ export function mergeCompiledCriteria(
   return merged;
 }
 
-// LLM enrichment of the deterministic compile. Throws on model failure — the
-// caller keeps the deterministic artifact (fail-safe, never blocks the run).
 export async function compileGoalCriteriaWithLlm(params: {
   goal: string;
   subject: string;

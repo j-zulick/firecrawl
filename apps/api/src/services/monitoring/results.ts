@@ -36,8 +36,6 @@ interface PageJudgment {
   }>;
 }
 
-// Exported for the search-monitor runner: search targets run inline (not via
-// the scrape worker), so they fire their per-page webhooks from runner.ts.
 export async function sendMonitorPageWebhook(params: {
   teamId: string;
   monitorId: string;

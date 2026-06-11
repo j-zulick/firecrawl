@@ -1,14 +1,5 @@
 import { containsAlias, tokenizeContent, type GoalCriteria } from "./criteria";
 
-// Deterministic verification of a judge "alert" verdict. Every check is a
-// universal mechanic (string containment, set membership, token overlap, page
-// shape measurement) — goal-specific knowledge comes exclusively from the
-// compiled criteria, and a check whose criteria field is empty is a no-op, so
-// unknown goal shapes degrade to trusting the judge rather than breaking.
-//
-// Verification gates (alert → watch); it never escalates and never ignores.
-// Ported from the POC's alert-verifier.js.
-
 const LISTING_PAGE_TYPES = new Set([
   "collectionpage",
   "itemlist",
@@ -29,9 +20,7 @@ const ARTICLE_PAGE_TYPES = new Set([
 export type VerifyEvidence = {
   url: string;
   titleText: string;
-  // The judge's claim about the page (rationale), already meta-claim-stripped.
   claimText: string;
-  // Scraped page markdown when available; empty for snippet-only results.
   pageText: string;
   metadata?: Record<string, unknown> | null;
 };
@@ -58,18 +47,11 @@ export function verifyAlertCandidate(params: {
   const conceptText = String(params.concept ?? "");
   const hasPageContent = Boolean(String(evidence.pageText ?? "").trim());
 
-  // 1. Subject containment — the monitored entity must actually appear in the
-  //    visible evidence, not just in the query we sent. Only enforceable when
-  //    we hold the page content the judge read: on snippet-only results the
-  //    judge saw more than we did, so absence here proves nothing.
   if (
     criteria.subjectAliases.length > 0 &&
     hasPageContent &&
     pageBackedText.trim()
   ) {
-    // Whole-alias containment, or any single alias token: an inferred subject
-    // can be a multi-word phrase ("Anthropic models") whose exact phrasing
-    // never appears even though the entity plainly does.
     const present = criteria.subjectAliases.some(
       alias =>
         containsAlias(pageBackedText, alias) ||
@@ -85,9 +67,6 @@ export function verifyAlertCandidate(params: {
     }
   }
 
-  // 2. Excluded-subject dominance — the story is ABOUT an entity the goal
-  //    excludes (e.g. a competitor) and the alert concept doesn't name the
-  //    subject. Name-drops of the subject inside someone else's story.
   if (criteria.excludedSubjects.length > 0 && conceptText) {
     const conceptNamesAlias = criteria.subjectAliases.some(alias =>
       containsAlias(conceptText, alias),
@@ -105,12 +84,6 @@ export function verifyAlertCandidate(params: {
     }
   }
 
-  // 3. Concept relevance — the alert's event/topic label must share at least
-  //    one content token with what the goal is about. Exact token comparison
-  //    only: inflection variants ("lawsuit"/"lawsuits") are the compiler's job
-  //    to enumerate into mustConcern as data, never code's job to derive.
-  // Enforced only with LLM-compiled criteria: the deterministic compile's
-  // token list is known-incomplete, and an incomplete allowlist must not veto.
   if (
     criteria.generatedBy === "llm" &&
     criteria.mustConcern.length > 0 &&
@@ -129,18 +102,11 @@ export function verifyAlertCandidate(params: {
     }
   }
 
-  // 4. Page shape — listing/aggregator/hub pages are surfaces, not stories.
-  //    Structured metadata wins when present; otherwise measure link density on
-  //    the scraped markdown (counting, not pattern matching). Skipped entirely
-  //    for snippet-only results.
   const shape = classifyPageShape(evidence);
   if (shape.kind === "listing") {
     failures.push({ check: "listing_surface", detail: shape.detail });
   }
 
-  // 5. Owned surface — only when the goal explicitly wants third-party
-  //    coverage. For event goals (releases, filings) the subject's own site is
-  //    the most authoritative source there is, never a disqualified one.
   if (criteria.thirdPartyOnly === true && criteria.ownedHosts.length > 0) {
     const host = hostOf(evidence.url);
     const owned =
@@ -188,11 +154,6 @@ export function classifyPageShape(evidence: VerifyEvidence): {
   const publishedAt = publishedDate(evidence.metadata);
   const density = words > 0 ? links / words : 0;
 
-  // A real article is prose; an aggregator/directory is a wall of links.
-  // Calibrated on live pages: link-heavy ARTICLES (citation-dense blogs, sites
-  // with nav/related-post chrome in the scrape) sit around 1 link per 30-50
-  // words, while true link walls run 1 per 6-12 words. Only the latter is a
-  // listing, and a declared publish date always vouches for the page.
   if (links >= 30 && density > 0.08 && !publishedAt) {
     return {
       kind: "listing",
@@ -252,7 +213,6 @@ function countLinks(markdown: string): number {
     count += 1;
     index += 2;
   }
-  // Bare URLs outside markdown link syntax still count toward link mass.
   index = 0;
   for (;;) {
     index = markdown.indexOf("http://", index);
@@ -267,7 +227,6 @@ function countLinks(markdown: string): number {
     count += 1;
     index += 8;
   }
-  // Markdown links were double-counted (the "](https://" form) — correct that.
   return Math.max(0, Math.round(count / 2));
 }
 

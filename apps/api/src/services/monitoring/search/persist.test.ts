@@ -84,7 +84,6 @@ describe("reconstructKnownState", () => {
       [
         page("https://a.com", "old-story", "2026-01-01T00:00:00Z"),
         page("https://b.com", "active-story", "2026-01-02T00:00:00Z"),
-        // a newer article re-touches the old story — it should outrank active-story
         page("https://c.com", "old-story", "2026-06-01T00:00:00Z"),
       ],
       "gv1",

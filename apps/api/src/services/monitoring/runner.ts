@@ -1043,10 +1043,6 @@ async function runMonitorSearchTarget(params: {
   }
   await insertMonitorCheckPages(pages);
 
-  // Per-page webhooks (monitor.page), change-monitor parity: search targets run
-  // inline rather than through the scrape worker, so the worker's webhook path
-  // never sees them. Fire for outcomes a subscriber would act on — alerts
-  // ("new") and failures ("error") — not for unchanged/watching pages.
   for (const page of pages) {
     if (page.status !== "new" && page.status !== "error") continue;
     await sendMonitorPageWebhook({

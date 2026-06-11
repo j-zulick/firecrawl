@@ -41,16 +41,12 @@ import {
 } from "./verify";
 import { hasGeminiKey } from "./tuning";
 
-// Unified schedule/window step → Firecrawl tbs window.
 function windowToTbs(window: string): string {
   if (window === "5m" || window === "15m" || window === "1h") return "qdr:h";
   if (window === "6h" || window === "24h") return "qdr:d";
-  return "qdr:w"; // 7d
+  return "qdr:w";
 }
 
-// Exclude wins over include (Exa/Parallel semantics). The -site: operators in
-// the scoped query are advisory — not every search provider honors them — so
-// the blocklist is also enforced here on the returned results.
 function isExcludedDomain(
   url: string,
   excludeDomains: string[] | undefined,
@@ -81,13 +77,8 @@ type SearchTargetInput = {
   alertMode: "first_match" | "every_new_result" | "material_dev";
   includeDomains?: string[];
   excludeDomains?: string[];
-  // Re-judge a still-live result (last status alert/watching) when its last check is older than
-  // this window, even if the SERP snippet is unchanged — catches content updates SERP text misses.
   recheckAfter?: string;
   maxResults: number;
-  // "deep" (default) scrapes + judges routed pages; "standard" judges from SERP
-  // snippets in one batched call — no page fetches, the cheap tier. Standard
-  // requires a Gemini key; without one it falls back to deep behavior.
   depth?: "standard" | "deep";
 };
 
@@ -115,7 +106,7 @@ type SearchTargetRunResult = {
   pagesChecked: number;
   skipped: number;
   meaningful: number;
-  matches: number; // new alerts this run
+  matches: number;
   summary: string;
   sources: SearchSource[];
   pageUpserts: Array<{
@@ -123,8 +114,6 @@ type SearchTargetRunResult = {
     urlHash: Buffer;
     status: string;
     metadata: Record<string, unknown>;
-    // Present on alert pages: feeds the check page's judgment jsonb so email +
-    // per-page webhooks carry the judge's reasoning (change-monitor parity).
     judgment?: {
       meaningful: boolean;
       confidence: "high" | "medium" | "low";
@@ -154,7 +143,7 @@ export async function runSearchTarget(params: {
 
   const tbs = windowToTbs(target.searchWindow);
   const events: KnownEvent[] = [...params.knownEvents];
-  const satisfied = new Set(events.map(e => e.key)); // first_match suppression set
+  const satisfied = new Set(events.map(e => e.key));
   const sources: SearchSource[] = [];
   const pageUpserts: SearchTargetRunResult["pageUpserts"] = [];
   let resultCount = 0;
@@ -162,7 +151,6 @@ export async function runSearchTarget(params: {
   let skipped = 0;
   let matches = 0;
 
-  // 1. Search each query; flatten + dedup by canonical URL within this run.
   const seenThisRun = new Set<string>();
   const candidates: Array<{
     url: string;
@@ -171,7 +159,6 @@ export async function runSearchTarget(params: {
     query: string;
   }> = [];
   for (const query of target.queries) {
-    // Scope to domains the same way the v2 search API does (site:/-site: operators).
     const { query: scopedQuery } = buildSearchQuery(query, undefined, {
       includeDomains: target.includeDomains,
       excludeDomains: target.excludeDomains,
@@ -202,11 +189,6 @@ export async function runSearchTarget(params: {
   const depth: "standard" | "deep" =
     target.depth === "standard" && llmStagesAvailable ? "standard" : "deep";
 
-  // Criteria artifact for the verifier + skeptic. Deterministic compile is
-  // free and always available; the LLM enrichment (aliases, competitors, owned
-  // hosts) fails safe back to deterministic. Compiled per run — cheap on a
-  // thinking-suppressed flash-class model; persistence keyed to goalVersion is
-  // a follow-up optimization, not a correctness need.
   let criteria: GoalCriteria = compileGoalCriteria({
     goal,
     subject,
@@ -230,8 +212,6 @@ export async function runSearchTarget(params: {
     }
   }
 
-  // Route which candidates are worth scrape/judge spend (deep mode). The LLM
-  // router fails open to deterministic top-K — the pre-port behavior.
   let selected = candidates.slice(0, target.maxResults);
   if (depth === "deep" && llmStagesAvailable && candidates.length > 0) {
     try {
@@ -262,8 +242,6 @@ export async function runSearchTarget(params: {
     }
   }
 
-  // Standard depth: one batched snippet-judge call for the whole selection —
-  // no page fetches. Verdicts keyed by canonical URL for the loop below.
   const snippetVerdicts = new Map<string, SearchVerdict>();
   if (depth === "standard" && selected.length > 0) {
     try {
@@ -300,7 +278,6 @@ export async function runSearchTarget(params: {
     }
   }
 
-  // 2. Per candidate: dedup → (judge if new/changed) → decide → event-resolve.
   for (const c of selected) {
     const canonical = canonicalizeUrl(c.url);
     const fingerprint = stableSerpFingerprint({
@@ -311,7 +288,6 @@ export async function runSearchTarget(params: {
     const known = knownPages.get(canonical);
     const knownCurrent =
       known && known.goalVersion === goalVersion ? known : undefined;
-    // Re-judge a still-live result on a cadence even if its SERP snippet is unchanged.
     const recheckMs = target.recheckAfter ? windowToMs(target.recheckAfter) : 0;
     const isLive =
       knownCurrent?.lastStatus === "alert" ||
@@ -327,11 +303,6 @@ export async function runSearchTarget(params: {
       knownCurrent.fingerprint !== fingerprint ||
       dueForRecheck;
 
-    // Known + unchanged under the current goal → reuse, no scrape/judge/LLM. The reused
-    // status carries the page's prior outcome forward: "already_seen" must mean "this
-    // alerted before" — a page that only ever watched/ignored repeats as such, otherwise
-    // the UI reports a prior alert that never happened (and flipping it to already_seen
-    // would also drop it out of the isLive recheck cadence above).
     if (!isNewOrChanged) {
       const reusedStatus: SearchSource["status"] =
         knownCurrent?.lastStatus === "alert" ||
@@ -351,8 +322,6 @@ export async function runSearchTarget(params: {
       continue;
     }
 
-    // Judge: deep scrapes the page (verdict returns on document.json, markdown
-    // kept for the verifier); standard reads the batched snippet verdict.
     let verdict: SearchVerdict | null = null;
     let pageText = "";
     let pageMetadata: Record<string, unknown> | null = null;
@@ -417,18 +386,12 @@ export async function runSearchTarget(params: {
         null;
     }
 
-    // Mechanical defense: a verdict whose rationale negates its own booleans is
-    // corrected before anything downstream consumes it.
     verdict = applyVerdictDefenses(verdict);
 
-    // Downstream stages (verifier, skeptic, resolver) must see page facts, not
-    // the judge grading itself.
     const strippedRationale = stripJudgeMetaClaims(verdict.rationale);
 
     let decision = verdictToDecision(verdict);
 
-    // Alert boundary, stage 1 — deterministic verification against the compiled
-    // criteria. Downgrade-only (notify → watch), fail-open on unknown shapes.
     let verification: VerificationResult | null = null;
     if (decision === "notify") {
       const evidence: VerifyEvidence = {
@@ -453,9 +416,6 @@ export async function runSearchTarget(params: {
       }
     }
 
-    // Alert boundary, stage 2 — adversarial skeptic. Runs only on surviving
-    // notify candidates (cost bounded by the alert rate); fails OPEN so a
-    // skeptic outage can't silently drop real alerts.
     if (decision === "notify" && llmStagesAvailable) {
       try {
         const skeptic: SkepticVerdict = await reviewAlert({
@@ -486,8 +446,6 @@ export async function runSearchTarget(params: {
       fingerprint,
       goalVersion,
       alertAction: verdict.alertAction,
-      // Informational only — recency/credibility gating lives in the judge's
-      // alertAction, not in mechanical field gates.
       publishedAt: realDate,
       concept: verdict.concept,
       rationale: verdict.rationale,
@@ -525,9 +483,6 @@ export async function runSearchTarget(params: {
       continue;
     }
 
-    // notify → resolve the real-world event against the known events (small list, handed straight
-    // to the LLM). Matches reuse the existing stable key; new events mint one. Resolver failure
-    // fails open to a new event: a possible duplicate alert beats a silently dropped one.
     let resolution;
     try {
       resolution = await resolveEvent({
@@ -554,22 +509,16 @@ export async function runSearchTarget(params: {
     const matched =
       resolution.matchedKey &&
       events.find(e => e.key === resolution.matchedKey);
-    // New event → mint a stable, content-independent key so a future relabel can't drift it.
     const eventKey = matched ? matched.key : uuidv7();
     const eventLabel = matched
       ? matched.label
       : resolution.label || verdict.concept;
 
-    // Suppression by mode. first_match: alert once per event. material_dev: alert once, then
-    // re-alert only when a later result adds materially-new info to the known event.
-    // every_new_result: never event-suppressed (alerts each new URL).
     let alreadySatisfied = false;
     if (satisfied.has(eventKey)) {
       if (target.alertMode === "first_match") {
         alreadySatisfied = true;
       } else if (target.alertMode === "material_dev") {
-        // Fails CLOSED: an unjudgeable "material development" stays suppressed —
-        // re-alerting an already-alerted event on an LLM outage is the worse error.
         try {
           const dev = await judgeMaterialDevelopment({
             goal,
@@ -603,9 +552,6 @@ export async function runSearchTarget(params: {
       continue;
     }
 
-    // New, meaningful, not-yet-satisfied → alert. Event state (satisfiedAt =
-    // first alert, alertCount) is stamped onto the alerting page's metadata —
-    // that's its durable home; persist.ts re-aggregates it next run.
     matches += 1;
     satisfied.add(eventKey);
     const nowIso = new Date().toISOString();
@@ -616,8 +562,6 @@ export async function runSearchTarget(params: {
       existingEvent.satisfiedAt = eventSatisfiedAt;
       existingEvent.alertCount = eventAlertCount;
     } else {
-      // Newest first: the resolver only sees the first ~20 candidates, and an
-      // event minted earlier in this same run must be visible to later results.
       events.unshift({
         key: eventKey,
         label: eventLabel,
@@ -657,7 +601,6 @@ export async function runSearchTarget(params: {
 
   let summary = "";
   if (matches > 0) {
-    // Summarizer failure must not fail the run — fall back to a counting summary.
     try {
       const out = await summarizeRun({
         goal,

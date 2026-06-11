@@ -3,7 +3,6 @@ import type { SearchVerdict } from "./judge";
 import type { EventResolution } from "./llm";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
 
-// --- Mock the external boundaries; the orchestration logic in run.ts runs for real. ---
 const searchMock = jest.fn();
 const scrapeURLMock = jest.fn();
 const resolveEventMock = jest.fn();
@@ -22,9 +21,6 @@ jest.mock("./llm", () => ({
   summarizeRun: (...a: unknown[]) => summarizeRunMock(...a),
   judgeMaterialDevelopment: (...a: unknown[]) => materialDevMock(...a),
 }));
-// These tests exercise the core pipeline with the optional LLM stages (router,
-// skeptic, criteria enrichment, snippet judge) gated off — the no-Gemini-key
-// configuration. run-defenses.test.ts covers the stages-on wiring.
 jest.mock("./tuning", () => ({
   hasGeminiKey: () => false,
   googleProviderOptions: () => ({}),
@@ -57,7 +53,6 @@ function setSearchResults(
   searchMock.mockResolvedValue(results);
 }
 
-// scrapeURL returns a verdict chosen by URL.
 function setVerdictsByUrl(map: Record<string, SearchVerdict>) {
   scrapeURLMock.mockImplementation((_id: string, url: string) => {
     const v = map[url];
@@ -151,7 +146,6 @@ describe("runSearchTarget orchestration", () => {
         description: "filing",
       },
     ]);
-    // Precompute the fingerprint the same way run.ts does, via the real dedupe module.
     const canonical = canonicalizeUrl("https://sec.gov/openai");
     const fingerprint = stableSerpFingerprint({
       url: "https://sec.gov/openai",
@@ -164,8 +158,6 @@ describe("runSearchTarget orchestration", () => {
 
     const out = await run({ knownPages });
 
-    // Reuse carries the prior outcome forward: this page alerted before, so the
-    // repeat is "already_seen". A page with no recorded prior alert must not be.
     expect(out.sources[0].status).toBe("already_seen");
     expect(out.pageUpserts[0].status).toBe("already_seen");
     expect(scrapeURLMock).not.toHaveBeenCalled();
@@ -187,7 +179,6 @@ describe("runSearchTarget orchestration", () => {
       title: "OpenAI S-1",
       snippet: "filing",
     });
-    // Known under the OLD goal version → must be treated as new under gv2.
     const knownPages = new Map<string, KnownPage>([
       [canonical, { fingerprint, goalVersion: "gv1" }],
     ]);
@@ -215,7 +206,6 @@ describe("runSearchTarget orchestration", () => {
       "https://sec.gov/openai": verdict(),
       "https://nytimes.com/openai-ipo": verdict({ concept: "openai-ipo" }),
     });
-    // First result creates the event; second resolves to the same key.
     resolveEventMock
       .mockResolvedValueOnce({
         matchedKey: null,
@@ -254,7 +244,6 @@ describe("runSearchTarget orchestration", () => {
       reason: "",
     });
     const out = await run();
-    // Key is the uuid (mocked constant here), not slugify("OpenAI's IPO Filing!!!").
     expect(out.sources[0].eventKey).toBe(
       "00000000-0000-7000-8000-000000000000",
     );
@@ -282,7 +271,6 @@ describe("runSearchTarget orchestration", () => {
       knownEvents: [{ key: "evt-stable-123", label: "OpenAI IPO" }],
     });
     expect(out.sources[0].eventKey).toBe("evt-stable-123");
-    // Reuses the stored label, ignoring the drifted one from this run.
     expect(out.pageUpserts[0].metadata.eventLabel).toBe("OpenAI IPO");
   });
 
@@ -341,9 +329,6 @@ describe("runSearchTarget orchestration", () => {
 });
 
 describe("scrape payload validity (real validator, no mocks)", () => {
-  // Proves the exact scrape options run.ts sends survive the real v2 validator and yield a
-  // json format carrying our verdict schema + prompt — the one integration not covered by
-  // matching the scrape/crawl path.
   it("scrapeOptions.parse accepts the verdict json format", () => {
     const { scrapeOptions } = require("../../../controllers/v2/types");
     const { verdictJsonSchema, buildJudgePrompt } = require("./judge");
@@ -454,8 +439,6 @@ describe("re-judge cadence", () => {
     ]);
     const out = await run({ target: { recheckAfter: "24h" }, knownPages });
     expect(scrapeURLMock).not.toHaveBeenCalled();
-    // A page that only ever watched repeats as watching — "already_seen" is
-    // reserved for pages that actually alerted on a prior run.
     expect(out.sources[0].status).toBe("watching");
   });
 });
