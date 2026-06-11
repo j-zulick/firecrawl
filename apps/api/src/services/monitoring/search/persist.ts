@@ -47,6 +47,18 @@ export function reconstructKnownState(
     if (meta.goalVersion === goalVersion && typeof meta.eventKey === "string") {
       const existing = eventsByKey.get(meta.eventKey);
       const seenAt = page.updated_at ?? "";
+      // Event state is stamped per alerting page; aggregate across pages:
+      // satisfiedAt = earliest stamp (first alert), alertCount = highest stamp
+      // (each alert writes prior+1, so max is the true count even when several
+      // pages of the same event carry older stamps).
+      const satisfiedAt =
+        typeof meta.eventSatisfiedAt === "string"
+          ? meta.eventSatisfiedAt
+          : undefined;
+      const alertCount =
+        typeof meta.eventAlertCount === "number"
+          ? meta.eventAlertCount
+          : undefined;
       if (!existing) {
         eventsByKey.set(meta.eventKey, {
           key: meta.eventKey,
@@ -55,9 +67,26 @@ export function reconstructKnownState(
               ? meta.eventLabel
               : meta.eventKey,
           lastSeenAt: seenAt,
+          ...(satisfiedAt ? { satisfiedAt } : {}),
+          ...(alertCount !== undefined ? { alertCount } : {}),
         });
-      } else if (seenAt > existing.lastSeenAt) {
-        existing.lastSeenAt = seenAt;
+      } else {
+        if (seenAt > existing.lastSeenAt) {
+          existing.lastSeenAt = seenAt;
+        }
+        if (
+          satisfiedAt &&
+          (!existing.satisfiedAt || satisfiedAt < existing.satisfiedAt)
+        ) {
+          existing.satisfiedAt = satisfiedAt;
+        }
+        if (
+          alertCount !== undefined &&
+          (existing.alertCount === undefined ||
+            alertCount > existing.alertCount)
+        ) {
+          existing.alertCount = alertCount;
+        }
       }
     }
   }
@@ -66,6 +95,6 @@ export function reconstructKnownState(
   // article about them mints a duplicate event (and a duplicate alert).
   const knownEvents = [...eventsByKey.values()]
     .sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1))
-    .map(({ key, label }) => ({ key, label }));
+    .map(({ lastSeenAt: _ignored, ...event }) => event);
   return { knownPages, knownEvents };
 }

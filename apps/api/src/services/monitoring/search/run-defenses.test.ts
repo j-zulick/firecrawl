@@ -48,8 +48,6 @@ const logger = {
 const verdict = (over: Partial<SearchVerdict> = {}): SearchVerdict => ({
   relevant: true,
   alertAction: "alert",
-  freshness: "fresh",
-  sourceQuality: "authoritative",
   concept: "Firecrawl product launch",
   rationale: "Firecrawl announced a new product today.",
   ...over,
@@ -293,5 +291,70 @@ describe("alert boundary", () => {
     const result = await runSearchTarget(runParams());
     expect(result.matches).toBe(0);
     expect(result.sources[0].status).toBe("ignored");
+  });
+});
+
+describe("event state stamps + judgment on alert pages", () => {
+  it("stamps satisfiedAt/alertCount/lastAlertAt and a judgment on the alerting page", async () => {
+    searchMock.mockResolvedValue([serpRow(1)]);
+    routeMock.mockResolvedValue([
+      { id: "result_1", decision: "scrape", priority: 1, reason: "" },
+    ]);
+    scrapeURLMock.mockResolvedValue({
+      success: true,
+      document: {
+        json: verdict(),
+        markdown: "Firecrawl announced a new product today in prose.",
+        metadata: {},
+      },
+    });
+
+    const result = await runSearchTarget(runParams());
+    const alertUpsert = result.pageUpserts.find(u => u.status === "alert")!;
+    expect(alertUpsert.metadata.eventAlertCount).toBe(1);
+    expect(typeof alertUpsert.metadata.eventSatisfiedAt).toBe("string");
+    expect(typeof alertUpsert.metadata.eventLastAlertAt).toBe("string");
+    expect(alertUpsert.judgment).toMatchObject({
+      meaningful: true,
+      confidence: "high",
+      reason: "Firecrawl announced a new product today.",
+    });
+  });
+
+  it("a later alert on a known satisfied event increments alertCount and keeps satisfiedAt", async () => {
+    searchMock.mockResolvedValue([serpRow(1)]);
+    routeMock.mockResolvedValue([
+      { id: "result_1", decision: "scrape", priority: 1, reason: "" },
+    ]);
+    scrapeURLMock.mockResolvedValue({
+      success: true,
+      document: {
+        json: verdict(),
+        markdown: "Firecrawl announced a new product today in prose.",
+        metadata: {},
+      },
+    });
+    resolveEventMock.mockResolvedValue({
+      matchedKey: "evt-known",
+      isNew: false,
+      label: "Firecrawl product launch",
+      reason: "",
+    });
+    materialDevMock.mockResolvedValue({ material: true, reason: "new stage" });
+
+    const result = await runSearchTarget({
+      ...runParams({ alertMode: "material_dev" }),
+      knownEvents: [
+        {
+          key: "evt-known",
+          label: "Firecrawl product launch",
+          satisfiedAt: "2026-06-01T00:00:00Z",
+          alertCount: 2,
+        },
+      ],
+    });
+    const alertUpsert = result.pageUpserts.find(u => u.status === "alert")!;
+    expect(alertUpsert.metadata.eventAlertCount).toBe(3);
+    expect(alertUpsert.metadata.eventSatisfiedAt).toBe("2026-06-01T00:00:00Z");
   });
 });

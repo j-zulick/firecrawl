@@ -141,3 +141,65 @@ describe("reconstructKnownState", () => {
     expect(knownEvents).toEqual([]);
   });
 });
+
+describe("event state aggregation (jsonb stamps on alerting pages)", () => {
+  it("aggregates satisfiedAt (earliest) and alertCount (highest) across pages", () => {
+    const { knownEvents } = reconstructKnownState(
+      [
+        {
+          url: "https://a.com/1",
+          metadata: {
+            fingerprint: "f1",
+            goalVersion: "v1",
+            eventKey: "evt-1",
+            eventLabel: "openai ipo",
+            eventSatisfiedAt: "2026-06-10T00:00:00Z",
+            eventAlertCount: 1,
+          },
+          updated_at: "2026-06-10T00:00:00Z",
+          last_status: "alert",
+        },
+        {
+          url: "https://b.com/2",
+          metadata: {
+            fingerprint: "f2",
+            goalVersion: "v1",
+            eventKey: "evt-1",
+            eventLabel: "openai ipo",
+            eventSatisfiedAt: "2026-06-10T00:00:00Z",
+            eventAlertCount: 3,
+          },
+          updated_at: "2026-06-11T00:00:00Z",
+          last_status: "alert",
+        },
+      ],
+      "v1",
+    );
+    expect(knownEvents).toHaveLength(1);
+    expect(knownEvents[0]).toMatchObject({
+      key: "evt-1",
+      satisfiedAt: "2026-06-10T00:00:00Z",
+      alertCount: 3,
+    });
+  });
+
+  it("legacy rows without stamps still reconstruct the event (no state fields)", () => {
+    const { knownEvents } = reconstructKnownState(
+      [
+        {
+          url: "https://a.com/1",
+          metadata: {
+            fingerprint: "f1",
+            goalVersion: "v1",
+            eventKey: "evt-legacy",
+            eventLabel: "old event",
+          },
+          updated_at: "2026-06-09T00:00:00Z",
+          last_status: "alert",
+        },
+      ],
+      "v1",
+    );
+    expect(knownEvents).toEqual([{ key: "evt-legacy", label: "old event" }]);
+  });
+});

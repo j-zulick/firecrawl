@@ -17,7 +17,15 @@ const SKEPTIC_MODEL =
 const ROUTER_MODEL =
   process.env.SEARCH_MONITOR_ROUTER_MODEL ?? "gemini-3-flash-preview";
 
-export type KnownEvent = { key: string; label: string };
+// Event state rides page-row metadata (no dedicated table): satisfiedAt is the
+// first alert time, alertCount the number of alerts — reconstructed per run by
+// persist.ts from the stamps run.ts writes on alerting pages.
+export type KnownEvent = {
+  key: string;
+  label: string;
+  satisfiedAt?: string;
+  alertCount?: number;
+};
 
 export type EventResolution = {
   matchedKey: string | null;
@@ -246,14 +254,6 @@ const snippetVerdictSchema = z.object({
       id: z.string(),
       relevant: z.boolean(),
       alertAction: z.enum(["alert", "watch", "ignore"]),
-      freshness: z.enum(["fresh", "stale", "unknown"]),
-      sourceQuality: z.enum([
-        "first-party",
-        "authoritative",
-        "unverified",
-        "resale",
-        "unclear",
-      ]),
       concept: z.string(),
       rationale: z.string(),
     }),
@@ -285,7 +285,7 @@ export async function judgeSnippets(params: {
     model: google(ROUTER_MODEL),
     schema: snippetVerdictSchema,
     system:
-      "You judge search results for a monitoring product using ONLY each result's SERP title, URL, and snippet — you cannot see the page. Be conservative: a snippet is thin evidence, so alertAction alert requires the snippet itself to concretely state a completed event satisfying the goal from a credible source. Query wording echoed in a snippet is not evidence. Competitors, look-alikes, listings, stale or unconfirmed results are watch/ignore. concept: a short reusable label naming the real-world event. Return one verdict per candidate id. Structured JSON only.",
+      "You judge search results for a monitoring product using ONLY each result's SERP title, URL, and snippet — you cannot see the page. Be conservative: a snippet is thin evidence, so alertAction alert requires the snippet itself to concretely state a completed, recent event satisfying the goal, from a source credible for that claim (the subject itself or established reporting). Query wording echoed in a snippet is not evidence. Rumors, content farms, competitors, look-alikes, listings, and old or unconfirmed results are watch/ignore. concept: a short reusable label naming the real-world event. Return one verdict per candidate id. Structured JSON only.",
     prompt: JSON.stringify({
       monitor: { goal: params.goal, subject: params.subject },
       searchWindow: params.searchWindow,

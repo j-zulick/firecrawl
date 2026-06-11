@@ -1,16 +1,13 @@
 // Page judge runs INSIDE the Firecrawl scrape (the `json` format) — the verdict comes back
 // on document.json. No separate Gemini call: Gemini is only for event-resolution + summary.
 
+// Deliberately minimal: recency and source credibility are folded into the
+// judge's single alertAction decision (see buildJudgePrompt) instead of being
+// separate gateable fields — fewer fields means fewer self-contradictions and
+// a simpler contract. The skeptic remains the independent safety net.
 export type SearchVerdict = {
   relevant: boolean;
   alertAction: "alert" | "watch" | "ignore";
-  freshness: "fresh" | "stale" | "unknown";
-  sourceQuality:
-    | "first-party"
-    | "authoritative"
-    | "unverified"
-    | "resale"
-    | "unclear";
   concept: string;
   rationale: string;
 };
@@ -19,22 +16,10 @@ export type SearchVerdict = {
 export const verdictJsonSchema = {
   type: "object",
   additionalProperties: false,
-  required: [
-    "relevant",
-    "alertAction",
-    "freshness",
-    "sourceQuality",
-    "concept",
-    "rationale",
-  ],
+  required: ["relevant", "alertAction", "concept", "rationale"],
   properties: {
     relevant: { type: "boolean" },
     alertAction: { type: "string", enum: ["alert", "watch", "ignore"] },
-    freshness: { type: "string", enum: ["fresh", "stale", "unknown"] },
-    sourceQuality: {
-      type: "string",
-      enum: ["first-party", "authoritative", "unverified", "resale", "unclear"],
-    },
     concept: { type: "string" },
     rationale: { type: "string" },
   },
@@ -50,8 +35,7 @@ export function buildJudgePrompt(
     subject ? `Monitored subject: ${subject}.` : "",
     `Search window: ${searchWindow}.`,
     "Judge ONLY this page's visible content against the goal, not the query wording.",
-    "Set relevant true and alertAction alert only when the page materially satisfies the exact goal and is fresh for the window. Competitors, look-alikes, listings, stale or unconfirmed pages are watch/ignore.",
-    "Never pair freshness stale/unknown with alertAction alert.",
+    "Set relevant true and alertAction alert only when the page materially satisfies the exact goal, is recent for the search window, and comes from a source credible for this kind of claim — the subject itself or established reporting. Rumors, content farms, syndicated rewrites, competitors, look-alikes, listings, and old or unconfirmed pages are watch/ignore.",
     "concept: a short reusable label naming the real-world event (company/product/event).",
   ]
     .filter(Boolean)
@@ -68,18 +52,6 @@ export function parseVerdict(json: unknown): SearchVerdict | null {
     alertAction: (["alert", "watch", "ignore"].includes(v.alertAction as string)
       ? v.alertAction
       : "watch") as SearchVerdict["alertAction"],
-    freshness: (["fresh", "stale", "unknown"].includes(v.freshness as string)
-      ? v.freshness
-      : "unknown") as SearchVerdict["freshness"],
-    sourceQuality: ([
-      "first-party",
-      "authoritative",
-      "unverified",
-      "resale",
-      "unclear",
-    ].includes(v.sourceQuality as string)
-      ? v.sourceQuality
-      : "unclear") as SearchVerdict["sourceQuality"],
     concept: typeof v.concept === "string" ? v.concept : "",
     rationale: typeof v.rationale === "string" ? v.rationale : "",
   };
@@ -98,31 +70,15 @@ export function windowToMs(window: string): number {
   return WINDOW_MS[window] ?? WINDOW_MS["24h"];
 }
 
-// Freshness from a real publish date vs the search window. Returns null when no usable date
-// exists, so the caller can fall back to the LLM's freshness guess. Future-dated → fresh.
-export function freshnessFromDate(
-  dateIso: string | null | undefined,
-  searchWindow: string,
-  nowMs: number,
-): "fresh" | "stale" | null {
-  if (!dateIso) return null;
-  const t = Date.parse(dateIso);
-  if (Number.isNaN(t)) return null;
-  const window = WINDOW_MS[searchWindow] ?? WINDOW_MS["24h"];
-  return nowMs - t <= window ? "fresh" : "stale";
-}
-
-// "alert" only when relevant, fresh, trusted-enough, concept-labeled, and the
-// judge asked to alert. A notify without a concept can't be event-deduped, so
-// it would re-alert forever — the POC requires the full field set for notify.
+// "alert" only when relevant, concept-labeled, and the judge asked to alert.
+// Recency and credibility live inside the judge's alertAction (see the prompt);
+// a notify without a concept can't be event-deduped, so it would re-alert
+// forever — concept stays a mechanical requirement.
 export function verdictToDecision(
   v: SearchVerdict,
 ): "notify" | "watch" | "ignore" {
   if (!v.relevant || v.alertAction === "ignore") return "ignore";
   if (v.alertAction === "watch") return "watch";
-  if (v.freshness !== "fresh") return "watch";
-  if (v.sourceQuality === "unverified" || v.sourceQuality === "unclear")
-    return "watch";
   if (!v.concept.trim()) return "watch";
   return "notify";
 }

@@ -1,7 +1,6 @@
 import {
   applyVerdictDefenses,
   contradictionFromRationale,
-  freshnessFromDate,
   parseVerdict,
   stripJudgeMetaClaims,
   verdictToDecision,
@@ -9,30 +8,9 @@ import {
 } from "./judge";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
 
-describe("freshnessFromDate", () => {
-  const now = Date.parse("2026-06-09T12:00:00Z");
-  it("returns null with no usable date (caller falls back to LLM)", () => {
-    expect(freshnessFromDate(null, "24h", now)).toBeNull();
-    expect(freshnessFromDate("not-a-date", "24h", now)).toBeNull();
-  });
-  it("fresh when within the window, stale when older", () => {
-    expect(freshnessFromDate("2026-06-09T06:00:00Z", "24h", now)).toBe("fresh");
-    expect(freshnessFromDate("2026-06-07T06:00:00Z", "24h", now)).toBe("stale");
-  });
-  it("respects the window size", () => {
-    expect(freshnessFromDate("2026-06-09T10:00:00Z", "1h", now)).toBe("stale");
-    expect(freshnessFromDate("2026-06-09T11:30:00Z", "1h", now)).toBe("fresh");
-  });
-  it("future-dated counts as fresh", () => {
-    expect(freshnessFromDate("2026-06-10T00:00:00Z", "24h", now)).toBe("fresh");
-  });
-});
-
 const v = (over: Partial<SearchVerdict>): SearchVerdict => ({
   relevant: true,
   alertAction: "alert",
-  freshness: "fresh",
-  sourceQuality: "authoritative",
   concept: "x",
   rationale: "x",
   ...over,
@@ -51,14 +29,6 @@ describe("verdictToDecision", () => {
   it("watches when judge says watch", () => {
     expect(verdictToDecision(v({ alertAction: "watch" }))).toBe("watch");
   });
-  it("downgrades stale to watch even if alert", () => {
-    expect(verdictToDecision(v({ freshness: "stale" }))).toBe("watch");
-    expect(verdictToDecision(v({ freshness: "unknown" }))).toBe("watch");
-  });
-  it("downgrades weak sources to watch", () => {
-    expect(verdictToDecision(v({ sourceQuality: "unverified" }))).toBe("watch");
-    expect(verdictToDecision(v({ sourceQuality: "unclear" }))).toBe("watch");
-  });
 });
 
 describe("parseVerdict", () => {
@@ -72,8 +42,6 @@ describe("parseVerdict", () => {
       parseVerdict({
         relevant: true,
         alertAction: "alert",
-        freshness: "fresh",
-        sourceQuality: "first-party",
         concept: "c",
         rationale: "r",
       }),
@@ -82,8 +50,6 @@ describe("parseVerdict", () => {
   it("defaults unknown enum values safely", () => {
     const out = parseVerdict({ relevant: true, alertAction: "bogus" });
     expect(out?.alertAction).toBe("watch");
-    expect(out?.freshness).toBe("unknown");
-    expect(out?.sourceQuality).toBe("unclear");
   });
 });
 

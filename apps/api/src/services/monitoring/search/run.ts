@@ -10,7 +10,6 @@ import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
 import {
   applyVerdictDefenses,
   buildJudgePrompt,
-  freshnessFromDate,
   parseVerdict,
   stripJudgeMetaClaims,
   verdictJsonSchema,
@@ -104,8 +103,6 @@ type SearchSource = {
   title: string;
   status: "alert" | "already_seen" | "watching" | "ignored" | "skipped";
   alertAction?: string;
-  freshness?: string;
-  sourceQuality?: string;
   concept?: string;
   eventKey?: string;
   rationale?: string;
@@ -126,6 +123,14 @@ type SearchTargetRunResult = {
     urlHash: Buffer;
     status: string;
     metadata: Record<string, unknown>;
+    // Present on alert pages: feeds the check page's judgment jsonb so email +
+    // per-page webhooks carry the judge's reasoning (change-monitor parity).
+    judgment?: {
+      meaningful: boolean;
+      confidence: "high" | "medium" | "low";
+      reason: string;
+      meaningfulChanges: [];
+    };
   }>;
 };
 
@@ -283,8 +288,6 @@ export async function runSearchTarget(params: {
           snippetVerdicts.set(canonicalizeUrl(c.url), {
             relevant: v.relevant,
             alertAction: v.alertAction,
-            freshness: v.freshness,
-            sourceQuality: v.sourceQuality,
             concept: v.concept,
             rationale: v.rationale,
           });
@@ -418,20 +421,11 @@ export async function runSearchTarget(params: {
     // corrected before anything downstream consumes it.
     verdict = applyVerdictDefenses(verdict);
 
-    // Prefer a real publish date over the LLM's freshness guess (freshness is an alert veto).
-    const dateFreshness = freshnessFromDate(
-      realDate,
-      target.searchWindow,
-      Date.now(),
-    );
-    const effectiveVerdict = dateFreshness
-      ? { ...verdict, freshness: dateFreshness }
-      : verdict;
     // Downstream stages (verifier, skeptic, resolver) must see page facts, not
     // the judge grading itself.
-    const strippedRationale = stripJudgeMetaClaims(effectiveVerdict.rationale);
+    const strippedRationale = stripJudgeMetaClaims(verdict.rationale);
 
-    let decision = verdictToDecision(effectiveVerdict);
+    let decision = verdictToDecision(verdict);
 
     // Alert boundary, stage 1 — deterministic verification against the compiled
     // criteria. Downgrade-only (notify → watch), fail-open on unknown shapes.
@@ -446,7 +440,7 @@ export async function runSearchTarget(params: {
       };
       const result = verifyAlertCandidate({
         criteria,
-        concept: effectiveVerdict.concept,
+        concept: verdict.concept,
         evidence,
       });
       verification = result;
@@ -472,7 +466,7 @@ export async function runSearchTarget(params: {
             title: c.title,
             url: c.url,
             snippet: c.description,
-            concept: effectiveVerdict.concept,
+            concept: verdict.concept,
             judgeAnswer: strippedRationale,
           },
         });
@@ -491,13 +485,12 @@ export async function runSearchTarget(params: {
     const baseMeta = {
       fingerprint,
       goalVersion,
-      alertAction: effectiveVerdict.alertAction,
-      freshness: effectiveVerdict.freshness,
-      freshnessSource: dateFreshness ? "date" : "llm",
+      alertAction: verdict.alertAction,
+      // Informational only — recency/credibility gating lives in the judge's
+      // alertAction, not in mechanical field gates.
       publishedAt: realDate,
-      sourceQuality: effectiveVerdict.sourceQuality,
-      concept: effectiveVerdict.concept,
-      rationale: effectiveVerdict.rationale,
+      concept: verdict.concept,
+      rationale: verdict.rationale,
       ...(verification && !verification.pass ? { verification } : {}),
     };
 
@@ -554,7 +547,7 @@ export async function runSearchTarget(params: {
       resolution = {
         matchedKey: null,
         isNew: true,
-        label: effectiveVerdict.concept,
+        label: verdict.concept,
         reason: "resolver_failed",
       };
     }
@@ -565,7 +558,7 @@ export async function runSearchTarget(params: {
     const eventKey = matched ? matched.key : uuidv7();
     const eventLabel = matched
       ? matched.label
-      : resolution.label || effectiveVerdict.concept;
+      : resolution.label || verdict.concept;
 
     // Suppression by mode. first_match: alert once per event. material_dev: alert once, then
     // re-alert only when a later result adds materially-new info to the known event.
@@ -610,13 +603,27 @@ export async function runSearchTarget(params: {
       continue;
     }
 
-    // New, meaningful, not-yet-satisfied → alert.
+    // New, meaningful, not-yet-satisfied → alert. Event state (satisfiedAt =
+    // first alert, alertCount) is stamped onto the alerting page's metadata —
+    // that's its durable home; persist.ts re-aggregates it next run.
     matches += 1;
     satisfied.add(eventKey);
-    if (!events.some(e => e.key === eventKey)) {
+    const nowIso = new Date().toISOString();
+    const existingEvent = events.find(e => e.key === eventKey);
+    const eventSatisfiedAt = existingEvent?.satisfiedAt ?? nowIso;
+    const eventAlertCount = (existingEvent?.alertCount ?? 0) + 1;
+    if (existingEvent) {
+      existingEvent.satisfiedAt = eventSatisfiedAt;
+      existingEvent.alertCount = eventAlertCount;
+    } else {
       // Newest first: the resolver only sees the first ~20 candidates, and an
       // event minted earlier in this same run must be visible to later results.
-      events.unshift({ key: eventKey, label: eventLabel });
+      events.unshift({
+        key: eventKey,
+        label: eventLabel,
+        satisfiedAt: eventSatisfiedAt,
+        alertCount: eventAlertCount,
+      });
     }
     sources.push({
       url: c.url,
@@ -629,7 +636,18 @@ export async function runSearchTarget(params: {
       url: canonical,
       urlHash: hashMonitorUrl(canonical),
       status: "alert",
-      metadata: eventMeta,
+      metadata: {
+        ...eventMeta,
+        eventSatisfiedAt,
+        eventAlertCount,
+        eventLastAlertAt: nowIso,
+      },
+      judgment: {
+        meaningful: true,
+        confidence: "high",
+        reason: verdict.rationale,
+        meaningfulChanges: [],
+      },
     });
   }
 
