@@ -48,25 +48,27 @@ const monitorDomainSchema = z
     "Domain must be a valid hostname without protocol or path",
   );
 
-const searchTargetSchema = z
-  .strictObject({
-    id: z.string().uuid().optional(),
-    type: z.literal("search"),
-    queries: z.array(z.string().min(1).max(256)).min(1).max(10),
-    searchWindow: z
-      .enum(["5m", "15m", "1h", "6h", "24h", "7d"])
-      .optional()
-      .default("24h"),
-    alertMode: z
-      .enum(["first_match", "every_new_result", "material_dev"])
-      .optional()
-      .default("first_match"),
-    includeDomains: z.array(monitorDomainSchema).max(50).optional(),
-    excludeDomains: z.array(monitorDomainSchema).max(50).optional(),
-    recheckAfter: z.enum(["1h", "6h", "24h", "7d"]).optional(),
-    maxResults: z.number().int().min(1).max(50).optional().default(10),
-    scrapeOptions: scrapeOptionsSchema,
-  });
+const searchTargetSchema = z.strictObject({
+  id: z.string().uuid().optional(),
+  type: z.literal("search"),
+  queries: z.array(z.string().min(1).max(256)).min(1).max(10),
+  searchWindow: z
+    .enum(["5m", "15m", "1h", "6h", "24h", "7d"])
+    .optional()
+    .default("24h"),
+  alertMode: z
+    .enum(["first_match", "every_new_result", "material_dev"])
+    .optional()
+    .default("first_match"),
+  // "deep" scrapes + judges routed pages (extract tier); "standard" judges
+  // from SERP snippets only — no page fetches, the cheap tier.
+  depth: z.enum(["standard", "deep"]).optional().default("deep"),
+  includeDomains: z.array(monitorDomainSchema).max(50).optional(),
+  excludeDomains: z.array(monitorDomainSchema).max(50).optional(),
+  recheckAfter: z.enum(["1h", "6h", "24h", "7d"]).optional(),
+  maxResults: z.number().int().min(1).max(50).optional().default(10),
+  scrapeOptions: scrapeOptionsSchema,
+});
 
 const monitorTargetSchema = z.union([
   scrapeTargetSchema,

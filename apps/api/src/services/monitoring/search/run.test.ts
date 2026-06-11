@@ -22,6 +22,13 @@ jest.mock("./llm", () => ({
   summarizeRun: (...a: unknown[]) => summarizeRunMock(...a),
   judgeMaterialDevelopment: (...a: unknown[]) => materialDevMock(...a),
 }));
+// These tests exercise the core pipeline with the optional LLM stages (router,
+// skeptic, criteria enrichment, snippet judge) gated off — the no-Gemini-key
+// configuration. run-defenses.test.ts covers the stages-on wiring.
+jest.mock("./tuning", () => ({
+  hasGeminiKey: () => false,
+  googleProviderOptions: () => ({}),
+}));
 
 import { runSearchTarget, type KnownPage } from "./run";
 
@@ -564,13 +571,27 @@ describe("domain scoping", () => {
 
   it("excluded hosts returned by the provider are dropped before judging", async () => {
     setSearchResults([
-      { url: "https://www.pinterest.com/pin/1", title: "pin", description: "x" },
-      { url: "https://boards.pinterest.com/pin/2", title: "pin", description: "x" },
-      { url: "https://news.com/openai", title: "OpenAI files S-1", description: "x" },
+      {
+        url: "https://www.pinterest.com/pin/1",
+        title: "pin",
+        description: "x",
+      },
+      {
+        url: "https://boards.pinterest.com/pin/2",
+        title: "pin",
+        description: "x",
+      },
+      {
+        url: "https://news.com/openai",
+        title: "OpenAI files S-1",
+        description: "x",
+      },
     ]);
     setVerdictsByUrl({ "https://news.com/openai": verdict() });
     const out = await run({
-      target: { excludeDomains: ["pinterest.com"] } as Partial<typeof baseTarget>,
+      target: { excludeDomains: ["pinterest.com"] } as Partial<
+        typeof baseTarget
+      >,
     });
     expect(out.resultCount).toBe(1);
     expect(out.sources.map(s => s.url)).toEqual(["https://news.com/openai"]);
@@ -583,7 +604,9 @@ describe("domain scoping", () => {
     ]);
     setVerdictsByUrl({ "https://notpinterest.com/a": verdict() });
     const out = await run({
-      target: { excludeDomains: ["pinterest.com"] } as Partial<typeof baseTarget>,
+      target: { excludeDomains: ["pinterest.com"] } as Partial<
+        typeof baseTarget
+      >,
     });
     expect(out.resultCount).toBe(1);
   });

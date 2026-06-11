@@ -8,19 +8,39 @@ import { CostTracking } from "../../../lib/cost-tracking";
 import { hashMonitorUrl } from "../store";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
 import {
+  applyVerdictDefenses,
   buildJudgePrompt,
   freshnessFromDate,
   parseVerdict,
+  stripJudgeMetaClaims,
   verdictJsonSchema,
   verdictToDecision,
   windowToMs,
+  type SearchVerdict,
 } from "./judge";
 import {
   judgeMaterialDevelopment,
+  judgeSnippets,
   resolveEvent,
+  reviewAlert,
+  routeSearchResults,
   summarizeRun,
   type KnownEvent,
+  type RouteDecision,
+  type SkepticVerdict,
+  type SnippetVerdict,
 } from "./llm";
+import {
+  compileGoalCriteria,
+  compileGoalCriteriaWithLlm,
+  type GoalCriteria,
+} from "./criteria";
+import {
+  verifyAlertCandidate,
+  type VerificationResult,
+  type VerifyEvidence,
+} from "./verify";
+import { hasGeminiKey } from "./tuning";
 
 // Unified schedule/window step → Firecrawl tbs window.
 function windowToTbs(window: string): string {
@@ -32,7 +52,7 @@ function windowToTbs(window: string): string {
 // Exclude wins over include (Exa/Parallel semantics). The -site: operators in
 // the scoped query are advisory — not every search provider honors them — so
 // the blocklist is also enforced here on the returned results.
-export function isExcludedDomain(
+function isExcludedDomain(
   url: string,
   excludeDomains: string[] | undefined,
 ): boolean {
@@ -44,7 +64,10 @@ export function isExcludedDomain(
     return false;
   }
   return excludeDomains.some(domain => {
-    const normalized = domain.trim().toLowerCase().replace(/^www\./, "");
+    const normalized = domain
+      .trim()
+      .toLowerCase()
+      .replace(/^www\./, "");
     return (
       normalized.length > 0 &&
       (host === normalized || host.endsWith(`.${normalized}`))
@@ -63,6 +86,10 @@ type SearchTargetInput = {
   // this window, even if the SERP snippet is unchanged — catches content updates SERP text misses.
   recheckAfter?: string;
   maxResults: number;
+  // "deep" (default) scrapes + judges routed pages; "standard" judges from SERP
+  // snippets in one batched call — no page fetches, the cheap tier. Standard
+  // requires a Gemini key; without one it falls back to deep behavior.
+  depth?: "standard" | "deep";
 };
 
 export type KnownPage = {
@@ -132,8 +159,12 @@ export async function runSearchTarget(params: {
 
   // 1. Search each query; flatten + dedup by canonical URL within this run.
   const seenThisRun = new Set<string>();
-  const candidates: Array<{ url: string; title: string; description: string }> =
-    [];
+  const candidates: Array<{
+    url: string;
+    title: string;
+    description: string;
+    query: string;
+  }> = [];
   for (const query of target.queries) {
     // Scope to domains the same way the v2 search API does (site:/-site: operators).
     const { query: scopedQuery } = buildSearchQuery(query, undefined, {
@@ -156,13 +187,118 @@ export async function runSearchTarget(params: {
         url: r.url,
         title: r.title,
         description: r.description,
+        query,
       });
     }
   }
   resultCount = candidates.length;
 
+  const llmStagesAvailable = hasGeminiKey();
+  const depth: "standard" | "deep" =
+    target.depth === "standard" && llmStagesAvailable ? "standard" : "deep";
+
+  // Criteria artifact for the verifier + skeptic. Deterministic compile is
+  // free and always available; the LLM enrichment (aliases, competitors, owned
+  // hosts) fails safe back to deterministic. Compiled per run — cheap on a
+  // thinking-suppressed flash-class model; persistence keyed to goalVersion is
+  // a follow-up optimization, not a correctness need.
+  let criteria: GoalCriteria = compileGoalCriteria({
+    goal,
+    subject,
+    goalVersion,
+  });
+  if (llmStagesAvailable) {
+    try {
+      criteria = await compileGoalCriteriaWithLlm({
+        goal,
+        subject,
+        queries: target.queries,
+        goalVersion,
+      });
+    } catch (error) {
+      logger.warn(
+        "search monitor criteria compile failed, keeping deterministic",
+        {
+          error,
+        },
+      );
+    }
+  }
+
+  // Route which candidates are worth scrape/judge spend (deep mode). The LLM
+  // router fails open to deterministic top-K — the pre-port behavior.
+  let selected = candidates.slice(0, target.maxResults);
+  if (depth === "deep" && llmStagesAvailable && candidates.length > 0) {
+    try {
+      const decisions = await routeSearchResults({
+        goal,
+        subject,
+        searchWindow: target.searchWindow,
+        maxResults: target.maxResults,
+        candidates: candidates.map((c, i) => ({
+          id: `result_${i + 1}`,
+          query: c.query,
+          title: c.title,
+          url: c.url,
+          snippet: c.description,
+        })),
+      });
+      const byId = new Map<string, RouteDecision>(
+        decisions.map(d => [d.id, d]),
+      );
+      const routed = candidates
+        .map((c, i) => ({ c, routing: byId.get(`result_${i + 1}`) }))
+        .filter(r => r.routing?.decision === "scrape")
+        .sort((a, b) => (b.routing?.priority ?? 0) - (a.routing?.priority ?? 0))
+        .map(r => r.c);
+      selected = routed.slice(0, target.maxResults);
+    } catch (error) {
+      logger.warn("search monitor router failed open to top-K", { error });
+    }
+  }
+
+  // Standard depth: one batched snippet-judge call for the whole selection —
+  // no page fetches. Verdicts keyed by canonical URL for the loop below.
+  const snippetVerdicts = new Map<string, SearchVerdict>();
+  if (depth === "standard" && selected.length > 0) {
+    try {
+      const verdicts = await judgeSnippets({
+        goal,
+        subject,
+        searchWindow: target.searchWindow,
+        candidates: selected.map((c, i) => ({
+          id: `result_${i + 1}`,
+          query: c.query,
+          title: c.title,
+          url: c.url,
+          snippet: c.description,
+        })),
+      });
+      const byId = new Map<string, SnippetVerdict>(
+        verdicts.map(v => [v.id, v]),
+      );
+      selected.forEach((c, i) => {
+        const v = byId.get(`result_${i + 1}`);
+        if (v) {
+          snippetVerdicts.set(canonicalizeUrl(c.url), {
+            relevant: v.relevant,
+            alertAction: v.alertAction,
+            freshness: v.freshness,
+            sourceQuality: v.sourceQuality,
+            concept: v.concept,
+            rationale: v.rationale,
+          });
+        }
+      });
+    } catch (error) {
+      logger.warn("search monitor snippet judge failed; results skipped", {
+        error,
+      });
+    }
+  }
+
   // 2. Per candidate: dedup → (judge if new/changed) → decide → event-resolve.
-  for (const c of candidates.slice(0, target.maxResults)) {
+  for (const c of selected) {
     const canonical = canonicalizeUrl(c.url);
     const fingerprint = stableSerpFingerprint({
       url: c.url,
@@ -212,52 +348,77 @@ export async function runSearchTarget(params: {
       continue;
     }
 
-    // Judge in-scrape via the json format; verdict returns on document.json.
-    let res;
-    try {
-      res = await scrapeURL(
-        "search-monitor;" + uuidv7(),
-        c.url,
-        scrapeOptions.parse({
-          formats: [
-            {
-              type: "json",
-              schema: verdictJsonSchema,
-              prompt: buildJudgePrompt(goal, subject, target.searchWindow),
-            },
-          ],
-          timeout: 20000,
-        }),
-        { teamId, zeroDataRetention: params.zeroDataRetention },
-        new CostTracking(),
-      );
-    } catch (error) {
-      logger.warn("search monitor scrape threw", { url: c.url, error });
-      skipped += 1;
-      sources.push({ url: c.url, title: c.title, status: "skipped" });
-      continue;
+    // Judge: deep scrapes the page (verdict returns on document.json, markdown
+    // kept for the verifier); standard reads the batched snippet verdict.
+    let verdict: SearchVerdict | null = null;
+    let pageText = "";
+    let pageMetadata: Record<string, unknown> | null = null;
+    let realDate: string | null = null;
+    if (depth === "standard") {
+      verdict = snippetVerdicts.get(canonical) ?? null;
+      if (!verdict) {
+        skipped += 1;
+        sources.push({ url: c.url, title: c.title, status: "skipped" });
+        continue;
+      }
+      pagesChecked += 1;
+    } else {
+      let res;
+      try {
+        res = await scrapeURL(
+          "search-monitor;" + uuidv7(),
+          c.url,
+          scrapeOptions.parse({
+            formats: [
+              { type: "markdown" },
+              {
+                type: "json",
+                schema: verdictJsonSchema,
+                prompt: buildJudgePrompt(goal, subject, target.searchWindow),
+              },
+            ],
+            timeout: 20000,
+          }),
+          { teamId, zeroDataRetention: params.zeroDataRetention },
+          new CostTracking(),
+        );
+      } catch (error) {
+        logger.warn("search monitor scrape threw", { url: c.url, error });
+        skipped += 1;
+        sources.push({ url: c.url, title: c.title, status: "skipped" });
+        continue;
+      }
+
+      if (!res.success) {
+        logger.warn("search monitor scrape failed", { url: c.url });
+        skipped += 1;
+        sources.push({ url: c.url, title: c.title, status: "skipped" });
+        continue;
+      }
+      pagesChecked += 1;
+
+      verdict = parseVerdict(res.document.json);
+      if (!verdict) {
+        skipped += 1;
+        sources.push({ url: c.url, title: c.title, status: "skipped" });
+        continue;
+      }
+      pageText = res.document.markdown ?? "";
+      pageMetadata = (res.document.metadata ?? null) as Record<
+        string,
+        unknown
+      > | null;
+      realDate =
+        res.document.metadata?.publishedTime ??
+        res.document.metadata?.modifiedTime ??
+        null;
     }
 
-    if (!res.success) {
-      logger.warn("search monitor scrape failed", { url: c.url });
-      skipped += 1;
-      sources.push({ url: c.url, title: c.title, status: "skipped" });
-      continue;
-    }
-    pagesChecked += 1;
-
-    const verdict = parseVerdict(res.document.json);
-    if (!verdict) {
-      skipped += 1;
-      sources.push({ url: c.url, title: c.title, status: "skipped" });
-      continue;
-    }
+    // Mechanical defense: a verdict whose rationale negates its own booleans is
+    // corrected before anything downstream consumes it.
+    verdict = applyVerdictDefenses(verdict);
 
     // Prefer a real publish date over the LLM's freshness guess (freshness is an alert veto).
-    const realDate =
-      res.document.metadata?.publishedTime ??
-      res.document.metadata?.modifiedTime ??
-      null;
     const dateFreshness = freshnessFromDate(
       realDate,
       target.searchWindow,
@@ -266,8 +427,67 @@ export async function runSearchTarget(params: {
     const effectiveVerdict = dateFreshness
       ? { ...verdict, freshness: dateFreshness }
       : verdict;
+    // Downstream stages (verifier, skeptic, resolver) must see page facts, not
+    // the judge grading itself.
+    const strippedRationale = stripJudgeMetaClaims(effectiveVerdict.rationale);
 
-    const decision = verdictToDecision(effectiveVerdict);
+    let decision = verdictToDecision(effectiveVerdict);
+
+    // Alert boundary, stage 1 — deterministic verification against the compiled
+    // criteria. Downgrade-only (notify → watch), fail-open on unknown shapes.
+    let verification: VerificationResult | null = null;
+    if (decision === "notify") {
+      const evidence: VerifyEvidence = {
+        url: c.url,
+        titleText: c.title,
+        claimText: strippedRationale,
+        pageText,
+        metadata: pageMetadata,
+      };
+      const result = verifyAlertCandidate({
+        criteria,
+        concept: effectiveVerdict.concept,
+        evidence,
+      });
+      verification = result;
+      if (!result.pass) {
+        decision = "watch";
+        logger.info("search monitor alert downgraded by verifier", {
+          url: c.url,
+          failures: result.failures,
+        });
+      }
+    }
+
+    // Alert boundary, stage 2 — adversarial skeptic. Runs only on surviving
+    // notify candidates (cost bounded by the alert rate); fails OPEN so a
+    // skeptic outage can't silently drop real alerts.
+    if (decision === "notify" && llmStagesAvailable) {
+      try {
+        const skeptic: SkepticVerdict = await reviewAlert({
+          goal,
+          subject,
+          criteria,
+          result: {
+            title: c.title,
+            url: c.url,
+            snippet: c.description,
+            concept: effectiveVerdict.concept,
+            judgeAnswer: strippedRationale,
+          },
+        });
+        if (skeptic.refuted) {
+          decision = "watch";
+          logger.info("search monitor alert refuted by skeptic", {
+            url: c.url,
+            failureMode: skeptic.failureMode,
+            reason: skeptic.reason,
+          });
+        }
+      } catch (error) {
+        logger.warn("search monitor skeptic failed open", { error });
+      }
+    }
     const baseMeta = {
       fingerprint,
       goalVersion,
@@ -278,6 +498,7 @@ export async function runSearchTarget(params: {
       sourceQuality: effectiveVerdict.sourceQuality,
       concept: effectiveVerdict.concept,
       rationale: effectiveVerdict.rationale,
+      ...(verification && !verification.pass ? { verification } : {}),
     };
 
     if (decision === "ignore") {
@@ -312,17 +533,31 @@ export async function runSearchTarget(params: {
     }
 
     // notify → resolve the real-world event against the known events (small list, handed straight
-    // to the LLM). Matches reuse the existing stable key; new events mint one.
-    const resolution = await resolveEvent({
-      goal,
-      subject,
-      result: {
-        title: c.title,
-        url: c.url,
-        evidence: effectiveVerdict.rationale,
-      },
-      candidates: events,
-    });
+    // to the LLM). Matches reuse the existing stable key; new events mint one. Resolver failure
+    // fails open to a new event: a possible duplicate alert beats a silently dropped one.
+    let resolution;
+    try {
+      resolution = await resolveEvent({
+        goal,
+        subject,
+        result: {
+          title: c.title,
+          url: c.url,
+          evidence: strippedRationale,
+        },
+        candidates: events,
+      });
+    } catch (error) {
+      logger.warn("search monitor event resolver failed open to new event", {
+        error,
+      });
+      resolution = {
+        matchedKey: null,
+        isNew: true,
+        label: effectiveVerdict.concept,
+        reason: "resolver_failed",
+      };
+    }
     const matched =
       resolution.matchedKey &&
       events.find(e => e.key === resolution.matchedKey);
@@ -340,13 +575,20 @@ export async function runSearchTarget(params: {
       if (target.alertMode === "first_match") {
         alreadySatisfied = true;
       } else if (target.alertMode === "material_dev") {
-        const dev = await judgeMaterialDevelopment({
-          goal,
-          subject,
-          eventLabel,
-          result: { title: c.title, evidence: effectiveVerdict.rationale },
-        });
-        alreadySatisfied = !dev.material;
+        // Fails CLOSED: an unjudgeable "material development" stays suppressed —
+        // re-alerting an already-alerted event on an LLM outage is the worse error.
+        try {
+          const dev = await judgeMaterialDevelopment({
+            goal,
+            subject,
+            eventLabel,
+            result: { title: c.title, evidence: strippedRationale },
+          });
+          alreadySatisfied = !dev.material;
+        } catch (error) {
+          logger.warn("search monitor material judge failed closed", { error });
+          alreadySatisfied = true;
+        }
       }
     }
     const eventMeta = { ...baseMeta, eventKey, eventLabel };
@@ -397,18 +639,26 @@ export async function runSearchTarget(params: {
 
   let summary = "";
   if (matches > 0) {
-    const out = await summarizeRun({
-      goal,
-      subject,
-      evidence: sources
-        .filter(s => s.status === "alert")
-        .map(s => ({
-          title: s.title,
-          url: s.url,
-          rationale: s.rationale ?? "",
-        })),
-    });
-    summary = out.summary;
+    // Summarizer failure must not fail the run — fall back to a counting summary.
+    try {
+      const out = await summarizeRun({
+        goal,
+        subject,
+        evidence: sources
+          .filter(s => s.status === "alert")
+          .map(s => ({
+            title: s.title,
+            url: s.url,
+            rationale: s.rationale ?? "",
+          })),
+      });
+      summary = out.summary;
+    } catch (error) {
+      logger.warn("search monitor summarizer failed; using fallback summary", {
+        error,
+      });
+      summary = `${matches} new result${matches === 1 ? "" : "s"} matched the monitor goal.`;
+    }
   }
 
   return {

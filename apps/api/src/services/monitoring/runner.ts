@@ -1002,6 +1002,7 @@ async function runMonitorSearchTarget(params: {
       excludeDomains: target.excludeDomains,
       recheckAfter: target.recheckAfter,
       maxResults: target.maxResults,
+      depth: target.depth,
     },
     goalVersion,
     knownPages,

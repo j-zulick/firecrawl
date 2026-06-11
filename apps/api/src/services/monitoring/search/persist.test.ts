@@ -109,7 +109,12 @@ describe("reconstructKnownState", () => {
   it("orders events most-recently-seen first (resolver window holds active stories)", () => {
     const page = (url: string, eventKey: string, updated_at: string) => ({
       url,
-      metadata: { fingerprint: "f", goalVersion: "gv1", eventKey, eventLabel: eventKey },
+      metadata: {
+        fingerprint: "f",
+        goalVersion: "gv1",
+        eventKey,
+        eventLabel: eventKey,
+      },
       updated_at,
     });
     const { knownEvents } = reconstructKnownState(

@@ -112,7 +112,9 @@ export function freshnessFromDate(
   return nowMs - t <= window ? "fresh" : "stale";
 }
 
-// "alert" only when relevant, fresh, trusted-enough, and the judge asked to alert.
+// "alert" only when relevant, fresh, trusted-enough, concept-labeled, and the
+// judge asked to alert. A notify without a concept can't be event-deduped, so
+// it would re-alert forever — the POC requires the full field set for notify.
 export function verdictToDecision(
   v: SearchVerdict,
 ): "notify" | "watch" | "ignore" {
@@ -121,5 +123,110 @@ export function verdictToDecision(
   if (v.freshness !== "fresh") return "watch";
   if (v.sourceQuality === "unverified" || v.sourceQuality === "unclear")
     return "watch";
+  if (!v.concept.trim()) return "watch";
   return "notify";
+}
+
+// ── Verdict defenses (ported from the POC's assessment.js) ──────────────────
+// The judge's own prose is evidence for downstream stages (event resolver,
+// verifier, skeptic). Two failure modes need mechanical correction before any
+// of that runs: (1) the verdict's boolean contradicts its rationale, and
+// (2) the rationale is self-referential meta-claims ("aligns with the monitor
+// goal") instead of page facts.
+
+// Does the rationale text negate the verdict? Returns the corrected stance:
+// "no" (evidence absent → not relevant), "unclear" (insufficient evidence →
+// never alert), or "" (no contradiction).
+export function contradictionFromRationale(
+  rationale: string,
+): "no" | "unclear" | "" {
+  const value = String(rationale ?? "")
+    .trim()
+    .toLowerCase();
+  if (!value) return "";
+  if (
+    /\b(?:not enough|insufficient|too little)\s+evidence\s+(?:to|for)\s+(?:alert|notify|confirm|determine|judge)\b|\bnot\s+enough\s+to\s+(?:alert|notify|confirm|determine|judge)\b/.test(
+      value,
+    )
+  ) {
+    return "unclear";
+  }
+  if (
+    /\b(?:does not|doesn't|do not|don't|did not|cannot|can't|fails to|failed to)\s+(?:mention|name|state|show|provide|confirm|establish|include|identify|report|document)\b/.test(
+      value,
+    )
+  ) {
+    return "no";
+  }
+  if (
+    /\b(?:mention|subject|topic|brand|company|entity|monitored\s+subject)\b.{0,100}\b(?:is\s+)?(?:not\s+present|absent|missing|not\s+found)\b/.test(
+      value,
+    ) ||
+    /\b(?:not\s+present|absent|missing|not\s+found)\b.{0,80}\b(?:on|from|in)\s+(?:this|the)\s+(?:page|result|article|snippet|content)\b/.test(
+      value,
+    )
+  ) {
+    return "no";
+  }
+  if (
+    /\b(?:not|no)\s+(?:an?\s+|the\s+)?(?:direct|exact|matching|concrete|fresh|completed|substantive|user-visible|goal-satisfying)\s+(?:match|event|announcement|release|launch|approval|customer|contract|partnership|deal|acquisition|lawsuit|filing|outage|incident|route|concert|mention)\b/.test(
+      value,
+    )
+  ) {
+    return "no";
+  }
+  if (
+    /\b(?:only|just|merely)\s+(?:a\s+)?(?:related|tangential|adjacent|generic|background)\b/.test(
+      value,
+    )
+  ) {
+    return "no";
+  }
+  return "";
+}
+
+// Apply contradiction correction to a parsed verdict. A "no" contradiction
+// flips relevant off (→ ignore); an "unclear" one caps the action at watch.
+export function applyVerdictDefenses(v: SearchVerdict): SearchVerdict {
+  const contradiction = contradictionFromRationale(v.rationale);
+  if (contradiction === "no" && v.relevant) {
+    return { ...v, relevant: false, alertAction: "ignore" };
+  }
+  if (contradiction === "unclear" && v.alertAction === "alert") {
+    return { ...v, alertAction: "watch" };
+  }
+  return v;
+}
+
+// Strip the judge's self-referential meta-claims and field boilerplate from its
+// rationale so downstream stages see page facts, not the judge grading itself.
+// ("…which aligns with the monitor goal" is not evidence; LLM-side chrome like
+// "Related topics: …" is page furniture, not a story.)
+export function stripJudgeMetaClaims(text: string): string {
+  return String(text ?? "")
+    .replace(
+      /\b(?:related|more|recommended|popular|trending|latest|similar|also)\s+(?:topics|tags|categories|sections|links|stories|articles|posts|coverage)\s*:?\s*[^.?!]*(?:[.?!]|$)/gi,
+      " ",
+    )
+    .replace(
+      /[^.?!]*\b(?:align|aligns|aligned|fit|fits|matched?|matches|satisf(?:y|ies|ied))\s+with\s+(?:the\s+)?monitor\s+goal\b[^.?!]*(?:[.?!]|$)/gi,
+      " ",
+    )
+    .replace(
+      /[^.?!]*\b(?:fall|falls|fit|fits|align|aligns|belong|belongs|sit|sits)\s+(?:within|into|under|with)\s+(?:the\s+)?(?:requested\s+)?(?:scope|criteria|categor(?:y|ies)|topic\s+lanes?|lanes?|contexts?)\b[^.?!]*(?:[.?!]|$)/gi,
+      " ",
+    )
+    .replace(
+      /[^.?!]*\b(?:fit|fits|fitting|meet|meets|meeting|satisf(?:y|ies|ying|ied)|match(?:es|ing|ed)?)\s+(?:the\s+)?(?:criteria|requirements)\s+(?:for|of)\b[^.?!]*(?:[.?!]|$)/gi,
+      " ",
+    )
+    .replace(/\bSource quality\s+is\b[^.?!]*(?:[.?!]|$)/gi, " ")
+    .replace(/\bFreshness\s+is\b[^.?!]*(?:[.?!]|$)/gi, " ")
+    .replace(/\bReusable topic\s+is\b[^.?!]*(?:[.?!]|$)/gi, " ")
+    .replace(
+      /\bAlert action\s*:?\s*(?:alert|watch|ignore)\b[^.?!]*(?:[.?!]|$)/gi,
+      " ",
+    )
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
