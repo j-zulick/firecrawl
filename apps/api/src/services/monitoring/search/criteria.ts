@@ -3,7 +3,7 @@ import { z } from "zod";
 import { googleModel, googleProviderOptions } from "./tuning";
 
 const CRITERIA_MODEL =
-  process.env.SEARCH_MONITOR_CRITERIA_MODEL ?? "gemini-flash-latest";
+  process.env.SEARCH_MONITOR_CRITERIA_MODEL ?? "gemini-flash-lite-latest";
 
 export type GoalCriteria = {
   goalVersion: string;

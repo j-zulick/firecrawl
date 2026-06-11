@@ -4,11 +4,11 @@ import { googleModel, googleProviderOptions } from "./tuning";
 import type { GoalCriteria } from "./criteria";
 
 const EVENT_MODEL =
-  process.env.SEARCH_MONITOR_EVENT_MODEL ?? "gemini-3-flash-preview";
+  process.env.SEARCH_MONITOR_EVENT_MODEL ?? "gemini-flash-lite-latest";
 const SUMMARY_MODEL =
-  process.env.SEARCH_MONITOR_SUMMARY_MODEL ?? "gemini-3-flash-preview";
+  process.env.SEARCH_MONITOR_SUMMARY_MODEL ?? "gemini-flash-lite-latest";
 const SKEPTIC_MODEL =
-  process.env.SEARCH_MONITOR_SKEPTIC_MODEL ?? "gemini-3-flash-preview";
+  process.env.SEARCH_MONITOR_SKEPTIC_MODEL ?? "gemini-flash-lite-latest";
 const ROUTER_MODEL =
   process.env.SEARCH_MONITOR_ROUTER_MODEL ?? "gemini-3-flash-preview";
 
