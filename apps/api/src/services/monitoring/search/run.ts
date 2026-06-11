@@ -85,6 +85,9 @@ export type KnownPage = {
   goalVersion: string;
   lastCheckedAt?: string;
   lastStatus?: string;
+  // Full stored monitor_pages metadata, carried through so unchanged-page
+  // upserts don't wipe event/verdict fields persisted by earlier runs.
+  metadata?: Record<string, unknown>;
 };
 
 type SearchSource = {
@@ -349,7 +352,15 @@ export async function runSearchTarget(params: {
         url: canonical,
         urlHash: hashMonitorUrl(canonical),
         status: reusedStatus,
-        metadata: { fingerprint, goalVersion },
+        // Upserts replace the stored metadata wholesale, so spread the prior
+        // metadata to preserve event stamps (eventKey/eventLabel/...) that
+        // event reconstruction depends on.
+        metadata: {
+          ...(knownCurrent?.metadata ?? {}),
+          fingerprint,
+          goalVersion,
+          searchStatus: reusedStatus,
+        },
       });
       continue;
     }
@@ -485,7 +496,8 @@ export async function runSearchTarget(params: {
         url: canonical,
         urlHash: hashMonitorUrl(canonical),
         status: "ignored",
-        metadata: baseMeta,
+        scraped: depth === "deep",
+        metadata: { ...baseMeta, searchStatus: "ignored" },
       });
       continue;
     }
@@ -500,7 +512,8 @@ export async function runSearchTarget(params: {
         url: canonical,
         urlHash: hashMonitorUrl(canonical),
         status: "watching",
-        metadata: baseMeta,
+        scraped: depth === "deep",
+        metadata: { ...baseMeta, searchStatus: "watching" },
       });
       continue;
     }
@@ -569,7 +582,8 @@ export async function runSearchTarget(params: {
         url: canonical,
         urlHash: hashMonitorUrl(canonical),
         status: "already_seen",
-        metadata: eventMeta,
+        scraped: depth === "deep",
+        metadata: { ...eventMeta, searchStatus: "already_seen" },
       });
       continue;
     }
@@ -605,6 +619,7 @@ export async function runSearchTarget(params: {
       scraped: depth === "deep",
       metadata: {
         ...eventMeta,
+        searchStatus: "alert",
         eventSatisfiedAt,
         eventAlertCount,
         eventLastAlertAt: nowIso,

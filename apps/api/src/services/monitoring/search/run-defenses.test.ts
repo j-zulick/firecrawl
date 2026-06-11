@@ -164,6 +164,8 @@ describe("standard depth (snippet judging, no scrapes)", () => {
       "alert",
       "watching",
     ]);
+    // snippet-only judgments never bill a scrape
+    expect(result.pageUpserts.every(u => u.scraped === false)).toBe(true);
   });
 
   it("skips results the snippet judge failed to cover", async () => {

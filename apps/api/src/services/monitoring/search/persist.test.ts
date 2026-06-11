@@ -27,7 +27,66 @@ describe("reconstructKnownState", () => {
     expect(knownPages.get(canonicalizeUrl("https://example.com/a"))).toEqual({
       fingerprint: "fp1",
       goalVersion: "gv1",
+      metadata: { fingerprint: "fp1", goalVersion: "gv1" },
     });
+  });
+
+  it("yields the search-internal lastStatus from metadata.searchStatus", () => {
+    // last_status on monitor_pages stores the page-status mapping (alert→new),
+    // so the search-internal status must come from metadata.searchStatus.
+    const { knownPages } = reconstructKnownState(
+      [
+        {
+          url: "https://a.com/1",
+          metadata: {
+            fingerprint: "f1",
+            goalVersion: "gv1",
+            searchStatus: "alert",
+          },
+          updated_at: "2026-06-10T00:00:00Z",
+          last_status: "new",
+        },
+      ],
+      "gv1",
+    );
+    const known = knownPages.get(canonicalizeUrl("https://a.com/1"))!;
+    expect(known.lastStatus).toBe("alert");
+    expect(known.lastCheckedAt).toBe("2026-06-10T00:00:00Z");
+  });
+
+  it("falls back to last_status for legacy rows without metadata.searchStatus", () => {
+    const { knownPages } = reconstructKnownState(
+      [
+        {
+          url: "https://a.com/1",
+          metadata: { fingerprint: "f1", goalVersion: "gv1" },
+          last_status: "same",
+        },
+      ],
+      "gv1",
+    );
+    expect(knownPages.get(canonicalizeUrl("https://a.com/1"))!.lastStatus).toBe(
+      "same",
+    );
+  });
+
+  it("carries the full stored metadata through to KnownPage (reuse upserts need it)", () => {
+    const meta = {
+      fingerprint: "f1",
+      goalVersion: "gv1",
+      searchStatus: "alert",
+      eventKey: "evt-1",
+      eventLabel: "openai ipo",
+      eventSatisfiedAt: "2026-06-01T00:00:00Z",
+      eventAlertCount: 2,
+    };
+    const { knownPages } = reconstructKnownState(
+      [{ url: "https://a.com/1", metadata: meta }],
+      "gv1",
+    );
+    expect(
+      knownPages.get(canonicalizeUrl("https://a.com/1"))!.metadata,
+    ).toEqual(meta);
   });
 
   it("only includes events from the current goalVersion (goal change starts clean)", () => {

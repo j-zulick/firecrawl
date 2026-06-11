@@ -164,6 +164,89 @@ describe("runSearchTarget orchestration", () => {
     expect(out.matches).toBe(0);
   });
 
+  it("reuse upsert preserves prior event metadata (eventKey survives unchanged pages)", async () => {
+    setSearchResults([
+      {
+        url: "https://sec.gov/openai",
+        title: "OpenAI S-1",
+        description: "filing",
+      },
+    ]);
+    const canonical = canonicalizeUrl("https://sec.gov/openai");
+    const fingerprint = stableSerpFingerprint({
+      url: "https://sec.gov/openai",
+      title: "OpenAI S-1",
+      snippet: "filing",
+    });
+    const knownPages = new Map<string, KnownPage>([
+      [
+        canonical,
+        {
+          fingerprint,
+          goalVersion: "gv1",
+          lastStatus: "alert",
+          metadata: {
+            fingerprint,
+            goalVersion: "gv1",
+            searchStatus: "alert",
+            eventKey: "evt-1",
+            eventLabel: "OpenAI IPO",
+            eventSatisfiedAt: "2026-06-01T00:00:00Z",
+            eventAlertCount: 2,
+          },
+        },
+      ],
+    ]);
+
+    const out = await run({ knownPages });
+
+    expect(scrapeURLMock).not.toHaveBeenCalled();
+    expect(out.pageUpserts[0].status).toBe("already_seen");
+    expect(out.pageUpserts[0].metadata).toMatchObject({
+      eventKey: "evt-1",
+      eventLabel: "OpenAI IPO",
+      eventSatisfiedAt: "2026-06-01T00:00:00Z",
+      eventAlertCount: 2,
+      fingerprint,
+      goalVersion: "gv1",
+      searchStatus: "already_seen",
+    });
+  });
+
+  it("mirrors the search-internal status into metadata and marks deep judgments scraped", async () => {
+    setSearchResults([
+      {
+        url: "https://sec.gov/openai",
+        title: "OpenAI S-1",
+        description: "filing",
+      },
+      {
+        url: "https://old.com/openai",
+        title: "OpenAI old news",
+        description: "2019",
+      },
+      {
+        url: "https://spam.com/x",
+        title: "irrelevant",
+        description: "noise",
+      },
+    ]);
+    setVerdictsByUrl({
+      "https://sec.gov/openai": verdict(),
+      "https://old.com/openai": verdict({ alertAction: "watch" }),
+      "https://spam.com/x": verdict({ relevant: false }),
+    });
+
+    const out = await run();
+
+    const byStatus = (status: string) =>
+      out.pageUpserts.find(u => u.status === status)!;
+    for (const status of ["alert", "watching", "ignored"]) {
+      expect(byStatus(status).metadata.searchStatus).toBe(status);
+      expect(byStatus(status).scraped).toBe(true);
+    }
+  });
+
   it("re-evaluates a known page when the goalVersion changed (stale memory)", async () => {
     setSearchResults([
       {
@@ -226,6 +309,10 @@ describe("runSearchTarget orchestration", () => {
     expect(statuses).toContain("alert");
     expect(statuses).toContain("already_seen");
     expect(out.matches).toBe(1);
+    // the suppressed result was still deep-scraped and judged
+    const seen = out.pageUpserts.find(u => u.status === "already_seen")!;
+    expect(seen.scraped).toBe(true);
+    expect(seen.metadata.searchStatus).toBe("already_seen");
   });
 
   it("mints a stable opaque key for new events (not a label slug)", async () => {
