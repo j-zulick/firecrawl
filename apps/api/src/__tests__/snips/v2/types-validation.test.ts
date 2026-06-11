@@ -1394,6 +1394,42 @@ describe("V2 Types Validation", () => {
     });
   });
 
+  describe("monitor search target goal validation", () => {
+    const searchTargets = [
+      { type: "search" as const, queries: ["firecrawl launch"] },
+    ];
+
+    it("create rejects a search target without a goal", () => {
+      expect(() =>
+        createMonitorSchema.parse({
+          name: "Search monitor",
+          schedule: { text: "every 30 minutes" },
+          targets: searchTargets,
+        }),
+      ).toThrow("A search target requires a non-empty goal");
+    });
+
+    it("update accepts a patch adding a search target without restating the goal", () => {
+      // The monitor may already carry a goal; the controller validates the
+      // merged state.
+      const result = updateMonitorSchema.parse({ targets: searchTargets });
+      expect(result.targets).toHaveLength(1);
+    });
+
+    it("update rejects a patch that adds search targets while clearing the goal", () => {
+      for (const goal of [null, "", "   "]) {
+        expect(() =>
+          updateMonitorSchema.parse({ targets: searchTargets, goal }),
+        ).toThrow("A search target requires a non-empty goal");
+      }
+    });
+
+    it("update allows clearing the goal when the patch has no targets (merged state is checked in the controller)", () => {
+      const result = updateMonitorSchema.parse({ goal: null });
+      expect(result.goal).toBeNull();
+    });
+  });
+
   describe("Edge cases", () => {
     it("should handle URL without protocol (should add http://)", () => {
       const input = {
