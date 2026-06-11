@@ -188,13 +188,25 @@ export async function runSearchTarget(params: {
       knownCurrent.fingerprint !== fingerprint ||
       dueForRecheck;
 
-    // Already-seen + unchanged under the current goal → reuse, no scrape/judge/LLM.
+    // Known + unchanged under the current goal → reuse, no scrape/judge/LLM. The reused
+    // status carries the page's prior outcome forward: "already_seen" must mean "this
+    // alerted before" — a page that only ever watched/ignored repeats as such, otherwise
+    // the UI reports a prior alert that never happened (and flipping it to already_seen
+    // would also drop it out of the isLive recheck cadence above).
     if (!isNewOrChanged) {
-      sources.push({ url: c.url, title: c.title, status: "already_seen" });
+      const reusedStatus: SearchSource["status"] =
+        knownCurrent?.lastStatus === "alert" ||
+        knownCurrent?.lastStatus === "already_seen"
+          ? "already_seen"
+          : knownCurrent?.lastStatus === "ignored" ||
+              knownCurrent?.lastStatus === "skipped"
+            ? knownCurrent.lastStatus
+            : "watching";
+      sources.push({ url: c.url, title: c.title, status: reusedStatus });
       pageUpserts.push({
         url: canonical,
         urlHash: hashMonitorUrl(canonical),
-        status: "already_seen",
+        status: reusedStatus,
         metadata: { fingerprint, goalVersion },
       });
       continue;

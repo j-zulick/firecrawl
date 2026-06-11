@@ -154,12 +154,15 @@ describe("runSearchTarget orchestration", () => {
       snippet: "filing",
     });
     const knownPages = new Map<string, KnownPage>([
-      [canonical, { fingerprint, goalVersion: "gv1" }],
+      [canonical, { fingerprint, goalVersion: "gv1", lastStatus: "alert" }],
     ]);
 
     const out = await run({ knownPages });
 
+    // Reuse carries the prior outcome forward: this page alerted before, so the
+    // repeat is "already_seen". A page with no recorded prior alert must not be.
     expect(out.sources[0].status).toBe("already_seen");
+    expect(out.pageUpserts[0].status).toBe("already_seen");
     expect(scrapeURLMock).not.toHaveBeenCalled();
     expect(out.matches).toBe(0);
   });
@@ -446,7 +449,9 @@ describe("re-judge cadence", () => {
     ]);
     const out = await run({ target: { recheckAfter: "24h" }, knownPages });
     expect(scrapeURLMock).not.toHaveBeenCalled();
-    expect(out.sources[0].status).toBe("already_seen");
+    // A page that only ever watched repeats as watching — "already_seen" is
+    // reserved for pages that actually alerted on a prior run.
+    expect(out.sources[0].status).toBe("watching");
   });
 
   it("does NOT re-judge a non-live (ignored) page even when stale", async () => {
@@ -465,7 +470,7 @@ describe("re-judge cadence", () => {
     ]);
     const out = await run({ target: { recheckAfter: "24h" }, knownPages });
     expect(scrapeURLMock).not.toHaveBeenCalled();
-    expect(out.sources[0].status).toBe("already_seen");
+    expect(out.sources[0].status).toBe("ignored");
   });
 });
 
