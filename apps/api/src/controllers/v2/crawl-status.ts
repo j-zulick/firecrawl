@@ -267,7 +267,8 @@ export async function crawlStatusController(
       data: [],
       ...(createdAtMs && {
         createdAt: new Date(createdAtMs).toISOString(),
-        duration: Math.max(0, (Date.now() - createdAtMs) / 1000),
+        completedAt: new Date(createdAtMs).toISOString(),
+        duration: 0,
       }),
     });
   }

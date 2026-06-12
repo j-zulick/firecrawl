@@ -1452,6 +1452,7 @@ export type CrawlStatusResponse =
       creditsUsed: number;
       expiresAt: string;
       createdAt?: string;
+      completedAt?: string;
       duration?: number;
       data: Document[];
     };
