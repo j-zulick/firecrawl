@@ -108,6 +108,9 @@ const configSchema = z.object({
   CLICKHOUSE_ANALYTICS_URL: z.string().optional(),
   CLICKHOUSE_ANALYTICS_DATABASE: z.string().optional(),
 
+  // Search highlights (beta): semantic highlight model endpoint
+  HIGHLIGHT_MODEL_URL: z.string().optional(),
+
   // Fire Engine
   FIRE_ENGINE_BETA_URL: z.string().optional(),
   FIRE_ENGINE_STAGING_URL: z.string().optional(),
