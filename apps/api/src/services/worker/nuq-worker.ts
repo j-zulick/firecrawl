@@ -42,7 +42,8 @@ import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-f
   );
   app.get("/health", async (_, res) => {
     const pgHealthy = await nuqHealthCheck();
-    const fdbHealthy = !fdbQueueEnabled() || (await nuqFdbHealthCheck());
+    const fdbHealthy =
+      config.NUQ_BACKEND !== "fdb" || (await nuqFdbHealthCheck());
     if (pgHealthy && fdbHealthy) {
       res.status(200).send("OK");
     } else {
