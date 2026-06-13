@@ -25,6 +25,8 @@
     "worker:production": "node dist/src/services/queue-worker.js",
     "nuq-worker": "tsc-watch --onSuccess \"node dist/src/services/worker/nuq-worker.js\"",
     "nuq-worker:production": "node dist/src/services/worker/nuq-worker.js",
+    "nuq-fdb-worker": "tsc-watch --onSuccess \"node dist/src/services/worker/nuq-fdb-worker.js\"",
+    "nuq-fdb-worker:production": "node dist/src/services/worker/nuq-fdb-worker.js",
     "nuq-prefetch-worker": "tsc-watch --onSuccess \"node dist/src/services/worker/nuq-prefetch-worker.js\"",
     "nuq-prefetch-worker:production": "node dist/src/services/worker/nuq-prefetch-worker.js",
     "nuq-reconciler-worker": "tsc-watch --onSuccess \"node dist/src/services/worker/nuq-reconciler-worker.js\"",
