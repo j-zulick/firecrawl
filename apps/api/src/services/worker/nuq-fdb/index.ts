@@ -3,7 +3,7 @@ import { NuQFdbQueue, QueueFullError, normalizeOwnerId } from "./queue";
 import { NuQFdbJobGroup } from "./groups";
 import { NuqFdbSweeper } from "./sweeper";
 import { NuqFdbExternalSlots } from "./slots";
-import { isFdbConfigured, nuqFdbHealthCheck } from "./client";
+import { isFdbConfigured, nuqFdbHealthCheck, withFdbTimeout } from "./client";
 
 export { NuQFdbQueue, QueueFullError, normalizeOwnerId } from "./queue";
 export type {
@@ -16,7 +16,7 @@ export { NuQFdbJobGroup } from "./groups";
 export type { NuQFdbJobGroupInstance, NuQFdbGroupStatus } from "./groups";
 export { NuqFdbSweeper } from "./sweeper";
 export { NuqFdbExternalSlots } from "./slots";
-export { isFdbConfigured, nuqFdbHealthCheck } from "./client";
+export { isFdbConfigured, nuqFdbHealthCheck, withFdbTimeout } from "./client";
 
 export const scrapeQueueFdb = new NuQFdbQueue<ScrapeJobData, any>("scrape", {
   hasGroups: true,

@@ -30,7 +30,11 @@ import {
   resolveJobBackend,
   scrapeQueue as routedScrapeQueue,
 } from "./worker/nuq-router";
-import { scrapeQueueFdb } from "./worker/nuq-fdb";
+import {
+  nuqFdbHealthCheck,
+  scrapeQueueFdb,
+  withFdbTimeout,
+} from "./worker/nuq-fdb";
 import { serializeTraceContext } from "../lib/otel-tracer";
 import { isSelfHosted } from "../lib/deployment";
 import { MONITOR_CHECK_STALE_TIMEOUT_MS } from "./monitoring/stale";
@@ -303,6 +307,8 @@ async function addScrapeJobFdb(
 }
 
 // parity with the PG path: notify when the backlog exceeds the team limit
+const FDB_OPTIONAL_COUNT_TIMEOUT_MS = 500;
+
 async function maybeSendConcurrencyNotificationFdb(
   teamId: string,
   teamLimit: number | null,
@@ -310,7 +316,11 @@ async function maybeSendConcurrencyNotificationFdb(
 ) {
   if (teamLimit === null || crawlOrBatch) return;
   try {
-    const pending = await scrapeQueueFdb.getTeamPendingCount(teamId);
+    if (!(await nuqFdbHealthCheck(FDB_OPTIONAL_COUNT_TIMEOUT_MS))) return;
+    const pending = await withFdbTimeout(
+      scrapeQueueFdb.getTeamPendingCount(teamId),
+      FDB_OPTIONAL_COUNT_TIMEOUT_MS,
+    );
     if (pending <= teamLimit) return;
     const shouldSendNotification =
       await shouldSendConcurrencyLimitNotification(teamId);

@@ -3,8 +3,14 @@ import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import { logger as _logger } from "../../../lib/logger";
 import { Request, Response } from "express";
-import { scrapeQueueFdb } from "../../../services/worker/nuq-fdb";
+import {
+  nuqFdbHealthCheck,
+  scrapeQueueFdb,
+  withFdbTimeout,
+} from "../../../services/worker/nuq-fdb";
 import { fdbQueueEnabled } from "../../../services/worker/nuq-router";
+
+const FDB_OPTIONAL_COUNT_TIMEOUT_MS = 500;
 
 async function cclog() {
   const logger = _logger.child({
@@ -41,12 +47,17 @@ async function cclog() {
 
   if (fdbQueueEnabled()) {
     try {
-      const fdbCounts = await scrapeQueueFdb.getTeamActiveCounts();
-      for (const [teamId, concurrency] of fdbCounts) {
-        concurrencyByTeam.set(
-          teamId,
-          (concurrencyByTeam.get(teamId) ?? 0) + concurrency,
+      if (await nuqFdbHealthCheck(FDB_OPTIONAL_COUNT_TIMEOUT_MS)) {
+        const fdbCounts = await withFdbTimeout(
+          scrapeQueueFdb.getTeamActiveCounts(),
+          FDB_OPTIONAL_COUNT_TIMEOUT_MS,
         );
+        for (const [teamId, concurrency] of fdbCounts) {
+          concurrencyByTeam.set(
+            teamId,
+            (concurrencyByTeam.get(teamId) ?? 0) + concurrency,
+          );
+        }
       }
     } catch (e) {
       logger.warn("Error reading FDB concurrency", { error: e });

@@ -2,8 +2,9 @@ import {
   pushConcurrencyLimitActiveJob,
   removeConcurrencyLimitActiveJob,
 } from "../../lib/concurrency-limit";
+import { config } from "../../config";
 import { isFdbTeam } from "./nuq-router";
-import { externalSlotsFdb } from "./nuq-fdb";
+import { externalSlotsFdb, nuqFdbHealthCheck, withFdbTimeout } from "./nuq-fdb";
 import { isSelfHosted } from "../../lib/deployment";
 import { ScrapeJobTimeoutError, TransportableError } from "../../lib/error";
 import { logger as _logger } from "../../lib/logger";
@@ -32,8 +33,21 @@ const semaphoreHoldDuration = new Histogram({
 const { scripts, runScript, ensure } = nuqRedis;
 
 const SEMAPHORE_TTL = 30 * 1000;
+const FDB_OPTIONAL_SLOT_TIMEOUT_MS = 500;
 type MirrorBackend = "pg" | "fdb";
 type MirrorState = { backend?: MirrorBackend; touched: Set<MirrorBackend> };
+
+function fdbForced(): boolean {
+  return config.NUQ_BACKEND === "fdb";
+}
+
+async function optionalFdbSlot<T>(operation: () => Promise<T>): Promise<T> {
+  if (fdbForced()) return operation();
+  if (!(await nuqFdbHealthCheck(FDB_OPTIONAL_SLOT_TIMEOUT_MS))) {
+    throw new Error("FDB health check failed before optional slot operation");
+  }
+  return await withFdbTimeout(operation(), FDB_OPTIONAL_SLOT_TIMEOUT_MS);
+}
 
 async function acquire(
   teamId: string,
@@ -206,7 +220,9 @@ function startHeartbeat(
 // PG-backed teams mirror into the Redis ZSET; FDB-backed teams consume an
 // external slot on the FDB ledger.
 async function resolveMirrorBackend(teamId: string): Promise<MirrorBackend> {
-  return (await isFdbTeam(teamId)) ? "fdb" : "pg";
+  if (!(await isFdbTeam(teamId))) return "pg";
+  if (fdbForced()) return "fdb";
+  return (await nuqFdbHealthCheck(FDB_OPTIONAL_SLOT_TIMEOUT_MS)) ? "fdb" : "pg";
 }
 
 async function releaseMirrorBackend(
@@ -215,7 +231,7 @@ async function releaseMirrorBackend(
   backend: MirrorBackend,
 ): Promise<void> {
   if (backend === "fdb") {
-    await externalSlotsFdb.release(teamId, holderId);
+    await optionalFdbSlot(() => externalSlotsFdb.release(teamId, holderId));
   } else {
     await removeConcurrencyLimitActiveJob(teamId, holderId);
   }
@@ -228,7 +244,9 @@ async function mirrorSlotAcquire(
 ): Promise<void> {
   const backend = await resolveMirrorBackend(teamId);
   if (backend === "fdb") {
-    await externalSlotsFdb.acquire(teamId, holderId, 60 * 1000);
+    await optionalFdbSlot(() =>
+      externalSlotsFdb.acquire(teamId, holderId, 60 * 1000),
+    );
   } else {
     await pushConcurrencyLimitActiveJob(teamId, holderId, 60 * 1000);
   }

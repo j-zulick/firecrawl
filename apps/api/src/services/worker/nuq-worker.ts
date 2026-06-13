@@ -10,7 +10,7 @@ import {
   scrapeQueue as scrapeQueuePg,
 } from "./nuq";
 import { scrapeQueue, fdbQueueEnabled } from "./nuq-router";
-import { getNuqFdbSweeper } from "./nuq-fdb";
+import { getNuqFdbSweeper, nuqFdbHealthCheck } from "./nuq-fdb";
 import { jobDurationSeconds } from "../../lib/job-metrics";
 import { register } from "prom-client";
 import Express from "express";
@@ -41,7 +41,9 @@ import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-f
       .send(nuqGetLocalMetrics() + "\n" + (await register.metrics())),
   );
   app.get("/health", async (_, res) => {
-    if (await nuqHealthCheck()) {
+    const pgHealthy = await nuqHealthCheck();
+    const fdbHealthy = !fdbQueueEnabled() || (await nuqFdbHealthCheck());
+    if (pgHealthy && fdbHealthy) {
       res.status(200).send("OK");
     } else {
       res.status(500).send("Not OK");
