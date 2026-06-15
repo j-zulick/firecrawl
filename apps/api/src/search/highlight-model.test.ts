@@ -63,8 +63,9 @@ describe("generateHighlightsBatch", () => {
       query: "q1",
       lines: ["a one", "b one"],
     });
-    // Threshold + budget are always sent so the cutoff matches the trained format.
+    // Threshold + top_k + budget are always sent so the cutoff matches the trained format.
     expect(typeof sent.requests[0].threshold).toBe("number");
+    expect(typeof sent.requests[0].top_k).toBe("number");
     expect(typeof sent.requests[0].max_highlight_chars).toBe("number");
   });
 

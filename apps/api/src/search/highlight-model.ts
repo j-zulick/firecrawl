@@ -14,6 +14,8 @@ import { config } from "../config";
 // Experimental score cutoff for keeping a span, tuned against the line-span
 // format the model was trained on.
 const HIGHLIGHT_THRESHOLD = 0.08;
+// Cap on how many spans to keep per page after thresholding (highest-scoring).
+const HIGHLIGHT_TOP_K = 12;
 // Character budget per page; the service keeps the highest-scoring spans until
 // the budget is reached (measured on raw span text).
 const MAX_HIGHLIGHT_CHARS = 800;
@@ -80,6 +82,7 @@ export async function generateHighlightsBatch(
           query: item.query,
           lines: item.lines,
           threshold: HIGHLIGHT_THRESHOLD,
+          top_k: HIGHLIGHT_TOP_K,
           max_highlight_chars: MAX_HIGHLIGHT_CHARS,
         })),
       }),
