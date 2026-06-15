@@ -13,8 +13,8 @@ import { redisRateLimitClient } from "../services/rate-limiter";
 // the `keyless/consume` canonical log are the real abuse controls.
 
 // No defaults: the keyless free tier is OFF unless BOTH limits are configured.
-export const KEYLESS_REQUESTS_PER_DAY = config.KEYLESS_REQUESTS_PER_DAY;
-export const KEYLESS_CREDITS_PER_DAY = config.KEYLESS_CREDITS_PER_DAY;
+const KEYLESS_REQUESTS_PER_DAY = config.KEYLESS_REQUESTS_PER_DAY;
+const KEYLESS_CREDITS_PER_DAY = config.KEYLESS_CREDITS_PER_DAY;
 
 // The tier is "configured" when BOTH limits are set — even to 0. Unset means the
 // feature is off (callers get a plain Unauthorized); 0 means it's on but the
@@ -31,13 +31,13 @@ const DAY_SECONDS = 86400;
 // Keyless teams reuse the `preview_` prefix so billing (autumn `isPreviewTeam`)
 // and GCS persistence are skipped automatically, with a dedicated infix so the
 // IP can be recovered when charging credits after a request completes.
-export const KEYLESS_TEAM_PREFIX = "preview_keyless_";
+const KEYLESS_TEAM_PREFIX = "preview_keyless_";
 
 export function keylessTeamId(ip: string): string {
   return `${KEYLESS_TEAM_PREFIX}${ip}`;
 }
 
-export function keylessIpFromTeamId(teamId: string): string | null {
+function keylessIpFromTeamId(teamId: string): string | null {
   return teamId.startsWith(KEYLESS_TEAM_PREFIX)
     ? teamId.slice(KEYLESS_TEAM_PREFIX.length)
     : null;
@@ -72,16 +72,14 @@ export function keylessTeamUuid(
  * is treated as IPv4.
  */
 export function isKeylessIpEligible(ip: string): boolean {
-  const normalized = ip.startsWith("::ffff:")
-    ? ip.slice("::ffff:".length)
-    : ip;
+  const normalized = ip.startsWith("::ffff:") ? ip.slice("::ffff:".length) : ip;
   return isIPv4(normalized);
 }
 
 const requestsKey = (ip: string) => `keyless_requests:${ip}`;
 const creditsKey = (ip: string) => `keyless_credits:${ip}`;
 
-export type KeylessConsumeResult = {
+type KeylessConsumeResult = {
   ok: boolean;
   reason?: "requests" | "credits";
   requestsUsed: number;
