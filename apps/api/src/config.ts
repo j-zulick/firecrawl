@@ -139,8 +139,11 @@ const configSchema = z.object({
   CLICKHOUSE_ANALYTICS_URL: z.string().optional(),
   CLICKHOUSE_ANALYTICS_DATABASE: z.string().optional(),
 
-  // Search highlights (beta): semantic highlight model endpoint
+  // Search highlights (beta): query-highlights model service. URL is the base
+  // (e.g. https://firecrawl--query-highlights.modal.run); TOKEN is the bearer
+  // token sent on every request.
   HIGHLIGHT_MODEL_URL: z.string().optional(),
+  HIGHLIGHT_MODEL_TOKEN: z.string().optional(),
 
   // Fire Engine
   FIRE_ENGINE_BETA_URL: z.string().optional(),
