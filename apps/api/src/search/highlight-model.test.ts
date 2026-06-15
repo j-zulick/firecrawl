@@ -38,18 +38,15 @@ describe("generateHighlightsBatch", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("posts every page to /batch_highlight with the bearer token", async () => {
+  it("posts each page's spans as `lines` to /batch_highlight with the bearer token", async () => {
     const fetchMock = mockFetchOnce({
-      results: [
-        { pruned_markdown: "Highlight A\n" },
-        { pruned_markdown: "Highlight B\n" },
-      ],
+      results: [{ highlights: [] }, { highlights: [] }],
     });
 
     await generateHighlightsBatch(
       [
-        { query: "q1", markdown: "page one" },
-        { query: "q2", markdown: "page two" },
+        { query: "q1", lines: ["a one", "b one"] },
+        { query: "q2", lines: ["a two"] },
       ],
       { logger },
     );
@@ -62,53 +59,73 @@ describe("generateHighlightsBatch", () => {
 
     const sent = JSON.parse(init.body);
     expect(sent.requests).toHaveLength(2);
-    expect(sent.requests[0]).toMatchObject({ query: "q1", markdown: "page one" });
+    expect(sent.requests[0]).toMatchObject({
+      query: "q1",
+      lines: ["a one", "b one"],
+    });
     // Threshold + budget are always sent so the cutoff matches the trained format.
     expect(typeof sent.requests[0].threshold).toBe("number");
     expect(typeof sent.requests[0].max_highlight_chars).toBe("number");
   });
 
-  it("maps pruned_markdown back to each item, trimmed, aligned by index", async () => {
+  it("returns the selected span indices per page, aligned by request order", async () => {
     mockFetchOnce({
       results: [
-        { pruned_markdown: "First page highlight\n" },
-        { pruned_markdown: "Second page highlight\nmore\n" },
+        {
+          highlights: [
+            { index: 0, score: 0.9 },
+            { index: 2, score: 0.5 },
+          ],
+        },
+        { highlights: [{ index: 1, score: 0.7 }] },
       ],
     });
 
     const out = await generateHighlightsBatch(
       [
-        { query: "q1", markdown: "a" },
-        { query: "q2", markdown: "b" },
+        { query: "q1", lines: ["l0", "l1", "l2"] },
+        { query: "q2", lines: ["l0", "l1"] },
       ],
       { logger },
     );
 
-    expect(out).toEqual([
-      "First page highlight",
-      "Second page highlight\nmore",
-    ]);
+    expect(out).toEqual([[0, 2], [1]]);
   });
 
-  it("returns null for empty / missing pruned_markdown entries", async () => {
-    mockFetchOnce({
-      results: [
-        { pruned_markdown: "" },
-        { pruned_markdown: "   \n" },
-        {},
-      ],
-    });
+  it("returns an empty array for a page with no selected spans", async () => {
+    mockFetchOnce({ results: [{ highlights: [] }, {}] });
 
     const out = await generateHighlightsBatch(
       [
-        { query: "q", markdown: "a" },
-        { query: "q", markdown: "b" },
-        { query: "q", markdown: "c" },
+        { query: "q", lines: ["a"] },
+        { query: "q", lines: ["b"] },
       ],
       { logger },
     );
 
-    expect(out).toEqual([null, null, null]);
+    expect(out).toEqual([[], []]);
+  });
+
+  it("ignores malformed (non-integer / missing) indices", async () => {
+    mockFetchOnce({
+      results: [
+        {
+          highlights: [
+            { index: 1, score: 0.9 },
+            { score: 0.8 }, // missing index
+            { index: 2.5, score: 0.7 }, // non-integer
+            { index: 3, score: 0.6 },
+          ],
+        },
+      ],
+    });
+
+    const out = await generateHighlightsBatch(
+      [{ query: "q", lines: ["a", "b", "c", "d"] }],
+      { logger },
+    );
+
+    expect(out).toEqual([[1, 3]]);
   });
 
   it("falls back to nulls (one per item) when the service errors", async () => {
@@ -116,8 +133,8 @@ describe("generateHighlightsBatch", () => {
 
     const out = await generateHighlightsBatch(
       [
-        { query: "q", markdown: "a" },
-        { query: "q", markdown: "b" },
+        { query: "q", lines: ["a"] },
+        { query: "q", lines: ["b"] },
       ],
       { logger },
     );
