@@ -11,6 +11,7 @@ import { parseMarkdown } from "../lib/html-to-markdown";
 import { htmlTransform } from "../scraper/scrapeURL/lib/removeUnwantedElements";
 import type { ScrapeOptions } from "../controllers/v2/types";
 import { generateHighlightsBatch } from "./highlight-model";
+import { selectHighlightIndices } from "./highlight-budget";
 import {
   parseMarkdownToSentences,
   assembleAnswer,
@@ -186,15 +187,19 @@ export async function applySearchHighlights(
   const indexHits = hits.length;
 
   // Score every hit in one batch call (candidate spans as explicit `lines`),
-  // then reassemble each page's selected span indices into a snippet.
+  // then for each page: budget the scored spans (neighbor + group policy) and
+  // reassemble the chosen indices into a snippet.
   let replaced = 0;
   if (indexHits > 0) {
-    const perPageIndices = await generateHighlightsBatch(
+    const perPageSpans = await generateHighlightsBatch(
       hits.map(h => ({ query, lines: h.sentences.map(s => s.text) })),
       { logger },
     );
-    perPageIndices.forEach((indices, i) => {
-      if (!indices || indices.length === 0) return;
+    perPageSpans.forEach((spans, i) => {
+      if (!spans || spans.length === 0) return;
+      const lineLengths = hits[i].sentences.map(s => s.text.length);
+      const indices = selectHighlightIndices(lineLengths, spans);
+      if (indices.length === 0) return;
       const snippet = assembleAnswer(hits[i].sentences, indices);
       if (snippet.trim() !== "") {
         hits[i].apply(snippet);

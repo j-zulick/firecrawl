@@ -63,13 +63,14 @@ describe("generateHighlightsBatch", () => {
       query: "q1",
       lines: ["a one", "b one"],
     });
-    // Threshold + top_k + budget are always sent so the cutoff matches the trained format.
+    // Threshold + top_k are sent; char budgeting is done client-side (group-aware),
+    // so max_highlight_chars is intentionally NOT sent.
     expect(typeof sent.requests[0].threshold).toBe("number");
     expect(typeof sent.requests[0].top_k).toBe("number");
-    expect(typeof sent.requests[0].max_highlight_chars).toBe("number");
+    expect(sent.requests[0].max_highlight_chars).toBeUndefined();
   });
 
-  it("returns the selected span indices per page, aligned by request order", async () => {
+  it("returns the scored spans per page, aligned by request order", async () => {
     mockFetchOnce({
       results: [
         {
@@ -90,7 +91,13 @@ describe("generateHighlightsBatch", () => {
       { logger },
     );
 
-    expect(out).toEqual([[0, 2], [1]]);
+    expect(out).toEqual([
+      [
+        { index: 0, score: 0.9 },
+        { index: 2, score: 0.5 },
+      ],
+      [{ index: 1, score: 0.7 }],
+    ]);
   });
 
   it("returns an empty array for a page with no selected spans", async () => {
@@ -107,14 +114,14 @@ describe("generateHighlightsBatch", () => {
     expect(out).toEqual([[], []]);
   });
 
-  it("ignores malformed (non-integer / missing) indices", async () => {
+  it("ignores malformed (non-integer index / missing score) spans", async () => {
     mockFetchOnce({
       results: [
         {
           highlights: [
             { index: 1, score: 0.9 },
-            { score: 0.8 }, // missing index
-            { index: 2.5, score: 0.7 }, // non-integer
+            { index: 4 }, // missing score
+            { index: 2.5, score: 0.7 }, // non-integer index
             { index: 3, score: 0.6 },
           ],
         },
@@ -122,11 +129,16 @@ describe("generateHighlightsBatch", () => {
     });
 
     const out = await generateHighlightsBatch(
-      [{ query: "q", lines: ["a", "b", "c", "d"] }],
+      [{ query: "q", lines: ["a", "b", "c", "d", "e"] }],
       { logger },
     );
 
-    expect(out).toEqual([[1, 3]]);
+    expect(out).toEqual([
+      [
+        { index: 1, score: 0.9 },
+        { index: 3, score: 0.6 },
+      ],
+    ]);
   });
 
   it("falls back to nulls (one per item) when the service errors", async () => {
