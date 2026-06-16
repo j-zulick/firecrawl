@@ -62,7 +62,7 @@ const searchTargetSchema = z.strictObject({
     .default("first_match"),
   // "deep" scrapes + judges routed pages (extract tier); "standard" judges
   // from SERP snippets only — no page fetches, the cheap tier.
-  depth: z.enum(["standard", "deep"]).optional().default("deep"),
+  depth: z.enum(["raw", "standard", "deep"]).optional().default("deep"),
   includeDomains: z.array(monitorDomainSchema).max(50).optional(),
   excludeDomains: z.array(monitorDomainSchema).max(50).optional(),
   recheckAfter: z.enum(["1h", "6h", "24h", "7d"]).optional(),

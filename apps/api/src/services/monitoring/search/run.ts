@@ -77,7 +77,7 @@ type SearchTargetInput = {
   excludeDomains?: string[];
   recheckAfter?: string;
   maxResults: number;
-  depth?: "standard" | "deep";
+  depth?: "raw" | "standard" | "deep";
 };
 
 export type KnownPage = {
@@ -153,12 +153,13 @@ export async function runSearchTarget(params: {
   let skipped = 0;
   let matches = 0;
 
-  const seenThisRun = new Set<string>();
+  const seenThisRun = new Map<string, number>();
   const candidates: Array<{
     url: string;
     title: string;
     description: string;
     query: string;
+    matchedQueries: string[];
   }> = [];
   for (const query of target.queries) {
     const { query: scopedQuery } = buildSearchQuery(query, undefined, {
@@ -175,28 +176,42 @@ export async function runSearchTarget(params: {
       if (!r.url) continue;
       if (isExcludedDomain(r.url, target.excludeDomains)) continue;
       const canonical = canonicalizeUrl(r.url);
-      if (seenThisRun.has(canonical)) continue;
-      seenThisRun.add(canonical);
+      const existingIdx = seenThisRun.get(canonical);
+      if (existingIdx !== undefined) {
+        // Same URL surfaced by another query this run — record the extra query
+        // (mirrors the POC's queryHits) instead of dropping it.
+        const existing = candidates[existingIdx];
+        if (!existing.matchedQueries.includes(query)) {
+          existing.matchedQueries.push(query);
+        }
+        continue;
+      }
+      seenThisRun.set(canonical, candidates.length);
       candidates.push({
         url: r.url,
         title: r.title,
         description: r.description,
         query,
+        matchedQueries: [query],
       });
     }
   }
   resultCount = candidates.length;
 
   const llmStagesAvailable = hasGeminiKey();
-  const depth: "standard" | "deep" =
-    target.depth === "standard" && llmStagesAvailable ? "standard" : "deep";
+  const depth: "raw" | "standard" | "deep" =
+    target.depth === "raw"
+      ? "raw"
+      : target.depth === "standard" && llmStagesAvailable
+        ? "standard"
+        : "deep";
 
   let criteria: GoalCriteria = compileGoalCriteria({
     goal,
     subject,
     goalVersion,
   });
-  if (llmStagesAvailable) {
+  if (llmStagesAvailable && depth !== "raw") {
     try {
       criteria = await compileGoalCriteriaWithLlm({
         goal,
@@ -365,6 +380,79 @@ export async function runSearchTarget(params: {
       continue;
     }
 
+    if (depth === "raw") {
+      const nowIso = new Date().toISOString();
+      const rawKey = canonical;
+      const alreadyAlerted =
+        satisfied.has(rawKey) && target.alertMode !== "every_new_result";
+      const rawMeta = {
+        fingerprint,
+        goalVersion,
+        searchStatus: alreadyAlerted ? "already_seen" : "alert",
+        eventKey: rawKey,
+        eventLabel: c.title || canonical,
+        query: c.query,
+        matchedQueries: c.matchedQueries,
+      };
+      if (alreadyAlerted) {
+        sources.push({
+          url: c.url,
+          title: c.title,
+          status: "already_seen",
+          eventKey: rawKey,
+        });
+        pageUpserts.push({
+          url: canonical,
+          urlHash: hashMonitorUrl(canonical),
+          status: "already_seen",
+          scraped: false,
+          metadata: rawMeta,
+        });
+        continue;
+      }
+      matches += 1;
+      satisfied.add(rawKey);
+      const existingEvent = events.find(e => e.key === rawKey);
+      const eventSatisfiedAt = existingEvent?.satisfiedAt ?? nowIso;
+      const eventAlertCount = (existingEvent?.alertCount ?? 0) + 1;
+      if (existingEvent) {
+        existingEvent.satisfiedAt = eventSatisfiedAt;
+        existingEvent.alertCount = eventAlertCount;
+      } else {
+        events.unshift({
+          key: rawKey,
+          label: c.title || canonical,
+          satisfiedAt: eventSatisfiedAt,
+          alertCount: eventAlertCount,
+        });
+      }
+      sources.push({
+        url: c.url,
+        title: c.title,
+        status: "alert",
+        eventKey: rawKey,
+      });
+      pageUpserts.push({
+        url: canonical,
+        urlHash: hashMonitorUrl(canonical),
+        status: "alert",
+        scraped: false,
+        metadata: {
+          ...rawMeta,
+          eventSatisfiedAt,
+          eventAlertCount,
+          eventLastAlertAt: nowIso,
+        },
+        judgment: {
+          meaningful: true,
+          confidence: "low",
+          reason: `New search result for "${c.query}"`,
+          meaningfulChanges: [],
+        },
+      });
+      continue;
+    }
+
     let verdict: SearchVerdict | null = null;
     let pageText = "";
     let realDate: string | null = null;
@@ -482,6 +570,7 @@ export async function runSearchTarget(params: {
       publishedAt: realDate,
       concept: verdict.concept,
       rationale: verdict.rationale,
+      matchedQueries: c.matchedQueries,
       ...(verification && !verification.pass ? { verification } : {}),
     };
 
@@ -638,7 +727,9 @@ export async function runSearchTarget(params: {
   ).length;
 
   let summary = "";
-  if (matches > 0) {
+  if (matches > 0 && depth === "raw") {
+    summary = `${matches} new search result${matches === 1 ? "" : "s"} matched the monitor queries.`;
+  } else if (matches > 0) {
     try {
       const out = await summarizeRun({
         goal,
