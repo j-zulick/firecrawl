@@ -1,6 +1,6 @@
 import { v7 as uuidv7 } from "uuid";
 import type { Logger } from "winston";
-import { search } from "../../../search";
+import { search } from "../../../search/v2";
 import { buildSearchQuery } from "../../../lib/search-query-builder";
 import { scrapeURL } from "../../../scraper/scrapeURL";
 import { scrapeOptions } from "../../../controllers/v2/types";
@@ -166,12 +166,14 @@ export async function runSearchTarget(params: {
       includeDomains: target.includeDomains,
       excludeDomains: target.excludeDomains,
     });
-    const results = await search({
+    const response = await search({
       query: scopedQuery,
       logger,
       num_results: target.maxResults,
       tbs,
     });
+    // v2 search returns { web, news, images }; the monitor consumes web hits.
+    const results = response.web ?? [];
     for (const r of results) {
       if (!r.url) continue;
       if (isExcludedDomain(r.url, target.excludeDomains)) continue;
