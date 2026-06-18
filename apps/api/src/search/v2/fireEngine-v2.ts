@@ -49,6 +49,11 @@ export async function fire_engine_search_v2(
     page?: number;
     type?: SearchResultType | SearchResultType[];
     enterprise?: ("default" | "anon" | "zdr")[];
+    // Opt-in observability hook. Invoked with `true` when the request ultimately
+    // failed (HTTP error / rate-limit / exhausted retries / thrown) and produced
+    // no usable response. Stays undefined-safe for existing callers that don't
+    // care to distinguish a real failure from a genuinely-empty result set.
+    onFailure?: (reason: string) => void;
   },
   abort?: AbortSignal,
 ): Promise<SearchV2Response> {
@@ -80,6 +85,16 @@ export async function fire_engine_search_v2(
     (response): response is SearchV2Response => response !== null,
     abort,
   );
+
+  // `attemptRequest` returns null on any non-OK HTTP response (e.g. 429
+  // rate-limit) or thrown error, and `executeWithRetry` only returns null once
+  // every attempt has been exhausted. A null here therefore means a real
+  // failure — NOT a successful search that legitimately found nothing (which
+  // comes back as a non-null `{}` / `{ web: [] }`). Surface that to opt-in
+  // callers so a swallowed rate-limit isn't mistaken for "no results".
+  if (result === null) {
+    options.onFailure?.("fire_engine_search request failed after retries");
+  }
 
   return result ?? {};
 }

@@ -47,6 +47,77 @@ function windowToTbs(window: string): string {
   return "qdr:w";
 }
 
+// Bounded retry for monitor searches. The upstream provider rate-limits
+// near-simultaneous identical queries and can answer with either a thrown/HTTP
+// error OR a clean HTTP 200 carrying an empty body — both of which otherwise
+// look identical to a genuinely-empty result and silently drop real hits.
+//
+// Strategy: retry on a hard failure (search() reported it via onFailure) AND on
+// an empty result, with exponential backoff + jitter so we don't hammer the
+// rate-limiter. A genuinely-empty query simply runs out of attempts and returns
+// empty cleanly (no failure flagged), so its correct "no results" behavior is
+// preserved. `failed` is only true when the LAST attempt was a real failure,
+// letting the caller mark the check degraded instead of confidently empty.
+const SEARCH_RETRY_BACKOFF_MS = [400, 1200] as const;
+
+async function searchWithRetry(
+  args: Parameters<typeof search>[0],
+  logger: Logger,
+): Promise<{ response: Awaited<ReturnType<typeof search>>; failed: boolean }> {
+  const maxAttempts = SEARCH_RETRY_BACKOFF_MS.length + 1;
+  let lastResponse: Awaited<ReturnType<typeof search>> = {};
+  let lastFailureReason: string | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    let failureReason: string | null = null;
+    const response = await search({
+      ...args,
+      onFailure: reason => {
+        failureReason = reason;
+      },
+    });
+    lastResponse = response;
+    lastFailureReason = failureReason;
+
+    const hasResults = (response.web?.length ?? 0) > 0;
+    // Success: real results came back. Return immediately.
+    if (hasResults) return { response, failed: false };
+
+    // No results. Could be a genuine empty OR a transient rate-limit (error or
+    // empty 200). Retry with backoff while attempts remain.
+    const isLastAttempt = attempt === maxAttempts - 1;
+    if (!isLastAttempt) {
+      const base = SEARCH_RETRY_BACKOFF_MS[attempt];
+      const jitter = Math.floor(Math.random() * 250);
+      logger.info("search monitor query empty/failed; retrying", {
+        query: args.query,
+        attempt: attempt + 1,
+        failureReason,
+        backoffMs: base + jitter,
+      });
+      await new Promise(r => setTimeout(r, base + jitter));
+      continue;
+    }
+  }
+
+  // Exhausted attempts. If the final attempt was a real provider failure,
+  // surface it loudly (degraded) — this is the false-negative we must not hide.
+  // If it was just empty with no failure, it is a legitimate no-results.
+  if (lastFailureReason) {
+    logger.warn(
+      "search monitor query failed after retries; reporting degraded (NOT clean no-results)",
+      {
+        query: args.query,
+        reason: lastFailureReason,
+        attempts: maxAttempts,
+      },
+    );
+    return { response: lastResponse, failed: true };
+  }
+
+  return { response: lastResponse, failed: false };
+}
+
 function isExcludedDomain(
   url: string,
   excludeDomains: string[] | undefined,
@@ -111,6 +182,12 @@ type SearchTargetRunResult = {
   meaningful: number;
   matches: number;
   summary: string;
+  // True when one or more of this target's queries failed at the search
+  // provider (rate-limit / HTTP error) after retries, rather than legitimately
+  // returning zero results. Callers should treat an empty run with
+  // searchDegraded=true as "could not confirm" rather than a confident
+  // "no new results", so a swallowed rate-limit isn't a silent false negative.
+  searchDegraded: boolean;
   sources: SearchSource[];
   // Credits attributable to the search() calls themselves (≈2 per 10 results),
   // matching executeSearch's search-credit math.
@@ -169,6 +246,11 @@ export async function runSearchTarget(params: {
   const costTracking = new CostTracking();
   // Search calls bill ≈2 credits / 10 results, mirroring executeSearch().
   let searchResultsBilled = 0;
+  // Count of queries that ultimately FAILED at the provider (rate-limit / HTTP
+  // error) after retries, as opposed to legitimately returning zero results.
+  // Used to mark the run degraded so an empty check isn't reported as a
+  // confident "no changes" when it was really a swallowed search failure.
+  let searchFailures = 0;
 
   const seenThisRun = new Map<string, number>();
   const candidates: Array<{
@@ -183,12 +265,20 @@ export async function runSearchTarget(params: {
       includeDomains: target.includeDomains,
       excludeDomains: target.excludeDomains,
     });
-    const response = await search({
-      query: scopedQuery,
+    const { response, failed } = await searchWithRetry(
+      {
+        query: scopedQuery,
+        logger,
+        num_results: target.maxResults,
+        tbs,
+      },
       logger,
-      num_results: target.maxResults,
-      tbs,
-    });
+    );
+    if (failed) {
+      // A real provider failure (not a genuine empty). Record it so the run is
+      // reported as degraded rather than a clean "no changes" for this query.
+      searchFailures += 1;
+    }
     // v2 search returns { web, news, images }; the monitor consumes web hits.
     const results = response.web ?? [];
     // Bill the search call at the platform rate (executeSearch: ~2 credits / 10
@@ -807,6 +897,24 @@ export async function runSearchTarget(params: {
     }
   }
 
+  const searchDegraded = searchFailures > 0;
+  if (searchDegraded && matches === 0) {
+    // Don't let a swallowed provider failure masquerade as a clean no-results.
+    logger.warn(
+      "search monitor run is degraded: one or more queries failed at the provider after retries; results may be incomplete",
+      {
+        monitorId: params.monitor.id,
+        targetId: target.id,
+        failedQueries: searchFailures,
+        totalQueries: target.queries.length,
+      },
+    );
+    if (!summary) {
+      summary =
+        "Search provider was unavailable for one or more queries (rate-limited or errored after retries); results may be incomplete.";
+    }
+  }
+
   const isZDR = params.zeroDataRetention;
   const searchCredits =
     Math.ceil(searchResultsBilled / 10) * (isZDR ? 10 : 2);
@@ -821,6 +929,7 @@ export async function runSearchTarget(params: {
     meaningful,
     matches,
     summary,
+    searchDegraded,
     sources,
     searchCredits,
     llmCredits,

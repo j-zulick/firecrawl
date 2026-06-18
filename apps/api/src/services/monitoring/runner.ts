@@ -117,6 +117,11 @@ type MonitorTargetRun =
       resultCount?: number;
       matches?: number;
       summary?: string;
+      // True when a query failed at the search provider (rate-limit / HTTP
+      // error) after retries rather than legitimately returning no results.
+      // Persisted into target_results so an empty-but-degraded run is visible
+      // and not mistaken for a confident "no changes".
+      searchDegraded?: boolean;
     };
 
 function createMonitorTargetRun(target: MonitorTarget): MonitorTargetRun {
@@ -957,9 +962,16 @@ async function runMonitorSearchTarget(params: {
   resultCount: number;
   matches: number;
   summary: string;
+  searchDegraded: boolean;
 }> {
   if (params.target.type !== "search") {
-    return { pages: [], resultCount: 0, matches: 0, summary: "" };
+    return {
+      pages: [],
+      resultCount: 0,
+      matches: 0,
+      summary: "",
+      searchDegraded: false,
+    };
   }
   const { monitor, check, target } = params;
   const goalVersion = computeGoalVersion(monitor.goal, target.queries);
@@ -1087,6 +1099,7 @@ async function runMonitorSearchTarget(params: {
     resultCount: result.resultCount,
     matches: result.matches,
     summary: result.summary,
+    searchDegraded: result.searchDegraded,
   };
 }
 
@@ -1192,6 +1205,7 @@ export async function processMonitorCheckJob(
         targetRun.resultCount = searchResult.resultCount;
         targetRun.matches = searchResult.matches;
         targetRun.summary = searchResult.summary;
+        targetRun.searchDegraded = searchResult.searchDegraded;
       }
     }
 
