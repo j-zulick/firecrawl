@@ -69,7 +69,7 @@ const criteriaSchema = z.object({
   mustConcern: z
     .array(z.string())
     .describe(
-      "Single lowercase content words a matching story must plausibly concern. Derived from the goal's topic, not its phrasing. Matching is EXACT string comparison, so include inflection variants explicitly (e.g. release, releases, released, launch, launches, launched).",
+      "Single lowercase content words that name the goal's SPECIFIC topic/scope — the subject matter a matching story must actually be about, not just the broad field. Derived from the goal's topic, not its phrasing. For a goal like 'AI safety or alignment research', use the precise topic words (safety, alignment, interpretability, evaluation) rather than broad-field words (ai, research) that adjacent off-topic stories would also share. Matching is EXACT string comparison, so include inflection variants explicitly (e.g. release, releases, released, launch, launches, launched).",
     ),
   excludedSubjects: z
     .array(z.string())
