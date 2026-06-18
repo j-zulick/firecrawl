@@ -41,6 +41,13 @@ const REMOVED_PAGE_CREDITS = 0;
 const X_TWITTER_POSTPROCESSOR_CREDIT_BONUS = 29;
 const DEFAULT_CRAWL_LIMIT_FOR_ESTIMATE = 10000;
 const MONITOR_CHECK_PAGE_BATCH_SIZE = 1000;
+// Search monitors also bill the search() call (~2 credits / 10 results) and
+// every LLM/judge call at cost. The estimate adds a per-result LLM allowance so
+// the reserved credits roughly cover the new at-cost actuals (router + snippet
+// judge + skeptic + resolver + summarizer). Tuned to typical gemini-flash-lite
+// usage; the actual deduction is always the at-cost figure, never this estimate.
+const SEARCH_CREDITS_PER_TEN_RESULTS = 2;
+const SEARCH_LLM_CREDITS_PER_RESULT = 2;
 
 type MonitorCreditMetadata = {
   creditsUsed?: unknown;
@@ -144,14 +151,31 @@ function estimateTargetBaseCredits(target: MonitorTarget): number {
     return target.urls.length * creditsPerPage;
   }
   if (target.type === "search") {
-    if (target.depth === "standard") {
-      return Math.max(1, target.queries.length);
+    // The search() call bills ~2 credits / 10 results regardless of depth.
+    const searchCallCredits =
+      Math.ceil(Math.max(1, target.maxResults) / 10) *
+      SEARCH_CREDITS_PER_TEN_RESULTS *
+      Math.max(1, target.queries.length);
+    if (target.depth === "raw") {
+      // No scrape, no LLM — only the search call.
+      return searchCallCredits;
     }
+    // Every result may drive LLM/judge work billed at cost.
+    const llmCredits = target.maxResults * SEARCH_LLM_CREDITS_PER_RESULT;
+    if (target.depth === "standard") {
+      // Snippet-only: no per-result scrape, but LLM snippet judging still runs.
+      return (
+        searchCallCredits + Math.max(1, target.queries.length) + llmCredits
+      );
+    }
+    // Deep: each selected result is scraped with JSON extraction.
     return (
+      searchCallCredits +
+      llmCredits +
       target.maxResults *
-      estimateBaseCreditsPerPage({
-        formats: [{ type: "json" }],
-      } as MonitorTarget["scrapeOptions"])
+        estimateBaseCreditsPerPage({
+          formats: [{ type: "json" }],
+        } as MonitorTarget["scrapeOptions"])
     );
   }
 
@@ -265,6 +289,14 @@ export function calculateMonitorCheckActualCreditsFromPages(
 
   function judgeCreditsForPage(page: (typeof pages)[number]): number {
     if (page.judgment == null) {
+      return 0;
+    }
+
+    // Search-target pages bill all of their LLM/judge work at cost (folded into
+    // metadata.creditsUsed by the search runner), so the flat per-page judge
+    // credit would double-count them. Only scrape/crawl judge invocations get it.
+    const target = targetsById.get(page.target_id ?? "");
+    if (target?.type === "search") {
       return 0;
     }
 

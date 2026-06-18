@@ -2,6 +2,8 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { googleModel, googleProviderOptions } from "./tuning";
 import type { GoalCriteria } from "./criteria";
+import { recordLlmCall } from "./cost";
+import type { CostTracking } from "../../../lib/cost-tracking";
 
 const EVENT_MODEL =
   process.env.SEARCH_MONITOR_EVENT_MODEL ?? "gemini-flash-lite-latest";
@@ -38,8 +40,9 @@ export async function resolveEvent(params: {
   subject: string;
   result: { title: string; url: string; evidence: string };
   candidates: KnownEvent[];
+  costTracking?: CostTracking;
 }): Promise<EventResolution> {
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model: googleModel(EVENT_MODEL),
     schema: eventResolverSchema,
     system:
@@ -65,6 +68,15 @@ export async function resolveEvent(params: {
     ...googleProviderOptions(),
   });
 
+  if (params.costTracking) {
+    recordLlmCall({
+      costTracking: params.costTracking,
+      model: EVENT_MODEL,
+      usage,
+      stage: "resolveEvent",
+    });
+  }
+
   return {
     matchedKey: object.matchedKey ?? null,
     isNew: object.matchedKey ? false : object.isNew !== false,
@@ -83,8 +95,9 @@ export async function judgeMaterialDevelopment(params: {
   subject: string;
   eventLabel: string;
   result: { title: string; evidence: string };
+  costTracking?: CostTracking;
 }): Promise<{ material: boolean; reason: string }> {
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model: googleModel(EVENT_MODEL),
     schema: materialDevSchema,
     system:
@@ -104,6 +117,14 @@ export async function judgeMaterialDevelopment(params: {
     temperature: 0,
     ...googleProviderOptions(),
   });
+  if (params.costTracking) {
+    recordLlmCall({
+      costTracking: params.costTracking,
+      model: EVENT_MODEL,
+      usage,
+      stage: "judgeMaterialDevelopment",
+    });
+  }
   return { material: object.material === true, reason: object.reason ?? "" };
 }
 
@@ -135,8 +156,9 @@ export async function reviewAlert(params: {
     concept: string;
     judgeAnswer: string;
   };
+  costTracking?: CostTracking;
 }): Promise<SkepticVerdict> {
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model: googleModel(SKEPTIC_MODEL),
     schema: alertSkepticSchema,
     system:
@@ -164,6 +186,14 @@ export async function reviewAlert(params: {
     temperature: 0,
     ...googleProviderOptions(),
   });
+  if (params.costTracking) {
+    recordLlmCall({
+      costTracking: params.costTracking,
+      model: SKEPTIC_MODEL,
+      usage,
+      stage: "reviewAlert",
+    });
+  }
   return object;
 }
 
@@ -197,9 +227,10 @@ export async function routeSearchResults(params: {
     url: string;
     snippet: string;
   }>;
+  costTracking?: CostTracking;
 }): Promise<RouteDecision[]> {
   const candidates = params.candidates.slice(0, 50);
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model: googleModel(ROUTER_MODEL),
     schema: routerSchema,
     system:
@@ -219,6 +250,14 @@ export async function routeSearchResults(params: {
     temperature: 0,
     ...googleProviderOptions(),
   });
+  if (params.costTracking) {
+    recordLlmCall({
+      costTracking: params.costTracking,
+      model: ROUTER_MODEL,
+      usage,
+      stage: "routeSearchResults",
+    });
+  }
   const validIds = new Set(candidates.map(c => c.id));
   return object.decisions
     .filter(d => validIds.has(d.id))
@@ -257,9 +296,10 @@ export async function judgeSnippets(params: {
     url: string;
     snippet: string;
   }>;
+  costTracking?: CostTracking;
 }): Promise<SnippetVerdict[]> {
   if (params.candidates.length === 0) return [];
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model: googleModel(ROUTER_MODEL),
     schema: snippetVerdictSchema,
     system:
@@ -272,6 +312,14 @@ export async function judgeSnippets(params: {
     temperature: 0,
     ...googleProviderOptions(),
   });
+  if (params.costTracking) {
+    recordLlmCall({
+      costTracking: params.costTracking,
+      model: ROUTER_MODEL,
+      usage,
+      stage: "judgeSnippets",
+    });
+  }
   const validIds = new Set(params.candidates.map(c => c.id));
   return object.verdicts.filter(v => validIds.has(v.id));
 }
@@ -285,8 +333,9 @@ export async function summarizeRun(params: {
   goal: string;
   subject: string;
   evidence: Array<{ title: string; url: string; rationale: string }>;
+  costTracking?: CostTracking;
 }): Promise<{ label: string; summary: string }> {
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model: googleModel(SUMMARY_MODEL),
     schema: runSummarySchema,
     system:
@@ -302,6 +351,15 @@ export async function summarizeRun(params: {
     temperature: 0,
     ...googleProviderOptions(),
   });
+
+  if (params.costTracking) {
+    recordLlmCall({
+      costTracking: params.costTracking,
+      model: SUMMARY_MODEL,
+      usage,
+      stage: "summarizeRun",
+    });
+  }
 
   return { label: object.label, summary: object.summary };
 }

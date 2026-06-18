@@ -1,6 +1,8 @@
 import { generateObject } from "ai";
 import { z } from "zod";
 import { googleModel, googleProviderOptions } from "./tuning";
+import { recordLlmCall } from "./cost";
+import type { CostTracking } from "../../../lib/cost-tracking";
 
 const CRITERIA_MODEL =
   process.env.SEARCH_MONITOR_CRITERIA_MODEL ?? "gemini-flash-lite-latest";
@@ -135,9 +137,10 @@ export async function compileGoalCriteriaWithLlm(params: {
   subject: string;
   queries: string[];
   goalVersion: string;
+  costTracking?: CostTracking;
 }): Promise<GoalCriteria> {
   const deterministic = compileGoalCriteria(params);
-  const { object } = await generateObject({
+  const { object, usage } = await generateObject({
     model: googleModel(CRITERIA_MODEL),
     schema: criteriaSchema,
     system:
@@ -150,5 +153,13 @@ export async function compileGoalCriteriaWithLlm(params: {
     temperature: 0,
     ...googleProviderOptions(),
   });
+  if (params.costTracking) {
+    recordLlmCall({
+      costTracking: params.costTracking,
+      model: CRITERIA_MODEL,
+      usage,
+      stage: "compileGoalCriteria",
+    });
+  }
   return mergeCompiledCriteria(deterministic, object);
 }

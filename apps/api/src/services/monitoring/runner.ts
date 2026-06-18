@@ -946,18 +946,6 @@ async function enqueueMonitorCrawlTarget(params: {
   return params.targetRun;
 }
 
-// Credit attribution via the canonical estimator: scraped results ran a json extraction,
-// already-seen results skip the scrape, failures bill the base scrape credit.
-const SEARCH_JSON_DOC = { json: {} } as const;
-const SEARCH_JSON_OPTS = { formats: [{ type: "json" }] } as const;
-function searchPageCredits(status: string, scraped: boolean): number {
-  if (status === "already_seen") return 0;
-  if (scraped) {
-    return estimateActualCredits(SEARCH_JSON_DOC, SEARCH_JSON_OPTS);
-  }
-  return 0;
-}
-
 // Runs inline (owns its search + scrape + judge), then persists onto the same
 // monitor_pages / monitor_check_pages tables the reconciler tallies.
 async function runMonitorSearchTarget(params: {
@@ -1015,25 +1003,22 @@ async function runMonitorSearchTarget(params: {
     }),
   });
 
+  // Run-level credits that aren't tied to a single page: the search() calls
+  // (~2 credits / 10 results) and every LLM/judge call (router, snippet judge,
+  // criteria compile, skeptic, resolver, material-dev, summarizer), all billed
+  // at cost by runSearchTarget. Fold this overhead onto the first persisted page
+  // so the page-sum reconciler (calculateMonitorCheckActualCredits) deducts it.
+  const overheadCredits = result.searchCredits + result.llmCredits;
+
   const pages: PageResult[] = [];
-  for (const upsert of result.pageUpserts) {
+  result.pageUpserts.forEach((upsert, index) => {
     const status = searchStatusToPageStatus(upsert.status);
-    const creditsUsed = searchPageCredits(
-      upsert.status,
-      upsert.scraped ?? false,
-    );
+    // Real per-page scrape cost from calculateCreditsToBeBilled (0 when the page
+    // was not scraped — e.g. already_seen or snippet-only depth).
+    const pageScrapeCredits = upsert.creditsUsed ?? 0;
+    const creditsUsed =
+      index === 0 ? pageScrapeCredits + overheadCredits : pageScrapeCredits;
     const metadata = { ...upsert.metadata, creditsUsed };
-    await upsertMonitorPage({
-      monitorId: monitor.id,
-      teamId: monitor.team_id,
-      targetId: target.id,
-      url: upsert.url,
-      source: "discovered",
-      checkId: check.id,
-      scrapeId: null,
-      status,
-      metadata,
-    });
     pages.push({
       check_id: check.id,
       monitor_id: monitor.id,
@@ -1046,7 +1031,42 @@ async function runMonitorSearchTarget(params: {
       judgment: upsert.judgment ?? null,
       emailStatus: status,
     });
+  });
+
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    await upsertMonitorPage({
+      monitorId: monitor.id,
+      teamId: monitor.team_id,
+      targetId: target.id,
+      url: page.url,
+      source: "discovered",
+      checkId: check.id,
+      scrapeId: null,
+      status: page.status,
+      metadata: page.metadata as Record<string, unknown>,
+    });
   }
+
+  // No pages persisted (e.g. zero search results) but the search() call + any
+  // criteria-compile LLM still cost credits. Persist a synthetic overhead page
+  // so the reconciler bills it.
+  if (pages.length === 0 && overheadCredits > 0) {
+    const overheadUrl = `monitor-search-overhead:${target.id}`;
+    const overheadPage: PageResult = {
+      check_id: check.id,
+      monitor_id: monitor.id,
+      team_id: monitor.team_id,
+      target_id: target.id,
+      url: overheadUrl,
+      url_hash: hashMonitorUrl(overheadUrl),
+      status: "same",
+      metadata: { creditsUsed: overheadCredits, searchOverhead: true },
+      emailStatus: "same",
+    };
+    pages.push(overheadPage);
+  }
+
   await insertMonitorCheckPages(pages);
 
   for (const page of pages) {

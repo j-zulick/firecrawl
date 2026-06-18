@@ -5,6 +5,8 @@ import { buildSearchQuery } from "../../../lib/search-query-builder";
 import { scrapeURL } from "../../../scraper/scrapeURL";
 import { scrapeOptions } from "../../../controllers/v2/types";
 import { CostTracking } from "../../../lib/cost-tracking";
+import { calculateCreditsToBeBilled } from "../../../lib/scrape-billing";
+import { llmCostToCredits } from "./cost";
 import { hashMonitorUrl } from "../store";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
 import {
@@ -110,11 +112,20 @@ type SearchTargetRunResult = {
   matches: number;
   summary: string;
   sources: SearchSource[];
+  // Credits attributable to the search() calls themselves (≈2 per 10 results),
+  // matching executeSearch's search-credit math.
+  searchCredits: number;
+  // Credits for all monitor LLM/judge calls (router, snippet judge, criteria
+  // compile, skeptic, resolver, material-dev, summarizer), billed at cost.
+  llmCredits: number;
   pageUpserts: Array<{
     url: string;
     urlHash: Buffer;
     status: string;
     scraped?: boolean;
+    // Real per-page scrape credits from calculateCreditsToBeBilled() — includes
+    // the scrape's own JSON/LLM extraction cost. 0 when the page was not scraped.
+    creditsUsed?: number;
     metadata: Record<string, unknown>;
     judgment?: {
       meaningful: boolean;
@@ -152,6 +163,12 @@ export async function runSearchTarget(params: {
   let pagesChecked = 0;
   let skipped = 0;
   let matches = 0;
+  // Single CostTracking shared by every LLM/judge call (and the per-page scrape
+  // extraction) in this run, so the run's LLM dollar cost converts to credits
+  // once via llmCostToCredits — the platform's canonical at-cost LLM billing.
+  const costTracking = new CostTracking();
+  // Search calls bill ≈2 credits / 10 results, mirroring executeSearch().
+  let searchResultsBilled = 0;
 
   const seenThisRun = new Map<string, number>();
   const candidates: Array<{
@@ -174,6 +191,9 @@ export async function runSearchTarget(params: {
     });
     // v2 search returns { web, news, images }; the monitor consumes web hits.
     const results = response.web ?? [];
+    // Bill the search call at the platform rate (executeSearch: ~2 credits / 10
+    // results) on the results this query actually returned, before dedupe/trim.
+    searchResultsBilled += results.length;
     for (const r of results) {
       if (!r.url) continue;
       if (isExcludedDomain(r.url, target.excludeDomains)) continue;
@@ -220,6 +240,7 @@ export async function runSearchTarget(params: {
         subject,
         queries: target.queries,
         goalVersion,
+        costTracking,
       });
     } catch (error) {
       logger.warn(
@@ -244,6 +265,7 @@ export async function runSearchTarget(params: {
         subject,
         searchWindow: target.searchWindow,
         maxResults: target.maxResults,
+        costTracking,
         candidates: candidates.map((c, i) => ({
           id: `result_${i + 1}`,
           query: c.query,
@@ -302,6 +324,7 @@ export async function runSearchTarget(params: {
         goal,
         subject,
         searchWindow: target.searchWindow,
+        costTracking,
         candidates: snippetCandidates.map((c, i) => ({
           id: `result_${i + 1}`,
           query: c.query,
@@ -458,6 +481,7 @@ export async function runSearchTarget(params: {
     let verdict: SearchVerdict | null = null;
     let pageText = "";
     let realDate: string | null = null;
+    let scrapeCredits = 0;
     if (depth === "standard") {
       verdict = snippetVerdicts.get(canonical) ?? null;
       if (!verdict) {
@@ -468,23 +492,25 @@ export async function runSearchTarget(params: {
       pagesChecked += 1;
     } else {
       let res;
+      const scrapeParsedOptions = scrapeOptions.parse({
+        formats: [
+          { type: "markdown" },
+          {
+            type: "json",
+            schema: verdictJsonSchema,
+            prompt: buildJudgePrompt(goal, subject, target.searchWindow),
+          },
+        ],
+        timeout: 20000,
+      });
+      const scrapeCostTracking = new CostTracking();
       try {
         res = await scrapeURL(
           "search-monitor;" + uuidv7(),
           c.url,
-          scrapeOptions.parse({
-            formats: [
-              { type: "markdown" },
-              {
-                type: "json",
-                schema: verdictJsonSchema,
-                prompt: buildJudgePrompt(goal, subject, target.searchWindow),
-              },
-            ],
-            timeout: 20000,
-          }),
+          scrapeParsedOptions,
           { teamId, zeroDataRetention: params.zeroDataRetention },
-          new CostTracking(),
+          scrapeCostTracking,
         );
       } catch (error) {
         logger.warn("search monitor scrape threw", { url: c.url, error });
@@ -500,6 +526,26 @@ export async function runSearchTarget(params: {
         continue;
       }
       pagesChecked += 1;
+
+      // Bill the scrape at actual cost via the same primitive the worker uses
+      // (calculateCreditsToBeBilled): base + JSON-extraction + any premium
+      // surcharges + the scrape's own LLM extraction cost. This replaces the
+      // dummy searchPageCredits() estimate.
+      try {
+        scrapeCredits = await calculateCreditsToBeBilled(
+          scrapeParsedOptions,
+          { teamId, zeroDataRetention: params.zeroDataRetention },
+          res.document,
+          scrapeCostTracking,
+          {},
+        );
+      } catch (error) {
+        logger.warn("search monitor scrape credit calc failed; using base", {
+          url: c.url,
+          error,
+        });
+        scrapeCredits = res.document.metadata?.creditsUsed ?? 1;
+      }
 
       verdict = parseVerdict(res.document.json);
       if (!verdict) {
@@ -545,6 +591,7 @@ export async function runSearchTarget(params: {
           goal,
           subject,
           criteria,
+          costTracking,
           result: {
             title: c.title,
             url: c.url,
@@ -588,6 +635,7 @@ export async function runSearchTarget(params: {
         urlHash: hashMonitorUrl(canonical),
         status: "ignored",
         scraped: depth === "deep",
+        creditsUsed: scrapeCredits,
         metadata: { ...baseMeta, searchStatus: "ignored" },
       });
       continue;
@@ -604,6 +652,7 @@ export async function runSearchTarget(params: {
         urlHash: hashMonitorUrl(canonical),
         status: "watching",
         scraped: depth === "deep",
+        creditsUsed: scrapeCredits,
         metadata: { ...baseMeta, searchStatus: "watching" },
       });
       continue;
@@ -614,6 +663,7 @@ export async function runSearchTarget(params: {
       resolution = await resolveEvent({
         goal,
         subject,
+        costTracking,
         result: {
           title: c.title,
           url: c.url,
@@ -650,6 +700,7 @@ export async function runSearchTarget(params: {
             goal,
             subject,
             eventLabel,
+            costTracking,
             result: { title: c.title, evidence: verdict.rationale },
           });
           alreadySatisfied = !dev.material;
@@ -674,6 +725,7 @@ export async function runSearchTarget(params: {
         urlHash: hashMonitorUrl(canonical),
         status: "already_seen",
         scraped: depth === "deep",
+        creditsUsed: scrapeCredits,
         metadata: { ...eventMeta, searchStatus: "already_seen" },
       });
       continue;
@@ -708,6 +760,7 @@ export async function runSearchTarget(params: {
       urlHash: hashMonitorUrl(canonical),
       status: "alert",
       scraped: depth === "deep",
+      creditsUsed: scrapeCredits,
       metadata: {
         ...eventMeta,
         searchStatus: "alert",
@@ -736,6 +789,7 @@ export async function runSearchTarget(params: {
       const out = await summarizeRun({
         goal,
         subject,
+        costTracking,
         evidence: sources
           .filter(s => s.status === "alert")
           .map(s => ({
@@ -753,6 +807,11 @@ export async function runSearchTarget(params: {
     }
   }
 
+  const isZDR = params.zeroDataRetention;
+  const searchCredits =
+    Math.ceil(searchResultsBilled / 10) * (isZDR ? 10 : 2);
+  const llmCredits = llmCostToCredits(costTracking);
+
   return {
     targetId: target.id,
     type: "search",
@@ -763,6 +822,8 @@ export async function runSearchTarget(params: {
     matches,
     summary,
     sources,
+    searchCredits,
+    llmCredits,
     pageUpserts,
   };
 }
