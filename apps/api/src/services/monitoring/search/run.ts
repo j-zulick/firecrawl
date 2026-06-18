@@ -214,7 +214,18 @@ type SearchTargetRunResult = {
 };
 
 export async function runSearchTarget(params: {
-  monitor: { id: string; teamId: string; goal: string | null; subject: string };
+  monitor: {
+    id: string;
+    teamId: string;
+    goal: string | null;
+    subject: string;
+    // Read fresh from the persisted monitor every check. When false, the LLM
+    // judge (router, snippet judge, criteria, verify, skeptic, summarizer) is
+    // skipped entirely and the target behaves like depth:"raw" — deterministic
+    // URLs + dedup state only, with no LLM credits billed. Toggling this via
+    // PATCH/UI therefore takes effect on the NEXT check with no redeploy.
+    judgeEnabled: boolean;
+  };
   target: SearchTargetInput;
   goalVersion: string;
   knownPages: Map<string, KnownPage>;
@@ -223,9 +234,13 @@ export async function runSearchTarget(params: {
   logger: Logger;
 }): Promise<SearchTargetRunResult> {
   const { target, knownPages, goalVersion, logger } = params;
+  const judgeEnabled = params.monitor.judgeEnabled;
 
   const goal = params.monitor.goal?.trim();
-  if (!goal) {
+  // The LLM judge requires a goal; raw/no-LLM mode does not. Only enforce the
+  // goal when we'll actually judge, so a judge-off check still runs search and
+  // returns raw results even when the monitor has no (or a cleared) goal.
+  if (judgeEnabled && !goal) {
     throw new Error("search monitor target requires a non-empty monitor goal");
   }
   const subject = params.monitor.subject ?? "";
@@ -311,15 +326,23 @@ export async function runSearchTarget(params: {
   resultCount = candidates.length;
 
   const llmStagesAvailable = hasGeminiKey();
-  const depth: "raw" | "standard" | "deep" =
-    target.depth === "raw"
+  // When the judge is disabled, collapse to "raw" so every LLM stage below
+  // (router, snippet judge, criteria-with-LLM, verify, skeptic, resolver,
+  // material-dev, summarizer) is skipped and no LLM credits are billed —
+  // reusing the deterministic raw path instead of scattering judgeEnabled
+  // conditionals. depth then drives judging only when judgeEnabled is true.
+  const depth: "raw" | "standard" | "deep" = !judgeEnabled
+    ? "raw"
+    : target.depth === "raw"
       ? "raw"
       : target.depth === "standard" && llmStagesAvailable
         ? "standard"
         : "deep";
 
   let criteria: GoalCriteria = compileGoalCriteria({
-    goal,
+    // goal can be empty in raw/judge-off mode; criteria is only consumed by
+    // the LLM judge stages, which never run when depth === "raw".
+    goal: goal ?? "",
     subject,
     goalVersion,
   });
