@@ -156,6 +156,9 @@ function estimateTargetBaseCredits(target: MonitorTarget): number {
       Math.ceil(Math.max(1, target.maxResults) / 10) *
       SEARCH_CREDITS_PER_TEN_RESULTS *
       Math.max(1, target.queries.length);
+    // depth is no longer settable via the API; absent depth means the runtime
+    // default ("deep" when judging is on). Only legacy stored targets carry an
+    // explicit "raw"/"standard". Treat absent depth as deep below.
     if (target.depth === "raw") {
       // No scrape, no LLM — only the search call.
       return searchCallCredits;

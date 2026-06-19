@@ -1002,7 +1002,11 @@ async function runMonitorSearchTarget(params: {
       id: target.id,
       queries: target.queries,
       searchWindow: target.searchWindow,
-      alertMode: target.alertMode,
+      // depth/alertMode are no longer settable via the API. Stored targets may
+      // still carry them (back-compat) so we pass them through; when absent,
+      // runSearchTarget derives depth (deep when judging on, raw when off) and
+      // alertMode defaults to "first_match".
+      alertMode: target.alertMode ?? "first_match",
       includeDomains: target.includeDomains,
       excludeDomains: target.excludeDomains,
       recheckAfter: target.recheckAfter,
