@@ -180,6 +180,17 @@ type SearchTargetRunResult = {
   // not confirm", not a confident "no new results" — avoids a silent false
   // negative on a swallowed rate-limit.
   searchDegraded: boolean;
+  // True when the deep (scrape+judge) path was expected to evaluate results but
+  // evaluated ~none BECAUSE the per-result scrapes failed/timed out — the
+  // false-negative twin of searchDegraded, one layer deeper. A judged check that
+  // completes with 0 pages / 0 judged because every scrape errored otherwise
+  // looks identical to "nothing new"; this flags it so it isn't read as clean.
+  // Conservative: NOT set when search legitimately returned 0 results, and NOT
+  // set when the judge legitimately ignored everything (resultsJudged > 0).
+  judgeDegraded: boolean;
+  // Human-readable explanation for whichever degraded flag is set (search OR
+  // judge), surfaced onto the check/summary the same way searchDegraded is.
+  degradedReason: string | null;
   sources: SearchSource[];
   // Search() call credits (≈2 per 10 results), matching executeSearch's math.
   searchCredits: number;
@@ -250,6 +261,12 @@ export async function runSearchTarget(params: {
   // Queries that failed at the provider after retries (vs. legitimately empty);
   // used to mark the run degraded.
   let searchFailures = 0;
+  // Deep-path per-result scrape/judge failures (scrape threw, scrape !success,
+  // or verdict unparseable) — the silently-swallowed errors that hit `continue`
+  // BEFORE resultsJudged is incremented. Counted to mark the check degraded when
+  // judging was expected but produced ~nothing DUE TO these failures, so an
+  // all-scrapes-failed deep check can't masquerade as a clean "nothing new".
+  let judgeScrapeFailures = 0;
 
   const seenThisRun = new Map<string, number>();
   const candidates: Array<{
@@ -609,6 +626,7 @@ export async function runSearchTarget(params: {
         );
       } catch (error) {
         logger.warn("search monitor scrape threw", { url: c.url, error });
+        judgeScrapeFailures += 1;
         skipped += 1;
         sources.push({ url: c.url, title: c.title, status: "skipped" });
         continue;
@@ -616,6 +634,7 @@ export async function runSearchTarget(params: {
 
       if (!res.success) {
         logger.warn("search monitor scrape failed", { url: c.url });
+        judgeScrapeFailures += 1;
         skipped += 1;
         sources.push({ url: c.url, title: c.title, status: "skipped" });
         continue;
@@ -624,6 +643,10 @@ export async function runSearchTarget(params: {
 
       verdict = parseVerdict(res.document.json);
       if (!verdict) {
+        // Scrape succeeded but the AI verdict was unparseable — the result was
+        // fetched yet never actually evaluated, so it counts as a judge-path
+        // failure for the degraded signal (not a legitimate "judge ignored it").
+        judgeScrapeFailures += 1;
         skipped += 1;
         sources.push({ url: c.url, title: c.title, status: "skipped" });
         continue;
@@ -920,6 +943,47 @@ export async function runSearchTarget(params: {
     }
   }
 
+  // Deep-path degraded signal: judging WAS expected (depth deep + search
+  // returned candidates) but produced ~nothing (resultsJudged === 0) BECAUSE the
+  // per-result scrapes failed (judgeScrapeFailures > 0). This is the conservative
+  // trigger — it is deliberately NOT set when:
+  //   - search legitimately returned 0 results (judgeExpected is false, no
+  //     candidates), or
+  //   - the judge legitimately evaluated results and ignored them all
+  //     (resultsJudged > 0), or
+  //   - only SOME scrapes failed but at least one was judged (resultsJudged > 0).
+  // Without this, a deep check whose every scrape timed out completes "clean"
+  // with 0 pages / 0 judged / 0 alerts — indistinguishable from "nothing new".
+  const judgeExpected = depth === "deep" && candidates.length > 0;
+  const judgeDegraded =
+    judgeExpected && resultsJudged === 0 && judgeScrapeFailures > 0;
+  if (judgeDegraded) {
+    logger.warn(
+      "search monitor run is degraded: deep-path scrapes failed for every candidate so nothing was judged; results may be incomplete (NOT a clean no-results)",
+      {
+        monitorId: params.monitor.id,
+        targetId: target.id,
+        candidates: candidates.length,
+        scrapeFailures: judgeScrapeFailures,
+        resultsJudged,
+      },
+    );
+    if (!summary) {
+      summary =
+        "Results were found but could not be fetched for evaluation (scrapes failed or timed out); this check is incomplete and may have missed new developments.";
+    }
+  }
+
+  // Single reason surfaced onto the check the same way searchDegraded is. Search
+  // failure takes precedence (it's upstream — a failed query means we never even
+  // got results to scrape).
+  const degradedReason: string | null =
+    searchDegraded && matches === 0
+      ? "search provider unavailable for one or more queries after retries; results may be incomplete"
+      : judgeDegraded
+        ? "deep-path scrapes failed for every candidate so nothing was judged; results may be incomplete"
+        : null;
+
   const isZDR = params.zeroDataRetention;
   const searchCredits =
     Math.ceil(searchResultsBilled / 10) * (isZDR ? 10 : 2);
@@ -935,6 +999,8 @@ export async function runSearchTarget(params: {
     matches,
     summary,
     searchDegraded,
+    judgeDegraded,
+    degradedReason,
     sources,
     searchCredits,
     judgeCredits,

@@ -419,3 +419,94 @@ describe("judgeEnabled gates the LLM judge", () => {
     expect(alertUpsert.metadata.concept).toBeDefined();
   });
 });
+
+describe("deep-path scrape failures mark the check degraded (no silent empty)", () => {
+  beforeEach(() => {
+    // Two candidates routed to scrape; scrape outcome varies per test.
+    searchMock.mockResolvedValue([serpRow(1), serpRow(2)]);
+    routeMock.mockResolvedValue([
+      { id: "result_1", decision: "scrape", priority: 2, reason: "" },
+      { id: "result_2", decision: "scrape", priority: 1, reason: "" },
+    ]);
+  });
+
+  it("degraded=true when EVERY deep-path scrape fails (judging expected, nothing judged)", async () => {
+    scrapeURLMock.mockResolvedValue({ success: false });
+
+    const result = await runSearchTarget(runParams({ depth: "deep" }));
+
+    // The false-negative we must surface: 0 judged / 0 alerts, but degraded.
+    expect(result.resultsJudged).toBe(0);
+    expect(result.matches).toBe(0);
+    expect(result.judgeDegraded).toBe(true);
+    expect(result.degradedReason).toMatch(/scrape/i);
+    // searchDegraded is the provider-level signal and stays false here.
+    expect(result.searchDegraded).toBe(false);
+    // A non-empty summary so the check never reads as a clean "nothing new".
+    expect(result.summary).not.toBe("");
+  });
+
+  it("degraded=true when scrapes throw", async () => {
+    scrapeURLMock.mockRejectedValue(new Error("scrape timed out"));
+
+    const result = await runSearchTarget(runParams({ depth: "deep" }));
+
+    expect(result.resultsJudged).toBe(0);
+    expect(result.judgeDegraded).toBe(true);
+    expect(result.degradedReason).toMatch(/scrape/i);
+  });
+
+  it("NOT degraded when at least one scrape succeeds and is judged", async () => {
+    scrapeURLMock.mockImplementation((_id: string, url: string) =>
+      url === serpRow(1).url
+        ? Promise.resolve({
+            success: true,
+            document: {
+              json: verdict({ alertAction: "ignore" }),
+              markdown: "prose",
+              metadata: {},
+            },
+          })
+        : Promise.resolve({ success: false }),
+    );
+
+    const result = await runSearchTarget(runParams({ depth: "deep" }));
+
+    // One result was actually judged (ignored) — that's a real evaluation, not a
+    // failure, so the check is NOT degraded even though a sibling scrape failed.
+    expect(result.resultsJudged).toBe(1);
+    expect(result.judgeDegraded).toBe(false);
+    expect(result.degradedReason).toBeNull();
+  });
+
+  it("NOT degraded when the judge legitimately ignores every (scraped) result", async () => {
+    scrapeURLMock.mockResolvedValue({
+      success: true,
+      document: {
+        json: verdict({ alertAction: "ignore" }),
+        markdown: "prose",
+        metadata: {},
+      },
+    });
+
+    const result = await runSearchTarget(runParams({ depth: "deep" }));
+
+    // Everything scraped fine and was evaluated; judge ignored it all. Normal.
+    expect(result.resultsJudged).toBe(2);
+    expect(result.matches).toBe(0);
+    expect(result.judgeDegraded).toBe(false);
+    expect(result.degradedReason).toBeNull();
+  });
+
+  it("NOT degraded when search legitimately returns zero results", async () => {
+    searchMock.mockResolvedValue([]);
+
+    const result = await runSearchTarget(runParams({ depth: "deep" }));
+
+    expect(result.resultCount).toBe(0);
+    expect(result.judgeDegraded).toBe(false);
+    expect(result.searchDegraded).toBe(false);
+    expect(result.degradedReason).toBeNull();
+    expect(scrapeURLMock).not.toHaveBeenCalled();
+  });
+});
