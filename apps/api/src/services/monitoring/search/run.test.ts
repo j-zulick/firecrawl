@@ -1,22 +1,21 @@
-import { jest } from "@jest/globals";
+jest.mock("uuid", () => ({ v7: () => "00000000-0000-7000-8000-000000000000" }));
+
 import type { Logger } from "winston";
 import type { SearchVerdict } from "./judge";
 import type { EventResolution } from "./llm";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
 
-const searchMock = jest.fn<(...a: any[]) => any>();
-const scrapeURLMock = jest.fn<(...a: any[]) => any>();
-const resolveEventMock = jest.fn<(...a: any[]) => any>();
-const summarizeRunMock = jest.fn<(...a: any[]) => any>();
-
-jest.mock("uuid", () => ({ v7: () => "00000000-0000-7000-8000-000000000000" }));
+const searchMock = jest.fn();
+const scrapeURLMock = jest.fn();
+const resolveEventMock = jest.fn();
+const summarizeRunMock = jest.fn();
 jest.mock("../../../search", () => ({
   search: (...a: unknown[]) => searchMock(...a),
 }));
 jest.mock("../../../scraper/scrapeURL", () => ({
   scrapeURL: (...a: unknown[]) => scrapeURLMock(...a),
 }));
-const materialDevMock = jest.fn<(...a: any[]) => any>();
+const materialDevMock = jest.fn();
 jest.mock("./llm", () => ({
   resolveEvent: (...a: unknown[]) => resolveEventMock(...a),
   summarizeRun: (...a: unknown[]) => summarizeRunMock(...a),
