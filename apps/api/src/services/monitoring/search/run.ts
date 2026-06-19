@@ -39,8 +39,7 @@ import {
 } from "./verify";
 import { hasGeminiKey } from "./tuning";
 
-// FLAT judge billing rate: credits charged per result the judge evaluates this
-// check (a result that receives an AI verdict — scraped + judged in deep mode).
+// Flat credits per result the judge evaluates (scraped + judged in deep mode).
 // Deterministic and known at check time — no token/at-cost math.
 export const JUDGE_CREDITS_PER_RESULT = 5;
 
@@ -50,17 +49,12 @@ function windowToTbs(window: string): string {
   return "qdr:w";
 }
 
-// Bounded retry for monitor searches. The upstream provider rate-limits
-// near-simultaneous identical queries and can answer with either a thrown/HTTP
-// error OR a clean HTTP 200 carrying an empty body — both of which otherwise
-// look identical to a genuinely-empty result and silently drop real hits.
-//
-// Strategy: retry on a hard failure (search() reported it via onFailure) AND on
-// an empty result, with exponential backoff + jitter so we don't hammer the
-// rate-limiter. A genuinely-empty query simply runs out of attempts and returns
-// empty cleanly (no failure flagged), so its correct "no results" behavior is
-// preserved. `failed` is only true when the LAST attempt was a real failure,
-// letting the caller mark the check degraded instead of confidently empty.
+// The provider rate-limits near-simultaneous identical queries and may answer
+// with an error OR a clean HTTP 200 with an empty body — indistinguishable from
+// a genuinely-empty result. Retry both empty and failed responses with backoff;
+// a real empty query just exhausts attempts and returns empty cleanly. `failed`
+// is true only when the LAST attempt was a real failure, so the caller can mark
+// the check degraded rather than confidently empty.
 const SEARCH_RETRY_BACKOFF_MS = [400, 1200] as const;
 
 async function searchWithRetry(
@@ -83,11 +77,8 @@ async function searchWithRetry(
     lastFailureReason = failureReason;
 
     const hasResults = (response.web?.length ?? 0) > 0;
-    // Success: real results came back. Return immediately.
     if (hasResults) return { response, failed: false };
 
-    // No results. Could be a genuine empty OR a transient rate-limit (error or
-    // empty 200). Retry with backoff while attempts remain.
     const isLastAttempt = attempt === maxAttempts - 1;
     if (!isLastAttempt) {
       const base = SEARCH_RETRY_BACKOFF_MS[attempt];
@@ -103,9 +94,8 @@ async function searchWithRetry(
     }
   }
 
-  // Exhausted attempts. If the final attempt was a real provider failure,
-  // surface it loudly (degraded) — this is the false-negative we must not hide.
-  // If it was just empty with no failure, it is a legitimate no-results.
+  // Exhausted attempts: a real final failure is the false-negative we must not
+  // hide; an empty with no failure is a legitimate no-results.
   if (lastFailureReason) {
     logger.warn(
       "search monitor query failed after retries; reporting degraded (NOT clean no-results)",
@@ -161,8 +151,8 @@ export type KnownPage = {
   goalVersion: string;
   lastCheckedAt?: string;
   lastStatus?: string;
-  // Full stored monitor_pages metadata, carried through so unchanged-page
-  // upserts don't wipe event/verdict fields persisted by earlier runs.
+  // Carried through so unchanged-page upserts don't wipe event/verdict fields
+  // persisted by earlier runs.
   metadata?: Record<string, unknown>;
 };
 
@@ -185,25 +175,18 @@ type SearchTargetRunResult = {
   meaningful: number;
   matches: number;
   summary: string;
-  // True when one or more of this target's queries failed at the search
-  // provider (rate-limit / HTTP error) after retries, rather than legitimately
-  // returning zero results. Callers should treat an empty run with
-  // searchDegraded=true as "could not confirm" rather than a confident
-  // "no new results", so a swallowed rate-limit isn't a silent false negative.
+  // True when a query failed at the provider after retries rather than
+  // legitimately returning zero results. An empty-but-degraded run means "could
+  // not confirm", not a confident "no new results" — avoids a silent false
+  // negative on a swallowed rate-limit.
   searchDegraded: boolean;
   sources: SearchSource[];
-  // Credits attributable to the search() calls themselves (≈2 per 10 results),
-  // matching executeSearch's search-credit math.
+  // Search() call credits (≈2 per 10 results), matching executeSearch's math.
   searchCredits: number;
-  // FLAT, deterministic judge billing: JUDGE_CREDITS_PER_RESULT (5) for every
-  // result the judge actually evaluated this check — i.e. each result that
-  // received an AI verdict (scraped + judged in deep mode). Zero when judging is
-  // off (raw mode). Replaces the old at-cost token→credit `llmCredits` and the
-  // per-scrape `calculateCreditsToBeBilled` contribution: the flat 5 covers both
-  // the scrape and the judge for a search result.
+  // Flat judge billing: JUDGE_CREDITS_PER_RESULT per result the judge evaluated
+  // (covers both the scrape and the judge). Zero in raw mode.
   judgeCredits: number;
-  // Number of results that received a judge verdict this check (the denominator
-  // for judgeCredits). Carried through for observability / estimate parity.
+  // Denominator for judgeCredits; carried for observability / estimate parity.
   resultsJudged: number;
   pageUpserts: Array<{
     url: string;
@@ -226,11 +209,8 @@ export async function runSearchTarget(params: {
     teamId: string;
     goal: string | null;
     subject: string;
-    // Read fresh from the persisted monitor every check. When false, the LLM
-    // judge (router, snippet judge, criteria, verify, skeptic, summarizer) is
-    // skipped entirely and the target behaves like depth:"raw" — deterministic
-    // URLs + dedup state only, with no LLM credits billed. Toggling this via
-    // PATCH/UI therefore takes effect on the NEXT check with no redeploy.
+    // When false, every LLM judge stage is skipped and the target behaves like
+    // depth:"raw" (deterministic URLs + dedup, no LLM credits).
     judgeEnabled: boolean;
   };
   target: SearchTargetInput;
@@ -244,9 +224,7 @@ export async function runSearchTarget(params: {
   const judgeEnabled = params.monitor.judgeEnabled;
 
   const goal = params.monitor.goal?.trim();
-  // The LLM judge requires a goal; raw/no-LLM mode does not. Only enforce the
-  // goal when we'll actually judge, so a judge-off check still runs search and
-  // returns raw results even when the monitor has no (or a cleared) goal.
+  // Only the LLM judge requires a goal; raw/judge-off checks still run search.
   if (judgeEnabled && !goal) {
     throw new Error("search monitor target requires a non-empty monitor goal");
   }
@@ -262,21 +240,15 @@ export async function runSearchTarget(params: {
   let pagesChecked = 0;
   let skipped = 0;
   let matches = 0;
-  // Shared CostTracking passed to the LLM/judge stages so they can record token
-  // usage for observability/debugging. Billing NO LONGER reads from it — judge
-  // credits are a flat per-judged-result figure (JUDGE_CREDITS_PER_RESULT),
-  // computed deterministically below. The object is kept only because the judge
+  // For observability only — billing does not read from it, but the judge
   // helpers require a CostTracking argument.
   const costTracking = new CostTracking();
   // Search calls bill ≈2 credits / 10 results, mirroring executeSearch().
   let searchResultsBilled = 0;
-  // Count of results that received an AI judge verdict this check. This is the
-  // single, clear denominator for flat judge billing: judgeCredits = 5 * this.
+  // Denominator for flat judge billing: judgeCredits = 5 * this.
   let resultsJudged = 0;
-  // Count of queries that ultimately FAILED at the provider (rate-limit / HTTP
-  // error) after retries, as opposed to legitimately returning zero results.
-  // Used to mark the run degraded so an empty check isn't reported as a
-  // confident "no changes" when it was really a swallowed search failure.
+  // Queries that failed at the provider after retries (vs. legitimately empty);
+  // used to mark the run degraded.
   let searchFailures = 0;
 
   const seenThisRun = new Map<string, number>();
@@ -302,14 +274,10 @@ export async function runSearchTarget(params: {
       logger,
     );
     if (failed) {
-      // A real provider failure (not a genuine empty). Record it so the run is
-      // reported as degraded rather than a clean "no changes" for this query.
       searchFailures += 1;
     }
-    // v2 search returns { web, news, images }; the monitor consumes web hits.
     const results = response.web ?? [];
-    // Bill the search call at the platform rate (executeSearch: ~2 credits / 10
-    // results) on the results this query actually returned, before dedupe/trim.
+    // Bill on raw results, before dedupe/trim.
     searchResultsBilled += results.length;
     for (const r of results) {
       if (!r.url) continue;
@@ -317,8 +285,8 @@ export async function runSearchTarget(params: {
       const canonical = canonicalizeUrl(r.url);
       const existingIdx = seenThisRun.get(canonical);
       if (existingIdx !== undefined) {
-        // Same URL surfaced by another query this run — record the extra query
-        // (mirrors the POC's queryHits) instead of dropping it.
+        // Same URL from another query this run — record the extra query rather
+        // than dropping it.
         const existing = candidates[existingIdx];
         if (!existing.matchedQueries.includes(query)) {
           existing.matchedQueries.push(query);
@@ -338,11 +306,8 @@ export async function runSearchTarget(params: {
   resultCount = candidates.length;
 
   const llmStagesAvailable = hasGeminiKey();
-  // When the judge is disabled, collapse to "raw" so every LLM stage below
-  // (router, snippet judge, criteria-with-LLM, verify, skeptic, resolver,
-  // material-dev, summarizer) is skipped and no LLM credits are billed —
-  // reusing the deterministic raw path instead of scattering judgeEnabled
-  // conditionals. depth then drives judging only when judgeEnabled is true.
+  // Judge off → collapse to "raw" so every LLM stage is skipped via the existing
+  // raw path, rather than scattering judgeEnabled conditionals.
   const depth: "raw" | "standard" | "deep" = !judgeEnabled
     ? "raw"
     : target.depth === "raw"
@@ -351,15 +316,11 @@ export async function runSearchTarget(params: {
         ? "standard"
         : "deep";
 
-  // From here on, any depth !== "raw" path requires a goal. The top-of-function
-  // guard guarantees judgeEnabled implies a non-empty goal; depth !== "raw"
-  // implies judgeEnabled, so this is always satisfied when judging actually
-  // runs; assert it for the type checker (and as a defensive invariant).
+  // depth !== "raw" implies judgeEnabled implies a non-empty goal (top guard),
+  // so judgeGoal is always populated when judging runs; "" only in raw mode.
   const judgeGoal: string = goal ?? "";
 
   let criteria: GoalCriteria = compileGoalCriteria({
-    // goal can be empty in raw/judge-off mode; criteria is only consumed by
-    // the LLM judge stages, which never run when depth === "raw".
     goal: judgeGoal,
     subject,
     goalVersion,
@@ -523,9 +484,8 @@ export async function runSearchTarget(params: {
         url: canonical,
         urlHash: hashMonitorUrl(canonical),
         status: reusedStatus,
-        // Upserts replace the stored metadata wholesale, so spread the prior
-        // metadata to preserve event stamps (eventKey/eventLabel/...) that
-        // event reconstruction depends on.
+        // Upserts replace metadata wholesale; spread prior metadata to preserve
+        // event stamps (eventKey/eventLabel/...) that reconstruction needs.
         metadata: {
           ...(knownCurrent?.metadata ?? {}),
           fingerprint,
@@ -670,9 +630,7 @@ export async function runSearchTarget(params: {
         null;
     }
 
-    // This result received an AI judge verdict (snippet judge in standard, or
-    // scrape+judge in deep). It is the unit of flat judge billing: each such
-    // result costs JUDGE_CREDITS_PER_RESULT, regardless of the verdict outcome.
+    // Judged this result — the unit of flat billing, regardless of outcome.
     resultsJudged += 1;
 
     let decision = verdictToDecision(verdict);
@@ -920,7 +878,7 @@ export async function runSearchTarget(params: {
 
   const searchDegraded = searchFailures > 0;
   if (searchDegraded && matches === 0) {
-    // Don't let a swallowed provider failure masquerade as a clean no-results.
+    // Don't let a swallowed provider failure masquerade as clean no-results.
     logger.warn(
       "search monitor run is degraded: one or more queries failed at the provider after retries; results may be incomplete",
       {
@@ -939,9 +897,6 @@ export async function runSearchTarget(params: {
   const isZDR = params.zeroDataRetention;
   const searchCredits =
     Math.ceil(searchResultsBilled / 10) * (isZDR ? 10 : 2);
-  // FLAT, deterministic judge billing: 5 credits per result the judge evaluated
-  // this check. No token/at-cost conversion. Zero when judging was off (raw),
-  // where resultsJudged stays 0. Known at check time → recorded reliably.
   const judgeCredits = resultsJudged * JUDGE_CREDITS_PER_RESULT;
 
   return {

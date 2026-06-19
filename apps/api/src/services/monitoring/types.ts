@@ -48,17 +48,9 @@ const monitorDomainSchema = z
     "Domain must be a valid hostname without protocol or path",
   );
 
-// `depth` and `alertMode` are NOT part of the public create/update contract.
-// They used to be settable; we now keep them internal-only with sane defaults
-// (depth derived at runtime in runSearchTarget — absent → deep when judging is
-// on, raw when off; alertMode defaults to "first_match" wherever it's read).
-//
-// We deliberately strip any client-supplied `depth`/`alertMode` BEFORE the
-// strictObject validation runs, rather than rejecting them with a 400. This
-// keeps older clients that still send these keys working — the values are
-// simply ignored and never persisted. Existing stored targets that already
-// carry depth/alertMode in the jsonb keep working: this only affects the API
-// input path, and the runtime still reads stored values via MonitorTarget.
+// `depth`/`alertMode` are internal-only (derived at runtime). Strip any
+// client-supplied values BEFORE strictObject validation rather than 400ing, so
+// older clients that still send them keep working (values ignored, not persisted).
 const searchTargetSchema = z.preprocess(
   value => {
     if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -201,10 +193,9 @@ export const createMonitorSchema = createMonitorBaseSchema
   .superRefine(requireGoalForSearchTargets)
   .transform(applyJudgeEnabledDefault);
 
-// Update bodies are partial: a patch adding search targets may rely on the
-// goal already stored on the monitor, so only reject here when the patch
-// itself includes search targets AND explicitly clears the goal. The
-// controller re-validates the merged monitor (stored row + patch).
+// Patches are partial and may rely on the already-stored goal, so only reject
+// when the patch includes search targets AND explicitly clears the goal. The
+// controller re-validates the merged monitor.
 function rejectGoalClearedWithSearchTargets(
   input: { targets?: unknown; goal?: unknown },
   ctx: z.RefinementCtx,
@@ -263,11 +254,9 @@ export const monitorCheckDetailQuerySchema = z.object({
   status: z.enum(["same", "new", "changed", "removed", "error"]).optional(),
 });
 
-// `depth`/`alertMode` are no longer accepted on the API input path (stripped by
-// searchTargetSchema's preprocess), but EXISTING stored targets in
-// monitors.targets jsonb may still carry them and the runtime must keep
-// honoring those values. Surface them here as optional, internal-only fields so
-// runner.ts / store.ts can read stored values without type errors.
+// Stripped from API input (see searchTargetSchema), but stored targets may
+// still carry them; surface as optional internal-only fields so runner/store
+// can read stored values without type errors.
 export type MonitorTarget = z.infer<typeof monitorTargetSchema> & {
   id: string;
 } & {

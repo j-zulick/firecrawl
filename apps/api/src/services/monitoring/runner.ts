@@ -110,25 +110,18 @@ type MonitorTargetRun =
       crawlId: string;
     }
   | {
-      // Search runs inline during dispatch (self-contained: search + scrape + judge),
-      // so its run descriptor needs no async handle. Summary/counts are filled in after it runs.
+      // Search runs inline during dispatch; counts/credits filled in after.
       targetId: string;
       type: "search";
       resultCount?: number;
       matches?: number;
       summary?: string;
-      // True when a query failed at the search provider (rate-limit / HTTP
-      // error) after retries rather than legitimately returning no results.
-      // Persisted into target_results so an empty-but-degraded run is visible
-      // and not mistaken for a confident "no changes".
+      // True when a query failed at the provider after retries (not legitimately
+      // empty); persisted so an empty-but-degraded run isn't read as "no changes".
       searchDegraded?: boolean;
-      // FLAT, deterministic search-target billing, recorded onto the check's
-      // target_results the moment the synchronous search completes. The check's
-      // actual_credits is summed from THESE values (plus non-search page
-      // credits), not reconstructed from per-page metadata — so a missing page,
-      // a reconciler race, or an empty CostTracking can never zero them out.
-      //   searchCredits = ceil(totalSearchResults/10)*2  (per check)
-      //   judgeCredits  = 5 * resultsJudged               (0 when judging off)
+      // Flat, deterministic credits recorded onto target_results when the search
+      // completes; actual_credits is summed from these, not reconstructed from
+      // per-page metadata, so a missing page / reconciler race can't zero them.
       searchCredits?: number;
       judgeCredits?: number;
       resultsJudged?: number;
@@ -961,8 +954,8 @@ async function enqueueMonitorCrawlTarget(params: {
   return params.targetRun;
 }
 
-// Runs inline (owns its search + scrape + judge), then persists onto the same
-// monitor_pages / monitor_check_pages tables the reconciler tallies.
+// Runs inline, then persists onto the same monitor_pages / monitor_check_pages
+// tables the reconciler tallies.
 async function runMonitorSearchTarget(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
@@ -973,7 +966,7 @@ async function runMonitorSearchTarget(params: {
   matches: number;
   summary: string;
   searchDegraded: boolean;
-  // FLAT, deterministic credits, recorded onto target_results by the caller.
+  // Flat, deterministic credits, recorded onto target_results by the caller.
   searchCredits: number;
   judgeCredits: number;
   resultsJudged: number;
@@ -993,7 +986,7 @@ async function runMonitorSearchTarget(params: {
   const { monitor, check, target } = params;
   const goalVersion = computeGoalVersion(monitor.goal, target.queries);
 
-  // Rebuild per-URL dedup memory + the event index from prior pages of this target.
+  // Rebuild per-URL dedup memory + event index from this target's prior pages.
   const priorPages = await listActiveMonitorPages({
     monitorId: monitor.id,
     targetId: target.id,
@@ -1009,20 +1002,15 @@ async function runMonitorSearchTarget(params: {
       teamId: monitor.team_id,
       goal: monitor.goal,
       subject: monitor.name,
-      // Read fresh from the persisted monitor on every check, so toggling the
-      // "Only alert on meaningful changes" judge via PATCH/UI takes effect on
-      // the NEXT check (no redeploy). When false, runSearchTarget collapses to
-      // raw mode: deterministic URLs + dedup, no LLM judge, no LLM credits.
+      // Read fresh each check so a PATCH/UI toggle takes effect next check.
       judgeEnabled: Boolean(monitor.judge_enabled),
     },
     target: {
       id: target.id,
       queries: target.queries,
       searchWindow: target.searchWindow,
-      // depth/alertMode are no longer settable via the API. Stored targets may
-      // still carry them (back-compat) so we pass them through; when absent,
-      // runSearchTarget derives depth (deep when judging on, raw when off) and
-      // alertMode defaults to "first_match".
+      // depth/alertMode aren't settable via the API, but stored targets may
+      // still carry them (back-compat), so pass them through.
       alertMode: target.alertMode ?? "first_match",
       includeDomains: target.includeDomains,
       excludeDomains: target.excludeDomains,
@@ -1041,21 +1029,15 @@ async function runMonitorSearchTarget(params: {
     }),
   });
 
-  // FLAT, deterministic search-target billing. These two numbers are known the
-  // instant the synchronous search finishes and are returned to the caller,
-  // which records them onto the check's target_results in a single DB write.
-  // The check's actual_credits is summed from target_results (NOT from per-page
-  // metadata), so search credits are recorded reliably regardless of how many
-  // pages persist, page ordering, reconciler timing, or CostTracking state —
-  // closing the old "completed deep check with actual_credits = 0" hole.
-  //   searchCredits = ceil(totalSearchResults/10) * 2   (per check)
-  //   judgeCredits  = 5 * resultsJudged                  (0 when judging off)
+  // Flat, deterministic credits, returned for recording onto target_results.
+  // actual_credits sums from target_results (not per-page metadata), so these
+  // are reliable regardless of page count/ordering/reconciler timing — closing
+  // the old "completed deep check with actual_credits = 0" hole.
   const searchCredits = result.searchCredits;
   const judgeCredits = result.judgeCredits;
 
-  // Search pages no longer carry per-page credit metadata: their cost is the
-  // flat figure above, billed once at the check level. Writing creditsUsed here
-  // would double-count against the page-sum for NON-search targets — so omit it.
+  // Search pages carry no per-page credit (cost is the flat figure above, billed
+  // once at check level); writing creditsUsed here would double-count.
   const pages: PageResult[] = result.pageUpserts.map(upsert => {
     const status = searchStatusToPageStatus(upsert.status);
     return {
@@ -1206,8 +1188,8 @@ export async function processMonitorCheckJob(
       } else if (target.type === "crawl" && targetRun.type === "crawl") {
         await enqueueMonitorCrawlTarget({ monitor, check, target, targetRun });
       } else if (target.type === "search" && targetRun.type === "search") {
-        // Search is synchronous: run it now and fold its outcome back into target_results
-        // so the reconciler (which treats search runs as already-complete) finalizes the check.
+        // Search is synchronous: run now and fold the outcome into target_results
+        // so the reconciler (which treats search as complete) finalizes the check.
         const searchResult = await runMonitorSearchTarget({
           monitor,
           check,
@@ -1217,10 +1199,7 @@ export async function processMonitorCheckJob(
         targetRun.matches = searchResult.matches;
         targetRun.summary = searchResult.summary;
         targetRun.searchDegraded = searchResult.searchDegraded;
-        // Record the FLAT, deterministic credits onto target_results. The
-        // updateMonitorCheck below persists target_results on the check row, so
-        // these numbers (known now) survive to finalization and are summed into
-        // actual_credits — never reconstructed from page metadata.
+        // Persisted onto target_results below so they survive to finalization.
         targetRun.searchCredits = searchResult.searchCredits;
         targetRun.judgeCredits = searchResult.judgeCredits;
         targetRun.resultsJudged = searchResult.resultsJudged;
@@ -1597,9 +1576,8 @@ export async function reconcileRunningMonitorChecks(
       const actualCredits = await calculateMonitorCheckActualCredits({
         checkId: check.id,
         targets: monitor.targets,
-        // Flat search-target credits are read from the persisted target_results,
-        // not reconstructed from page metadata — so a completed deep check that
-        // judged results always records them (the old actual_credits=0 bug).
+        // Flat search credits come from target_results, not page metadata, so a
+        // completed deep check that judged always records them (fixes the old bug).
         targetResults,
       });
 

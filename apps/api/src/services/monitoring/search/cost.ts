@@ -1,9 +1,8 @@
 import { CostTracking } from "../../../lib/cost-tracking";
 import { calculateCost } from "../../../scraper/scrapeURL/transformers/llmExtract";
 
-// AI SDK `generateObject` returns token usage under `usage.inputTokens` /
-// `usage.outputTokens`. Older SDK builds expose `promptTokens` /
-// `completionTokens`; normalize both so cost recording never silently drops to 0.
+// Newer AI SDK exposes usage as inputTokens/outputTokens, older builds as
+// promptTokens/completionTokens; accept both so cost never silently drops to 0.
 type RawUsage =
   | {
       inputTokens?: number;
@@ -23,15 +22,10 @@ function outputTokensOf(usage: RawUsage): number {
 }
 
 /**
- * Record a single monitor LLM call against a shared CostTracking, mirroring how
- * the scrape/extract path records LLM work (llmExtract.ts → calculateCost →
- * CostTracking.addCall).
- *
- * NOTE: monitor JUDGE BILLING NO LONGER reads from this CostTracking. Judge
- * credits are a FLAT 5 per judged result (see JUDGE_CREDITS_PER_RESULT in
- * run.ts), computed deterministically at check time. This recording is retained
- * purely for observability/debugging of token usage — it does not affect the
- * credits a team is charged.
+ * Record a single monitor LLM call against a shared CostTracking, mirroring the
+ * scrape/extract path (llmExtract.ts → calculateCost → CostTracking.addCall).
+ * For observability only — judge billing is a flat per-result figure (see
+ * JUDGE_CREDITS_PER_RESULT in run.ts) and does not read from this.
  */
 export function recordLlmCall(params: {
   costTracking: CostTracking;
