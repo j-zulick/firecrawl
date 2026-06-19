@@ -149,20 +149,13 @@ type SearchTargetRunResult = {
   meaningful: number;
   matches: number;
   summary: string;
-  // Reserved provider-level degraded signal. The public search() helper swallows
-  // provider errors into an empty result, so the monitor cannot tell a real
-  // failure from a genuine no-results without reaching into core search; this
-  // therefore stays false. Kept for the check shape and possible future use.
+  // Reserved provider-level signal; always false (see assembly below).
   searchDegraded: boolean;
-  // True when the deep (scrape+judge) path was expected to evaluate results but
-  // evaluated ~none BECAUSE the per-result scrapes failed/timed out. A judged check that
-  // completes with 0 pages / 0 judged because every scrape errored otherwise
-  // looks identical to "nothing new"; this flags it so it isn't read as clean.
-  // Conservative: NOT set when search legitimately returned 0 results, and NOT
-  // set when the judge legitimately ignored everything (resultsJudged > 0).
+  // True when the deep path was expected to judge results but judged ~none
+  // because every per-result scrape failed — otherwise indistinguishable from
+  // a clean "nothing new".
   judgeDegraded: boolean;
-  // Human-readable explanation when judgeDegraded is set, surfaced onto the
-  // check/summary.
+  // Explanation surfaced onto the check when judgeDegraded is set.
   degradedReason: string | null;
   sources: SearchSource[];
   // Search() call credits (≈2 per 10 results), matching executeSearch's math.
@@ -231,11 +224,8 @@ export async function runSearchTarget(params: {
   let searchResultsBilled = 0;
   // Denominator for flat judge billing: judgeCredits = 5 * this.
   let resultsJudged = 0;
-  // Deep-path per-result scrape/judge failures (scrape threw, scrape !success,
-  // or verdict unparseable) — the silently-swallowed errors that hit `continue`
-  // BEFORE resultsJudged is incremented. Counted to mark the check degraded when
-  // judging was expected but produced ~nothing DUE TO these failures, so an
-  // all-scrapes-failed deep check can't masquerade as a clean "nothing new".
+  // Deep-path per-result failures (scrape threw / !success / unparseable verdict)
+  // that `continue` before resultsJudged increments — drives judgeDegraded.
   let judgeScrapeFailures = 0;
 
   const seenThisRun = new Map<string, number>();
@@ -625,23 +615,9 @@ export async function runSearchTarget(params: {
         null;
     }
 
-    // Canonical "judged result" — the unit of flat billing.
-    //
-    //   A judged result is a result we scraped (deep) or snippet-judged
-    //   (standard) and obtained a parsed AI verdict for THIS run, regardless of
-    //   the verdict's outcome (alert/watch/ignore/already_seen). This is exactly
-    //   what costs money — the scrape + the verdict LLM call — and exactly what
-    //   the docs price: "5 credits per result judged — covers scraping and
-    //   evaluating the result".
-    //
-    // NOT counted (and not billed): the router-skipped subset (never scraped),
-    // results whose scrape/verdict failed (status "skipped", no verdict), raw /
-    // judge-off results, and unchanged results REUSED from a prior run (those
-    // were billed when first judged — see the !isNewOrChanged branch above,
-    // which carries a stale `concept` over but must not re-bill). Reaching this
-    // line is the single source of truth; every billed page is stamped
-    // judgedThisRun=true in baseMeta so the billed count == count of pages with
-    // judgedThisRun, with no ambiguity from leaked prior-run concepts.
+    // A "judged result" is one scraped/snippet-judged with a parsed verdict
+    // this run — the unit of flat billing. Reaching here is the single source
+    // of truth; pages reused unchanged, router-skipped, or failed don't count.
     resultsJudged += 1;
 
     let decision = verdictToDecision(verdict);
