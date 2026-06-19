@@ -39,8 +39,7 @@ import {
 } from "./verify";
 import { hasGeminiKey } from "./tuning";
 
-// Flat credits per result the judge evaluates (scraped + judged in deep mode).
-// Deterministic and known at check time — no token/at-cost math.
+// Flat, deterministic credits per result the judge evaluates.
 export const JUDGE_CREDITS_PER_RESULT = 5;
 
 function windowToTbs(window: string): string {
@@ -49,9 +48,8 @@ function windowToTbs(window: string): string {
   return "qdr:w";
 }
 
-// The provider rate-limits near-simultaneous identical queries and may answer
-// with a clean HTTP 200 empty body. Retry empty responses with backoff; a
-// genuinely-empty query just exhausts attempts and returns empty cleanly.
+// Retry empty responses with backoff (the provider rate-limits near-identical
+// queries with a 200 + empty body); a truly-empty query just exhausts attempts.
 const SEARCH_RETRY_BACKOFF_MS = [400, 1200] as const;
 
 async function searchWithRetry(
@@ -125,8 +123,7 @@ export type KnownPage = {
   goalVersion: string;
   lastCheckedAt?: string;
   lastStatus?: string;
-  // Carried through so unchanged-page upserts don't wipe event/verdict fields
-  // persisted by earlier runs.
+  // Carried through so unchanged-page upserts don't wipe earlier event/verdict fields.
   metadata?: Record<string, unknown>;
 };
 
@@ -151,19 +148,12 @@ type SearchTargetRunResult = {
   summary: string;
   // Reserved provider-level signal; always false (see assembly below).
   searchDegraded: boolean;
-  // True when the deep path was expected to judge results but judged ~none
-  // because every per-result scrape failed — otherwise indistinguishable from
-  // a clean "nothing new".
+  // Deep path found candidates but judged none (every scrape failed).
   judgeDegraded: boolean;
-  // Explanation surfaced onto the check when judgeDegraded is set.
   degradedReason: string | null;
   sources: SearchSource[];
-  // Search() call credits (≈2 per 10 results), matching executeSearch's math.
   searchCredits: number;
-  // Flat judge billing: JUDGE_CREDITS_PER_RESULT per result the judge evaluated
-  // (covers both the scrape and the judge). Zero in raw mode.
   judgeCredits: number;
-  // Denominator for judgeCredits; carried for observability / estimate parity.
   resultsJudged: number;
   pageUpserts: Array<{
     url: string;
@@ -186,8 +176,7 @@ export async function runSearchTarget(params: {
     teamId: string;
     goal: string | null;
     subject: string;
-    // When false, every LLM judge stage is skipped and the target behaves like
-    // depth:"raw" (deterministic URLs + dedup, no LLM credits).
+    // When false, every LLM judge stage is skipped (behaves like depth:"raw").
     judgeEnabled: boolean;
   };
   target: SearchTargetInput;
@@ -217,15 +206,11 @@ export async function runSearchTarget(params: {
   let pagesChecked = 0;
   let skipped = 0;
   let matches = 0;
-  // For observability only — billing does not read from it, but the judge
-  // helpers require a CostTracking argument.
+  // Required by the judge helpers; billing does not read from it.
   const costTracking = new CostTracking();
-  // Search calls bill ≈2 credits / 10 results, mirroring executeSearch().
   let searchResultsBilled = 0;
-  // Denominator for flat judge billing: judgeCredits = 5 * this.
   let resultsJudged = 0;
-  // Deep-path per-result failures (scrape threw / !success / unparseable verdict)
-  // that `continue` before resultsJudged increments — drives judgeDegraded.
+  // Per-result failures that `continue` before resultsJudged increments.
   let judgeScrapeFailures = 0;
 
   const seenThisRun = new Map<string, number>();
@@ -868,24 +853,10 @@ export async function runSearchTarget(params: {
     }
   }
 
-  // The public search() helper swallows provider errors and returns an empty
-  // result, so the monitor can't distinguish a real provider failure from a
-  // genuine no-results without reaching into core search. We deliberately don't:
-  // empty-after-retries is treated as a clean no-results. The field is kept for
-  // the check shape (and the deep-path judge-degraded signal below still fires).
   const searchDegraded = false;
 
-  // Deep-path degraded signal: judging WAS expected (depth deep + search
-  // returned candidates) but produced ~nothing (resultsJudged === 0) BECAUSE the
-  // per-result scrapes failed (judgeScrapeFailures > 0). This is the conservative
-  // trigger — it is deliberately NOT set when:
-  //   - search legitimately returned 0 results (judgeExpected is false, no
-  //     candidates), or
-  //   - the judge legitimately evaluated results and ignored them all
-  //     (resultsJudged > 0), or
-  //   - only SOME scrapes failed but at least one was judged (resultsJudged > 0).
-  // Without this, a deep check whose every scrape timed out completes "clean"
-  // with 0 pages / 0 judged / 0 alerts — indistinguishable from "nothing new".
+  // A deep check that found candidates but judged none (every scrape failed)
+  // would otherwise look identical to a clean "nothing new".
   const judgeExpected = depth === "deep" && candidates.length > 0;
   const judgeDegraded =
     judgeExpected && resultsJudged === 0 && judgeScrapeFailures > 0;
@@ -906,8 +877,6 @@ export async function runSearchTarget(params: {
     }
   }
 
-  // Single reason surfaced onto the check when the deep path could not evaluate
-  // the results it found.
   const degradedReason: string | null = judgeDegraded
     ? "deep-path scrapes failed for every candidate so nothing was judged; results may be incomplete"
     : null;
