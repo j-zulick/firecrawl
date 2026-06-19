@@ -5,8 +5,6 @@ import { buildSearchQuery } from "../../../lib/search-query-builder";
 import { scrapeURL } from "../../../scraper/scrapeURL";
 import { scrapeOptions } from "../../../controllers/v2/types";
 import { CostTracking } from "../../../lib/cost-tracking";
-import { calculateCreditsToBeBilled } from "../../../lib/scrape-billing";
-import { llmCostToCredits } from "./cost";
 import { hashMonitorUrl } from "../store";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
 import {
@@ -40,6 +38,11 @@ import {
   type VerifyEvidence,
 } from "./verify";
 import { hasGeminiKey } from "./tuning";
+
+// FLAT judge billing rate: credits charged per result the judge evaluates this
+// check (a result that receives an AI verdict — scraped + judged in deep mode).
+// Deterministic and known at check time — no token/at-cost math.
+export const JUDGE_CREDITS_PER_RESULT = 5;
 
 function windowToTbs(window: string): string {
   if (window === "5m" || window === "15m" || window === "1h") return "qdr:h";
@@ -192,17 +195,21 @@ type SearchTargetRunResult = {
   // Credits attributable to the search() calls themselves (≈2 per 10 results),
   // matching executeSearch's search-credit math.
   searchCredits: number;
-  // Credits for all monitor LLM/judge calls (router, snippet judge, criteria
-  // compile, skeptic, resolver, material-dev, summarizer), billed at cost.
-  llmCredits: number;
+  // FLAT, deterministic judge billing: JUDGE_CREDITS_PER_RESULT (5) for every
+  // result the judge actually evaluated this check — i.e. each result that
+  // received an AI verdict (scraped + judged in deep mode). Zero when judging is
+  // off (raw mode). Replaces the old at-cost token→credit `llmCredits` and the
+  // per-scrape `calculateCreditsToBeBilled` contribution: the flat 5 covers both
+  // the scrape and the judge for a search result.
+  judgeCredits: number;
+  // Number of results that received a judge verdict this check (the denominator
+  // for judgeCredits). Carried through for observability / estimate parity.
+  resultsJudged: number;
   pageUpserts: Array<{
     url: string;
     urlHash: Buffer;
     status: string;
     scraped?: boolean;
-    // Real per-page scrape credits from calculateCreditsToBeBilled() — includes
-    // the scrape's own JSON/LLM extraction cost. 0 when the page was not scraped.
-    creditsUsed?: number;
     metadata: Record<string, unknown>;
     judgment?: {
       meaningful: boolean;
@@ -255,12 +262,17 @@ export async function runSearchTarget(params: {
   let pagesChecked = 0;
   let skipped = 0;
   let matches = 0;
-  // Single CostTracking shared by every LLM/judge call (and the per-page scrape
-  // extraction) in this run, so the run's LLM dollar cost converts to credits
-  // once via llmCostToCredits — the platform's canonical at-cost LLM billing.
+  // Shared CostTracking passed to the LLM/judge stages so they can record token
+  // usage for observability/debugging. Billing NO LONGER reads from it — judge
+  // credits are a flat per-judged-result figure (JUDGE_CREDITS_PER_RESULT),
+  // computed deterministically below. The object is kept only because the judge
+  // helpers require a CostTracking argument.
   const costTracking = new CostTracking();
   // Search calls bill ≈2 credits / 10 results, mirroring executeSearch().
   let searchResultsBilled = 0;
+  // Count of results that received an AI judge verdict this check. This is the
+  // single, clear denominator for flat judge billing: judgeCredits = 5 * this.
+  let resultsJudged = 0;
   // Count of queries that ultimately FAILED at the provider (rate-limit / HTTP
   // error) after retries, as opposed to legitimately returning zero results.
   // Used to mark the run degraded so an empty check isn't reported as a
@@ -600,7 +612,6 @@ export async function runSearchTarget(params: {
     let verdict: SearchVerdict | null = null;
     let pageText = "";
     let realDate: string | null = null;
-    let scrapeCredits = 0;
     if (depth === "standard") {
       verdict = snippetVerdicts.get(canonical) ?? null;
       if (!verdict) {
@@ -646,26 +657,6 @@ export async function runSearchTarget(params: {
       }
       pagesChecked += 1;
 
-      // Bill the scrape at actual cost via the same primitive the worker uses
-      // (calculateCreditsToBeBilled): base + JSON-extraction + any premium
-      // surcharges + the scrape's own LLM extraction cost. This replaces the
-      // dummy searchPageCredits() estimate.
-      try {
-        scrapeCredits = await calculateCreditsToBeBilled(
-          scrapeParsedOptions,
-          { teamId, zeroDataRetention: params.zeroDataRetention },
-          res.document,
-          scrapeCostTracking,
-          {},
-        );
-      } catch (error) {
-        logger.warn("search monitor scrape credit calc failed; using base", {
-          url: c.url,
-          error,
-        });
-        scrapeCredits = res.document.metadata?.creditsUsed ?? 1;
-      }
-
       verdict = parseVerdict(res.document.json);
       if (!verdict) {
         skipped += 1;
@@ -678,6 +669,11 @@ export async function runSearchTarget(params: {
         res.document.metadata?.modifiedTime ??
         null;
     }
+
+    // This result received an AI judge verdict (snippet judge in standard, or
+    // scrape+judge in deep). It is the unit of flat judge billing: each such
+    // result costs JUDGE_CREDITS_PER_RESULT, regardless of the verdict outcome.
+    resultsJudged += 1;
 
     let decision = verdictToDecision(verdict);
 
@@ -754,7 +750,6 @@ export async function runSearchTarget(params: {
         urlHash: hashMonitorUrl(canonical),
         status: "ignored",
         scraped: depth === "deep",
-        creditsUsed: scrapeCredits,
         metadata: { ...baseMeta, searchStatus: "ignored" },
       });
       continue;
@@ -771,7 +766,6 @@ export async function runSearchTarget(params: {
         urlHash: hashMonitorUrl(canonical),
         status: "watching",
         scraped: depth === "deep",
-        creditsUsed: scrapeCredits,
         metadata: { ...baseMeta, searchStatus: "watching" },
       });
       continue;
@@ -844,7 +838,6 @@ export async function runSearchTarget(params: {
         urlHash: hashMonitorUrl(canonical),
         status: "already_seen",
         scraped: depth === "deep",
-        creditsUsed: scrapeCredits,
         metadata: { ...eventMeta, searchStatus: "already_seen" },
       });
       continue;
@@ -879,7 +872,6 @@ export async function runSearchTarget(params: {
       urlHash: hashMonitorUrl(canonical),
       status: "alert",
       scraped: depth === "deep",
-      creditsUsed: scrapeCredits,
       metadata: {
         ...eventMeta,
         searchStatus: "alert",
@@ -947,7 +939,10 @@ export async function runSearchTarget(params: {
   const isZDR = params.zeroDataRetention;
   const searchCredits =
     Math.ceil(searchResultsBilled / 10) * (isZDR ? 10 : 2);
-  const llmCredits = llmCostToCredits(costTracking);
+  // FLAT, deterministic judge billing: 5 credits per result the judge evaluated
+  // this check. No token/at-cost conversion. Zero when judging was off (raw),
+  // where resultsJudged stays 0. Known at check time → recorded reliably.
+  const judgeCredits = resultsJudged * JUDGE_CREDITS_PER_RESULT;
 
   return {
     targetId: target.id,
@@ -961,7 +956,8 @@ export async function runSearchTarget(params: {
     searchDegraded,
     sources,
     searchCredits,
-    llmCredits,
+    judgeCredits,
+    resultsJudged,
     pageUpserts,
   };
 }

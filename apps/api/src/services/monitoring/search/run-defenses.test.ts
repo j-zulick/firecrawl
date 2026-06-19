@@ -366,8 +366,9 @@ describe("judgeEnabled gates the LLM judge", () => {
     expect(summarizeRunMock).not.toHaveBeenCalled();
     expect(criteriaLlmMock).not.toHaveBeenCalled();
 
-    // No LLM credits billed; search still ran and was billed.
-    expect(result.llmCredits).toBe(0);
+    // No judge credits billed (raw → nothing judged); search still ran and was billed.
+    expect(result.judgeCredits).toBe(0);
+    expect(result.resultsJudged).toBe(0);
     expect(result.resultCount).toBe(2);
 
     // Raw alerts: deterministic searchStatus from dedup, but no LLM
@@ -388,7 +389,8 @@ describe("judgeEnabled gates the LLM judge", () => {
     );
 
     expect(result.resultCount).toBe(1);
-    expect(result.llmCredits).toBe(0);
+    expect(result.judgeCredits).toBe(0);
+    expect(result.resultsJudged).toBe(0);
     expect(scrapeURLMock).not.toHaveBeenCalled();
   });
 

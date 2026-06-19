@@ -1,6 +1,5 @@
 import { CostTracking } from "../../../lib/cost-tracking";
 import { calculateCost } from "../../../scraper/scrapeURL/transformers/llmExtract";
-import { calculateThinkingCost } from "../../../lib/extract/usage/llm-cost";
 
 // AI SDK `generateObject` returns token usage under `usage.inputTokens` /
 // `usage.outputTokens`. Older SDK builds expose `promptTokens` /
@@ -25,9 +24,14 @@ function outputTokensOf(usage: RawUsage): number {
 
 /**
  * Record a single monitor LLM call against a shared CostTracking, mirroring how
- * the scrape/extract path bills LLM work "at cost" (llmExtract.ts → calculateCost
- * → CostTracking.addCall). The dollar cost is later converted to credits via
- * {@link llmCostToCredits}, the same conversion extract uses.
+ * the scrape/extract path records LLM work (llmExtract.ts → calculateCost →
+ * CostTracking.addCall).
+ *
+ * NOTE: monitor JUDGE BILLING NO LONGER reads from this CostTracking. Judge
+ * credits are a FLAT 5 per judged result (see JUDGE_CREDITS_PER_RESULT in
+ * run.ts), computed deterministically at check time. This recording is retained
+ * purely for observability/debugging of token usage — it does not affect the
+ * credits a team is charged.
  */
 export function recordLlmCall(params: {
   costTracking: CostTracking;
@@ -44,16 +48,4 @@ export function recordLlmCall(params: {
     cost: calculateCost(params.model, input, output),
     tokens: { input, output },
   });
-}
-
-/**
- * Convert the accumulated LLM dollar cost into credits. Uses the platform's
- * canonical at-cost conversion: calculateThinkingCost(ct) = ceil(totalCost *
- * 20000) tokens, then ceil(tokens / 15) credits — identical to how the extract
- * endpoint bills its fire-1 / thinking LLM work (extraction-service.ts).
- */
-export function llmCostToCredits(costTracking: CostTracking): number {
-  const tokensBilled = calculateThinkingCost(costTracking);
-  if (tokensBilled <= 0) return 0;
-  return Math.ceil(tokensBilled / 15);
 }

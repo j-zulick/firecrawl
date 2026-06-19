@@ -41,13 +41,16 @@ const REMOVED_PAGE_CREDITS = 0;
 const X_TWITTER_POSTPROCESSOR_CREDIT_BONUS = 29;
 const DEFAULT_CRAWL_LIMIT_FOR_ESTIMATE = 10000;
 const MONITOR_CHECK_PAGE_BATCH_SIZE = 1000;
-// Search monitors also bill the search() call (~2 credits / 10 results) and
-// every LLM/judge call at cost. The estimate adds a per-result LLM allowance so
-// the reserved credits roughly cover the new at-cost actuals (router + snippet
-// judge + skeptic + resolver + summarizer). Tuned to typical gemini-flash-lite
-// usage; the actual deduction is always the at-cost figure, never this estimate.
+// FLAT, deterministic search-monitor billing:
+//  - The search() call bills 2 credits per 10 results, per query.
+//  - The judge bills a FLAT 5 credits per result it evaluates (scraped+judged
+//    in deep). No token/at-cost conversion. The estimate is an upper bound
+//    (all results of all queries judged); real runs dedupe + cap, so actual ≤
+//    estimate. The actual deduction is the flat figure recorded on the check.
+// SEARCH_JUDGE_CREDITS_PER_RESULT MUST stay in sync with
+// JUDGE_CREDITS_PER_RESULT in ./search/run.ts (the runtime billing rate).
 const SEARCH_CREDITS_PER_TEN_RESULTS = 2;
-const SEARCH_LLM_CREDITS_PER_RESULT = 2;
+const SEARCH_JUDGE_CREDITS_PER_RESULT = 5;
 
 type MonitorCreditMetadata = {
   creditsUsed?: unknown;
@@ -145,41 +148,48 @@ function estimateBaseCreditsPerPage(
   return credits;
 }
 
-function estimateTargetBaseCredits(target: MonitorTarget): number {
+// Upper bound on the number of results a search target's judge could evaluate
+// in one run: every result of every query (before dedupe). Used by the FLAT
+// judge estimate (5 per judged result). Real runs dedupe and the router caps
+// selection, so actual judged results ≤ this — keeping estimate ≥ actual.
+function estimateSearchJudgedResults(
+  target: Extract<MonitorTarget, { type: "search" }>,
+): number {
+  return Math.max(1, target.maxResults) * Math.max(1, target.queries.length);
+}
+
+function estimateSearchTargetCredits(
+  target: Extract<MonitorTarget, { type: "search" }>,
+  judgeEnabled: boolean,
+): number {
+  // FLAT model: search call (2 per 10 results, per query) + flat judge (5 per
+  // result the judge could evaluate). No at-cost scrape/LLM components.
+  const searchCallCredits =
+    Math.ceil(Math.max(1, target.maxResults) / 10) *
+    SEARCH_CREDITS_PER_TEN_RESULTS *
+    Math.max(1, target.queries.length);
+  // Judging is skipped entirely in raw mode or when the judge is off.
+  if (target.depth === "raw" || !judgeEnabled) {
+    return searchCallCredits;
+  }
+  return (
+    searchCallCredits +
+    estimateSearchJudgedResults(target) * SEARCH_JUDGE_CREDITS_PER_RESULT
+  );
+}
+
+function estimateTargetBaseCredits(
+  target: MonitorTarget,
+  judgeEnabled: boolean = false,
+): number {
   const creditsPerPage = estimateBaseCreditsPerPage(target.scrapeOptions);
   if (target.type === "scrape") {
     return target.urls.length * creditsPerPage;
   }
   if (target.type === "search") {
-    // The search() call bills ~2 credits / 10 results regardless of depth.
-    const searchCallCredits =
-      Math.ceil(Math.max(1, target.maxResults) / 10) *
-      SEARCH_CREDITS_PER_TEN_RESULTS *
-      Math.max(1, target.queries.length);
-    // depth is no longer settable via the API; absent depth means the runtime
-    // default ("deep" when judging is on). Only legacy stored targets carry an
-    // explicit "raw"/"standard". Treat absent depth as deep below.
-    if (target.depth === "raw") {
-      // No scrape, no LLM — only the search call.
-      return searchCallCredits;
-    }
-    // Every result may drive LLM/judge work billed at cost.
-    const llmCredits = target.maxResults * SEARCH_LLM_CREDITS_PER_RESULT;
-    if (target.depth === "standard") {
-      // Snippet-only: no per-result scrape, but LLM snippet judging still runs.
-      return (
-        searchCallCredits + Math.max(1, target.queries.length) + llmCredits
-      );
-    }
-    // Deep: each selected result is scraped with JSON extraction.
-    return (
-      searchCallCredits +
-      llmCredits +
-      target.maxResults *
-        estimateBaseCreditsPerPage({
-          formats: [{ type: "json" }],
-        } as MonitorTarget["scrapeOptions"])
-    );
+    // Search targets carry their FULL estimate (search + flat judge) here; they
+    // are excluded from the global per-page judge loop to avoid double-counting.
+    return estimateSearchTargetCredits(target, judgeEnabled);
   }
 
   const limit =
@@ -209,13 +219,18 @@ export function estimateMonitorCreditsPerRun(
   judgeEnabled: boolean = false,
 ): number {
   const baseCredits = targets.reduce(
-    (sum, target) => sum + estimateTargetBaseCredits(target),
+    (sum, target) => sum + estimateTargetBaseCredits(target, judgeEnabled),
     0,
   );
+  // Search targets bill judging via the FLAT 5-per-judged-result model, already
+  // folded into estimateTargetBaseCredits above. The global per-page judge
+  // allowance applies only to scrape/crawl targets, so exclude search here.
   const judgeCredits = judgeEnabled
     ? targets.reduce(
         (sum, target) =>
-          sum + estimateTargetPageCount(target) * JUDGE_CREDITS_PER_PAGE,
+          target.type === "search"
+            ? sum
+            : sum + estimateTargetPageCount(target) * JUDGE_CREDITS_PER_PAGE,
         0,
       )
     : 0;
@@ -309,6 +324,15 @@ export function calculateMonitorCheckActualCreditsFromPages(
   }
 
   return pages.reduce((total, page) => {
+    // Search-target pages carry NO per-page credit. Their entire cost (search
+    // call + flat judge) is billed once at the check level from target_results
+    // (see flatSearchTargetCredits / calculateMonitorCheckActualCredits). Summing
+    // a per-page base here would double-bill them, so skip search pages.
+    const target = targetsById.get(page.target_id ?? "");
+    if (target?.type === "search") {
+      return total;
+    }
+
     const metadata = page.metadata as MonitorCreditMetadata | null;
     const recordedCredits = metadata?.creditsUsed;
     let baseCredits = fallbackBaseCreditsForPage(page);
@@ -322,6 +346,37 @@ export function calculateMonitorCheckActualCreditsFromPages(
 
     const judgeCredits = judgeCreditsForPage(page);
     return total + baseCredits + judgeCredits;
+  }, 0);
+}
+
+/**
+ * Sum the FLAT, deterministic credits recorded on a check's target_results for
+ * every search target: searchCredits (2 per 10 results) + judgeCredits (5 per
+ * judged result). These are computed and persisted onto target_results the
+ * moment the synchronous search completes, so they are always present at
+ * finalization — independent of which pages persisted, page ordering, reconciler
+ * timing, or any CostTracking object. This is what guarantees a completed deep
+ * check can never record actual_credits = 0 while it actually judged results.
+ */
+export function flatSearchTargetCredits(targetResults: unknown): number {
+  if (!Array.isArray(targetResults)) return 0;
+  return targetResults.reduce((total: number, run: unknown) => {
+    if (!run || typeof run !== "object") return total;
+    const r = run as {
+      type?: unknown;
+      searchCredits?: unknown;
+      judgeCredits?: unknown;
+    };
+    if (r.type !== "search") return total;
+    const searchCredits =
+      typeof r.searchCredits === "number" && Number.isFinite(r.searchCredits)
+        ? r.searchCredits
+        : 0;
+    const judgeCredits =
+      typeof r.judgeCredits === "number" && Number.isFinite(r.judgeCredits)
+        ? r.judgeCredits
+        : 0;
+    return total + searchCredits + judgeCredits;
   }, 0);
 }
 
@@ -896,8 +951,13 @@ export async function countMonitorCheckPages(params: {
 export async function calculateMonitorCheckActualCredits(params: {
   checkId: string;
   targets: MonitorTarget[];
+  // The check's persisted target_results. Search-target credits (flat, known at
+  // check time) are summed from here deterministically; pass the value read off
+  // the check row so an empty/missing pages table can never zero them out.
+  targetResults?: unknown;
 }): Promise<number> {
-  let total = 0;
+  // Flat search-target credits first: deterministic and independent of pages.
+  let total = flatSearchTargetCredits(params.targetResults);
   let offset = 0;
 
   while (true) {

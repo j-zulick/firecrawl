@@ -5,6 +5,7 @@ jest.mock("uuid", () => ({
 import {
   calculateMonitorCheckActualCreditsFromPages,
   estimateMonitorCreditsPerRun,
+  flatSearchTargetCredits,
 } from "./store";
 import type { MonitorTarget } from "./types";
 
@@ -207,5 +208,114 @@ describe("monitoring store credit helpers", () => {
         { status: "error", metadata: {} },
       ]),
     ).toBe(5);
+  });
+});
+
+describe("FLAT deterministic search-monitor billing", () => {
+  const searchTarget = (
+    overrides: Partial<Extract<MonitorTarget, { type: "search" }>> = {},
+  ): MonitorTarget =>
+    ({
+      id: "search-1",
+      type: "search",
+      queries: ["nvidia gpu launch"],
+      searchWindow: "24h",
+      maxResults: 10,
+      scrapeOptions: {},
+      ...overrides,
+    }) as MonitorTarget;
+
+  describe("estimate (upper bound)", () => {
+    it("judge OFF (raw billing): only the search call, 2 per 10 results", () => {
+      // ceil(10/10)*2 * 1 query = 2.
+      expect(estimateMonitorCreditsPerRun([searchTarget()], false)).toBe(2);
+    });
+
+    it("judge ON: search call + flat 5 per judged result (all results, all queries)", () => {
+      // search = ceil(10/10)*2*1 = 2; judge = 5 * (10 results * 1 query) = 50.
+      expect(estimateMonitorCreditsPerRun([searchTarget()], true)).toBe(52);
+    });
+
+    it("legacy depth:raw target is never judged even when judging is on", () => {
+      expect(
+        estimateMonitorCreditsPerRun([searchTarget({ depth: "raw" })], true),
+      ).toBe(2);
+    });
+
+    it("scales with queries and maxResults as an upper bound", () => {
+      const t = searchTarget({
+        maxResults: 20,
+        queries: ["a", "b", "c"],
+      });
+      // search = ceil(20/10)*2*3 = 12; judge = 5 * (20*3) = 300 → 312.
+      expect(estimateMonitorCreditsPerRun([t], true)).toBe(312);
+    });
+  });
+
+  describe("flatSearchTargetCredits (the deterministic actual)", () => {
+    it("sums searchCredits + judgeCredits across search target_results", () => {
+      // The headline trace: search 2 + judge 5*3 = 17.
+      const targetResults = [
+        {
+          targetId: "search-1",
+          type: "search",
+          searchCredits: 2,
+          judgeCredits: 15,
+          resultsJudged: 3,
+        },
+      ];
+      expect(flatSearchTargetCredits(targetResults)).toBe(17);
+    });
+
+    it("raw / judge-off: just the 2 search credits, 0 judge", () => {
+      expect(
+        flatSearchTargetCredits([
+          {
+            targetId: "search-1",
+            type: "search",
+            searchCredits: 2,
+            judgeCredits: 0,
+            resultsJudged: 0,
+          },
+        ]),
+      ).toBe(2);
+    });
+
+    it("ignores non-search target runs and malformed entries", () => {
+      expect(
+        flatSearchTargetCredits([
+          { targetId: "scrape-1", type: "scrape", expectedJobs: ["a"] },
+          { targetId: "search-1", type: "search", searchCredits: 4 },
+          null,
+          "garbage",
+          { type: "search" }, // missing credits → contributes 0
+        ]),
+      ).toBe(4);
+    });
+
+    it("returns 0 for non-array / empty target_results", () => {
+      expect(flatSearchTargetCredits(undefined)).toBe(0);
+      expect(flatSearchTargetCredits(null)).toBe(0);
+      expect(flatSearchTargetCredits([])).toBe(0);
+    });
+  });
+
+  it("page-sum never bills search-target pages (cost is at the check level)", () => {
+    const targets: MonitorTarget[] = [searchTarget()];
+    // Even with judgment + status, a search page contributes 0 to the page sum;
+    // its credits live in target_results via flatSearchTargetCredits.
+    expect(
+      calculateMonitorCheckActualCreditsFromPages(
+        [
+          {
+            target_id: "search-1",
+            metadata: {},
+            judgment: { meaningful: true },
+            status: "new",
+          },
+        ],
+        targets,
+      ),
+    ).toBe(0);
   });
 });

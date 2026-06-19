@@ -122,6 +122,16 @@ type MonitorTargetRun =
       // Persisted into target_results so an empty-but-degraded run is visible
       // and not mistaken for a confident "no changes".
       searchDegraded?: boolean;
+      // FLAT, deterministic search-target billing, recorded onto the check's
+      // target_results the moment the synchronous search completes. The check's
+      // actual_credits is summed from THESE values (plus non-search page
+      // credits), not reconstructed from per-page metadata — so a missing page,
+      // a reconciler race, or an empty CostTracking can never zero them out.
+      //   searchCredits = ceil(totalSearchResults/10)*2  (per check)
+      //   judgeCredits  = 5 * resultsJudged               (0 when judging off)
+      searchCredits?: number;
+      judgeCredits?: number;
+      resultsJudged?: number;
     };
 
 function createMonitorTargetRun(target: MonitorTarget): MonitorTargetRun {
@@ -963,6 +973,10 @@ async function runMonitorSearchTarget(params: {
   matches: number;
   summary: string;
   searchDegraded: boolean;
+  // FLAT, deterministic credits, recorded onto target_results by the caller.
+  searchCredits: number;
+  judgeCredits: number;
+  resultsJudged: number;
 }> {
   if (params.target.type !== "search") {
     return {
@@ -971,6 +985,9 @@ async function runMonitorSearchTarget(params: {
       matches: 0,
       summary: "",
       searchDegraded: false,
+      searchCredits: 0,
+      judgeCredits: 0,
+      resultsJudged: 0,
     };
   }
   const { monitor, check, target } = params;
@@ -1024,23 +1041,24 @@ async function runMonitorSearchTarget(params: {
     }),
   });
 
-  // Run-level credits that aren't tied to a single page: the search() calls
-  // (~2 credits / 10 results) and every LLM/judge call (router, snippet judge,
-  // criteria compile, skeptic, resolver, material-dev, summarizer), all billed
-  // at cost by runSearchTarget. Fold this overhead onto the first persisted page
-  // so the page-sum reconciler (calculateMonitorCheckActualCredits) deducts it.
-  const overheadCredits = result.searchCredits + result.llmCredits;
+  // FLAT, deterministic search-target billing. These two numbers are known the
+  // instant the synchronous search finishes and are returned to the caller,
+  // which records them onto the check's target_results in a single DB write.
+  // The check's actual_credits is summed from target_results (NOT from per-page
+  // metadata), so search credits are recorded reliably regardless of how many
+  // pages persist, page ordering, reconciler timing, or CostTracking state —
+  // closing the old "completed deep check with actual_credits = 0" hole.
+  //   searchCredits = ceil(totalSearchResults/10) * 2   (per check)
+  //   judgeCredits  = 5 * resultsJudged                  (0 when judging off)
+  const searchCredits = result.searchCredits;
+  const judgeCredits = result.judgeCredits;
 
-  const pages: PageResult[] = [];
-  result.pageUpserts.forEach((upsert, index) => {
+  // Search pages no longer carry per-page credit metadata: their cost is the
+  // flat figure above, billed once at the check level. Writing creditsUsed here
+  // would double-count against the page-sum for NON-search targets — so omit it.
+  const pages: PageResult[] = result.pageUpserts.map(upsert => {
     const status = searchStatusToPageStatus(upsert.status);
-    // Real per-page scrape cost from calculateCreditsToBeBilled (0 when the page
-    // was not scraped — e.g. already_seen or snippet-only depth).
-    const pageScrapeCredits = upsert.creditsUsed ?? 0;
-    const creditsUsed =
-      index === 0 ? pageScrapeCredits + overheadCredits : pageScrapeCredits;
-    const metadata = { ...upsert.metadata, creditsUsed };
-    pages.push({
+    return {
       check_id: check.id,
       monitor_id: monitor.id,
       team_id: monitor.team_id,
@@ -1048,10 +1066,10 @@ async function runMonitorSearchTarget(params: {
       url: upsert.url,
       url_hash: upsert.urlHash,
       status,
-      metadata,
+      metadata: upsert.metadata,
       judgment: upsert.judgment ?? null,
       emailStatus: status,
-    });
+    };
   });
 
   for (let i = 0; i < pages.length; i++) {
@@ -1067,25 +1085,6 @@ async function runMonitorSearchTarget(params: {
       status: page.status,
       metadata: page.metadata as Record<string, unknown>,
     });
-  }
-
-  // No pages persisted (e.g. zero search results) but the search() call + any
-  // criteria-compile LLM still cost credits. Persist a synthetic overhead page
-  // so the reconciler bills it.
-  if (pages.length === 0 && overheadCredits > 0) {
-    const overheadUrl = `monitor-search-overhead:${target.id}`;
-    const overheadPage: PageResult = {
-      check_id: check.id,
-      monitor_id: monitor.id,
-      team_id: monitor.team_id,
-      target_id: target.id,
-      url: overheadUrl,
-      url_hash: hashMonitorUrl(overheadUrl),
-      status: "same",
-      metadata: { creditsUsed: overheadCredits, searchOverhead: true },
-      emailStatus: "same",
-    };
-    pages.push(overheadPage);
   }
 
   await insertMonitorCheckPages(pages);
@@ -1109,6 +1108,9 @@ async function runMonitorSearchTarget(params: {
     matches: result.matches,
     summary: result.summary,
     searchDegraded: result.searchDegraded,
+    searchCredits,
+    judgeCredits,
+    resultsJudged: result.resultsJudged,
   };
 }
 
@@ -1215,6 +1217,13 @@ export async function processMonitorCheckJob(
         targetRun.matches = searchResult.matches;
         targetRun.summary = searchResult.summary;
         targetRun.searchDegraded = searchResult.searchDegraded;
+        // Record the FLAT, deterministic credits onto target_results. The
+        // updateMonitorCheck below persists target_results on the check row, so
+        // these numbers (known now) survive to finalization and are summed into
+        // actual_credits — never reconstructed from page metadata.
+        targetRun.searchCredits = searchResult.searchCredits;
+        targetRun.judgeCredits = searchResult.judgeCredits;
+        targetRun.resultsJudged = searchResult.resultsJudged;
       }
     }
 
@@ -1588,6 +1597,10 @@ export async function reconcileRunningMonitorChecks(
       const actualCredits = await calculateMonitorCheckActualCredits({
         checkId: check.id,
         targets: monitor.targets,
+        // Flat search-target credits are read from the persisted target_results,
+        // not reconstructed from page metadata — so a completed deep check that
+        // judged results always records them (the old actual_credits=0 bug).
+        targetResults,
       });
 
       let finalized = await updateMonitorCheck(check.id, {
