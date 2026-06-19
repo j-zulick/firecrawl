@@ -772,7 +772,22 @@ export interface MonitorCrawlTarget {
   scrapeOptions?: ScrapeOptions;
 }
 
-export type MonitorTarget = MonitorScrapeTarget | MonitorCrawlTarget;
+export interface MonitorSearchTarget {
+  id?: string;
+  type: "search";
+  queries: string[];
+  searchWindow?: "5m" | "15m" | "1h" | "6h" | "24h" | "7d";
+  includeDomains?: string[];
+  excludeDomains?: string[];
+  recheckAfter?: "1h" | "6h" | "24h" | "7d";
+  maxResults?: number;
+  scrapeOptions?: ScrapeOptions;
+}
+
+export type MonitorTarget =
+  | MonitorScrapeTarget
+  | MonitorCrawlTarget
+  | MonitorSearchTarget;
 
 export interface CreateMonitorRequest {
   name: string;

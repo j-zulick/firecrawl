@@ -985,16 +985,23 @@ class MonitorEmailRecipientSubscription(BaseModel):
 
 
 class MonitorTarget(BaseModel):
-    """A scrape or crawl target stored on a monitor."""
+    """A scrape, crawl, or search target stored on a monitor."""
 
     model_config = {"extra": "allow", "populate_by_name": True}
 
     id: Optional[str] = None
-    type: Literal["scrape", "crawl"]
+    type: Literal["scrape", "crawl", "search"]
     urls: Optional[List[str]] = None
     url: Optional[str] = None
     scrape_options: Optional[Union[ScrapeOptions, Dict[str, Any]]] = Field(default=None, alias="scrapeOptions")
     crawl_options: Optional[Dict[str, Any]] = Field(default=None, alias="crawlOptions")
+    # search target fields
+    queries: Optional[List[str]] = None
+    search_window: Optional[Literal["5m", "15m", "1h", "6h", "24h", "7d"]] = Field(default=None, alias="searchWindow")
+    include_domains: Optional[List[str]] = Field(default=None, alias="includeDomains")
+    exclude_domains: Optional[List[str]] = Field(default=None, alias="excludeDomains")
+    recheck_after: Optional[Literal["1h", "6h", "24h", "7d"]] = Field(default=None, alias="recheckAfter")
+    max_results: Optional[int] = Field(default=None, alias="maxResults")
 
 
 class MonitorCreateRequest(BaseModel):
