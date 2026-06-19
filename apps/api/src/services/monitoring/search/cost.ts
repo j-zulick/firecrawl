@@ -1,8 +1,6 @@
 import { CostTracking } from "../../../lib/cost-tracking";
 import { calculateCost } from "../../../scraper/scrapeURL/transformers/llmExtract";
 
-// Newer AI SDK exposes usage as inputTokens/outputTokens, older builds as
-// promptTokens/completionTokens; accept both so cost never silently drops to 0.
 type RawUsage =
   | {
       inputTokens?: number;
@@ -21,12 +19,6 @@ function outputTokensOf(usage: RawUsage): number {
   return usage?.outputTokens ?? usage?.completionTokens ?? 0;
 }
 
-/**
- * Record a single monitor LLM call against a shared CostTracking, mirroring the
- * scrape/extract path (llmExtract.ts → calculateCost → CostTracking.addCall).
- * For observability only — judge billing is a flat per-result figure (see
- * JUDGE_CREDITS_PER_RESULT in run.ts) and does not read from this.
- */
 export function recordLlmCall(params: {
   costTracking: CostTracking;
   model: string;

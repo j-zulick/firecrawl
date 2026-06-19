@@ -33,9 +33,6 @@ export function reconstructKnownState(
         fingerprint: meta.fingerprint,
         goalVersion: meta.goalVersion,
         lastCheckedAt: page.updated_at,
-        // monitor_pages.last_status holds the page-status mapping (new/same/
-        // error); the search-internal status (alert/watching/...) is mirrored
-        // into metadata.searchStatus. Fall back to last_status for legacy rows.
         lastStatus:
           typeof meta.searchStatus === "string"
             ? meta.searchStatus

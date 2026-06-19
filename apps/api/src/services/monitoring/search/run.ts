@@ -39,7 +39,6 @@ import {
 } from "./verify";
 import { hasGeminiKey } from "./tuning";
 
-// Flat, deterministic credits per result the judge evaluates.
 export const JUDGE_CREDITS_PER_RESULT = 5;
 
 function windowToTbs(window: string): string {
@@ -48,8 +47,6 @@ function windowToTbs(window: string): string {
   return "qdr:w";
 }
 
-// Retry empty responses with backoff (the provider rate-limits near-identical
-// queries with a 200 + empty body); a truly-empty query just exhausts attempts.
 const SEARCH_RETRY_BACKOFF_MS = [400, 1200] as const;
 
 async function searchWithRetry(
@@ -123,7 +120,6 @@ export type KnownPage = {
   goalVersion: string;
   lastCheckedAt?: string;
   lastStatus?: string;
-  // Carried through so unchanged-page upserts don't wipe earlier event/verdict fields.
   metadata?: Record<string, unknown>;
 };
 
@@ -146,9 +142,7 @@ type SearchTargetRunResult = {
   meaningful: number;
   matches: number;
   summary: string;
-  // Reserved provider-level signal; always false (see assembly below).
   searchDegraded: boolean;
-  // Deep path found candidates but judged none (every scrape failed).
   judgeDegraded: boolean;
   degradedReason: string | null;
   sources: SearchSource[];
@@ -176,7 +170,6 @@ export async function runSearchTarget(params: {
     teamId: string;
     goal: string | null;
     subject: string;
-    // When false, every LLM judge stage is skipped (behaves like depth:"raw").
     judgeEnabled: boolean;
   };
   target: SearchTargetInput;
@@ -190,7 +183,6 @@ export async function runSearchTarget(params: {
   const judgeEnabled = params.monitor.judgeEnabled;
 
   const goal = params.monitor.goal?.trim();
-  // Only the LLM judge requires a goal; raw/judge-off checks still run search.
   if (judgeEnabled && !goal) {
     throw new Error("search monitor target requires a non-empty monitor goal");
   }
@@ -206,11 +198,9 @@ export async function runSearchTarget(params: {
   let pagesChecked = 0;
   let skipped = 0;
   let matches = 0;
-  // Required by the judge helpers; billing does not read from it.
   const costTracking = new CostTracking();
   let searchResultsBilled = 0;
   let resultsJudged = 0;
-  // Per-result failures that `continue` before resultsJudged increments.
   let judgeScrapeFailures = 0;
 
   const seenThisRun = new Map<string, number>();
@@ -236,7 +226,6 @@ export async function runSearchTarget(params: {
       logger,
     );
     const results = response.web ?? [];
-    // Bill on raw results, before dedupe/trim.
     searchResultsBilled += results.length;
     for (const r of results) {
       if (!r.url) continue;
@@ -244,8 +233,6 @@ export async function runSearchTarget(params: {
       const canonical = canonicalizeUrl(r.url);
       const existingIdx = seenThisRun.get(canonical);
       if (existingIdx !== undefined) {
-        // Same URL from another query this run — record the extra query rather
-        // than dropping it.
         const existing = candidates[existingIdx];
         if (!existing.matchedQueries.includes(query)) {
           existing.matchedQueries.push(query);
@@ -265,8 +252,6 @@ export async function runSearchTarget(params: {
   resultCount = candidates.length;
 
   const llmStagesAvailable = hasGeminiKey();
-  // Judge off → collapse to "raw" so every LLM stage is skipped via the existing
-  // raw path, rather than scattering judgeEnabled conditionals.
   const depth: "raw" | "standard" | "deep" = !judgeEnabled
     ? "raw"
     : target.depth === "raw"
@@ -275,8 +260,6 @@ export async function runSearchTarget(params: {
         ? "standard"
         : "deep";
 
-  // depth !== "raw" implies judgeEnabled implies a non-empty goal (top guard),
-  // so judgeGoal is always populated when judging runs; "" only in raw mode.
   const judgeGoal: string = goal ?? "";
 
   let criteria: GoalCriteria = compileGoalCriteria({
@@ -443,12 +426,6 @@ export async function runSearchTarget(params: {
         url: canonical,
         urlHash: hashMonitorUrl(canonical),
         status: reusedStatus,
-        // Upserts replace metadata wholesale; spread prior metadata to preserve
-        // event stamps (eventKey/eventLabel/...) that reconstruction needs.
-        // Force judgedThisRun=false: this page is REUSED unchanged, not
-        // re-judged, so it must not be counted/billed again even though prior
-        // metadata may carry a stale concept/judgedThisRun from when it was
-        // first judged.
         metadata: {
           ...(knownCurrent?.metadata ?? {}),
           fingerprint,
@@ -585,9 +562,6 @@ export async function runSearchTarget(params: {
 
       verdict = parseVerdict(res.document.json);
       if (!verdict) {
-        // Scrape succeeded but the AI verdict was unparseable — the result was
-        // fetched yet never actually evaluated, so it counts as a judge-path
-        // failure for the degraded signal (not a legitimate "judge ignored it").
         judgeScrapeFailures += 1;
         skipped += 1;
         sources.push({ url: c.url, title: c.title, status: "skipped" });
@@ -600,9 +574,6 @@ export async function runSearchTarget(params: {
         null;
     }
 
-    // A "judged result" is one scraped/snippet-judged with a parsed verdict
-    // this run — the unit of flat billing. Reaching here is the single source
-    // of truth; pages reused unchanged, router-skipped, or failed don't count.
     resultsJudged += 1;
 
     let decision = verdictToDecision(verdict);
@@ -665,10 +636,6 @@ export async function runSearchTarget(params: {
       concept: verdict.concept,
       rationale: verdict.rationale,
       matchedQueries: c.matchedQueries,
-      // Stamped iff resultsJudged was incremented just above — the canonical,
-      // unambiguous billing signal. `concept` alone is unreliable: the reuse
-      // path copies a prior run's concept onto an unchanged page that was NOT
-      // re-judged this run. judgedThisRun is true ONLY on results billed now.
       judgedThisRun: true,
       ...(verification && !verification.pass ? { verification } : {}),
     };
@@ -855,8 +822,6 @@ export async function runSearchTarget(params: {
 
   const searchDegraded = false;
 
-  // A deep check that found candidates but judged none (every scrape failed)
-  // would otherwise look identical to a clean "nothing new".
   const judgeExpected = depth === "deep" && candidates.length > 0;
   const judgeDegraded =
     judgeExpected && resultsJudged === 0 && judgeScrapeFailures > 0;

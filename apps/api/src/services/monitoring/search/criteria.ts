@@ -22,7 +22,6 @@ export function tokenizeContent(text: string | null | undefined): string[] {
     String(text ?? "")
       .toLowerCase()
       .split(/[^a-z0-9]+/)
-      // Keep 2-char tokens: acronyms like AI, EU, or Go are real content terms.
       .filter(token => token.length >= 2)
   );
 }

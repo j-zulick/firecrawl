@@ -26,8 +26,6 @@ export function verifyAlertCandidate(params: {
   const pageBackedText = [
     evidence.titleText,
     evidence.claimText,
-    // The subject often appears only in the body (e.g. a headline that uses a
-    // product name); cap the slice so containment stays cheap on huge pages.
     String(evidence.pageText ?? "").slice(0, 20000),
   ]
     .filter(Boolean)
