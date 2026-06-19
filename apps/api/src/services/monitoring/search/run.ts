@@ -486,11 +486,16 @@ export async function runSearchTarget(params: {
         status: reusedStatus,
         // Upserts replace metadata wholesale; spread prior metadata to preserve
         // event stamps (eventKey/eventLabel/...) that reconstruction needs.
+        // Force judgedThisRun=false: this page is REUSED unchanged, not
+        // re-judged, so it must not be counted/billed again even though prior
+        // metadata may carry a stale concept/judgedThisRun from when it was
+        // first judged.
         metadata: {
           ...(knownCurrent?.metadata ?? {}),
           fingerprint,
           goalVersion,
           searchStatus: reusedStatus,
+          judgedThisRun: false,
         },
       });
       continue;
@@ -630,7 +635,23 @@ export async function runSearchTarget(params: {
         null;
     }
 
-    // Judged this result — the unit of flat billing, regardless of outcome.
+    // Canonical "judged result" — the unit of flat billing.
+    //
+    //   A judged result is a result we scraped (deep) or snippet-judged
+    //   (standard) and obtained a parsed AI verdict for THIS run, regardless of
+    //   the verdict's outcome (alert/watch/ignore/already_seen). This is exactly
+    //   what costs money — the scrape + the verdict LLM call — and exactly what
+    //   the docs price: "5 credits per result judged — covers scraping and
+    //   evaluating the result".
+    //
+    // NOT counted (and not billed): the router-skipped subset (never scraped),
+    // results whose scrape/verdict failed (status "skipped", no verdict), raw /
+    // judge-off results, and unchanged results REUSED from a prior run (those
+    // were billed when first judged — see the !isNewOrChanged branch above,
+    // which carries a stale `concept` over but must not re-bill). Reaching this
+    // line is the single source of truth; every billed page is stamped
+    // judgedThisRun=true in baseMeta so the billed count == count of pages with
+    // judgedThisRun, with no ambiguity from leaked prior-run concepts.
     resultsJudged += 1;
 
     let decision = verdictToDecision(verdict);
@@ -693,6 +714,11 @@ export async function runSearchTarget(params: {
       concept: verdict.concept,
       rationale: verdict.rationale,
       matchedQueries: c.matchedQueries,
+      // Stamped iff resultsJudged was incremented just above — the canonical,
+      // unambiguous billing signal. `concept` alone is unreliable: the reuse
+      // path copies a prior run's concept onto an unchanged page that was NOT
+      // re-judged this run. judgedThisRun is true ONLY on results billed now.
+      judgedThisRun: true,
       ...(verification && !verification.pass ? { verification } : {}),
     };
 

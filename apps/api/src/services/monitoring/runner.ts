@@ -113,6 +113,11 @@ type MonitorTargetRun =
       // Search runs inline during dispatch; counts/credits filled in after.
       targetId: string;
       type: "search";
+      // False/undefined until the inline search finishes and stamps its credits.
+      // The reconciler must NOT finalize a check whose search run is still
+      // pending — otherwise it sums credits that haven't been written yet and
+      // bills 0. Set true ONLY once searchCredits/judgeCredits are populated.
+      searchCompleted?: boolean;
       resultCount?: number;
       matches?: number;
       summary?: string;
@@ -1203,6 +1208,11 @@ export async function processMonitorCheckJob(
         targetRun.searchCredits = searchResult.searchCredits;
         targetRun.judgeCredits = searchResult.judgeCredits;
         targetRun.resultsJudged = searchResult.resultsJudged;
+        // Mark complete LAST, after credits are populated: the reconciler keys
+        // its completeness check on this flag, so it can never finalize (and
+        // bill the as-yet-unstamped, zero credits) while the search — possibly
+        // mid rate-limit retry — is still running.
+        targetRun.searchCompleted = true;
       }
     }
 
@@ -1354,7 +1364,14 @@ async function isMonitorCheckComplete(
   }
 
   for (const target of targetResults) {
-    if (target?.type === "scrape") {
+    if (target?.type === "search") {
+      // Search runs inline during dispatch and stamps searchCompleted=true only
+      // after its flat credits are written. Until then the run is in flight
+      // (e.g. retrying a rate-limited query), so treating it as complete would
+      // let the reconciler finalize with credits still at 0 — the never-zero
+      // guarantee depends on waiting here.
+      if (!target.searchCompleted) return false;
+    } else if (target?.type === "scrape") {
       const expected = Array.isArray(target.expectedJobs)
         ? target.expectedJobs.length
         : 0;

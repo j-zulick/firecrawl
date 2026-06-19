@@ -60,3 +60,43 @@ describe("search-monitor FLAT judge billing rate", () => {
     expect(judgeCreditsFor(10)).toBe(50);
   });
 });
+
+// The CANONICAL "judged result" definition, pinned so billing and the eval stay
+// in lockstep. A judged result is one scraped+judged (deep) or snippet-judged
+// (standard) THIS run — run.ts increments resultsJudged exactly once per such
+// result and stamps metadata.judgedThisRun=true on its persisted page. The
+// billed count therefore equals the number of pages with judgedThisRun=true.
+// Reused (unchanged), raw, and skipped pages are NOT judged this run and carry
+// judgedThisRun=false / absent — even if they retain a stale `concept`.
+describe("canonical judged-result count (billing == persisted signal)", () => {
+  type Page = { searchStatus: string; judgedThisRun?: boolean; concept?: string };
+  const billedJudgedCount = (pages: Page[]) =>
+    pages.filter(p => p.judgedThisRun === true).length;
+
+  it("counts judgedThisRun=true, NOT every page nor every page with a concept", () => {
+    // The judged#1 shape: 6 results, only 1 re-judged this run; the other two
+    // "concept" pages are REUSED from a prior run (judgedThisRun=false) and a
+    // skipped page got no verdict. Counting pages-with-concept gives 3 (the old
+    // eval undercount mismatch); the canonical count is 1.
+    const pages: Page[] = [
+      { searchStatus: "alert", judgedThisRun: true, concept: "fresh-verdict" },
+      { searchStatus: "already_seen", judgedThisRun: false, concept: "stale-1" },
+      { searchStatus: "watching", judgedThisRun: false, concept: "stale-2" },
+      { searchStatus: "skipped" }, // no verdict, no judgedThisRun
+    ];
+    expect(pages.filter(p => p.concept).length).toBe(3); // the misleading count
+    expect(billedJudgedCount(pages)).toBe(1); // the canonical, billed count
+    expect(billedJudgedCount(pages) * JUDGE_CREDITS_PER_RESULT).toBe(5);
+  });
+
+  it("counts judged results across every billed outcome (alert/watch/ignore/already_seen)", () => {
+    const pages: Page[] = [
+      { searchStatus: "alert", judgedThisRun: true },
+      { searchStatus: "watching", judgedThisRun: true },
+      { searchStatus: "ignored", judgedThisRun: true },
+      { searchStatus: "already_seen", judgedThisRun: true },
+      { searchStatus: "skipped" }, // verdict failed -> not billed
+    ];
+    expect(billedJudgedCount(pages)).toBe(4); // -> 5*4 = 20 judge credits
+  });
+});
