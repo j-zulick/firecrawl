@@ -12,7 +12,7 @@ const JUDGE_CREDITS_PER_RESULT = 5;
 // shared CostTracking, but that is ONLY for observability — it no longer feeds
 // the credits a team is charged.
 describe("search-monitor LLM cost recording (observability only)", () => {
-  it("records a call's token cost into the shared CostTracking", () => {
+  it("records token usage into the shared CostTracking with no dollar cost", () => {
     const ct = new CostTracking();
     recordLlmCall({
       costTracking: ct,
@@ -20,8 +20,10 @@ describe("search-monitor LLM cost recording (observability only)", () => {
       usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
       stage: "routeSearchResults",
     });
-    // gemini-flash-lite-latest: $0.10 in + $0.40 out per 1M tokens.
-    expect(ct.toJSON().totalCost).toBeCloseTo(0.5, 6);
+    const json = ct.toJSON();
+    // Tokens recorded for observability; cost stays 0 (flat per-result billing).
+    expect(json.totalCost).toBe(0);
+    expect(json.calls[0].tokens).toEqual({ input: 1_000_000, output: 1_000_000 });
   });
 
   it("normalizes promptTokens/completionTokens (older SDK usage shape)", () => {
@@ -32,18 +34,7 @@ describe("search-monitor LLM cost recording (observability only)", () => {
       usage: { promptTokens: 1_000_000, completionTokens: 0 },
       stage: "summarizeRun",
     });
-    expect(ct.toJSON().totalCost).toBeCloseTo(0.1, 6);
-  });
-
-  it("returns 0 cost for an unknown/unpriced model rather than throwing", () => {
-    const ct = new CostTracking();
-    recordLlmCall({
-      costTracking: ct,
-      model: "some-model-with-no-price",
-      usage: { inputTokens: 1000, outputTokens: 1000 },
-      stage: "test",
-    });
-    expect(ct.toJSON().totalCost).toBe(0);
+    expect(ct.toJSON().calls[0].tokens).toEqual({ input: 1_000_000, output: 0 });
   });
 });
 

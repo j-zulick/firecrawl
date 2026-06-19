@@ -1,7 +1,8 @@
 import type { Logger } from "winston";
-import type { SearchVerdict } from "./judge";
+import { type SearchVerdict, verdictJsonSchema, buildJudgePrompt } from "./judge";
 import type { EventResolution } from "./llm";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
+import { scrapeOptions } from "../../../controllers/v2/types";
 
 // vi.mock is hoisted above declarations, so the mocks its factories reference
 // are created in vi.hoisted() (also hoisted) to avoid any TDZ surprises.
@@ -15,8 +16,13 @@ const { searchMock, scrapeURLMock, resolveEventMock, summarizeRunMock, materialD
   }));
 
 vi.mock("uuid", () => ({ v7: () => "00000000-0000-7000-8000-000000000000" }));
-vi.mock("../../../search", () => ({
-  search: (...a: unknown[]) => searchMock(...a),
+vi.mock("../../../search/v2", () => ({
+  // Tests set the mock to resolve a bare result array; the real search() returns
+  // a SearchV2Response ({ web: [...] }), so wrap arrays to match that contract.
+  search: async (...a: unknown[]) => {
+    const r = await searchMock(...a);
+    return Array.isArray(r) ? { web: r } : r;
+  },
 }));
 vi.mock("../../../scraper/scrapeURL", () => ({
   scrapeURL: (...a: unknown[]) => scrapeURLMock(...a),
@@ -423,8 +429,6 @@ describe("runSearchTarget orchestration", () => {
 
 describe("scrape payload validity (real validator, no mocks)", () => {
   it("scrapeOptions.parse accepts the verdict json format", () => {
-    const { scrapeOptions } = require("../../../controllers/v2/types");
-    const { verdictJsonSchema, buildJudgePrompt } = require("./judge");
     const parsed = scrapeOptions.parse({
       formats: [
         {

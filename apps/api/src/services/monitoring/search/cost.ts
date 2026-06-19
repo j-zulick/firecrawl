@@ -1,5 +1,4 @@
 import { CostTracking } from "../../../lib/cost-tracking";
-import { calculateCost } from "../../../scraper/scrapeURL/transformers/llmExtract";
 
 type RawUsage =
   | {
@@ -27,11 +26,13 @@ export function recordLlmCall(params: {
 }): void {
   const input = inputTokensOf(params.usage);
   const output = outputTokensOf(params.usage);
+  // Tokens are recorded for observability only; judge billing is a flat
+  // per-result figure, so we do not attach a dollar cost here.
   params.costTracking.addCall({
     type: "other",
     metadata: { source: "search-monitor", stage: params.stage },
     model: params.model,
-    cost: calculateCost(params.model, input, output),
+    cost: 0,
     tokens: { input, output },
   });
 }

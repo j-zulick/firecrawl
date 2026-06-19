@@ -11,8 +11,6 @@ describe("searchStatusToPageStatus", () => {
   });
 });
 
-describe("searchPageWasScraped", () => {});
-
 describe("reconstructKnownState", () => {
   it("rebuilds the dedup map keyed by canonical URL", () => {
     const { knownPages } = reconstructKnownState(

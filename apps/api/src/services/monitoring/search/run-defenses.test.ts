@@ -26,8 +26,13 @@ const {
 }));
 
 vi.mock("uuid", () => ({ v7: () => "00000000-0000-7000-8000-000000000000" }));
-vi.mock("../../../search", () => ({
-  search: (...a: unknown[]) => searchMock(...a),
+vi.mock("../../../search/v2", () => ({
+  // Tests set the mock to resolve a bare result array; the real search() returns
+  // a SearchV2Response ({ web: [...] }), so wrap arrays to match that contract.
+  search: async (...a: unknown[]) => {
+    const r = await searchMock(...a);
+    return Array.isArray(r) ? { web: r } : r;
+  },
 }));
 vi.mock("../../../scraper/scrapeURL", () => ({
   scrapeURL: (...a: unknown[]) => scrapeURLMock(...a),
