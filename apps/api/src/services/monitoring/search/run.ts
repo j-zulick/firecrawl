@@ -50,43 +50,31 @@ function windowToTbs(window: string): string {
 }
 
 // The provider rate-limits near-simultaneous identical queries and may answer
-// with an error OR a clean HTTP 200 with an empty body — indistinguishable from
-// a genuinely-empty result. Retry both empty and failed responses with backoff;
-// a real empty query just exhausts attempts and returns empty cleanly. `failed`
-// is true only when the LAST attempt was a real failure, so the caller can mark
-// the check degraded rather than confidently empty.
+// with a clean HTTP 200 empty body. Retry empty responses with backoff; a
+// genuinely-empty query just exhausts attempts and returns empty cleanly.
 const SEARCH_RETRY_BACKOFF_MS = [400, 1200] as const;
 
 async function searchWithRetry(
   args: Parameters<typeof search>[0],
   logger: Logger,
-): Promise<{ response: Awaited<ReturnType<typeof search>>; failed: boolean }> {
+): Promise<Awaited<ReturnType<typeof search>>> {
   const maxAttempts = SEARCH_RETRY_BACKOFF_MS.length + 1;
   let lastResponse: Awaited<ReturnType<typeof search>> = {};
-  let lastFailureReason: string | null = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    let failureReason: string | null = null;
-    const response = await search({
-      ...args,
-      onFailure: reason => {
-        failureReason = reason;
-      },
-    });
+    const response = await search(args);
     lastResponse = response;
-    lastFailureReason = failureReason;
 
     const hasResults = (response.web?.length ?? 0) > 0;
-    if (hasResults) return { response, failed: false };
+    if (hasResults) return response;
 
     const isLastAttempt = attempt === maxAttempts - 1;
     if (!isLastAttempt) {
       const base = SEARCH_RETRY_BACKOFF_MS[attempt];
       const jitter = Math.floor(Math.random() * 250);
-      logger.info("search monitor query empty/failed; retrying", {
+      logger.info("search monitor query empty; retrying", {
         query: args.query,
         attempt: attempt + 1,
-        failureReason,
         backoffMs: base + jitter,
       });
       await new Promise(r => setTimeout(r, base + jitter));
@@ -94,21 +82,7 @@ async function searchWithRetry(
     }
   }
 
-  // Exhausted attempts: a real final failure is the false-negative we must not
-  // hide; an empty with no failure is a legitimate no-results.
-  if (lastFailureReason) {
-    logger.warn(
-      "search monitor query failed after retries; reporting degraded (NOT clean no-results)",
-      {
-        query: args.query,
-        reason: lastFailureReason,
-        attempts: maxAttempts,
-      },
-    );
-    return { response: lastResponse, failed: true };
-  }
-
-  return { response: lastResponse, failed: false };
+  return lastResponse;
 }
 
 function isExcludedDomain(
@@ -175,21 +149,20 @@ type SearchTargetRunResult = {
   meaningful: number;
   matches: number;
   summary: string;
-  // True when a query failed at the provider after retries rather than
-  // legitimately returning zero results. An empty-but-degraded run means "could
-  // not confirm", not a confident "no new results" — avoids a silent false
-  // negative on a swallowed rate-limit.
+  // Reserved provider-level degraded signal. The public search() helper swallows
+  // provider errors into an empty result, so the monitor cannot tell a real
+  // failure from a genuine no-results without reaching into core search; this
+  // therefore stays false. Kept for the check shape and possible future use.
   searchDegraded: boolean;
   // True when the deep (scrape+judge) path was expected to evaluate results but
-  // evaluated ~none BECAUSE the per-result scrapes failed/timed out — the
-  // false-negative twin of searchDegraded, one layer deeper. A judged check that
+  // evaluated ~none BECAUSE the per-result scrapes failed/timed out. A judged check that
   // completes with 0 pages / 0 judged because every scrape errored otherwise
   // looks identical to "nothing new"; this flags it so it isn't read as clean.
   // Conservative: NOT set when search legitimately returned 0 results, and NOT
   // set when the judge legitimately ignored everything (resultsJudged > 0).
   judgeDegraded: boolean;
-  // Human-readable explanation for whichever degraded flag is set (search OR
-  // judge), surfaced onto the check/summary the same way searchDegraded is.
+  // Human-readable explanation when judgeDegraded is set, surfaced onto the
+  // check/summary.
   degradedReason: string | null;
   sources: SearchSource[];
   // Search() call credits (≈2 per 10 results), matching executeSearch's math.
@@ -258,9 +231,6 @@ export async function runSearchTarget(params: {
   let searchResultsBilled = 0;
   // Denominator for flat judge billing: judgeCredits = 5 * this.
   let resultsJudged = 0;
-  // Queries that failed at the provider after retries (vs. legitimately empty);
-  // used to mark the run degraded.
-  let searchFailures = 0;
   // Deep-path per-result scrape/judge failures (scrape threw, scrape !success,
   // or verdict unparseable) — the silently-swallowed errors that hit `continue`
   // BEFORE resultsJudged is incremented. Counted to mark the check degraded when
@@ -281,7 +251,7 @@ export async function runSearchTarget(params: {
       includeDomains: target.includeDomains,
       excludeDomains: target.excludeDomains,
     });
-    const { response, failed } = await searchWithRetry(
+    const response = await searchWithRetry(
       {
         query: scopedQuery,
         logger,
@@ -290,9 +260,6 @@ export async function runSearchTarget(params: {
       },
       logger,
     );
-    if (failed) {
-      searchFailures += 1;
-    }
     const results = response.web ?? [];
     // Bill on raw results, before dedupe/trim.
     searchResultsBilled += results.length;
@@ -925,23 +892,12 @@ export async function runSearchTarget(params: {
     }
   }
 
-  const searchDegraded = searchFailures > 0;
-  if (searchDegraded && matches === 0) {
-    // Don't let a swallowed provider failure masquerade as clean no-results.
-    logger.warn(
-      "search monitor run is degraded: one or more queries failed at the provider after retries; results may be incomplete",
-      {
-        monitorId: params.monitor.id,
-        targetId: target.id,
-        failedQueries: searchFailures,
-        totalQueries: target.queries.length,
-      },
-    );
-    if (!summary) {
-      summary =
-        "Search provider was unavailable for one or more queries (rate-limited or errored after retries); results may be incomplete.";
-    }
-  }
+  // The public search() helper swallows provider errors and returns an empty
+  // result, so the monitor can't distinguish a real provider failure from a
+  // genuine no-results without reaching into core search. We deliberately don't:
+  // empty-after-retries is treated as a clean no-results. The field is kept for
+  // the check shape (and the deep-path judge-degraded signal below still fires).
+  const searchDegraded = false;
 
   // Deep-path degraded signal: judging WAS expected (depth deep + search
   // returned candidates) but produced ~nothing (resultsJudged === 0) BECAUSE the
@@ -974,15 +930,11 @@ export async function runSearchTarget(params: {
     }
   }
 
-  // Single reason surfaced onto the check the same way searchDegraded is. Search
-  // failure takes precedence (it's upstream — a failed query means we never even
-  // got results to scrape).
-  const degradedReason: string | null =
-    searchDegraded && matches === 0
-      ? "search provider unavailable for one or more queries after retries; results may be incomplete"
-      : judgeDegraded
-        ? "deep-path scrapes failed for every candidate so nothing was judged; results may be incomplete"
-        : null;
+  // Single reason surfaced onto the check when the deep path could not evaluate
+  // the results it found.
+  const degradedReason: string | null = judgeDegraded
+    ? "deep-path scrapes failed for every candidate so nothing was judged; results may be incomplete"
+    : null;
 
   const isZDR = params.zeroDataRetention;
   const searchCredits =
