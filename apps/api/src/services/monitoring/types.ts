@@ -48,27 +48,43 @@ const monitorDomainSchema = z
     "Domain must be a valid hostname without protocol or path",
   );
 
-const searchTargetSchema = z.strictObject({
-  id: z.string().uuid().optional(),
-  type: z.literal("search"),
-  queries: z.array(z.string().min(1).max(256)).min(1).max(12),
-  searchWindow: z
-    .enum(["5m", "15m", "1h", "6h", "24h", "7d"])
-    .optional()
-    .default("24h"),
-  alertMode: z
-    .enum(["first_match", "every_new_result", "material_dev"])
-    .optional()
-    .default("first_match"),
-  // "deep" scrapes + judges routed pages (extract tier); "standard" judges
-  // from SERP snippets only — no page fetches, the cheap tier.
-  depth: z.enum(["raw", "standard", "deep"]).optional().default("deep"),
-  includeDomains: z.array(monitorDomainSchema).max(50).optional(),
-  excludeDomains: z.array(monitorDomainSchema).max(50).optional(),
-  recheckAfter: z.enum(["1h", "6h", "24h", "7d"]).optional(),
-  maxResults: z.number().int().min(1).max(50).optional().default(10),
-  scrapeOptions: scrapeOptionsSchema,
-});
+// `depth` and `alertMode` are NOT part of the public create/update contract.
+// They used to be settable; we now keep them internal-only with sane defaults
+// (depth derived at runtime in runSearchTarget — absent → deep when judging is
+// on, raw when off; alertMode defaults to "first_match" wherever it's read).
+//
+// We deliberately strip any client-supplied `depth`/`alertMode` BEFORE the
+// strictObject validation runs, rather than rejecting them with a 400. This
+// keeps older clients that still send these keys working — the values are
+// simply ignored and never persisted. Existing stored targets that already
+// carry depth/alertMode in the jsonb keep working: this only affects the API
+// input path, and the runtime still reads stored values via MonitorTarget.
+const searchTargetSchema = z.preprocess(
+  value => {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const { depth: _depth, alertMode: _alertMode, ...rest } = value as Record<
+        string,
+        unknown
+      >;
+      return rest;
+    }
+    return value;
+  },
+  z.strictObject({
+    id: z.string().uuid().optional(),
+    type: z.literal("search"),
+    queries: z.array(z.string().min(1).max(256)).min(1).max(12),
+    searchWindow: z
+      .enum(["5m", "15m", "1h", "6h", "24h", "7d"])
+      .optional()
+      .default("24h"),
+    includeDomains: z.array(monitorDomainSchema).max(50).optional(),
+    excludeDomains: z.array(monitorDomainSchema).max(50).optional(),
+    recheckAfter: z.enum(["1h", "6h", "24h", "7d"]).optional(),
+    maxResults: z.number().int().min(1).max(50).optional().default(10),
+    scrapeOptions: scrapeOptionsSchema,
+  }),
+);
 
 const monitorTargetSchema = z.union([
   scrapeTargetSchema,
@@ -247,8 +263,16 @@ export const monitorCheckDetailQuerySchema = z.object({
   status: z.enum(["same", "new", "changed", "removed", "error"]).optional(),
 });
 
+// `depth`/`alertMode` are no longer accepted on the API input path (stripped by
+// searchTargetSchema's preprocess), but EXISTING stored targets in
+// monitors.targets jsonb may still carry them and the runtime must keep
+// honoring those values. Surface them here as optional, internal-only fields so
+// runner.ts / store.ts can read stored values without type errors.
 export type MonitorTarget = z.infer<typeof monitorTargetSchema> & {
   id: string;
+} & {
+  depth?: "raw" | "standard" | "deep";
+  alertMode?: "first_match" | "every_new_result" | "material_dev";
 };
 export type CreateMonitorRequest = z.infer<typeof createMonitorSchema>;
 export type UpdateMonitorRequest = z.infer<typeof updateMonitorSchema>;
