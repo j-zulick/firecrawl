@@ -1,25 +1,38 @@
-/// <reference types="jest" />
-jest.mock("uuid", () => ({ v7: () => "00000000-0000-7000-8000-000000000000" }));
-
 import type { Logger } from "winston";
 import type { SearchVerdict } from "./judge";
 
-const searchMock = jest.fn();
-const scrapeURLMock = jest.fn();
-const resolveEventMock = jest.fn();
-const summarizeRunMock = jest.fn();
-const materialDevMock = jest.fn();
-const reviewAlertMock = jest.fn();
-const routeMock = jest.fn();
-const snippetsMock = jest.fn();
-const criteriaLlmMock = jest.fn();
-jest.mock("../../../search", () => ({
+// vi.mock is hoisted above declarations, so the mocks its factories reference
+// are created in vi.hoisted() (also hoisted) to avoid any TDZ surprises.
+const {
+  searchMock,
+  scrapeURLMock,
+  resolveEventMock,
+  summarizeRunMock,
+  materialDevMock,
+  reviewAlertMock,
+  routeMock,
+  snippetsMock,
+  criteriaLlmMock,
+} = vi.hoisted(() => ({
+  searchMock: vi.fn(),
+  scrapeURLMock: vi.fn(),
+  resolveEventMock: vi.fn(),
+  summarizeRunMock: vi.fn(),
+  materialDevMock: vi.fn(),
+  reviewAlertMock: vi.fn(),
+  routeMock: vi.fn(),
+  snippetsMock: vi.fn(),
+  criteriaLlmMock: vi.fn(),
+}));
+
+vi.mock("uuid", () => ({ v7: () => "00000000-0000-7000-8000-000000000000" }));
+vi.mock("../../../search", () => ({
   search: (...a: unknown[]) => searchMock(...a),
 }));
-jest.mock("../../../scraper/scrapeURL", () => ({
+vi.mock("../../../scraper/scrapeURL", () => ({
   scrapeURL: (...a: unknown[]) => scrapeURLMock(...a),
 }));
-jest.mock("./llm", () => ({
+vi.mock("./llm", () => ({
   resolveEvent: (...a: unknown[]) => resolveEventMock(...a),
   summarizeRun: (...a: unknown[]) => summarizeRunMock(...a),
   judgeMaterialDevelopment: (...a: unknown[]) => materialDevMock(...a),
@@ -27,21 +40,21 @@ jest.mock("./llm", () => ({
   routeSearchResults: (...a: unknown[]) => routeMock(...a),
   judgeSnippets: (...a: unknown[]) => snippetsMock(...a),
 }));
-jest.mock("./tuning", () => ({
+vi.mock("./tuning", () => ({
   hasGeminiKey: () => true,
   googleProviderOptions: () => ({}),
 }));
-jest.mock("./criteria", () => ({
-  ...jest.requireActual("./criteria"),
+vi.mock("./criteria", async importOriginal => ({
+  ...(await importOriginal<typeof import("./criteria")>()),
   compileGoalCriteriaWithLlm: (...a: unknown[]) => criteriaLlmMock(...a),
 }));
 
 import { runSearchTarget } from "./run";
 
 const logger = {
-  warn: jest.fn(),
-  info: jest.fn(),
-  error: jest.fn(),
+  warn: vi.fn(),
+  info: vi.fn(),
+  error: vi.fn(),
 } as unknown as Logger;
 
 const verdict = (over: Partial<SearchVerdict> = {}): SearchVerdict => ({
@@ -92,7 +105,7 @@ function runParams(
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   criteriaLlmMock.mockResolvedValue(llmCriteria);
   resolveEventMock.mockResolvedValue({
     matchedKey: null,

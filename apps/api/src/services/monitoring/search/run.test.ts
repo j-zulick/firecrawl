@@ -1,28 +1,32 @@
-/// <reference types="jest" />
-jest.mock("uuid", () => ({ v7: () => "00000000-0000-7000-8000-000000000000" }));
-
 import type { Logger } from "winston";
 import type { SearchVerdict } from "./judge";
 import type { EventResolution } from "./llm";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
 
-const searchMock = jest.fn();
-const scrapeURLMock = jest.fn();
-const resolveEventMock = jest.fn();
-const summarizeRunMock = jest.fn();
-jest.mock("../../../search", () => ({
+// vi.mock is hoisted above declarations, so the mocks its factories reference
+// are created in vi.hoisted() (also hoisted) to avoid any TDZ surprises.
+const { searchMock, scrapeURLMock, resolveEventMock, summarizeRunMock, materialDevMock } =
+  vi.hoisted(() => ({
+    searchMock: vi.fn(),
+    scrapeURLMock: vi.fn(),
+    resolveEventMock: vi.fn(),
+    summarizeRunMock: vi.fn(),
+    materialDevMock: vi.fn(),
+  }));
+
+vi.mock("uuid", () => ({ v7: () => "00000000-0000-7000-8000-000000000000" }));
+vi.mock("../../../search", () => ({
   search: (...a: unknown[]) => searchMock(...a),
 }));
-jest.mock("../../../scraper/scrapeURL", () => ({
+vi.mock("../../../scraper/scrapeURL", () => ({
   scrapeURL: (...a: unknown[]) => scrapeURLMock(...a),
 }));
-const materialDevMock = jest.fn();
-jest.mock("./llm", () => ({
+vi.mock("./llm", () => ({
   resolveEvent: (...a: unknown[]) => resolveEventMock(...a),
   summarizeRun: (...a: unknown[]) => summarizeRunMock(...a),
   judgeMaterialDevelopment: (...a: unknown[]) => materialDevMock(...a),
 }));
-jest.mock("./tuning", () => ({
+vi.mock("./tuning", () => ({
   hasGeminiKey: () => false,
   googleProviderOptions: () => ({}),
 }));
@@ -30,9 +34,9 @@ jest.mock("./tuning", () => ({
 import { runSearchTarget, type KnownPage } from "./run";
 
 const logger = {
-  warn: jest.fn(),
-  info: jest.fn(),
-  error: jest.fn(),
+  warn: vi.fn(),
+  info: vi.fn(),
+  error: vi.fn(),
 } as unknown as Logger;
 
 const verdict = (over: Partial<SearchVerdict> = {}): SearchVerdict => ({
@@ -105,7 +109,7 @@ function run(
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   resolveEventMock.mockResolvedValue({
     matchedKey: null,
     isNew: true,
