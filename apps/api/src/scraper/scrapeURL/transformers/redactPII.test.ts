@@ -1,11 +1,12 @@
+import type { MockedFunction } from "vitest";
 import { performRedactPII } from "./redactPII";
 import { redactText } from "../../../lib/fire-privacy-client";
 
-jest.mock("../../../lib/fire-privacy-client", () => ({
-  redactText: jest.fn(),
+vi.mock("../../../lib/fire-privacy-client", () => ({
+  redactText: vi.fn(),
 }));
 
-const mockedRedactText = redactText as jest.MockedFunction<typeof redactText>;
+const mockedRedactText = redactText as MockedFunction<typeof redactText>;
 
 describe("performRedactPII", () => {
   const baseMeta = () =>
@@ -19,10 +20,10 @@ describe("performRedactPII", () => {
         },
       },
       logger: {
-        debug: jest.fn(),
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
       },
     }) as any;
   const baseDocument = (overrides: Record<string, unknown> = {}) =>
@@ -51,7 +52,6 @@ describe("performRedactPII", () => {
     );
 
     expect(document.markdown).toBe("Hello <PERSON>");
-    expect(document.pii?.redactedMarkdown).toBe("Hello <PERSON>");
   });
 
   it("runs when redactPII is enabled with markdown output", async () => {
@@ -74,7 +74,6 @@ describe("performRedactPII", () => {
 
     expect(mockedRedactText).toHaveBeenCalledTimes(1);
     expect(document.markdown).toBe("Hello <PERSON>");
-    expect(document.pii?.redactedMarkdown).toBe("Hello <PERSON>");
   });
 
   it("keeps markdown as an empty string when redaction cannot produce safe output", async () => {
@@ -94,7 +93,6 @@ describe("performRedactPII", () => {
     );
 
     expect(document.markdown).toBe("");
-    expect(document.pii?.redactedMarkdown).toBeNull();
   });
 
   it("keeps downstream markdown consumers safe when source markdown is missing", async () => {
@@ -102,12 +100,5 @@ describe("performRedactPII", () => {
 
     expect(mockedRedactText).not.toHaveBeenCalled();
     expect(document.markdown).toBe("");
-    expect(document.pii).toEqual({
-      status: "skipped",
-      reason: "empty_input",
-      redactedMarkdown: null,
-      spans: [],
-      counts: {},
-    });
   });
 });

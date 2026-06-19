@@ -5,8 +5,8 @@ import {
 } from "./tracking";
 import type { MonitorTarget } from "../services/monitoring/types";
 
-jest.mock("./clickhouse-client", () => ({
-  chInsert: jest.fn(),
+vi.mock("./clickhouse-client", () => ({
+  chInsert: vi.fn(),
 }));
 
 const scrapeTarget: MonitorTarget = {
@@ -42,7 +42,7 @@ const searchTarget: MonitorTarget = {
 
 describe("monitor target interest tracking", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it("builds target-grain rows for scrape and crawl monitors", () => {

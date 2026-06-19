@@ -9,7 +9,8 @@ import {
 import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { RequestWithAuth, scrapeOptions } from "./types";
-import { crawlGroup } from "../../services/worker/nuq";
+import { crawlGroup } from "../../services/worker/nuq-router";
+import { normalizeOwnerId } from "../../lib/owner-id";
 import { removeConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
 configDotenv();
 
@@ -23,7 +24,9 @@ export async function crawlCancelController(
       return res.status(404).json({ error: "Job not found" });
     }
 
-    if (group.ownerId !== req.auth.team_id) {
+    // group.ownerId is normalized to a UUID in NuQ, so the raw team_id
+    // (e.g. "bypass" when self-hosted) must be normalized before comparing
+    if (group.ownerId !== normalizeOwnerId(req.auth.team_id)) {
       return res.status(404).json({ error: "Job not found" });
     }
 
@@ -32,12 +35,12 @@ export async function crawlCancelController(
     }
 
     const sc: StoredCrawl = (await getCrawl(req.params.jobId)) ?? {
-      team_id: group.ownerId,
+      team_id: req.auth.team_id,
       createdAt: Date.now(),
       crawlerOptions: null,
       scrapeOptions: scrapeOptions.parse({}),
       internalOptions: {
-        teamId: group.ownerId,
+        teamId: req.auth.team_id,
       },
     };
 
@@ -48,8 +51,12 @@ export async function crawlCancelController(
       logger.error(error);
     }
 
-    const jobIds = await getCrawlJobs(req.params.jobId);
-    await removeConcurrencyLimitedJobs(sc.team_id, jobIds);
+    if (sc.queueBackend === "fdb") {
+      await crawlGroup.cancelGroup(req.params.jobId);
+    } else {
+      const jobIds = await getCrawlJobs(req.params.jobId);
+      await removeConcurrencyLimitedJobs(sc.team_id, jobIds);
+    }
 
     res.json({
       status: "cancelled",

@@ -4,8 +4,9 @@ import { Client, Pool } from "pg";
 import { type ScrapeJobData } from "../../types";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import amqp from "amqplib";
-import { v5 as uuidv5, validate as isUUID } from "uuid";
+import { normalizeOwnerId } from "../../lib/owner-id";
 import { config } from "../../config";
+import { nuqRedis } from "./redis";
 
 // === Basics
 
@@ -51,14 +52,6 @@ type NuQJobOptions = {
 type NuQOptions = {
   backlog?: boolean;
 };
-
-// owner IDs can sometimes be non-UUID, so let's normalize it to avoid query breakage - mogery
-const normalizedUUIDNamespace = "0f38e00e-d7ee-4b77-8a7a-a787a3537ca2";
-function normalizeOwnerId(ownerId: string | undefined | null): string | null {
-  if (typeof ownerId !== "string") return null;
-  if (isUUID(ownerId)) return ownerId;
-  return uuidv5(ownerId, normalizedUUIDNamespace);
-}
 
 function isExpectedAmqpCloseError(error: unknown): boolean {
   const message =
@@ -1746,6 +1739,10 @@ export const crawlGroup = new NuQJobGroup("nuq.group_crawl");
 // === Cleanup
 
 export async function nuqShutdown() {
-  await scrapeQueue.shutdown();
+  await Promise.all([
+    scrapeQueue.shutdown(),
+    crawlFinishedQueue.shutdown(),
+    nuqRedis.shutdown(),
+  ]);
   await nuqPool.end();
 }

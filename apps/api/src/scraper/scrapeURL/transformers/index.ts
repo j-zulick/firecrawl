@@ -18,6 +18,8 @@ import { performAttributes } from "./performAttributes";
 
 import { deriveDiff } from "./diff";
 import { fetchAudio } from "./audio";
+import { fetchProduct } from "./product";
+import { fetchMenu } from "./menu";
 import { fetchVideo } from "./video";
 import { performRedactPII } from "./redactPII";
 import { useIndex, useSearchIndex } from "../../../services/index";
@@ -334,6 +336,8 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasScreenshot = hasFormatOfType(meta.options.formats, "screenshot");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
   const hasBranding = hasFormatOfType(meta.options.formats, "branding");
+  const hasProduct = hasFormatOfType(meta.options.formats, "product");
+  const hasMenu = hasFormatOfType(meta.options.formats, "menu");
   const hasQuestionFormat = hasFormatOfType(meta.options.formats, "question");
   const hasHighlightsFormat = hasFormatOfType(
     meta.options.formats,
@@ -488,6 +492,20 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     );
   }
 
+  if (!hasProduct && document.product !== undefined) {
+    meta.logger.warn(
+      "Removed product from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
+    );
+    delete document.product;
+  }
+
+  if (!hasMenu && document.menu !== undefined) {
+    meta.logger.warn(
+      "Removed menu from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
+    );
+    delete document.menu;
+  }
+
   const hasAudio = hasFormatOfType(meta.options.formats, "audio");
   if (!hasAudio && document.audio !== undefined) {
     delete document.audio;
@@ -500,21 +518,16 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasVideo = hasFormatOfType(meta.options.formats, "video");
   if (!hasVideo && document.video !== undefined) {
     delete document.video;
-  } else if (hasVideo && document.video === undefined) {
+  }
+  if (!hasVideo && document.videos !== undefined) {
+    delete document.videos;
+  } else if (
+    hasVideo &&
+    document.video === undefined &&
+    document.videos === undefined
+  ) {
     meta.logger.warn(
       "Request had format: video, but there was no video field in the result.",
-    );
-  }
-
-  // Redaction itself is controlled by redactPII. Keep internal redaction
-  // details only when explicitly requested.
-  const hasPii = hasFormatOfType(meta.options.formats, "pii");
-  const wantPii = !!(hasPii && meta.options.redactPII);
-  if (!wantPii && document.pii !== undefined) {
-    delete document.pii;
-  } else if (wantPii && document.pii === undefined) {
-    meta.logger.warn(
-      "Redaction details were requested, but there was no pii field in the result.",
     );
   }
 
@@ -582,6 +595,8 @@ const transformerStack: Transformer[] = [
   deriveImagesFromHTML,
   deriveBrandingFromActions,
   deriveMetadataFromRawHTML,
+  fetchProduct,
+  fetchMenu,
   ...(useIndex ? [sendDocumentToIndex] : []),
   ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
   performLLMExtract,
