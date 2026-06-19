@@ -74,6 +74,7 @@ const baseMonitor = {
   teamId: "team1",
   goal: "Alert when OpenAI files for IPO",
   subject: "OpenAI",
+  judgeEnabled: true,
 };
 
 function run(

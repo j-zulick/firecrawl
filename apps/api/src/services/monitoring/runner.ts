@@ -992,6 +992,11 @@ async function runMonitorSearchTarget(params: {
       teamId: monitor.team_id,
       goal: monitor.goal,
       subject: monitor.name,
+      // Read fresh from the persisted monitor on every check, so toggling the
+      // "Only alert on meaningful changes" judge via PATCH/UI takes effect on
+      // the NEXT check (no redeploy). When false, runSearchTarget collapses to
+      // raw mode: deterministic URLs + dedup, no LLM judge, no LLM credits.
+      judgeEnabled: Boolean(monitor.judge_enabled),
     },
     target: {
       id: target.id,

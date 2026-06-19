@@ -339,17 +339,23 @@ export async function runSearchTarget(params: {
         ? "standard"
         : "deep";
 
+  // From here on, any depth !== "raw" path requires a goal. The top-of-function
+  // guard guarantees judgeEnabled implies a non-empty goal; depth !== "raw"
+  // implies judgeEnabled, so this is always satisfied when judging actually
+  // runs; assert it for the type checker (and as a defensive invariant).
+  const judgeGoal: string = goal ?? "";
+
   let criteria: GoalCriteria = compileGoalCriteria({
     // goal can be empty in raw/judge-off mode; criteria is only consumed by
     // the LLM judge stages, which never run when depth === "raw".
-    goal: goal ?? "",
+    goal: judgeGoal,
     subject,
     goalVersion,
   });
   if (llmStagesAvailable && depth !== "raw") {
     try {
       criteria = await compileGoalCriteriaWithLlm({
-        goal,
+        goal: judgeGoal,
         subject,
         queries: target.queries,
         goalVersion,
@@ -374,7 +380,7 @@ export async function runSearchTarget(params: {
     }
     try {
       const decisions = await routeSearchResults({
-        goal,
+        goal: judgeGoal,
         subject,
         searchWindow: target.searchWindow,
         maxResults: target.maxResults,
@@ -434,7 +440,7 @@ export async function runSearchTarget(params: {
   if (depth === "standard" && snippetCandidates.length > 0) {
     try {
       const verdicts = await judgeSnippets({
-        goal,
+        goal: judgeGoal,
         subject,
         searchWindow: target.searchWindow,
         costTracking,
@@ -611,7 +617,7 @@ export async function runSearchTarget(params: {
           {
             type: "json",
             schema: verdictJsonSchema,
-            prompt: buildJudgePrompt(goal, subject, target.searchWindow),
+            prompt: buildJudgePrompt(judgeGoal, subject, target.searchWindow),
           },
         ],
         timeout: 20000,
@@ -701,7 +707,7 @@ export async function runSearchTarget(params: {
     if (decision === "notify" && llmStagesAvailable) {
       try {
         const skeptic: SkepticVerdict = await reviewAlert({
-          goal,
+          goal: judgeGoal,
           subject,
           criteria,
           costTracking,
@@ -774,7 +780,7 @@ export async function runSearchTarget(params: {
     let resolution;
     try {
       resolution = await resolveEvent({
-        goal,
+        goal: judgeGoal,
         subject,
         costTracking,
         result: {
@@ -810,7 +816,7 @@ export async function runSearchTarget(params: {
       } else if (target.alertMode === "material_dev") {
         try {
           const dev = await judgeMaterialDevelopment({
-            goal,
+            goal: judgeGoal,
             subject,
             eventLabel,
             costTracking,
@@ -900,7 +906,7 @@ export async function runSearchTarget(params: {
   } else if (matches > 0) {
     try {
       const out = await summarizeRun({
-        goal,
+        goal: judgeGoal,
         subject,
         costTracking,
         evidence: sources

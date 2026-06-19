@@ -61,13 +61,18 @@ const llmCriteria = {
   thirdPartyOnly: false,
 };
 
-function runParams(targetOver: Record<string, unknown> = {}) {
+function runParams(
+  targetOver: Record<string, unknown> = {},
+  monitorOver: Record<string, unknown> = {},
+) {
   return {
     monitor: {
       id: "mon_1",
       teamId: "team_1",
       goal: "Alert me when Firecrawl launches a new product",
       subject: "Firecrawl",
+      judgeEnabled: true,
+      ...monitorOver,
     },
     target: {
       id: "tgt_1",
@@ -339,5 +344,76 @@ describe("event state stamps + judgment on alert pages", () => {
     const alertUpsert = result.pageUpserts.find(u => u.status === "alert")!;
     expect(alertUpsert.metadata.eventAlertCount).toBe(3);
     expect(alertUpsert.metadata.eventSatisfiedAt).toBe("2026-06-01T00:00:00Z");
+  });
+});
+
+describe("judgeEnabled gates the LLM judge", () => {
+  it("judge OFF behaves like raw: no LLM stages, no LLM credits, no concept/rationale", async () => {
+    // Monitor still has a goal and depth:"deep" — but judgeEnabled=false must
+    // collapse to raw and skip every LLM stage.
+    searchMock.mockResolvedValue([serpRow(1), serpRow(2)]);
+
+    const result = await runSearchTarget(
+      runParams({ depth: "deep" }, { judgeEnabled: false }),
+    );
+
+    // No LLM stage ran.
+    expect(routeMock).not.toHaveBeenCalled();
+    expect(snippetsMock).not.toHaveBeenCalled();
+    expect(scrapeURLMock).not.toHaveBeenCalled();
+    expect(reviewAlertMock).not.toHaveBeenCalled();
+    expect(resolveEventMock).not.toHaveBeenCalled();
+    expect(summarizeRunMock).not.toHaveBeenCalled();
+    expect(criteriaLlmMock).not.toHaveBeenCalled();
+
+    // No LLM credits billed; search still ran and was billed.
+    expect(result.llmCredits).toBe(0);
+    expect(result.resultCount).toBe(2);
+
+    // Raw alerts: deterministic searchStatus from dedup, but no LLM
+    // concept/rationale on any upsert.
+    for (const upsert of result.pageUpserts) {
+      expect(upsert.scraped).toBe(false);
+      expect(upsert.metadata.concept).toBeUndefined();
+      expect(upsert.metadata.rationale).toBeUndefined();
+      expect(upsert.metadata.searchStatus).toBeDefined();
+    }
+  });
+
+  it("judge OFF with no goal still runs search and returns raw results (no throw)", async () => {
+    searchMock.mockResolvedValue([serpRow(1)]);
+
+    const result = await runSearchTarget(
+      runParams({ depth: "deep" }, { judgeEnabled: false, goal: null }),
+    );
+
+    expect(result.resultCount).toBe(1);
+    expect(result.llmCredits).toBe(0);
+    expect(scrapeURLMock).not.toHaveBeenCalled();
+  });
+
+  it("judge ON with depth:deep still runs the full judge", async () => {
+    searchMock.mockResolvedValue([serpRow(1)]);
+    routeMock.mockResolvedValue([
+      { id: "result_1", decision: "scrape", priority: 1, reason: "" },
+    ]);
+    scrapeURLMock.mockResolvedValue({
+      success: true,
+      document: {
+        json: verdict(),
+        markdown: "Firecrawl announced a new product today in prose.",
+        metadata: {},
+      },
+    });
+
+    const result = await runSearchTarget(
+      runParams({ depth: "deep" }, { judgeEnabled: true }),
+    );
+
+    expect(routeMock).toHaveBeenCalled();
+    expect(scrapeURLMock).toHaveBeenCalled();
+    expect(result.matches).toBe(1);
+    const alertUpsert = result.pageUpserts.find(u => u.status === "alert")!;
+    expect(alertUpsert.metadata.concept).toBeDefined();
   });
 });
