@@ -1105,7 +1105,6 @@ class MonitorTarget(BaseModel):
     search_window: Optional[Literal["5m", "15m", "1h", "6h", "24h", "7d"]] = Field(default=None, alias="searchWindow")
     include_domains: Optional[List[str]] = Field(default=None, alias="includeDomains")
     exclude_domains: Optional[List[str]] = Field(default=None, alias="excludeDomains")
-    recheck_after: Optional[Literal["1h", "6h", "24h", "7d"]] = Field(default=None, alias="recheckAfter")
     max_results: Optional[int] = Field(default=None, alias="maxResults")
 
 

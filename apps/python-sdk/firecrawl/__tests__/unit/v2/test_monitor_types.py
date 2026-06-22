@@ -9,7 +9,6 @@ def test_monitor_search_target_parses_camelcase_fields():
             "searchWindow": "24h",
             "includeDomains": ["firecrawl.dev"],
             "excludeDomains": ["spam.com"],
-            "recheckAfter": "6h",
             "maxResults": 20,
         }
     )
@@ -19,7 +18,6 @@ def test_monitor_search_target_parses_camelcase_fields():
     assert target.search_window == "24h"
     assert target.include_domains == ["firecrawl.dev"]
     assert target.exclude_domains == ["spam.com"]
-    assert target.recheck_after == "6h"
     assert target.max_results == 20
 
 

@@ -20,7 +20,6 @@ describe("v2 monitor search target", () => {
       searchWindow: "24h",
       includeDomains: ["firecrawl.dev"],
       excludeDomains: ["spam.com"],
-      recheckAfter: "6h",
       maxResults: 20,
     };
 

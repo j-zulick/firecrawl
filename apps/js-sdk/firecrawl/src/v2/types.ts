@@ -885,7 +885,6 @@ export interface MonitorSearchTarget {
   searchWindow?: "5m" | "15m" | "1h" | "6h" | "24h" | "7d";
   includeDomains?: string[];
   excludeDomains?: string[];
-  recheckAfter?: "1h" | "6h" | "24h" | "7d";
   maxResults?: number;
   scrapeOptions?: ScrapeOptions;
 }

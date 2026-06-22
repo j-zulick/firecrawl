@@ -48,16 +48,19 @@ const monitorDomainSchema = z
     "Domain must be a valid hostname without protocol or path",
   );
 
-// `depth`/`alertMode` are internal-only (derived at runtime). Strip any
-// client-supplied values BEFORE strictObject validation rather than 400ing, so
-// older clients that still send them keep working (values ignored, not persisted).
+// `depth`/`alertMode`/`recheckAfter` are internal-only (derived at runtime /
+// defaulted by the runner). Strip any client-supplied values BEFORE strictObject
+// validation rather than 400ing, so older clients that still send them keep
+// working (values ignored, not persisted).
 const searchTargetSchema = z.preprocess(
   value => {
     if (value && typeof value === "object" && !Array.isArray(value)) {
-      const { depth: _depth, alertMode: _alertMode, ...rest } = value as Record<
-        string,
-        unknown
-      >;
+      const {
+        depth: _depth,
+        alertMode: _alertMode,
+        recheckAfter: _recheckAfter,
+        ...rest
+      } = value as Record<string, unknown>;
       return rest;
     }
     return value;
@@ -72,7 +75,6 @@ const searchTargetSchema = z.preprocess(
       .default("24h"),
     includeDomains: z.array(monitorDomainSchema).max(50).optional(),
     excludeDomains: z.array(monitorDomainSchema).max(50).optional(),
-    recheckAfter: z.enum(["1h", "6h", "24h", "7d"]).optional(),
     maxResults: z.number().int().min(1).max(50).optional().default(10),
     scrapeOptions: scrapeOptionsSchema,
   }),
@@ -262,6 +264,7 @@ export type MonitorTarget = z.infer<typeof monitorTargetSchema> & {
 } & {
   depth?: "raw" | "standard" | "deep";
   alertMode?: "first_match" | "every_new_result" | "material_dev";
+  recheckAfter?: "1h" | "6h" | "24h" | "7d";
 };
 export type CreateMonitorRequest = z.infer<typeof createMonitorSchema>;
 export type UpdateMonitorRequest = z.infer<typeof updateMonitorSchema>;
