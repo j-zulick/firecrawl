@@ -76,14 +76,13 @@ export function verifyAlertCandidate(params: {
     conceptText
   ) {
     const conceptTokens = new Set(tokenizeContent(conceptText));
-    const aliasTokens = criteria.subjectAliases.flatMap(tokenizeContent);
-    const relevant = [...criteria.mustConcern, ...aliasTokens].some(token =>
+    const topicPresent = criteria.mustConcern.some(token =>
       conceptTokens.has(token),
     );
-    if (conceptTokens.size > 0 && !relevant) {
+    if (conceptTokens.size > 0 && !topicPresent) {
       failures.push({
         check: "concept_off_goal",
-        detail: `alert concept "${conceptText.slice(0, 80)}" shares no content terms with the goal`,
+        detail: `alert concept "${conceptText.slice(0, 80)}" shares no goal terms with the monitor`,
       });
     }
   }

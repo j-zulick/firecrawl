@@ -38,8 +38,10 @@ import {
   type VerifyEvidence,
 } from "./verify";
 import { hasGeminiKey } from "./tuning";
-
-const JUDGE_CREDITS_PER_RESULT = 5;
+import {
+  searchCreditsForResultCount,
+  judgeCreditsForJudgedCount,
+} from "./billing";
 
 function windowToTbs(window: string): string {
   if (window === "5m" || window === "15m" || window === "1h") return "qdr:h";
@@ -142,7 +144,6 @@ type SearchTargetRunResult = {
   meaningful: number;
   matches: number;
   summary: string;
-  searchDegraded: boolean;
   judgeDegraded: boolean;
   degradedReason: string | null;
   sources: SearchSource[];
@@ -202,6 +203,7 @@ export async function runSearchTarget(params: {
   let searchResultsBilled = 0;
   let resultsJudged = 0;
   let judgeScrapeFailures = 0;
+  let snippetJudgeFailed = false;
 
   const seenThisRun = new Map<string, number>();
   const candidates: Array<{
@@ -382,6 +384,7 @@ export async function runSearchTarget(params: {
         }
       });
     } catch (error) {
+      snippetJudgeFailed = true;
       logger.warn("search monitor snippet judge failed; results skipped", {
         error,
       });
@@ -395,6 +398,24 @@ export async function runSearchTarget(params: {
       title: c.title,
       snippet: c.description,
     });
+    const pushUnevaluatedPage = (error: string) => {
+      skipped += 1;
+      sources.push({ url: c.url, title: c.title, status: "skipped" });
+      pageUpserts.push({
+        url: canonical,
+        urlHash: hashMonitorUrl(canonical),
+        status: "skipped",
+        scraped: false,
+        metadata: {
+          fingerprint,
+          goalVersion,
+          searchStatus: "skipped",
+          matchedQueries: c.matchedQueries,
+          judgedThisRun: false,
+          error,
+        },
+      });
+    };
     const known = knownPages.get(canonical);
     const knownCurrent =
       known && known.goalVersion === goalVersion ? known : undefined;
@@ -516,8 +537,12 @@ export async function runSearchTarget(params: {
     if (depth === "standard") {
       verdict = snippetVerdicts.get(canonical) ?? null;
       if (!verdict) {
-        skipped += 1;
-        sources.push({ url: c.url, title: c.title, status: "skipped" });
+        if (snippetJudgeFailed) {
+          pushUnevaluatedPage("snippet judge failed");
+        } else {
+          skipped += 1;
+          sources.push({ url: c.url, title: c.title, status: "skipped" });
+        }
         continue;
       }
       pagesChecked += 1;
@@ -546,16 +571,16 @@ export async function runSearchTarget(params: {
       } catch (error) {
         logger.warn("search monitor scrape threw", { url: c.url, error });
         judgeScrapeFailures += 1;
-        skipped += 1;
-        sources.push({ url: c.url, title: c.title, status: "skipped" });
+        pushUnevaluatedPage(
+          error instanceof Error ? error.message : "scrape threw",
+        );
         continue;
       }
 
       if (!res.success) {
         logger.warn("search monitor scrape failed", { url: c.url });
         judgeScrapeFailures += 1;
-        skipped += 1;
-        sources.push({ url: c.url, title: c.title, status: "skipped" });
+        pushUnevaluatedPage("scrape failed");
         continue;
       }
       pagesChecked += 1;
@@ -563,8 +588,7 @@ export async function runSearchTarget(params: {
       verdict = parseVerdict(res.document.json);
       if (!verdict) {
         judgeScrapeFailures += 1;
-        skipped += 1;
-        sources.push({ url: c.url, title: c.title, status: "skipped" });
+        pushUnevaluatedPage("verdict unparseable");
         continue;
       }
       pageText = res.document.markdown ?? "";
@@ -820,36 +844,40 @@ export async function runSearchTarget(params: {
     }
   }
 
-  const searchDegraded = false;
-
-  const judgeExpected = depth === "deep" && candidates.length > 0;
-  const judgeDegraded =
-    judgeExpected && resultsJudged === 0 && judgeScrapeFailures > 0;
+  const deepJudgeFailed =
+    depth === "deep" &&
+    candidates.length > 0 &&
+    resultsJudged === 0 &&
+    judgeScrapeFailures > 0;
+  const standardJudgeFailed =
+    depth === "standard" && resultsJudged === 0 && snippetJudgeFailed;
+  const judgeDegraded = deepJudgeFailed || standardJudgeFailed;
   if (judgeDegraded) {
     logger.warn(
-      "search monitor run is degraded: deep-path scrapes failed for every candidate so nothing was judged; results may be incomplete (NOT a clean no-results)",
+      "search monitor run is degraded: results were found but none could be judged; results may be incomplete (NOT a clean no-results)",
       {
         monitorId: params.monitor.id,
         targetId: target.id,
+        depth,
         candidates: candidates.length,
         scrapeFailures: judgeScrapeFailures,
+        snippetJudgeFailed,
         resultsJudged,
       },
     );
     if (!summary) {
       summary =
-        "Results were found but could not be fetched for evaluation (scrapes failed or timed out); this check is incomplete and may have missed new developments.";
+        "Results were found but could not be evaluated (the judge step failed); this check is incomplete and may have missed new developments.";
     }
   }
 
   const degradedReason: string | null = judgeDegraded
-    ? "deep-path scrapes failed for every candidate so nothing was judged; results may be incomplete"
+    ? "results were found but none could be judged; results may be incomplete"
     : null;
 
   const isZDR = params.zeroDataRetention;
-  const searchCredits =
-    Math.ceil(searchResultsBilled / 10) * (isZDR ? 10 : 2);
-  const judgeCredits = resultsJudged * JUDGE_CREDITS_PER_RESULT;
+  const searchCredits = searchCreditsForResultCount(searchResultsBilled, isZDR);
+  const judgeCredits = judgeCreditsForJudgedCount(resultsJudged);
 
   return {
     targetId: target.id,
@@ -860,7 +888,6 @@ export async function runSearchTarget(params: {
     meaningful,
     matches,
     summary,
-    searchDegraded,
     judgeDegraded,
     degradedReason,
     sources,

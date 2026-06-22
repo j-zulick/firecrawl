@@ -169,9 +169,8 @@ const createMonitorBaseSchema = z.strictObject({
   origin: z.string().optional().prefault("api"),
 });
 
-// A search target can only be judged with a goal — enforce it whenever one is present.
 function requireGoalForSearchTargets(
-  input: { targets?: unknown; goal?: unknown },
+  input: { targets?: unknown; goal?: unknown; judgeEnabled?: unknown },
   ctx: z.RefinementCtx,
 ): void {
   const targets = input.targets;
@@ -180,11 +179,10 @@ function requireGoalForSearchTargets(
     t =>
       t && typeof t === "object" && (t as { type?: unknown }).type === "search",
   );
+  if (!hasSearchTarget) return;
+  if (input.judgeEnabled === false) return;
   const goal = input.goal;
-  if (
-    hasSearchTarget &&
-    (typeof goal !== "string" || goal.trim().length === 0)
-  ) {
+  if (typeof goal !== "string" || goal.trim().length === 0) {
     ctx.addIssue({
       code: "custom",
       message: "A search target requires a non-empty goal",
@@ -201,7 +199,7 @@ export const createMonitorSchema = createMonitorBaseSchema
 // when the patch includes search targets AND explicitly clears the goal. The
 // controller re-validates the merged monitor.
 function rejectGoalClearedWithSearchTargets(
-  input: { targets?: unknown; goal?: unknown },
+  input: { targets?: unknown; goal?: unknown; judgeEnabled?: unknown },
   ctx: z.RefinementCtx,
 ): void {
   const targets = input.targets;
@@ -211,6 +209,7 @@ function rejectGoalClearedWithSearchTargets(
       t && typeof t === "object" && (t as { type?: unknown }).type === "search",
   );
   if (!hasSearchTarget) return;
+  if (input.judgeEnabled === false) return;
   const goal = input.goal;
   if (goal === undefined) return;
   if (goal === null || (typeof goal === "string" && goal.trim().length === 0)) {
@@ -228,8 +227,7 @@ export const updateMonitorSchema = createMonitorBaseSchema
     status: z.enum(["active", "paused"]).optional(),
   })
   .superRefine(rejectGoalClearedWithSearchTargets)
-  .refine(x => Object.keys(x).length > 0, "Update body cannot be empty")
-  .transform(applyJudgeEnabledDefault);
+  .refine(x => Object.keys(x).length > 0, "Update body cannot be empty");
 
 export const listMonitorsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).optional().default(25),

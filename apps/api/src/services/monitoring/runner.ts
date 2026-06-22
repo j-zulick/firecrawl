@@ -126,14 +126,7 @@ type MonitorTargetRun =
       resultCount?: number;
       matches?: number;
       summary?: string;
-      // True when a query failed at the provider after retries (not legitimately
-      // empty); persisted so an empty-but-degraded run isn't read as "no changes".
-      searchDegraded?: boolean;
-      // True when the deep (scrape+judge) path was expected to evaluate results
-      // but evaluated ~none because the per-result scrapes failed; persisted so a
-      // judged check that scraped nothing isn't read as a clean "no changes".
       judgeDegraded?: boolean;
-      // Human-readable explanation for whichever degraded flag is set.
       degradedReason?: string | null;
       // Flat, deterministic credits recorded onto target_results when the search
       // completes; actual_credits is summed from these, not reconstructed from
@@ -991,7 +984,6 @@ async function runMonitorSearchTarget(params: {
   resultCount: number;
   matches: number;
   summary: string;
-  searchDegraded: boolean;
   judgeDegraded: boolean;
   degradedReason: string | null;
   // Flat, deterministic credits, recorded onto target_results by the caller.
@@ -1005,7 +997,6 @@ async function runMonitorSearchTarget(params: {
       resultCount: 0,
       matches: 0,
       summary: "",
-      searchDegraded: false,
       judgeDegraded: false,
       degradedReason: null,
       searchCredits: 0,
@@ -1014,7 +1005,11 @@ async function runMonitorSearchTarget(params: {
     };
   }
   const { monitor, check, target } = params;
-  const goalVersion = computeGoalVersion(monitor.goal, target.queries);
+  const goalVersion = computeGoalVersion(
+    monitor.goal,
+    monitor.name,
+    target.queries,
+  );
 
   // Rebuild per-URL dedup memory + event index from this target's prior pages.
   const priorPages = await listActiveMonitorPages({
@@ -1119,7 +1114,6 @@ async function runMonitorSearchTarget(params: {
     resultCount: result.resultCount,
     matches: result.matches,
     summary: result.summary,
-    searchDegraded: result.searchDegraded,
     judgeDegraded: result.judgeDegraded,
     degradedReason: result.degradedReason,
     searchCredits,
@@ -1230,7 +1224,6 @@ export async function processMonitorCheckJob(
         targetRun.resultCount = searchResult.resultCount;
         targetRun.matches = searchResult.matches;
         targetRun.summary = searchResult.summary;
-        targetRun.searchDegraded = searchResult.searchDegraded;
         targetRun.judgeDegraded = searchResult.judgeDegraded;
         targetRun.degradedReason = searchResult.degradedReason;
         // Persisted onto target_results below so they survive to finalization.

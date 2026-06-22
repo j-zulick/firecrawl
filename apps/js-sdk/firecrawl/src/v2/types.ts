@@ -983,7 +983,6 @@ export interface MonitorSearchTargetResult {
   resultCount?: number;
   matches?: number;
   summary?: string;
-  searchDegraded?: boolean;
   judgeDegraded?: boolean;
   degradedReason?: string | null;
   searchCredits?: number;
@@ -1005,7 +1004,8 @@ export interface MonitorCheck {
     | "completed"
     | "failed"
     | "partial"
-    | "skipped_overlap";
+    | "skipped_overlap"
+    | "skipped_no_credits";
   trigger: "scheduled" | "manual";
   scheduledFor?: string | null;
   startedAt?: string | null;

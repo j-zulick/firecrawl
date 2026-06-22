@@ -10,6 +10,10 @@ import {
   estimateRunsPerMonth,
   validateMonitorCron,
 } from "./cron";
+import {
+  searchCreditsForResultCount,
+  judgeCreditsForJudgedCount,
+} from "./search/billing";
 import type {
   CreateMonitorRequest,
   MonitorCheckPageInsert,
@@ -41,13 +45,6 @@ const REMOVED_PAGE_CREDITS = 0;
 const X_TWITTER_POSTPROCESSOR_CREDIT_BONUS = 29;
 const DEFAULT_CRAWL_LIMIT_FOR_ESTIMATE = 10000;
 const MONITOR_CHECK_PAGE_BATCH_SIZE = 1000;
-// Flat search-monitor billing: search() bills 2 per 10 results per query; the
-// judge bills 5 per result evaluated. The estimate is an upper bound (all
-// results judged); real runs dedupe + cap, so actual ≤ estimate.
-// SEARCH_JUDGE_CREDITS_PER_RESULT MUST stay in sync with JUDGE_CREDITS_PER_RESULT
-// in ./search/run.ts.
-const SEARCH_CREDITS_PER_TEN_RESULTS = 2;
-const SEARCH_JUDGE_CREDITS_PER_RESULT = 5;
 
 type MonitorCreditMetadata = {
   creditsUsed?: unknown;
@@ -145,29 +142,25 @@ function estimateBaseCreditsPerPage(
   return credits;
 }
 
-// Upper bound on results the judge could evaluate in one run: every result of
-// every query, before dedupe. Real runs dedupe/cap, so actual ≤ this.
 function estimateSearchJudgedResults(
   target: Extract<MonitorTarget, { type: "search" }>,
 ): number {
-  return Math.max(1, target.maxResults) * Math.max(1, target.queries.length);
+  return Math.max(1, target.maxResults);
 }
 
 function estimateSearchTargetCredits(
   target: Extract<MonitorTarget, { type: "search" }>,
   judgeEnabled: boolean,
 ): number {
-  const searchCallCredits =
-    Math.ceil(Math.max(1, target.maxResults) / 10) *
-    SEARCH_CREDITS_PER_TEN_RESULTS *
-    Math.max(1, target.queries.length);
-  // No judging in raw mode or when the judge is off.
+  const rawResults =
+    Math.max(1, target.maxResults) * Math.max(1, target.queries.length);
+  const searchCallCredits = searchCreditsForResultCount(rawResults, false);
   if (target.depth === "raw" || !judgeEnabled) {
     return searchCallCredits;
   }
   return (
     searchCallCredits +
-    estimateSearchJudgedResults(target) * SEARCH_JUDGE_CREDITS_PER_RESULT
+    judgeCreditsForJudgedCount(estimateSearchJudgedResults(target))
   );
 }
 

@@ -1428,6 +1428,32 @@ describe("V2 Types Validation", () => {
       const result = updateMonitorSchema.parse({ goal: null });
       expect(result.goal).toBeNull();
     });
+
+    it("create allows a raw search target (judgeEnabled:false) without a goal", () => {
+      const result = createMonitorSchema.parse({
+        name: "Raw search monitor",
+        schedule: { text: "every 30 minutes" },
+        targets: searchTargets,
+        judgeEnabled: false,
+      });
+      expect(result.targets).toHaveLength(1);
+      expect(result.judgeEnabled).toBe(false);
+    });
+
+    it("create still defaults judgeEnabled true when a goal is present", () => {
+      const result = createMonitorSchema.parse({
+        name: "Judged search monitor",
+        schedule: { text: "every 30 minutes" },
+        targets: searchTargets,
+        goal: "Alert when Firecrawl launches",
+      });
+      expect(result.judgeEnabled).toBe(true);
+    });
+
+    it("update with just { goal } does NOT silently enable judging", () => {
+      const result = updateMonitorSchema.parse({ goal: "Alert when X ships" });
+      expect(result.judgeEnabled).toBeUndefined();
+    });
   });
 
   describe("Edge cases", () => {

@@ -117,6 +117,12 @@ describe("monitor target interest tracking", () => {
     expect(signatureFor({ ...searchTarget })).toBe(base);
     expect(signatureFor({ ...searchTarget, maxResults: 25 })).not.toBe(base);
     expect(signatureFor({ ...searchTarget, depth: "standard" })).not.toBe(base);
+    expect(
+      signatureFor({ ...searchTarget, includeDomains: ["firecrawl.dev"] }),
+    ).not.toBe(base);
+    expect(
+      signatureFor({ ...searchTarget, excludeDomains: ["spam.example"] }),
+    ).not.toBe(base);
   });
 
   it("sends rows to the monitor target ClickHouse table", async () => {

@@ -242,13 +242,14 @@ describe("FLAT deterministic search-monitor billing", () => {
       ).toBe(2);
     });
 
-    it("scales with queries and maxResults as an upper bound", () => {
+    it("scales search with queries but caps judge at maxResults total", () => {
       const t = searchTarget({
         maxResults: 20,
         queries: ["a", "b", "c"],
       });
-      // search = ceil(20/10)*2*3 = 12; judge = 5 * (20*3) = 300 → 312.
-      expect(estimateMonitorCreditsPerRun([t], true)).toBe(312);
+      // search = ceil((20*3)/10)*2 = 12; judge = 5 * 20 (total cap, NOT *queries)
+      // = 100 → 112. The runner judges at most maxResults candidates total.
+      expect(estimateMonitorCreditsPerRun([t], true)).toBe(112);
     });
   });
 

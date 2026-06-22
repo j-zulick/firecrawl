@@ -458,11 +458,17 @@ describe("deep-path scrape failures mark the check degraded (no silent empty)", 
     expect(result.resultsJudged).toBe(0);
     expect(result.matches).toBe(0);
     expect(result.judgeDegraded).toBe(true);
-    expect(result.degradedReason).toMatch(/scrape/i);
-    // searchDegraded is the provider-level signal and stays false here.
-    expect(result.searchDegraded).toBe(false);
+    expect(result.degradedReason).toMatch(/judged|incomplete/i);
     // A non-empty summary so the check never reads as a clean "nothing new".
     expect(result.summary).not.toBe("");
+    // Each unscrapeable result is persisted as a "skipped" page so it surfaces
+    // as an error check page (skipped -> error) instead of silently vanishing.
+    const skippedUpserts = result.pageUpserts.filter(
+      u => u.status === "skipped",
+    );
+    expect(skippedUpserts).toHaveLength(2);
+    expect(skippedUpserts[0].metadata.searchStatus).toBe("skipped");
+    expect(skippedUpserts[0].metadata.judgedThisRun).toBe(false);
   });
 
   it("degraded=true when scrapes throw", async () => {
@@ -472,7 +478,7 @@ describe("deep-path scrape failures mark the check degraded (no silent empty)", 
 
     expect(result.resultsJudged).toBe(0);
     expect(result.judgeDegraded).toBe(true);
-    expect(result.degradedReason).toMatch(/scrape/i);
+    expect(result.degradedReason).toMatch(/judged|incomplete/i);
   });
 
   it("NOT degraded when at least one scrape succeeds and is judged", async () => {
@@ -524,8 +530,19 @@ describe("deep-path scrape failures mark the check degraded (no silent empty)", 
 
     expect(result.resultCount).toBe(0);
     expect(result.judgeDegraded).toBe(false);
-    expect(result.searchDegraded).toBe(false);
     expect(result.degradedReason).toBeNull();
     expect(scrapeURLMock).not.toHaveBeenCalled();
+  });
+
+  it("degraded=true when the standard snippet judge fails for every candidate", async () => {
+    searchMock.mockResolvedValue([serpRow(1), serpRow(2)]);
+    snippetsMock.mockRejectedValue(new Error("snippet judge outage"));
+
+    const result = await runSearchTarget(runParams({ depth: "standard" }));
+
+    expect(result.resultsJudged).toBe(0);
+    expect(result.matches).toBe(0);
+    expect(result.judgeDegraded).toBe(true);
+    expect(result.degradedReason).toMatch(/judged|incomplete/i);
   });
 });

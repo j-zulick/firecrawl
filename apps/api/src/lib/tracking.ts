@@ -138,6 +138,8 @@ function monitorTargetSignature(target: MonitorTarget): string {
       alertMode: target.alertMode,
       maxResults: target.maxResults,
       depth: target.depth ?? null,
+      includeDomains: [...(target.includeDomains ?? [])].sort(),
+      excludeDomains: [...(target.excludeDomains ?? [])].sort(),
     });
   }
 

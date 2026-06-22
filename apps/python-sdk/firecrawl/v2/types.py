@@ -1201,7 +1201,6 @@ class MonitorTargetResult(BaseModel):
     result_count: Optional[int] = Field(default=None, alias="resultCount")
     matches: Optional[int] = None
     summary: Optional[str] = None
-    search_degraded: Optional[bool] = Field(default=None, alias="searchDegraded")
     judge_degraded: Optional[bool] = Field(default=None, alias="judgeDegraded")
     degraded_reason: Optional[str] = Field(default=None, alias="degradedReason")
     search_credits: Optional[int] = Field(default=None, alias="searchCredits")
@@ -1214,7 +1213,7 @@ class MonitorCheck(BaseModel):
 
     id: str
     monitor_id: str = Field(alias="monitorId")
-    status: Literal["queued", "running", "completed", "failed", "partial", "skipped_overlap"]
+    status: Literal["queued", "running", "completed", "failed", "partial", "skipped_overlap", "skipped_no_credits"]
     trigger: Literal["scheduled", "manual"]
     scheduled_for: Optional[str] = Field(default=None, alias="scheduledFor")
     started_at: Optional[str] = Field(default=None, alias="startedAt")

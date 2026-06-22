@@ -161,6 +161,17 @@ describe("verifyAlertCandidate", () => {
     );
   });
 
+  it("downgrades a subject-only concept that misses the topic (funding vs launch)", () => {
+    // "Firecrawl funding" names the subject but not the goal's topic (launch);
+    // a subject-alias token must NOT satisfy the must-concern gate.
+    const result = verifyAlertCandidate({
+      criteria: baseCriteria(),
+      concept: "Firecrawl Series B funding",
+      evidence: evidence(),
+    });
+    expect(result.failures.map(f => f.check)).toContain("concept_off_goal");
+  });
+
   it("fails owned-surface only when the goal wants third-party coverage", () => {
     const owned = verifyAlertCandidate({
       criteria: baseCriteria({ thirdPartyOnly: true }),

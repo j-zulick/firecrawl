@@ -295,13 +295,15 @@ export async function updateMonitorController(
 
   const input = updateMonitorSchema.parse(req.body);
 
-  // Validate the merged monitor state: a partial update can add search
-  // targets that rely on the stored goal, or clear the goal while search
-  // targets remain on the monitor. Both must leave a non-empty goal behind.
   const mergedTargets = input.targets ?? existing.targets;
   const mergedGoal = input.goal !== undefined ? input.goal : existing.goal;
+  const mergedJudgeEnabled =
+    input.judgeEnabled !== undefined
+      ? input.judgeEnabled
+      : existing.judge_enabled;
   if (
     mergedTargets.some(t => t.type === "search") &&
+    mergedJudgeEnabled !== false &&
     (typeof mergedGoal !== "string" || mergedGoal.trim().length === 0)
   ) {
     return res.status(400).json({
