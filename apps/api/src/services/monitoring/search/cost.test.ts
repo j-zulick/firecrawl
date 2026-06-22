@@ -1,16 +1,8 @@
 import { CostTracking } from "../../../lib/cost-tracking";
 import { recordLlmCall } from "./cost";
 
-// Mirror of JUDGE_CREDITS_PER_RESULT in ./run.ts. We intentionally do NOT import
-// from ./run here: run.ts pulls in the search/scrape stack (ESM `uuid`, native
-// modules) which the jest transform can't load in this suite. The value is a
-// stable billing constant; this test pins it and the flat-billing arithmetic.
 const JUDGE_CREDITS_PER_RESULT = 5;
 
-// Monitor judge billing is now a FLAT, deterministic figure (5 credits per
-// result the judge evaluates). recordLlmCall still records token usage into a
-// shared CostTracking, but that is ONLY for observability — it no longer feeds
-// the credits a team is charged.
 describe("search-monitor LLM cost recording (observability only)", () => {
   it("records token usage into the shared CostTracking with no dollar cost", () => {
     const ct = new CostTracking();
@@ -52,23 +44,15 @@ describe("search-monitor FLAT judge billing rate", () => {
   });
 });
 
-// The CANONICAL "judged result" definition, pinned so billing and the eval stay
-// in lockstep. A judged result is one scraped+judged (deep) or snippet-judged
-// (standard) THIS run — run.ts increments resultsJudged exactly once per such
-// result and stamps metadata.judgedThisRun=true on its persisted page. The
-// billed count therefore equals the number of pages with judgedThisRun=true.
-// Reused (unchanged), raw, and skipped pages are NOT judged this run and carry
-// judgedThisRun=false / absent — even if they retain a stale `concept`.
+// Billed count == pages with judgedThisRun=true (not every page, not every page
+// with a concept — reused/skipped pages keep a stale concept but aren't judged).
 describe("canonical judged-result count (billing == persisted signal)", () => {
   type Page = { searchStatus: string; judgedThisRun?: boolean; concept?: string };
   const billedJudgedCount = (pages: Page[]) =>
     pages.filter(p => p.judgedThisRun === true).length;
 
   it("counts judgedThisRun=true, NOT every page nor every page with a concept", () => {
-    // The judged#1 shape: 6 results, only 1 re-judged this run; the other two
-    // "concept" pages are REUSED from a prior run (judgedThisRun=false) and a
-    // skipped page got no verdict. Counting pages-with-concept gives 3 (the old
-    // eval undercount mismatch); the canonical count is 1.
+    // 1 judged this run; 2 reused (stale concept, not judged); 1 skipped.
     const pages: Page[] = [
       { searchStatus: "alert", judgedThisRun: true, concept: "fresh-verdict" },
       { searchStatus: "already_seen", judgedThisRun: false, concept: "stale-1" },

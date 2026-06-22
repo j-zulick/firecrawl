@@ -115,22 +115,16 @@ type MonitorTargetRun =
       crawlId: string;
     }
   | {
-      // Search runs inline during dispatch; counts/credits filled in after.
       targetId: string;
       type: "search";
-      // False/undefined until the inline search finishes and stamps its credits.
-      // The reconciler must NOT finalize a check whose search run is still
-      // pending — otherwise it sums credits that haven't been written yet and
-      // bills 0. Set true ONLY once searchCredits/judgeCredits are populated.
+      // Set true only after the inline search stamps its credits; the reconciler
+      // waits on this so it never finalizes with credits still at 0.
       searchCompleted?: boolean;
       resultCount?: number;
       matches?: number;
       summary?: string;
       judgeDegraded?: boolean;
       degradedReason?: string | null;
-      // Flat, deterministic credits recorded onto target_results when the search
-      // completes; actual_credits is summed from these, not reconstructed from
-      // per-page metadata, so a missing page / reconciler race can't zero them.
       searchCredits?: number;
       judgeCredits?: number;
       resultsJudged?: number;
@@ -1054,15 +1048,11 @@ async function runMonitorSearchTarget(params: {
     }),
   });
 
-  // Flat, deterministic credits, returned for recording onto target_results.
-  // actual_credits sums from target_results (not per-page metadata), so these
-  // are reliable regardless of page count/ordering/reconciler timing — closing
-  // the old "completed deep check with actual_credits = 0" hole.
+  // Flat credits recorded onto target_results (summed there at finalization).
   const searchCredits = result.searchCredits;
   const judgeCredits = result.judgeCredits;
 
-  // Search pages carry no per-page credit (cost is the flat figure above, billed
-  // once at check level); writing creditsUsed here would double-count.
+  // Search pages carry no per-page credit — billed once at check level.
   const pages: PageResult[] = result.pageUpserts.map(upsert => {
     const status = searchStatusToPageStatus(upsert.status);
     return {
@@ -1214,8 +1204,7 @@ export async function processMonitorCheckJob(
       } else if (target.type === "crawl" && targetRun.type === "crawl") {
         await enqueueMonitorCrawlTarget({ monitor, check, target, targetRun });
       } else if (target.type === "search" && targetRun.type === "search") {
-        // Search is synchronous: run now and fold the outcome into target_results
-        // so the reconciler (which treats search as complete) finalizes the check.
+        // Search runs synchronously; fold its outcome into target_results.
         const searchResult = await runMonitorSearchTarget({
           monitor,
           check,
@@ -1226,14 +1215,11 @@ export async function processMonitorCheckJob(
         targetRun.summary = searchResult.summary;
         targetRun.judgeDegraded = searchResult.judgeDegraded;
         targetRun.degradedReason = searchResult.degradedReason;
-        // Persisted onto target_results below so they survive to finalization.
         targetRun.searchCredits = searchResult.searchCredits;
         targetRun.judgeCredits = searchResult.judgeCredits;
         targetRun.resultsJudged = searchResult.resultsJudged;
-        // Mark complete LAST, after credits are populated: the reconciler keys
-        // its completeness check on this flag, so it can never finalize (and
-        // bill the as-yet-unstamped, zero credits) while the search — possibly
-        // mid rate-limit retry — is still running.
+        // Set LAST, after credits are stamped, so the reconciler never finalizes
+        // with credits still at 0.
         targetRun.searchCompleted = true;
       }
     }
@@ -1387,11 +1373,7 @@ async function isMonitorCheckComplete(
 
   for (const target of targetResults) {
     if (target?.type === "search") {
-      // Search runs inline during dispatch and stamps searchCompleted=true only
-      // after its flat credits are written. Until then the run is in flight
-      // (e.g. retrying a rate-limited query), so treating it as complete would
-      // let the reconciler finalize with credits still at 0 — the never-zero
-      // guarantee depends on waiting here.
+      // Not complete until the inline search has stamped its credits.
       if (!target.searchCompleted) return false;
     } else if (target?.type === "scrape") {
       const expected = Array.isArray(target.expectedJobs)
@@ -1615,8 +1597,7 @@ export async function reconcileRunningMonitorChecks(
       const actualCredits = await calculateMonitorCheckActualCredits({
         checkId: check.id,
         targets: monitor.targets,
-        // Flat search credits come from target_results, not page metadata, so a
-        // completed deep check that judged always records them (fixes the old bug).
+        // Flat search credits come from target_results, not page metadata.
         targetResults,
       });
 

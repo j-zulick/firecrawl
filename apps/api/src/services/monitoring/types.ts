@@ -48,12 +48,8 @@ const monitorDomainSchema = z
     "Domain must be a valid hostname without protocol or path",
   );
 
-// `depth`/`alertMode`/`recheckAfter` are internal-only (derived at runtime /
-// defaulted by the runner). `scrapeOptions` is meaningless for search: the runner
-// builds its own scrape format (markdown + verdict-json) per result, so a client
-// value would be ignored. Strip all of these BEFORE strictObject validation
-// rather than 400ing, so older clients that still send them keep working (values
-// ignored, not persisted).
+// depth/alertMode/recheckAfter are internal-only; scrapeOptions is unused for
+// search. Strip them before validation so older clients sending them don't 400.
 const searchTargetSchema = z.preprocess(
   value => {
     if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -265,9 +261,7 @@ export type MonitorTarget = z.infer<typeof monitorTargetSchema> & {
   depth?: "raw" | "standard" | "deep";
   alertMode?: "first_match" | "every_new_result" | "material_dev";
   recheckAfter?: "1h" | "6h" | "24h" | "7d";
-  // Present on scrape/crawl targets; absent on search (the search runner builds
-  // its own per-result scrape format). Optional here so union-level reads in
-  // runner/store/results keep compiling.
+  // Present on scrape/crawl, absent on search; optional so union reads compile.
   scrapeOptions?: z.infer<typeof scrapeOptionsSchema>;
 };
 export type CreateMonitorRequest = z.infer<typeof createMonitorSchema>;

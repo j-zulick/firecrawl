@@ -5,14 +5,10 @@ import type { GoalCriteria } from "./criteria";
 import { recordLlmCall } from "./cost";
 import type { CostTracking } from "../../../lib/cost-tracking";
 
-const EVENT_MODEL =
-  process.env.SEARCH_MONITOR_EVENT_MODEL ?? "gemini-flash-lite-latest";
-const SUMMARY_MODEL =
-  process.env.SEARCH_MONITOR_SUMMARY_MODEL ?? "gemini-flash-lite-latest";
-const SKEPTIC_MODEL =
-  process.env.SEARCH_MONITOR_SKEPTIC_MODEL ?? "gemini-flash-lite-latest";
-const ROUTER_MODEL =
-  process.env.SEARCH_MONITOR_ROUTER_MODEL ?? "gemini-3-flash-preview";
+const EVENT_MODEL = "gemini-flash-lite-latest";
+const SUMMARY_MODEL = "gemini-flash-lite-latest";
+const SKEPTIC_MODEL = "gemini-flash-lite-latest";
+const ROUTER_MODEL = "gemini-3-flash-preview";
 
 export type KnownEvent = {
   key: string;
@@ -57,12 +53,10 @@ export async function resolveEvent(params: {
         url: params.result.url,
         evidence: (params.result.evidence || "").slice(0, 500),
       },
-      instructions: [
-        "If newResult is the same underlying event as a knownEvent, set matchedKey to that event's key and isNew false.",
-        "Only set isNew true when this is a distinct development not represented by any knownEvent.",
-        "label: when matched, reuse the matched event's label; when new, write a short reusable label naming the company/product/event.",
-        "A new article from a different publisher about the same filing/launch/recall is NOT a new event.",
-      ],
+      instructions: `If newResult is the same underlying event as a knownEvent, set matchedKey to that event's key and isNew false.
+Only set isNew true when this is a distinct development not represented by any knownEvent.
+label: when matched, reuse the matched event's label; when new, write a short reusable label naming the company/product/event.
+A new article from a different publisher about the same filing/launch/recall is NOT a new event.`,
     }),
     temperature: 0,
     ...googleProviderOptions(),
@@ -109,10 +103,8 @@ export async function judgeMaterialDevelopment(params: {
         title: params.result.title,
         evidence: (params.result.evidence || "").slice(0, 500),
       },
-      instructions: [
-        "Set material true only when the new result reports a genuinely new development of the known event.",
-        "Set material false when it restates already-known facts, even from a new source or headline.",
-      ],
+      instructions: `Set material true only when the new result reports a genuinely new development of the known event.
+Set material false when it restates already-known facts, even from a new source or headline.`,
     }),
     temperature: 0,
     ...googleProviderOptions(),
@@ -239,12 +231,10 @@ export async function routeSearchResults(params: {
       monitor: { goal: params.goal, subject: params.subject },
       searchWindow: params.searchWindow,
       maxResults: params.maxResults,
-      instructions: [
-        "Select scrape only when the result could plausibly contain primary evidence or substantive discussion satisfying the monitor goal.",
-        "Skip obvious jobs, directories, tag pages, search pages, marketplaces, profiles, irrelevant foreign-language spam, generic tool lists, or pages where the monitored subject appears only as a skill, integration, or incidental keyword.",
-        "Do not use keyword overlap alone. Explain the user-facing reason.",
-        "Never select more than maxResults.",
-      ],
+      instructions: `Select scrape only when the result could plausibly contain primary evidence or substantive discussion satisfying the monitor goal.
+Skip obvious jobs, directories, tag pages, search pages, marketplaces, profiles, irrelevant foreign-language spam, generic tool lists, or pages where the monitored subject appears only as a skill, integration, or incidental keyword.
+Do not use keyword overlap alone. Explain the user-facing reason.
+Never select more than maxResults.`,
       candidates,
     }),
     temperature: 0,
@@ -343,10 +333,8 @@ export async function summarizeRun(params: {
     prompt: JSON.stringify({
       monitor: { goal: params.goal, subject: params.subject },
       evidence: params.evidence.slice(0, 8),
-      instructions: [
-        "Summarize why the meaningful sources satisfy the goal as a group, in one short sentence.",
-        "If sources are meaningful but already reported, say they are related evidence, not a new notification.",
-      ],
+      instructions: `Summarize why the meaningful sources satisfy the goal as a group, in one short sentence.
+If sources are meaningful but already reported, say they are related evidence, not a new notification.`,
     }),
     temperature: 0,
     ...googleProviderOptions(),

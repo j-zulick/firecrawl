@@ -4,8 +4,7 @@ import { googleModel, googleProviderOptions } from "./tuning";
 import { recordLlmCall } from "./cost";
 import type { CostTracking } from "../../../lib/cost-tracking";
 
-const CRITERIA_MODEL =
-  process.env.SEARCH_MONITOR_CRITERIA_MODEL ?? "gemini-flash-lite-latest";
+const CRITERIA_MODEL = "gemini-flash-lite-latest";
 
 export type GoalCriteria = {
   goalVersion: string;

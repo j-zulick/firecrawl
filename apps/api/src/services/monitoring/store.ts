@@ -173,8 +173,6 @@ function estimateTargetBaseCredits(
     return target.urls.length * creditsPerPage;
   }
   if (target.type === "search") {
-    // Full estimate (search + flat judge); excluded from the global per-page
-    // judge loop below to avoid double-counting.
     return estimateSearchTargetCredits(target, judgeEnabled);
   }
 
@@ -208,8 +206,7 @@ export function estimateMonitorCreditsPerRun(
     (sum, target) => sum + estimateTargetBaseCredits(target, judgeEnabled),
     0,
   );
-  // Search judging is already folded into estimateTargetBaseCredits above; the
-  // per-page allowance applies only to scrape/crawl, so exclude search here.
+  // Per-page judge allowance is scrape/crawl only (search judging is folded in above).
   const judgeCredits = judgeEnabled
     ? targets.reduce(
         (sum, target) =>
@@ -295,21 +292,16 @@ export function calculateMonitorCheckActualCreditsFromPages(
       return 0;
     }
 
-    // Search judging is billed at the check level; the per-page judge credit
-    // would double-count it. Only scrape/crawl get it.
+    // Search is billed at the check level (see flatSearchTargetCredits).
     const target = targetsById.get(page.target_id ?? "");
     if (target?.type === "search") {
       return 0;
     }
-
-    // A persisted judgment means the judge ran for this page; charge for it
-    // whether or not the verdict was meaningful.
     return JUDGE_CREDITS_PER_PAGE;
   }
 
   return pages.reduce((total, page) => {
-    // Search pages carry no per-page credit (billed at check level via
-    // flatSearchTargetCredits); summing a per-page base would double-bill.
+    // Search pages carry no per-page credit — billed at check level.
     const target = targetsById.get(page.target_id ?? "");
     if (target?.type === "search") {
       return total;
@@ -331,12 +323,7 @@ export function calculateMonitorCheckActualCreditsFromPages(
   }, 0);
 }
 
-/**
- * Sum the flat credits recorded on a check's target_results for every search
- * target (searchCredits + judgeCredits). Persisted when the search completes, so
- * they're always present at finalization regardless of which pages persisted —
- * guaranteeing a deep check that judged can never record actual_credits = 0.
- */
+// Sum the flat searchCredits + judgeCredits recorded on a check's target_results.
 export function flatSearchTargetCredits(targetResults: unknown): number {
   if (!Array.isArray(targetResults)) return 0;
   return targetResults.reduce((total: number, run: unknown) => {
@@ -930,11 +917,8 @@ export async function countMonitorCheckPages(params: {
 export async function calculateMonitorCheckActualCredits(params: {
   checkId: string;
   targets: MonitorTarget[];
-  // The check's persisted target_results; search credits are summed from here so
-  // an empty/missing pages table can't zero them out.
   targetResults?: unknown;
 }): Promise<number> {
-  // Flat search credits first: deterministic and independent of pages.
   let total = flatSearchTargetCredits(params.targetResults);
   let offset = 0;
 

@@ -301,12 +301,8 @@ describe("FLAT deterministic search-monitor billing", () => {
     });
   });
 
-  // Regression guard for the FLAT search billing contract that eval H asserts:
-  //   actual_credits = 2*ceil(totalResults/10) + 5*resultsJudged   (search-only
-  //   when judge is off). These pin the deterministic sum, the never-zero-with-
-  //   results invariant, and that the retry path still bills.
+  // Flat billing contract: actual = 2*ceil(totalResults/10) + 5*resultsJudged.
   describe("flat search billing contract (eval H regression guard)", () => {
-    // The deterministic figures the runner stamps onto a search target run.
     const searchCreditsFor = (totalResults: number) =>
       2 * Math.ceil(totalResults / 10);
     const stampedSearchRun = (totalResults: number, resultsJudged: number) => ({
