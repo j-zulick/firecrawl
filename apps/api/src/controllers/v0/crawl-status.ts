@@ -123,13 +123,23 @@ async function getFdbCrawlStatus(crawlId: string, sc: StoredCrawl) {
         )
       : [];
 
-  const data = doneJobs
+  const scrapeBlobs = await Promise.all(
+    doneJobs.map(
+      async x =>
+        [
+          x,
+          x.returnvalue ??
+            (config.GCS_BUCKET_NAME ? await getJobFromGCS(x.id) : null),
+        ] as const,
+    ),
+  );
+
+  const data = scrapeBlobs
     .filter(
-      x => x.failedReason !== "Concurreny limit hit" && x.returnvalue !== null,
+      ([job, scrape]) =>
+        job.failedReason !== "Concurreny limit hit" && scrape != null,
     )
-    .map(x =>
-      Array.isArray(x.returnvalue) ? x.returnvalue[0] : x.returnvalue,
-    );
+    .map(([, scrape]) => (Array.isArray(scrape) ? scrape[0] : scrape));
 
   const firstScrapeOptions =
     doneJobs.length > 0 && "scrapeOptions" in doneJobs[0].data
