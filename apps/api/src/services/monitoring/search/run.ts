@@ -39,7 +39,7 @@ import {
 } from "./verify";
 import { hasGeminiKey } from "./tuning";
 
-export const JUDGE_CREDITS_PER_RESULT = 5;
+const JUDGE_CREDITS_PER_RESULT = 5;
 
 function windowToTbs(window: string): string {
   if (window === "5m" || window === "15m" || window === "1h") return "qdr:h";
