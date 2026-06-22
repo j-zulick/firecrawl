@@ -886,7 +886,6 @@ export interface MonitorSearchTarget {
   includeDomains?: string[];
   excludeDomains?: string[];
   maxResults?: number;
-  scrapeOptions?: ScrapeOptions;
 }
 
 export type MonitorTarget =

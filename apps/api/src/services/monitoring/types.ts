@@ -49,9 +49,11 @@ const monitorDomainSchema = z
   );
 
 // `depth`/`alertMode`/`recheckAfter` are internal-only (derived at runtime /
-// defaulted by the runner). Strip any client-supplied values BEFORE strictObject
-// validation rather than 400ing, so older clients that still send them keep
-// working (values ignored, not persisted).
+// defaulted by the runner). `scrapeOptions` is meaningless for search: the runner
+// builds its own scrape format (markdown + verdict-json) per result, so a client
+// value would be ignored. Strip all of these BEFORE strictObject validation
+// rather than 400ing, so older clients that still send them keep working (values
+// ignored, not persisted).
 const searchTargetSchema = z.preprocess(
   value => {
     if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -59,6 +61,7 @@ const searchTargetSchema = z.preprocess(
         depth: _depth,
         alertMode: _alertMode,
         recheckAfter: _recheckAfter,
+        scrapeOptions: _scrapeOptions,
         ...rest
       } = value as Record<string, unknown>;
       return rest;
@@ -76,7 +79,6 @@ const searchTargetSchema = z.preprocess(
     includeDomains: z.array(monitorDomainSchema).max(50).optional(),
     excludeDomains: z.array(monitorDomainSchema).max(50).optional(),
     maxResults: z.number().int().min(1).max(50).optional().default(10),
-    scrapeOptions: scrapeOptionsSchema,
   }),
 );
 
@@ -265,6 +267,10 @@ export type MonitorTarget = z.infer<typeof monitorTargetSchema> & {
   depth?: "raw" | "standard" | "deep";
   alertMode?: "first_match" | "every_new_result" | "material_dev";
   recheckAfter?: "1h" | "6h" | "24h" | "7d";
+  // Present on scrape/crawl targets; absent on search (the search runner builds
+  // its own per-result scrape format). Optional here so union-level reads in
+  // runner/store/results keep compiling.
+  scrapeOptions?: z.infer<typeof scrapeOptionsSchema>;
 };
 export type CreateMonitorRequest = z.infer<typeof createMonitorSchema>;
 export type UpdateMonitorRequest = z.infer<typeof updateMonitorSchema>;

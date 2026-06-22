@@ -37,7 +37,6 @@ const searchTarget: MonitorTarget = {
   alertMode: "first_match",
   depth: "deep",
   maxResults: 10,
-  scrapeOptions: {},
 };
 
 describe("monitor target interest tracking", () => {
