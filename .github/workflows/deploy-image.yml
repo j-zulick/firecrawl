@@ -98,6 +98,7 @@ jobs:
           tags: ${{ needs.version.outputs.image }}:sha-${{ needs.version.outputs.short_sha }}-${{ matrix.platform_suffix }}
           platforms: ${{ matrix.platform }}
           provenance: false
+          no-cache: true
 
   publish:
     runs-on: blacksmith-2vcpu-ubuntu-2404

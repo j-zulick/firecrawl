@@ -54,8 +54,8 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     --mount=type=cache,target=/app/native/target \
     pnpm install --frozen-lockfile
 
-# Build the application
-RUN pnpm run build
+# Build the application from a clean output directory.
+RUN rm -rf dist && pnpm run build
 
 # Remove dev dependencies
 RUN pnpm prune --prod --ignore-scripts
