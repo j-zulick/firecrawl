@@ -964,6 +964,38 @@ export interface MonitorPageJudgment {
   }>;
 }
 
+export interface MonitorScrapeTargetResult {
+  targetId: string;
+  type: "scrape";
+  expectedJobs?: string[];
+}
+
+export interface MonitorCrawlTargetResult {
+  targetId: string;
+  type: "crawl";
+  crawlId?: string;
+}
+
+export interface MonitorSearchTargetResult {
+  targetId: string;
+  type: "search";
+  searchCompleted?: boolean;
+  resultCount?: number;
+  matches?: number;
+  summary?: string;
+  searchDegraded?: boolean;
+  judgeDegraded?: boolean;
+  degradedReason?: string | null;
+  searchCredits?: number;
+  judgeCredits?: number;
+  resultsJudged?: number;
+}
+
+export type MonitorTargetResult =
+  | MonitorScrapeTargetResult
+  | MonitorCrawlTargetResult
+  | MonitorSearchTargetResult;
+
 export interface MonitorCheck {
   id: string;
   monitorId: string;
@@ -988,7 +1020,7 @@ export interface MonitorCheck {
     | "released"
     | "failed";
   summary: MonitorSummary;
-  targetResults?: unknown;
+  targetResults?: MonitorTargetResult[];
   notificationStatus?: unknown;
   error?: string | null;
   createdAt: string;

@@ -1190,6 +1190,25 @@ class MonitorPageJudgment(BaseModel):
     meaningful_changes: List[MonitorMeaningfulChange] = Field(default_factory=list, alias="meaningfulChanges")
 
 
+class MonitorTargetResult(BaseModel):
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    target_id: str = Field(alias="targetId")
+    type: Literal["scrape", "crawl", "search"]
+    expected_jobs: Optional[List[str]] = Field(default=None, alias="expectedJobs")
+    crawl_id: Optional[str] = Field(default=None, alias="crawlId")
+    search_completed: Optional[bool] = Field(default=None, alias="searchCompleted")
+    result_count: Optional[int] = Field(default=None, alias="resultCount")
+    matches: Optional[int] = None
+    summary: Optional[str] = None
+    search_degraded: Optional[bool] = Field(default=None, alias="searchDegraded")
+    judge_degraded: Optional[bool] = Field(default=None, alias="judgeDegraded")
+    degraded_reason: Optional[str] = Field(default=None, alias="degradedReason")
+    search_credits: Optional[int] = Field(default=None, alias="searchCredits")
+    judge_credits: Optional[int] = Field(default=None, alias="judgeCredits")
+    results_judged: Optional[int] = Field(default=None, alias="resultsJudged")
+
+
 class MonitorCheck(BaseModel):
     model_config = {"populate_by_name": True, "extra": "allow"}
 
@@ -1205,7 +1224,7 @@ class MonitorCheck(BaseModel):
     actual_credits: Optional[int] = Field(default=None, alias="actualCredits")
     billing_status: Literal["not_applicable", "reserved", "confirmed", "released", "failed"] = Field(alias="billingStatus")
     summary: MonitorSummary
-    target_results: Optional[Any] = Field(default=None, alias="targetResults")
+    target_results: Optional[List[MonitorTargetResult]] = Field(default=None, alias="targetResults")
     notification_status: Optional[Any] = Field(default=None, alias="notificationStatus")
     error: Optional[str] = None
     created_at: str = Field(alias="createdAt")
