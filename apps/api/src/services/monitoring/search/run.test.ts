@@ -33,7 +33,7 @@ vi.mock("./llm", () => ({
   judgeMaterialDevelopment: (...a: unknown[]) => materialDevMock(...a),
 }));
 vi.mock("./tuning", () => ({
-  hasGeminiKey: () => false,
+  hasLlmProvider: () => false,
   googleProviderOptions: () => ({}),
 }));
 

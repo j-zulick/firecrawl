@@ -37,7 +37,7 @@ import {
   type VerificationResult,
   type VerifyEvidence,
 } from "./verify";
-import { hasGeminiKey } from "./tuning";
+import { hasLlmProvider } from "./tuning";
 import {
   searchCreditsForResultCount,
   judgeCreditsForJudgedCount,
@@ -253,7 +253,7 @@ export async function runSearchTarget(params: {
   }
   resultCount = candidates.length;
 
-  const llmStagesAvailable = hasGeminiKey();
+  const llmStagesAvailable = hasLlmProvider();
   const depth: "raw" | "standard" | "deep" = !judgeEnabled
     ? "raw"
     : target.depth === "raw"

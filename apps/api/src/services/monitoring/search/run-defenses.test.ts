@@ -46,7 +46,7 @@ vi.mock("./llm", () => ({
   judgeSnippets: (...a: unknown[]) => snippetsMock(...a),
 }));
 vi.mock("./tuning", () => ({
-  hasGeminiKey: () => true,
+  hasLlmProvider: () => true,
   googleProviderOptions: () => ({}),
 }));
 vi.mock("./criteria", async importOriginal => ({
