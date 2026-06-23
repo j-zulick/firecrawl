@@ -40,6 +40,20 @@ import {
   judgeCreditsForJudgedCount,
 } from "./billing";
 
+function hasBooleanSyntax(query: string): boolean {
+  return /[()]/.test(query) || /\bOR\b/.test(query);
+}
+
+// Strip boolean operators that search backends often choke on, collapsing
+// `X (a OR b OR c)` into plain keywords `X a b c`. Quotes and site: are kept.
+function simplifySearchQuery(query: string): string {
+  return query
+    .replace(/[()]/g, " ")
+    .replace(/\bOR\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function windowToTbs(window: string): string {
   if (window === "5m" || window === "15m" || window === "1h") return "qdr:h";
   if (window === "6h" || window === "24h") return "qdr:d";
@@ -246,7 +260,43 @@ export async function runSearchTarget(params: {
       },
       logger,
     );
-    const results = response.web ?? [];
+    let results = response.web ?? [];
+    // Boolean/over-specified queries (e.g. `X (a OR b OR c)`) frequently return
+    // zero results from the search backend. When that happens, retry once with a
+    // simplified, plain-keyword version so a poorly-phrased query still fires.
+    if (results.length === 0 && hasBooleanSyntax(query)) {
+      const simplified = simplifySearchQuery(query);
+      if (simplified && simplified !== query) {
+        const { query: simplifiedScoped } = buildSearchQuery(
+          simplified,
+          undefined,
+          {
+            includeDomains: target.includeDomains,
+            excludeDomains: target.excludeDomains,
+          },
+        );
+        const retry = await searchWithRetry(
+          {
+            query: simplifiedScoped,
+            logger,
+            num_results: target.maxResults,
+            tbs,
+          },
+          logger,
+        );
+        if ((retry.web?.length ?? 0) > 0) {
+          logger.info(
+            "search monitor: empty boolean query, simplified fallback hit",
+            {
+              original: query,
+              simplified,
+              results: retry.web?.length,
+            },
+          );
+          results = retry.web ?? [];
+        }
+      }
+    }
     searchResultsBilled += results.length;
     for (const r of results) {
       if (!r.url) continue;
