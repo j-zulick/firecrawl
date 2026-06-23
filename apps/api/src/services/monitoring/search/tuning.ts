@@ -1,3 +1,4 @@
+import type { GoogleLanguageModelOptions } from "@ai-sdk/google";
 import { getModel } from "../../../lib/generic-ai";
 import { config } from "../../../config";
 
@@ -9,29 +10,6 @@ export type LlmUsageLabels = {
   monitorId: string;
   monitorCheckId: string;
 };
-
-export function googleProviderOptions(
-  functionId: string,
-  labels?: LlmUsageLabels,
-) {
-  return {
-    providerOptions: {
-      google: {
-        thinkingConfig: { thinkingLevel: "minimal" as const },
-        ...(labels
-          ? {
-              labels: {
-                functionId,
-                teamId: labels.teamId,
-                monitorId: labels.monitorId,
-                monitorCheckId: labels.monitorCheckId,
-              },
-            }
-          : {}),
-      },
-    },
-  };
-}
 
 function geminiApiKey(): string | undefined {
   return process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GEMINI_API_KEY;
@@ -50,4 +28,21 @@ export function hasLlmProvider(): boolean {
 
 export function googleModel(modelId: string) {
   return getModel(modelId, hasVertex() ? "vertex" : "google");
+}
+
+export function googleProviderOptions(
+  functionId: string,
+  labels?: LlmUsageLabels,
+) {
+  const provider = hasVertex() ? "vertex" : "google";
+
+  const options: GoogleLanguageModelOptions = {
+    thinkingConfig: { thinkingLevel: "minimal" },
+  };
+  // Billing labels are Vertex-only; the GenAI provider ignores them.
+  if (provider === "vertex" && labels) {
+    options.labels = { functionId, ...labels };
+  }
+
+  return { providerOptions: { [provider]: options } };
 }
