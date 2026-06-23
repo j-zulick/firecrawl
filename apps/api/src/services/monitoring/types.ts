@@ -69,7 +69,9 @@ const searchTargetSchema = z.preprocess(
     type: z.literal("search"),
     queries: z.array(z.string().min(1).max(256)).min(1).max(12),
     searchWindow: z
-      .enum(["5m", "15m", "1h", "6h", "24h", "7d"])
+      .enum(["5m", "15m", "1h", "6h", "24h", "7d"], {
+        error: "searchWindow must be one of: 5m, 15m, 1h, 6h, 24h, 7d",
+      })
       .optional()
       .default("24h"),
     includeDomains: z.array(monitorDomainSchema).max(50).optional(),
