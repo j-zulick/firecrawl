@@ -342,6 +342,20 @@ export async function runSearchTarget(params: {
   }
   resultCount = candidates.length;
 
+  // A check that retrieves nothing looks identical to "nothing happened", so a
+  // genuine miss (search came back empty despite relevant content existing) is
+  // invisible. Surface it explicitly so empty-retrieval can be diagnosed/alerted on.
+  if (resultCount === 0) {
+    logger.warn(
+      "search monitor: all queries returned no results after retries",
+      {
+        queries: target.queries,
+        searchWindow: target.searchWindow,
+        includeDomains: target.includeDomains,
+      },
+    );
+  }
+
   const llmStagesAvailable = hasLlmProvider();
   const depth: "raw" | "standard" | "deep" = !judgeEnabled
     ? "raw"
