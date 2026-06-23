@@ -40,18 +40,34 @@ import {
   judgeCreditsForJudgedCount,
 } from "./billing";
 
-function hasBooleanSyntax(query: string): boolean {
-  return /[()]/.test(query) || /\bOR\b/.test(query);
+// A query worth simplifying on an empty result: boolean operators OR too many
+// words. Both reliably return zero results from the search backend (observed:
+// `X (a OR b OR c)` and 5+ word queries go empty where 2-3 words succeed).
+const MAX_QUERY_WORDS = 6;
+
+function wordCount(query: string): number {
+  return query.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function shouldSimplifyOnEmpty(query: string): boolean {
+  return (
+    /[()]/.test(query) ||
+    /\bOR\b/.test(query) ||
+    wordCount(query) > MAX_QUERY_WORDS
+  );
 }
 
 // Strip boolean operators that search backends often choke on, collapsing
-// `X (a OR b OR c)` into plain keywords `X a b c`. Quotes and site: are kept.
+// `X (a OR b OR c)` into plain keywords `X a b c`, and cap to the leading few
+// keywords so an over-specified query still matches. Quotes and site: are kept.
 function simplifySearchQuery(query: string): string {
-  return query
+  const plain = query
     .replace(/[()]/g, " ")
     .replace(/\bOR\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  const words = plain.split(/\s+/).filter(Boolean);
+  return words.slice(0, MAX_QUERY_WORDS).join(" ");
 }
 
 function windowToTbs(window: string): string {
@@ -268,7 +284,7 @@ export async function runSearchTarget(params: {
     // Boolean/over-specified queries (e.g. `X (a OR b OR c)`) frequently return
     // zero results from the search backend. When that happens, retry once with a
     // simplified, plain-keyword version so a poorly-phrased query still fires.
-    if (results.length === 0 && hasBooleanSyntax(query)) {
+    if (results.length === 0 && shouldSimplifyOnEmpty(query)) {
       const simplified = simplifySearchQuery(query);
       if (simplified && simplified !== query) {
         const { query: simplifiedScoped } = buildSearchQuery(
