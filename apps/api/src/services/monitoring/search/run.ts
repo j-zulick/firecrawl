@@ -543,12 +543,8 @@ export async function runSearchTarget(params: {
           eventAlertCount,
           eventLastAlertAt: nowIso,
         },
-        judgment: {
-          meaningful: true,
-          confidence: "low",
-          reason: `New search result for "${c.query}"`,
-          meaningfulChanges: [],
-        },
+        // Raw mode does not run the judge, so it carries no judgment — these are
+        // surfaced as new results, not evaluated as "meaningful".
       });
       continue;
     }
@@ -573,7 +569,11 @@ export async function runSearchTarget(params: {
       try {
         doc = await params.scrapePage({
           url: c.url,
-          judgePrompt: buildJudgePrompt(judgeGoal, subject, target.searchWindow),
+          judgePrompt: buildJudgePrompt(
+            judgeGoal,
+            subject,
+            target.searchWindow,
+          ),
         });
       } catch (error) {
         logger.warn("search monitor scrape threw", { url: c.url, error });
@@ -599,7 +599,8 @@ export async function runSearchTarget(params: {
         continue;
       }
       pageText = doc.markdown ?? "";
-      realDate = doc.metadata?.publishedTime ?? doc.metadata?.modifiedTime ?? null;
+      realDate =
+        doc.metadata?.publishedTime ?? doc.metadata?.modifiedTime ?? null;
     }
 
     resultsJudged += 1;
