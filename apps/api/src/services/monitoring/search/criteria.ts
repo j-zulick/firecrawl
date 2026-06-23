@@ -1,6 +1,10 @@
 import { generateObject } from "ai";
 import { z } from "zod";
-import { googleModel, googleProviderOptions } from "./tuning";
+import {
+  googleModel,
+  googleProviderOptions,
+  type LlmUsageLabels,
+} from "./tuning";
 import { recordLlmCall } from "./cost";
 import type { CostTracking } from "../../../lib/cost-tracking";
 
@@ -136,6 +140,7 @@ export async function compileGoalCriteriaWithLlm(params: {
   queries: string[];
   goalVersion: string;
   costTracking?: CostTracking;
+  labels?: LlmUsageLabels;
 }): Promise<GoalCriteria> {
   const deterministic = compileGoalCriteria(params);
   const { object, usage } = await generateObject({
@@ -149,7 +154,7 @@ export async function compileGoalCriteriaWithLlm(params: {
       queries: params.queries,
     }),
     temperature: 0,
-    ...googleProviderOptions(),
+    ...googleProviderOptions("compileGoalCriteria", params.labels),
   });
   if (params.costTracking) {
     recordLlmCall({

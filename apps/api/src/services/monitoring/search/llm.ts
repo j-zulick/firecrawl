@@ -1,6 +1,10 @@
 import { generateObject } from "ai";
 import { z } from "zod";
-import { googleModel, googleProviderOptions } from "./tuning";
+import {
+  googleModel,
+  googleProviderOptions,
+  type LlmUsageLabels,
+} from "./tuning";
 import type { GoalCriteria } from "./criteria";
 import { recordLlmCall } from "./cost";
 import type { CostTracking } from "../../../lib/cost-tracking";
@@ -37,6 +41,7 @@ export async function resolveEvent(params: {
   result: { title: string; url: string; evidence: string };
   candidates: KnownEvent[];
   costTracking?: CostTracking;
+  labels?: LlmUsageLabels;
 }): Promise<EventResolution> {
   const { object, usage } = await generateObject({
     model: googleModel(EVENT_MODEL),
@@ -59,7 +64,7 @@ label: when matched, reuse the matched event's label; when new, write a short re
 A new article from a different publisher about the same filing/launch/recall is NOT a new event.`,
     }),
     temperature: 0,
-    ...googleProviderOptions(),
+    ...googleProviderOptions("resolveEvent", params.labels),
   });
 
   if (params.costTracking) {
@@ -90,6 +95,7 @@ export async function judgeMaterialDevelopment(params: {
   eventLabel: string;
   result: { title: string; evidence: string };
   costTracking?: CostTracking;
+  labels?: LlmUsageLabels;
 }): Promise<{ material: boolean; reason: string }> {
   const { object, usage } = await generateObject({
     model: googleModel(EVENT_MODEL),
@@ -107,7 +113,7 @@ export async function judgeMaterialDevelopment(params: {
 Set material false when it restates already-known facts, even from a new source or headline.`,
     }),
     temperature: 0,
-    ...googleProviderOptions(),
+    ...googleProviderOptions("judgeMaterialDevelopment", params.labels),
   });
   if (params.costTracking) {
     recordLlmCall({
@@ -149,6 +155,7 @@ export async function reviewAlert(params: {
     judgeAnswer: string;
   };
   costTracking?: CostTracking;
+  labels?: LlmUsageLabels;
 }): Promise<SkepticVerdict> {
   const { object, usage } = await generateObject({
     model: googleModel(SKEPTIC_MODEL),
@@ -176,7 +183,7 @@ export async function reviewAlert(params: {
       },
     }),
     temperature: 0,
-    ...googleProviderOptions(),
+    ...googleProviderOptions("reviewAlert", params.labels),
   });
   if (params.costTracking) {
     recordLlmCall({
@@ -220,6 +227,7 @@ export async function routeSearchResults(params: {
     snippet: string;
   }>;
   costTracking?: CostTracking;
+  labels?: LlmUsageLabels;
 }): Promise<RouteDecision[]> {
   const candidates = params.candidates.slice(0, 50);
   const { object, usage } = await generateObject({
@@ -238,7 +246,7 @@ Never select more than maxResults.`,
       candidates,
     }),
     temperature: 0,
-    ...googleProviderOptions(),
+    ...googleProviderOptions("routeSearchResults", params.labels),
   });
   if (params.costTracking) {
     recordLlmCall({
@@ -287,6 +295,7 @@ export async function judgeSnippets(params: {
     snippet: string;
   }>;
   costTracking?: CostTracking;
+  labels?: LlmUsageLabels;
 }): Promise<SnippetVerdict[]> {
   if (params.candidates.length === 0) return [];
   const { object, usage } = await generateObject({
@@ -300,7 +309,7 @@ export async function judgeSnippets(params: {
       candidates: params.candidates.slice(0, 50),
     }),
     temperature: 0,
-    ...googleProviderOptions(),
+    ...googleProviderOptions("judgeSnippets", params.labels),
   });
   if (params.costTracking) {
     recordLlmCall({
@@ -324,6 +333,7 @@ export async function summarizeRun(params: {
   subject: string;
   evidence: Array<{ title: string; url: string; rationale: string }>;
   costTracking?: CostTracking;
+  labels?: LlmUsageLabels;
 }): Promise<{ label: string; summary: string }> {
   const { object, usage } = await generateObject({
     model: googleModel(SUMMARY_MODEL),
@@ -337,7 +347,7 @@ export async function summarizeRun(params: {
 If sources are meaningful but already reported, say they are related evidence, not a new notification.`,
     }),
     temperature: 0,
-    ...googleProviderOptions(),
+    ...googleProviderOptions("summarizeRun", params.labels),
   });
 
   if (params.costTracking) {

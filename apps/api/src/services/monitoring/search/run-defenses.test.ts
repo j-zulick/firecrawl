@@ -101,6 +101,7 @@ function runParams(
       maxResults: 10,
       ...targetOver,
     },
+    monitorCheckId: "check-1",
     goalVersion: "v1",
     knownPages: new Map(),
     knownEvents: [],

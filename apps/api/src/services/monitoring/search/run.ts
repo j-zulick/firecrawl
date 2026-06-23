@@ -174,6 +174,7 @@ export async function runSearchTarget(params: {
     judgeEnabled: boolean;
   };
   target: SearchTargetInput;
+  monitorCheckId: string;
   goalVersion: string;
   knownPages: Map<string, KnownPage>;
   knownEvents: KnownEvent[];
@@ -189,6 +190,12 @@ export async function runSearchTarget(params: {
   }
   const subject = params.monitor.subject ?? "";
   const teamId = params.monitor.teamId;
+  // Vertex billing labels attached to every LLM call for usage tracing.
+  const labels = {
+    teamId,
+    monitorId: params.monitor.id,
+    monitorCheckId: params.monitorCheckId,
+  };
 
   const tbs = windowToTbs(target.searchWindow);
   const events: KnownEvent[] = [...params.knownEvents];
@@ -277,6 +284,7 @@ export async function runSearchTarget(params: {
         queries: target.queries,
         goalVersion,
         costTracking,
+        labels,
       });
     } catch (error) {
       logger.warn(
@@ -302,6 +310,7 @@ export async function runSearchTarget(params: {
         searchWindow: target.searchWindow,
         maxResults: target.maxResults,
         costTracking,
+        labels,
         candidates: candidates.map((c, i) => ({
           id: `result_${i + 1}`,
           query: c.query,
@@ -361,6 +370,7 @@ export async function runSearchTarget(params: {
         subject,
         searchWindow: target.searchWindow,
         costTracking,
+        labels,
         candidates: snippetCandidates.map((c, i) => ({
           id: `result_${i + 1}`,
           query: c.query,
@@ -632,6 +642,7 @@ export async function runSearchTarget(params: {
           subject,
           criteria,
           costTracking,
+          labels,
           result: {
             title: c.title,
             url: c.url,
@@ -703,6 +714,7 @@ export async function runSearchTarget(params: {
         goal: judgeGoal,
         subject,
         costTracking,
+        labels,
         result: {
           title: c.title,
           url: c.url,
@@ -740,6 +752,7 @@ export async function runSearchTarget(params: {
             subject,
             eventLabel,
             costTracking,
+            labels,
             result: { title: c.title, evidence: verdict.rationale },
           });
           alreadySatisfied = !dev.material;
@@ -827,6 +840,7 @@ export async function runSearchTarget(params: {
         goal: judgeGoal,
         subject,
         costTracking,
+        labels,
         evidence: sources
           .filter(s => s.status === "alert")
           .map(s => ({

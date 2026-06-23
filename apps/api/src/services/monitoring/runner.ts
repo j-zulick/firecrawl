@@ -1037,6 +1037,7 @@ async function runMonitorSearchTarget(params: {
       maxResults: target.maxResults,
       depth: target.depth,
     },
+    monitorCheckId: check.id,
     goalVersion,
     knownPages,
     knownEvents,

@@ -106,6 +106,7 @@ function run(
       ...over.target,
       alertMode: over.alertMode ?? baseTarget.alertMode,
     },
+    monitorCheckId: "check-1",
     goalVersion: over.goalVersion ?? "gv1",
     knownPages: over.knownPages ?? new Map(),
     knownEvents: over.knownEvents ?? [],

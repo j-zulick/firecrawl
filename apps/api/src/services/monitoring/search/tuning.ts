@@ -1,15 +1,35 @@
 import { getModel } from "../../../lib/generic-ai";
 import { config } from "../../../config";
 
-type GoogleThinkingOptions = {
-  providerOptions: {
-    google: { thinkingConfig: { thinkingLevel: "minimal" } };
-  };
+// Vertex billing labels so every LLM call is traceable at the billing level by
+// function, team, monitor, and monitor check (mirrors the Extract code). The
+// GenAI provider ignores labels it doesn't understand.
+export type LlmUsageLabels = {
+  teamId: string;
+  monitorId: string;
+  monitorCheckId: string;
 };
 
-export function googleProviderOptions(): GoogleThinkingOptions {
+export function googleProviderOptions(
+  functionId: string,
+  labels?: LlmUsageLabels,
+) {
   return {
-    providerOptions: { google: { thinkingConfig: { thinkingLevel: "minimal" } } },
+    providerOptions: {
+      google: {
+        thinkingConfig: { thinkingLevel: "minimal" as const },
+        ...(labels
+          ? {
+              labels: {
+                functionId,
+                teamId: labels.teamId,
+                monitorId: labels.monitorId,
+                monitorCheckId: labels.monitorCheckId,
+              },
+            }
+          : {}),
+      },
+    },
   };
 }
 
