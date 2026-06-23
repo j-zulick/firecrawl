@@ -60,7 +60,11 @@ function windowToTbs(window: string): string {
   return "qdr:w";
 }
 
-const SEARCH_RETRY_BACKOFF_MS = [400, 1200] as const;
+// The search backend intermittently returns an empty result set for a query that
+// succeeds moments later (observed: the same query swings 0 <-> N across checks).
+// Retry a few times with growing backoff so a transient empty doesn't make a whole
+// check find nothing.
+const SEARCH_RETRY_BACKOFF_MS = [400, 1200, 3000, 6000] as const;
 
 async function searchWithRetry(
   args: Parameters<typeof search>[0],
