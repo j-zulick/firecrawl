@@ -493,7 +493,10 @@ mod tests {
     fn search_target_serializes_to_camel_case_wire_format() {
         let target = MonitorSearchTarget {
             id: Some("t1".to_string()),
-            queries: vec!["firecrawl funding".to_string(), "firecrawl news".to_string()],
+            queries: vec![
+                "firecrawl funding".to_string(),
+                "firecrawl news".to_string(),
+            ],
             search_window: Some(MonitorSearchWindow::TwentyFourHours),
             include_domains: Some(vec!["techcrunch.com".to_string()]),
             exclude_domains: None,
@@ -546,7 +549,10 @@ mod tests {
         assert_eq!(result.search_completed, Some(true));
         assert_eq!(result.result_count, Some(12));
         assert_eq!(result.matches, Some(3));
-        assert_eq!(result.summary.as_deref(), Some("Found new funding coverage"));
+        assert_eq!(
+            result.summary.as_deref(),
+            Some("Found new funding coverage")
+        );
         assert_eq!(result.judge_degraded, Some(false));
         assert_eq!(result.degraded_reason, None);
         assert_eq!(result.search_credits, Some(2.5));
