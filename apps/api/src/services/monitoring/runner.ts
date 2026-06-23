@@ -65,7 +65,8 @@ import {
   MONITOR_CHECK_STALE_TIMEOUT_MS,
 } from "./stale";
 import { trackMonitorCheckStartedInterest } from "./interest";
-import { runSearchTarget } from "./search/run";
+import { runSearchTarget, type ScrapeSearchResult } from "./search/run";
+import { verdictJsonSchema } from "./search/judge";
 import { computeGoalVersion } from "./search/dedupe";
 import {
   reconstructKnownState,
@@ -326,6 +327,77 @@ async function runSingleScrape(params: {
     scrapeId,
     doc,
     credits: estimateActualCredits(doc, params.target.scrapeOptions),
+  };
+}
+
+// Deep-mode search-monitor page scrape. Routes through the same internal
+// scrape path as every other monitor scrape (processJobInternal, skipNuq,
+// bypassBilling) instead of calling scrapeURL directly, so it respects the
+// team's concurrency queue and is never billed per-page (search monitors bill
+// flat at the check level).
+async function scrapeSearchMonitorPage(params: {
+  teamId: string;
+  checkId: string;
+  url: string;
+  judgePrompt: string;
+}): Promise<ScrapeSearchResult | null> {
+  const scrapeId = uuidv7();
+  const scrapeOptions = scrapeRequestSchema.parse({
+    url: params.url,
+    formats: [
+      { type: "markdown" },
+      { type: "json", schema: verdictJsonSchema, prompt: params.judgePrompt },
+    ],
+    timeout: 20000,
+    origin: "monitor",
+  });
+
+  await logRequest({
+    id: scrapeId,
+    kind: "scrape",
+    api_version: "v2",
+    team_id: params.teamId,
+    origin: "monitor",
+    integration: null,
+    target_hint: params.url,
+    zeroDataRetention: false,
+    api_key_id: null,
+  });
+
+  const job: NuQJob<ScrapeJobData> = {
+    id: scrapeId,
+    status: "active",
+    createdAt: new Date(),
+    priority: 20,
+    data: {
+      mode: "single_urls",
+      url: params.url,
+      team_id: params.teamId,
+      scrapeOptions,
+      internalOptions: {
+        teamId: params.teamId,
+        saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
+        bypassBilling: true,
+        zeroDataRetention: false,
+      },
+      skipNuq: true,
+      origin: "monitor",
+      integration: null,
+      billing: { endpoint: "monitor", jobId: params.checkId },
+      zeroDataRetention: false,
+      apiKeyId: null,
+    },
+  };
+
+  const doc = await processJobInternal(job);
+  if (!doc) return null;
+  return {
+    json: doc.json ?? null,
+    markdown: doc.markdown ?? "",
+    metadata: {
+      publishedTime: doc.metadata?.publishedTime ?? null,
+      modifiedTime: doc.metadata?.modifiedTime ?? null,
+    },
   };
 }
 
@@ -1038,6 +1110,13 @@ async function runMonitorSearchTarget(params: {
       depth: target.depth,
     },
     monitorCheckId: check.id,
+    scrapePage: ({ url, judgePrompt }) =>
+      scrapeSearchMonitorPage({
+        teamId: monitor.team_id,
+        checkId: check.id,
+        url,
+        judgePrompt,
+      }),
     goalVersion,
     knownPages,
     knownEvents,

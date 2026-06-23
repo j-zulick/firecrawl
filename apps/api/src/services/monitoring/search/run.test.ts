@@ -2,14 +2,14 @@ import type { Logger } from "winston";
 import { type SearchVerdict, verdictJsonSchema, buildJudgePrompt } from "./judge";
 import type { EventResolution } from "./llm";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
-import { scrapeOptions } from "../../../controllers/v2/types";
+import { scrapeRequestSchema } from "../../../controllers/v2/types";
 
 // vi.mock is hoisted above declarations, so the mocks its factories reference
 // are created in vi.hoisted() (also hoisted) to avoid any TDZ surprises.
-const { searchMock, scrapeURLMock, resolveEventMock, summarizeRunMock, materialDevMock } =
+const { searchMock, scrapePageMock, resolveEventMock, summarizeRunMock, materialDevMock } =
   vi.hoisted(() => ({
     searchMock: vi.fn(),
-    scrapeURLMock: vi.fn(),
+    scrapePageMock: vi.fn(),
     resolveEventMock: vi.fn(),
     summarizeRunMock: vi.fn(),
     materialDevMock: vi.fn(),
@@ -23,9 +23,6 @@ vi.mock("../../../search/v2", () => ({
     const r = await searchMock(...a);
     return Array.isArray(r) ? { web: r } : r;
   },
-}));
-vi.mock("../../../scraper/scrapeURL", () => ({
-  scrapeURL: (...a: unknown[]) => scrapeURLMock(...a),
 }));
 vi.mock("./llm", () => ({
   resolveEvent: (...a: unknown[]) => resolveEventMock(...a),
@@ -54,8 +51,9 @@ const verdict = (over: Partial<SearchVerdict> = {}): SearchVerdict => ({
 });
 
 const okScrape = (v: SearchVerdict) => ({
-  success: true,
-  document: { json: v },
+  json: v,
+  markdown: "",
+  metadata: {},
 });
 
 function setSearchResults(
@@ -65,9 +63,9 @@ function setSearchResults(
 }
 
 function setVerdictsByUrl(map: Record<string, SearchVerdict>) {
-  scrapeURLMock.mockImplementation((_id: string, url: string) => {
+  scrapePageMock.mockImplementation(({ url }: { url: string }) => {
     const v = map[url];
-    if (!v) return Promise.resolve({ success: false });
+    if (!v) return Promise.resolve(null);
     return Promise.resolve(okScrape(v));
   });
 }
@@ -107,6 +105,7 @@ function run(
       alertMode: over.alertMode ?? baseTarget.alertMode,
     },
     monitorCheckId: "check-1",
+    scrapePage: (...a: unknown[]) => scrapePageMock(...a),
     goalVersion: over.goalVersion ?? "gv1",
     knownPages: over.knownPages ?? new Map(),
     knownEvents: over.knownEvents ?? [],
@@ -148,7 +147,7 @@ describe("runSearchTarget orchestration", () => {
     expect(out.sources[0].eventKey).toBeTruthy();
     expect(out.pageUpserts[0].status).toBe("alert");
     expect(out.summary).toBe("OpenAI filed for IPO.");
-    expect(scrapeURLMock).toHaveBeenCalledTimes(1);
+    expect(scrapePageMock).toHaveBeenCalledTimes(1);
   });
 
   it("skips scrape/judge for an already-seen unchanged page (same goalVersion)", async () => {
@@ -173,7 +172,7 @@ describe("runSearchTarget orchestration", () => {
 
     expect(out.sources[0].status).toBe("already_seen");
     expect(out.pageUpserts[0].status).toBe("already_seen");
-    expect(scrapeURLMock).not.toHaveBeenCalled();
+    expect(scrapePageMock).not.toHaveBeenCalled();
     expect(out.matches).toBe(0);
   });
 
@@ -213,7 +212,7 @@ describe("runSearchTarget orchestration", () => {
 
     const out = await run({ knownPages });
 
-    expect(scrapeURLMock).not.toHaveBeenCalled();
+    expect(scrapePageMock).not.toHaveBeenCalled();
     expect(out.pageUpserts[0].status).toBe("already_seen");
     expect(out.pageUpserts[0].metadata).toMatchObject({
       eventKey: "evt-1",
@@ -281,7 +280,7 @@ describe("runSearchTarget orchestration", () => {
 
     const out = await run({ knownPages, goalVersion: "gv2" });
 
-    expect(scrapeURLMock).toHaveBeenCalledTimes(1);
+    expect(scrapePageMock).toHaveBeenCalledTimes(1);
     expect(out.sources[0].status).toBe("alert");
   });
 
@@ -397,7 +396,7 @@ describe("runSearchTarget orchestration", () => {
     setSearchResults([
       { url: "https://dead.com/x", title: "x", description: "y" },
     ]);
-    scrapeURLMock.mockResolvedValue({ success: false });
+    scrapePageMock.mockResolvedValue(null);
 
     const out = await run();
 
@@ -424,13 +423,14 @@ describe("runSearchTarget orchestration", () => {
     const out = await run();
 
     expect(out.resultCount).toBe(1);
-    expect(scrapeURLMock).toHaveBeenCalledTimes(1);
+    expect(scrapePageMock).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("scrape payload validity (real validator, no mocks)", () => {
-  it("scrapeOptions.parse accepts the verdict json format", () => {
-    const parsed = scrapeOptions.parse({
+  it("scrapeRequestSchema accepts the verdict json format the runner sends", () => {
+    const parsed = scrapeRequestSchema.parse({
+      url: "https://example.com",
       formats: [
         {
           type: "json",
@@ -439,6 +439,7 @@ describe("scrape payload validity (real validator, no mocks)", () => {
         },
       ],
       timeout: 20000,
+      origin: "monitor",
     });
     const jsonFormat = (parsed.formats as Array<{ type: string }>).find(
       f => f.type === "json",
@@ -517,7 +518,7 @@ describe("re-judge cadence", () => {
       ],
     ]);
     const out = await run({ target: { recheckAfter: "24h" }, knownPages });
-    expect(scrapeURLMock).toHaveBeenCalledTimes(1);
+    expect(scrapePageMock).toHaveBeenCalledTimes(1);
     expect(out.sources[0].status).toBe("alert");
   });
 
@@ -536,7 +537,7 @@ describe("re-judge cadence", () => {
       ],
     ]);
     const out = await run({ target: { recheckAfter: "24h" }, knownPages });
-    expect(scrapeURLMock).not.toHaveBeenCalled();
+    expect(scrapePageMock).not.toHaveBeenCalled();
     expect(out.sources[0].status).toBe("watching");
   });
 });
@@ -582,6 +583,6 @@ describe("domain scoping", () => {
     });
     expect(out.resultCount).toBe(1);
     expect(out.sources.map(s => s.url)).toEqual(["https://news.com/openai"]);
-    expect(scrapeURLMock).toHaveBeenCalledTimes(1);
+    expect(scrapePageMock).toHaveBeenCalledTimes(1);
   });
 });

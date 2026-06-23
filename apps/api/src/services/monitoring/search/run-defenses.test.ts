@@ -34,9 +34,6 @@ vi.mock("../../../search/v2", () => ({
     return Array.isArray(r) ? { web: r } : r;
   },
 }));
-vi.mock("../../../scraper/scrapeURL", () => ({
-  scrapeURL: (...a: unknown[]) => scrapeURLMock(...a),
-}));
 vi.mock("./llm", () => ({
   resolveEvent: (...a: unknown[]) => resolveEventMock(...a),
   summarizeRun: (...a: unknown[]) => summarizeRunMock(...a),
@@ -102,6 +99,25 @@ function runParams(
       ...targetOver,
     },
     monitorCheckId: "check-1",
+    // scrapeURLMock keeps the legacy { success, document } shape; adapt it to the
+    // ScrapeSearchResult the injected scrapePage now returns.
+    scrapePage: async (...a: unknown[]) => {
+      const r = (await scrapeURLMock(...a)) as {
+        success?: boolean;
+        document?: {
+          json: unknown;
+          markdown?: string;
+          metadata?: { publishedTime?: string; modifiedTime?: string };
+        };
+      } | null;
+      return r && r.success && r.document
+        ? {
+            json: r.document.json ?? null,
+            markdown: r.document.markdown ?? "",
+            metadata: r.document.metadata ?? {},
+          }
+        : null;
+    },
     goalVersion: "v1",
     knownPages: new Map(),
     knownEvents: [],
@@ -150,7 +166,7 @@ describe("router gating (deep)", () => {
 
     const result = await runSearchTarget(runParams());
     expect(scrapeURLMock).toHaveBeenCalledTimes(1);
-    expect(scrapeURLMock.mock.calls[0][1]).toBe(serpRow(2).url);
+    expect(scrapeURLMock.mock.calls[0][0].url).toBe(serpRow(2).url);
     expect(result.matches).toBe(1);
   });
 
@@ -483,7 +499,7 @@ describe("deep-path scrape failures mark the check degraded (no silent empty)", 
   });
 
   it("NOT degraded when at least one scrape succeeds and is judged", async () => {
-    scrapeURLMock.mockImplementation((_id: string, url: string) =>
+    scrapeURLMock.mockImplementation(({ url }: { url: string }) =>
       url === serpRow(1).url
         ? Promise.resolve({
             success: true,

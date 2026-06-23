@@ -2,15 +2,12 @@ import { v7 as uuidv7 } from "uuid";
 import type { Logger } from "winston";
 import { search } from "../../../search/v2";
 import { buildSearchQuery } from "../../../lib/search-query-builder";
-import { scrapeURL } from "../../../scraper/scrapeURL";
-import { scrapeOptions } from "../../../controllers/v2/types";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { hashMonitorUrl } from "../store";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
 import {
   buildJudgePrompt,
   parseVerdict,
-  verdictJsonSchema,
   verdictToDecision,
   windowToMs,
   type SearchVerdict,
@@ -125,6 +122,20 @@ export type KnownPage = {
   metadata?: Record<string, unknown>;
 };
 
+// Deep-mode page scrape. Injected by the caller so it can route through the
+// shared monitor scrape path (concurrency queue + bypassBilling), keeping this
+// module free of worker/queue dependencies. Resolves to null on scrape failure.
+export type ScrapeSearchResult = {
+  json: unknown;
+  markdown: string;
+  metadata: { publishedTime?: string | null; modifiedTime?: string | null };
+};
+
+type ScrapeSearchPage = (args: {
+  url: string;
+  judgePrompt: string;
+}) => Promise<ScrapeSearchResult | null>;
+
 type SearchSource = {
   url: string;
   title: string;
@@ -175,6 +186,7 @@ export async function runSearchTarget(params: {
   };
   target: SearchTargetInput;
   monitorCheckId: string;
+  scrapePage: ScrapeSearchPage;
   goalVersion: string;
   knownPages: Map<string, KnownPage>;
   knownEvents: KnownEvent[];
@@ -557,27 +569,12 @@ export async function runSearchTarget(params: {
       }
       pagesChecked += 1;
     } else {
-      let res;
-      const scrapeParsedOptions = scrapeOptions.parse({
-        formats: [
-          { type: "markdown" },
-          {
-            type: "json",
-            schema: verdictJsonSchema,
-            prompt: buildJudgePrompt(judgeGoal, subject, target.searchWindow),
-          },
-        ],
-        timeout: 20000,
-      });
-      const scrapeCostTracking = new CostTracking();
+      let doc: ScrapeSearchResult | null;
       try {
-        res = await scrapeURL(
-          "search-monitor;" + uuidv7(),
-          c.url,
-          scrapeParsedOptions,
-          { teamId, zeroDataRetention: params.zeroDataRetention },
-          scrapeCostTracking,
-        );
+        doc = await params.scrapePage({
+          url: c.url,
+          judgePrompt: buildJudgePrompt(judgeGoal, subject, target.searchWindow),
+        });
       } catch (error) {
         logger.warn("search monitor scrape threw", { url: c.url, error });
         judgeScrapeFailures += 1;
@@ -587,7 +584,7 @@ export async function runSearchTarget(params: {
         continue;
       }
 
-      if (!res.success) {
+      if (!doc) {
         logger.warn("search monitor scrape failed", { url: c.url });
         judgeScrapeFailures += 1;
         pushUnevaluatedPage("scrape failed");
@@ -595,17 +592,14 @@ export async function runSearchTarget(params: {
       }
       pagesChecked += 1;
 
-      verdict = parseVerdict(res.document.json);
+      verdict = parseVerdict(doc.json);
       if (!verdict) {
         judgeScrapeFailures += 1;
         pushUnevaluatedPage("verdict unparseable");
         continue;
       }
-      pageText = res.document.markdown ?? "";
-      realDate =
-        res.document.metadata?.publishedTime ??
-        res.document.metadata?.modifiedTime ??
-        null;
+      pageText = doc.markdown ?? "";
+      realDate = doc.metadata?.publishedTime ?? doc.metadata?.modifiedTime ?? null;
     }
 
     resultsJudged += 1;
