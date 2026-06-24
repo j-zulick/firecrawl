@@ -70,6 +70,43 @@ function simplifySearchQuery(query: string): string {
   return words.slice(0, MAX_QUERY_WORDS).join(" ");
 }
 
+// Single source of truth for a candidate's dedup decision, shared by the deep
+// pre-scrape pass and the per-result loop so they can never disagree on which
+// results are new/changed (and thus which to scrape).
+function evaluateSerpCandidate(
+  c: { url: string; title: string; description: string },
+  knownPages: Map<string, KnownPage>,
+  goalVersion: string,
+  recheckMs: number | undefined,
+): {
+  canonical: string;
+  fingerprint: string;
+  knownCurrent: KnownPage | undefined;
+  isNewOrChanged: boolean;
+} {
+  const canonical = canonicalizeUrl(c.url);
+  const fingerprint = stableSerpFingerprint({
+    url: c.url,
+    title: c.title,
+    snippet: c.description,
+  });
+  const known = knownPages.get(canonical);
+  const knownCurrent =
+    known && known.goalVersion === goalVersion ? known : undefined;
+  const isLive =
+    knownCurrent?.lastStatus === "alert" ||
+    knownCurrent?.lastStatus === "watching";
+  const dueForRecheck = Boolean(
+    recheckMs &&
+      isLive &&
+      knownCurrent?.lastCheckedAt &&
+      Date.now() - Date.parse(knownCurrent.lastCheckedAt) > recheckMs,
+  );
+  const isNewOrChanged =
+    !knownCurrent || knownCurrent.fingerprint !== fingerprint || dueForRecheck;
+  return { canonical, fingerprint, knownCurrent, isNewOrChanged };
+}
+
 function windowToTbs(window: string): string {
   if (window === "5m" || window === "15m" || window === "1h") return "qdr:h";
   if (window === "6h" || window === "24h") return "qdr:d";
@@ -497,13 +534,44 @@ export async function runSearchTarget(params: {
     }
   }
 
+  // The per-result loop below scrapes deep-mode pages one at a time, serializing
+  // N×(up to 20s) scrapes per check and pinning the worker for minutes. Scrape the
+  // new/changed candidates concurrently here and cache the docs (the scrapes are
+  // bounded downstream by the team's NuQ scrape queue). All dedup/event/counter
+  // state stays in the single-threaded loop, so only the I/O is parallelized.
+  const deepDocs = new Map<
+    string,
+    { doc: ScrapeSearchResult | null; error?: unknown }
+  >();
+  if (depth === "deep" && llmStagesAvailable) {
+    const judgePrompt = buildJudgePrompt(
+      judgeGoal,
+      subject,
+      target.searchWindow,
+    );
+    await Promise.all(
+      selected
+        .filter(
+          c =>
+            evaluateSerpCandidate(c, knownPages, goalVersion, recheckMs)
+              .isNewOrChanged,
+        )
+        .map(async c => {
+          const canonical = canonicalizeUrl(c.url);
+          try {
+            deepDocs.set(canonical, {
+              doc: await params.scrapePage({ url: c.url, judgePrompt }),
+            });
+          } catch (error) {
+            deepDocs.set(canonical, { doc: null, error });
+          }
+        }),
+    );
+  }
+
   for (const c of selected) {
-    const canonical = canonicalizeUrl(c.url);
-    const fingerprint = stableSerpFingerprint({
-      url: c.url,
-      title: c.title,
-      snippet: c.description,
-    });
+    const { canonical, fingerprint, knownCurrent, isNewOrChanged } =
+      evaluateSerpCandidate(c, knownPages, goalVersion, recheckMs);
     const pushUnevaluatedPage = (error: string) => {
       skipped += 1;
       sources.push({ url: c.url, title: c.title, status: "skipped" });
@@ -522,22 +590,6 @@ export async function runSearchTarget(params: {
         },
       });
     };
-    const known = knownPages.get(canonical);
-    const knownCurrent =
-      known && known.goalVersion === goalVersion ? known : undefined;
-    const isLive =
-      knownCurrent?.lastStatus === "alert" ||
-      knownCurrent?.lastStatus === "watching";
-    const dueForRecheck = Boolean(
-      recheckMs &&
-        isLive &&
-        knownCurrent?.lastCheckedAt &&
-        Date.now() - Date.parse(knownCurrent.lastCheckedAt) > recheckMs,
-    );
-    const isNewOrChanged =
-      !knownCurrent ||
-      knownCurrent.fingerprint !== fingerprint ||
-      dueForRecheck;
 
     if (!isNewOrChanged) {
       const reusedStatus: SearchSource["status"] =
@@ -649,16 +701,32 @@ export async function runSearchTarget(params: {
       }
       pagesChecked += 1;
     } else {
+      // Use the doc fetched in the concurrent pre-scrape pass; fall back to an
+      // inline scrape only if it wasn't pre-fetched (shouldn't happen).
       let doc: ScrapeSearchResult | null;
-      try {
-        doc = await params.scrapePage({
+      const cached = deepDocs.get(canonical);
+      if (cached?.error !== undefined) {
+        logger.warn("search monitor scrape threw", {
           url: c.url,
-          judgePrompt: buildJudgePrompt(
-            judgeGoal,
-            subject,
-            target.searchWindow,
-          ),
+          error: cached.error,
         });
+        judgeScrapeFailures += 1;
+        pushUnevaluatedPage(
+          cached.error instanceof Error ? cached.error.message : "scrape threw",
+        );
+        continue;
+      }
+      try {
+        doc = cached
+          ? cached.doc
+          : await params.scrapePage({
+              url: c.url,
+              judgePrompt: buildJudgePrompt(
+                judgeGoal,
+                subject,
+                target.searchWindow,
+              ),
+            });
       } catch (error) {
         logger.warn("search monitor scrape threw", { url: c.url, error });
         judgeScrapeFailures += 1;
