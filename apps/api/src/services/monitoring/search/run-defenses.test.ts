@@ -3,26 +3,12 @@ import type { SearchVerdict } from "./judge";
 
 // vi.mock is hoisted above declarations, so the mocks its factories reference
 // are created in vi.hoisted() (also hoisted) to avoid any TDZ surprises.
-const {
-  searchMock,
-  scrapeURLMock,
-  resolveEventMock,
-  summarizeRunMock,
-  materialDevMock,
-  reviewAlertMock,
-  routeMock,
-  snippetsMock,
-  criteriaLlmMock,
-} = vi.hoisted(() => ({
+// The lean pipeline has only one LLM stage left in deep mode (the per-page JSON
+// verdict, produced by the injected scrapePage) plus judgeSnippets for standard.
+const { searchMock, scrapeURLMock, snippetsMock } = vi.hoisted(() => ({
   searchMock: vi.fn(),
   scrapeURLMock: vi.fn(),
-  resolveEventMock: vi.fn(),
-  summarizeRunMock: vi.fn(),
-  materialDevMock: vi.fn(),
-  reviewAlertMock: vi.fn(),
-  routeMock: vi.fn(),
   snippetsMock: vi.fn(),
-  criteriaLlmMock: vi.fn(),
 }));
 
 vi.mock("uuid", () => ({ v7: () => "00000000-0000-7000-8000-000000000000" }));
@@ -35,20 +21,11 @@ vi.mock("../../../search/v2", () => ({
   },
 }));
 vi.mock("./llm", () => ({
-  resolveEvent: (...a: unknown[]) => resolveEventMock(...a),
-  summarizeRun: (...a: unknown[]) => summarizeRunMock(...a),
-  judgeMaterialDevelopment: (...a: unknown[]) => materialDevMock(...a),
-  reviewAlert: (...a: unknown[]) => reviewAlertMock(...a),
-  routeSearchResults: (...a: unknown[]) => routeMock(...a),
   judgeSnippets: (...a: unknown[]) => snippetsMock(...a),
 }));
 vi.mock("./tuning", () => ({
   hasLlmProvider: () => true,
   googleProviderOptions: () => ({}),
-}));
-vi.mock("./criteria", async importOriginal => ({
-  ...(await importOriginal<typeof import("./criteria")>()),
-  compileGoalCriteriaWithLlm: (...a: unknown[]) => criteriaLlmMock(...a),
 }));
 
 import { runSearchTarget } from "./run";
@@ -66,16 +43,6 @@ const verdict = (over: Partial<SearchVerdict> = {}): SearchVerdict => ({
   rationale: "Firecrawl announced a new product today.",
   ...over,
 });
-
-const llmCriteria = {
-  goalVersion: "v1",
-  generatedBy: "llm" as const,
-  subjectAliases: ["Firecrawl"],
-  mustConcern: ["launch", "launches", "launched", "product"],
-  excludedSubjects: ["Parallel"],
-  ownedHosts: ["firecrawl.dev"],
-  thirdPartyOnly: false,
-};
 
 function runParams(
   targetOver: Record<string, unknown> = {},
@@ -128,19 +95,6 @@ function runParams(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  criteriaLlmMock.mockResolvedValue(llmCriteria);
-  resolveEventMock.mockResolvedValue({
-    matchedKey: null,
-    isNew: true,
-    label: "Firecrawl product launch",
-    reason: "",
-  });
-  summarizeRunMock.mockResolvedValue({ label: "meaningful", summary: "ok" });
-  reviewAlertMock.mockResolvedValue({
-    refuted: false,
-    failureMode: "none",
-    reason: "",
-  });
 });
 
 const serpRow = (n: number) => ({
@@ -149,41 +103,20 @@ const serpRow = (n: number) => ({
   description: `Firecrawl announced product ${n} today.`,
 });
 
-describe("router gating (deep)", () => {
-  it("scrapes only candidates the router selects", async () => {
+describe("deep mode (scrape every selected candidate)", () => {
+  it("scrapes every result up to maxResults (no router gating)", async () => {
     searchMock.mockResolvedValue([serpRow(1), serpRow(2), serpRow(3)]);
-    routeMock.mockResolvedValue([
-      { id: "result_2", decision: "scrape", priority: 1, reason: "promising" },
-    ]);
-    scrapeURLMock.mockResolvedValue({
-      success: true,
-      document: {
-        json: verdict(),
-        markdown: "Firecrawl announced product 2 today in prose.",
-        metadata: {},
-      },
-    });
-
-    const result = await runSearchTarget(runParams());
-    expect(scrapeURLMock).toHaveBeenCalledTimes(1);
-    expect(scrapeURLMock.mock.calls[0][0].url).toBe(serpRow(2).url);
-    expect(result.matches).toBe(1);
-  });
-
-  it("fails open to top-K when the router throws", async () => {
-    searchMock.mockResolvedValue([serpRow(1), serpRow(2)]);
-    routeMock.mockRejectedValue(new Error("router down"));
     scrapeURLMock.mockResolvedValue({
       success: true,
       document: {
         json: verdict({ alertAction: "watch" }),
-        markdown: "",
+        markdown: "prose",
         metadata: {},
       },
     });
 
     const result = await runSearchTarget(runParams());
-    expect(scrapeURLMock).toHaveBeenCalledTimes(2);
+    expect(scrapeURLMock).toHaveBeenCalledTimes(3);
     expect(result.matches).toBe(0);
   });
 });
@@ -198,7 +131,6 @@ describe("standard depth (snippet judging, no scrapes)", () => {
 
     const result = await runSearchTarget(runParams({ depth: "standard" }));
     expect(scrapeURLMock).not.toHaveBeenCalled();
-    expect(routeMock).not.toHaveBeenCalled();
     expect(result.pagesChecked).toBe(2);
     expect(result.matches).toBe(1);
     expect(result.sources.map(s => s.status).sort()).toEqual([
