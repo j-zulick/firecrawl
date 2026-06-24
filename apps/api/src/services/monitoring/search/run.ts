@@ -40,39 +40,8 @@ import {
   judgeCreditsForJudgedCount,
 } from "./billing";
 
-// A query worth simplifying on an empty result: boolean operators OR too many
-// words. Both reliably return zero results from the search backend (observed:
-// `X (a OR b OR c)` and 5+ word queries go empty where 2-3 words succeed).
-const MAX_QUERY_WORDS = 6;
-
-function wordCount(query: string): number {
-  return query.trim().split(/\s+/).filter(Boolean).length;
-}
-
-function shouldSimplifyOnEmpty(query: string): boolean {
-  return (
-    /[()]/.test(query) ||
-    /\bOR\b/.test(query) ||
-    wordCount(query) > MAX_QUERY_WORDS
-  );
-}
-
-// Strip boolean operators that search backends often choke on, collapsing
-// `X (a OR b OR c)` into plain keywords `X a b c`, and cap to the leading few
-// keywords so an over-specified query still matches. Quotes and site: are kept.
-function simplifySearchQuery(query: string): string {
-  const plain = query
-    .replace(/[()]/g, " ")
-    .replace(/\bOR\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const words = plain.split(/\s+/).filter(Boolean);
-  return words.slice(0, MAX_QUERY_WORDS).join(" ");
-}
-
-// Single source of truth for a candidate's dedup decision, shared by the deep
-// pre-scrape pass and the per-result loop so they can never disagree on which
-// results are new/changed (and thus which to scrape).
+// Shared dedup decision for a search result, used by both the pre-scrape pass and
+// the per-result loop so they never disagree on which results to scrape/judge.
 function evaluateSerpCandidate(
   c: { url: string; title: string; description: string },
   knownPages: Map<string, KnownPage>,
