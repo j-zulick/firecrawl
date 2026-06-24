@@ -80,6 +80,7 @@ describe("monitoring scheduler", () => {
     team_id: "team-1",
     current_check_id: null,
     next_run_at: "2026-05-05T18:45:00.000Z",
+    targets: [{ id: "t-1", type: "scrape" }],
   } as any;
   const check = { id: "check-1" } as any;
 
@@ -110,14 +111,36 @@ describe("monitoring scheduler", () => {
       monitor,
       checkId: check.id,
     });
-    expect(mockAddMonitorCheckJob).toHaveBeenCalledWith({
-      monitorId: monitor.id,
-      checkId: check.id,
-      teamId: monitor.team_id,
-    });
+    expect(mockAddMonitorCheckJob).toHaveBeenCalledWith(
+      {
+        monitorId: monitor.id,
+        checkId: check.id,
+        teamId: monitor.team_id,
+      },
+      { search: false },
+    );
     expect(
       mockDispatchScheduledMonitorCheck.mock.invocationCallOrder[0],
     ).toBeLessThan(mockAddMonitorCheckJob.mock.invocationCallOrder[0]);
+  });
+
+  it("routes a search monitor to the dedicated search queue", async () => {
+    mockClaimDueMonitors.mockResolvedValue([
+      { ...monitor, targets: [{ id: "t-1", type: "search" }] } as any,
+    ]);
+
+    await expect(
+      enqueueDueMonitorChecks({ workerId: "worker-1" }),
+    ).resolves.toBe(1);
+
+    expect(mockAddMonitorCheckJob).toHaveBeenCalledWith(
+      {
+        monitorId: monitor.id,
+        checkId: check.id,
+        teamId: monitor.team_id,
+      },
+      { search: true },
+    );
   });
 
   it("fails and clears a dispatched check when enqueueing fails", async () => {
