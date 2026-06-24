@@ -19,16 +19,25 @@ import type { MonitorRow } from "./types";
 
 const logger = _logger.child({ module: "monitoring-scheduler" });
 
+// Search monitors route to a dedicated check queue (see queue.ts).
+export function monitorIsSearch(monitor: MonitorRow): boolean {
+  return (monitor.targets ?? []).some(target => target.type === "search");
+}
+
 export async function enqueueMonitorCheck(params: {
   monitorId: string;
   checkId: string;
   teamId: string;
+  search?: boolean;
 }): Promise<void> {
-  await addMonitorCheckJob({
-    monitorId: params.monitorId,
-    checkId: params.checkId,
-    teamId: params.teamId,
-  });
+  await addMonitorCheckJob(
+    {
+      monitorId: params.monitorId,
+      checkId: params.checkId,
+      teamId: params.teamId,
+    },
+    { search: params.search },
+  );
 }
 
 export async function enqueueDueMonitorChecks(
@@ -98,6 +107,7 @@ export async function enqueueDueMonitorChecks(
         monitorId: monitor.id,
         checkId: check.id,
         teamId: monitor.team_id,
+        search: monitorIsSearch(monitor),
       });
       enqueued++;
     } catch (error) {
