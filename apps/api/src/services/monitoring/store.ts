@@ -858,6 +858,28 @@ export async function insertMonitorCheckPages(
   );
 }
 
+// Delete all check-page rows for a (check, target). Used to make the inline
+// search write idempotent: a redelivered search check clears its prior rows
+// before re-inserting, so a crash-and-redeliver can't leave duplicate pages.
+// Partition-safe (no unique constraint needed on the partitioned table).
+export async function deleteMonitorCheckPages(params: {
+  checkId: string;
+  targetId: string;
+}): Promise<void> {
+  await run(
+    () =>
+      db
+        .delete(schema.monitor_check_pages)
+        .where(
+          and(
+            eq(schema.monitor_check_pages.check_id, params.checkId),
+            eq(schema.monitor_check_pages.target_id, params.targetId),
+          ),
+        ),
+    "Failed to delete monitor check pages",
+  );
+}
+
 export async function listMonitorCheckPages(params: {
   teamId: string;
   monitorId: string;

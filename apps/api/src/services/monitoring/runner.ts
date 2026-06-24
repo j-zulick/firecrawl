@@ -42,6 +42,7 @@ import {
   countMonitorCheckPages,
   hashMonitorUrl,
   insertMonitorCheckPages,
+  deleteMonitorCheckPages,
   listActiveMonitorPages,
   listMonitorCheckPages,
   listRunningMonitorChecks,
@@ -63,6 +64,7 @@ import {
   MONITOR_CHECK_STALE_ERROR,
   isMonitorCheckStale,
   MONITOR_CHECK_STALE_TIMEOUT_MS,
+  monitorCheckStaleTimeoutMs,
 } from "./stale";
 import { trackMonitorCheckStartedInterest } from "./interest";
 import { runSearchTarget, type ScrapeSearchResult } from "./search/run";
@@ -1164,6 +1166,9 @@ async function runMonitorSearchTarget(params: {
     });
   }
 
+  // Clear any rows from a prior (crashed/redelivered) run of this same check so
+  // the insert is effectively a replace — a redelivery can't duplicate pages.
+  await deleteMonitorCheckPages({ checkId: check.id, targetId: target.id });
   await insertMonitorCheckPages(pages);
 
   for (const page of pages) {
@@ -1190,6 +1195,24 @@ async function runMonitorSearchTarget(params: {
     judgeCredits,
     resultsJudged: result.resultsJudged,
   };
+}
+
+// Find a persisted search target run that already completed, so a redelivered
+// check can restore its figures instead of re-running (and re-billing) it.
+function findCompletedSearchTargetRun(
+  targetResults: unknown,
+  targetId: string,
+): Record<string, unknown> | null {
+  if (!Array.isArray(targetResults)) return null;
+  const match = targetResults.find(
+    tr =>
+      tr != null &&
+      typeof tr === "object" &&
+      (tr as { type?: unknown }).type === "search" &&
+      (tr as { targetId?: unknown }).targetId === targetId &&
+      (tr as { searchCompleted?: unknown }).searchCompleted === true,
+  );
+  return (match as Record<string, unknown>) ?? null;
 }
 
 export async function processMonitorCheckJob(
@@ -1284,6 +1307,19 @@ export async function processMonitorCheckJob(
       } else if (target.type === "crawl" && targetRun.type === "crawl") {
         await enqueueMonitorCrawlTarget({ monitor, check, target, targetRun });
       } else if (target.type === "search" && targetRun.type === "search") {
+        // If this check was already run to completion for this target (a
+        // redelivery after the inline work finished but before the ack),
+        // restore the persisted figures instead of re-running — re-running
+        // would re-bill the search and re-scrape every page.
+        const priorRun = findCompletedSearchTargetRun(
+          initialCheck.target_results,
+          target.id,
+        );
+        if (priorRun) {
+          Object.assign(targetRun, priorRun);
+          targetRun.searchCompleted = true;
+          continue;
+        }
         // Search runs synchronously; fold its outcome into target_results.
         const searchResult = await runMonitorSearchTarget({
           monitor,
@@ -1573,7 +1609,7 @@ async function failStaleMonitorCheck(params: {
     monitorId: params.monitor.id,
     checkId: params.check.id,
     startedAt: params.check.started_at,
-    timeoutMs: MONITOR_CHECK_STALE_TIMEOUT_MS,
+    timeoutMs: monitorCheckStaleTimeoutMs(params.check),
   });
 
   return true;

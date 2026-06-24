@@ -66,5 +66,31 @@ describe("monitoring runner", () => {
         ),
       ).toBe(true);
     });
+
+    it("uses the shorter search timeout when the check has a search target", () => {
+      // 11 minutes old: past the 10-min search cutoff but well under 1 hour.
+      const elevenMinAgo = new Date(
+        now.getTime() - 11 * 60 * 1000,
+      ).toISOString();
+      const base = {
+        started_at: elevenMinAgo,
+        updated_at: now.toISOString(),
+        created_at: now.toISOString(),
+      };
+      // Scrape check: not stale yet (1-hour timeout).
+      expect(
+        isMonitorCheckStale(
+          { ...base, target_results: [{ type: "scrape", targetId: "t1" }] },
+          now,
+        ),
+      ).toBe(false);
+      // Search check: stale (10-minute timeout).
+      expect(
+        isMonitorCheckStale(
+          { ...base, target_results: [{ type: "search", targetId: "t1" }] },
+          now,
+        ),
+      ).toBe(true);
+    });
   });
 });
