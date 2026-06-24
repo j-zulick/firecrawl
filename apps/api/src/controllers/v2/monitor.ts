@@ -25,10 +25,7 @@ import {
   listMonitors,
   updateMonitor,
 } from "../../services/monitoring/store";
-import {
-  enqueueMonitorCheck,
-  monitorIsSearch,
-} from "../../services/monitoring/scheduler";
+import { enqueueMonitorCheck } from "../../services/monitoring/scheduler";
 import {
   estimateRunsPerMonth,
   validateMonitorCron,
@@ -459,7 +456,6 @@ export async function runMonitorController(
     monitorId: monitor.id,
     checkId: check.id,
     teamId: monitor.team_id,
-    search: monitorIsSearch(monitor),
   });
 
   res.status(200).json({
