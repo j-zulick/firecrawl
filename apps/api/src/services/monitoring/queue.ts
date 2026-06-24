@@ -35,6 +35,10 @@ let consumeChannel: amqp.Channel | null = null;
 // after any RabbitMQ blip, and only a restart heals it.
 const registeredConsumers: Array<{ queue: string; handler: ConsumerHandler }> =
   [];
+// Queues with a live consumer on the CURRENT consume channel. Cleared whenever
+// the channel drops, so a reconnect re-subscribes exactly once per queue and
+// repeated drops can't pile up duplicate consumers.
+const subscribedQueues = new Set<string>();
 let reconnectInFlight = false;
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
@@ -89,6 +93,7 @@ function handleConnectionDrop(reason: string, error?: unknown): void {
   connection = null;
   publishChannel = null;
   consumeChannel = null;
+  subscribedQueues.clear();
   if (registeredConsumers.length > 0) {
     scheduleReconnect(RECONNECT_BASE_DELAY_MS);
   }
@@ -221,6 +226,9 @@ async function subscribe(
   queue: string,
   handler: ConsumerHandler,
 ): Promise<void> {
+  // Already consuming this queue on the current channel — don't add a duplicate
+  // (a reconnect could otherwise re-subscribe an already-subscribed queue).
+  if (subscribedQueues.has(queue)) return;
   // Per-consumer prefetch (amqplib default): each consumer gets its own in-flight
   // slot, so the search and default consumers don't block each other.
   await ch.prefetch(1);
@@ -256,6 +264,7 @@ async function subscribe(
     { noAck: false },
   );
 
+  subscribedQueues.add(queue);
   logger.info("Started consuming monitor check jobs", { queue });
 }
 
