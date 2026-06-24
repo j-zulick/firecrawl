@@ -82,10 +82,8 @@ function windowToTbs(window: string): string {
   return "qdr:w";
 }
 
-// The search backend intermittently returns an empty result set for a query that
-// succeeds moments later (observed: the same query swings 0 <-> N across checks).
-// Retry a few times with growing backoff so a transient empty doesn't make a whole
-// check find nothing.
+// Retry an empty result with growing backoff — the backend sometimes returns 0 for
+// a query that succeeds moments later.
 const SEARCH_RETRY_BACKOFF_MS = [400, 1200, 3000, 6000] as const;
 
 async function searchWithRetry(
@@ -286,43 +284,7 @@ export async function runSearchTarget(params: {
       },
       logger,
     );
-    let results = response.web ?? [];
-    // Boolean/over-specified queries (e.g. `X (a OR b OR c)`) frequently return
-    // zero results from the search backend. When that happens, retry once with a
-    // simplified, plain-keyword version so a poorly-phrased query still fires.
-    if (results.length === 0 && shouldSimplifyOnEmpty(query)) {
-      const simplified = simplifySearchQuery(query);
-      if (simplified && simplified !== query) {
-        const { query: simplifiedScoped } = buildSearchQuery(
-          simplified,
-          undefined,
-          {
-            includeDomains: target.includeDomains,
-            excludeDomains: target.excludeDomains,
-          },
-        );
-        const retry = await searchWithRetry(
-          {
-            query: simplifiedScoped,
-            logger,
-            num_results: target.maxResults,
-            tbs,
-          },
-          logger,
-        );
-        if ((retry.web?.length ?? 0) > 0) {
-          logger.info(
-            "search monitor: empty boolean query, simplified fallback hit",
-            {
-              original: query,
-              simplified,
-              results: retry.web?.length,
-            },
-          );
-          results = retry.web ?? [];
-        }
-      }
-    }
+    const results = response.web ?? [];
     searchResultsBilled += results.length;
     for (const r of results) {
       if (!r.url) continue;
@@ -348,9 +310,8 @@ export async function runSearchTarget(params: {
   }
   resultCount = candidates.length;
 
-  // A check that retrieves nothing looks identical to "nothing happened", so a
-  // genuine miss (search came back empty despite relevant content existing) is
-  // invisible. Surface it explicitly so empty-retrieval can be diagnosed/alerted on.
+  // An empty retrieval is indistinguishable from "nothing matched", so log it to
+  // make a genuine miss diagnosable.
   if (resultCount === 0) {
     logger.warn(
       "search monitor: all queries returned no results after retries",
@@ -503,11 +464,9 @@ export async function runSearchTarget(params: {
     }
   }
 
-  // The per-result loop below scrapes deep-mode pages one at a time, serializing
-  // N×(up to 20s) scrapes per check and pinning the worker for minutes. Scrape the
-  // new/changed candidates concurrently here and cache the docs (the scrapes are
-  // bounded downstream by the team's NuQ scrape queue). All dedup/event/counter
-  // state stays in the single-threaded loop, so only the I/O is parallelized.
+  // Pre-scrape deep-mode pages concurrently and cache them, so the loop below isn't
+  // a serial scrape→judge→scrape chain. Only the I/O is parallel; all dedup/event
+  // state stays in the single-threaded loop. (NuQ bounds the actual scrape fan-out.)
   const deepDocs = new Map<
     string,
     { doc: ScrapeSearchResult | null; error?: unknown }
@@ -670,8 +629,7 @@ export async function runSearchTarget(params: {
       }
       pagesChecked += 1;
     } else {
-      // Use the doc fetched in the concurrent pre-scrape pass; fall back to an
-      // inline scrape only if it wasn't pre-fetched (shouldn't happen).
+      // Read the doc from the pre-scrape cache; scrape inline only as a fallback.
       let doc: ScrapeSearchResult | null;
       const cached = deepDocs.get(canonical);
       if (cached?.error !== undefined) {

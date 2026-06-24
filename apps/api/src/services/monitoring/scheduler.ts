@@ -19,8 +19,7 @@ import type { MonitorRow } from "./types";
 
 const logger = _logger.child({ module: "monitoring-scheduler" });
 
-// Search monitors ride a dedicated check queue (see queue.ts) so their heavy checks
-// can't starve everyone else's. A monitor is "search" if any of its targets is.
+// Search monitors route to a dedicated check queue (see queue.ts).
 export function monitorIsSearch(monitor: MonitorRow): boolean {
   return (monitor.targets ?? []).some(target => target.type === "search");
 }

@@ -102,11 +102,8 @@ export function verifyAlertCandidate(params: {
     }
   }
 
-  // `subject_missing` is a literal alias-in-page-text match — fragile: a page
-  // genuinely about the subject often doesn't contain the exact alias string, and
-  // a stray monitor name can leak into the aliases (observed: a monitor's own name
-  // used as the subject). Keep it as a diagnostic signal but don't suppress an
-  // alert on it alone; the stronger checks below remain blocking.
+  // `subject_missing` is a fragile literal alias-in-page check, so keep it as a
+  // diagnostic but don't let it alone suppress an alert — only the stronger checks block.
   const blockingFailures = failures.filter(f => f.check !== "subject_missing");
 
   return {

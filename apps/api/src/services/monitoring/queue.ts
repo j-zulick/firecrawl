@@ -6,11 +6,8 @@ const MONITOR_CHECK_QUEUE = "monitor.checks";
 const MONITOR_CHECK_DLX = "monitor.checks.dlx";
 const MONITOR_CHECK_DLQ = "monitor.checks.dlq";
 
-// Search-monitor checks are an order of magnitude heavier than scrape/crawl checks
-// (each one scrapes many result pages and runs a multi-stage LLM pipeline). They get
-// a DEDICATED queue + consumer so a burst of search checks drains on its own slot
-// and can't starve the consumer that processes everyone else's page/site/batch
-// checks. prefetch is applied per-consumer, so the two consumers run independently.
+// Search checks are far heavier than scrape/crawl checks, so they get a dedicated
+// queue + consumer — a burst of them can't starve the page/site/batch checks.
 const MONITOR_SEARCH_CHECK_QUEUE = "monitor.checks.search";
 const MONITOR_SEARCH_CHECK_DLX = "monitor.checks.search.dlx";
 const MONITOR_SEARCH_CHECK_DLQ = "monitor.checks.search.dlq";
@@ -26,8 +23,7 @@ export type MonitorCheckJobData = {
 let connection: amqp.ChannelModel | null = null;
 let channel: amqp.Channel | null = null;
 
-// Declare a check queue with its dead-letter exchange/queue. Identical topology for
-// the default and search queues — only the names differ.
+// Declare a check queue + its dead-letter exchange/queue (same topology for both).
 async function assertCheckQueue(
   ch: amqp.Channel,
   queue: string,
@@ -123,9 +119,8 @@ async function consumeQueue(
   handler: (data: MonitorCheckJobData) => Promise<void>,
 ): Promise<void> {
   const ch = await getChannel();
-  // Per-consumer prefetch (amqplib default global=false): each consumer on the
-  // channel gets its own in-flight slot, so the search and default consumers don't
-  // block one another.
+  // Per-consumer prefetch (amqplib default): each consumer gets its own in-flight
+  // slot, so the search and default consumers don't block each other.
   await ch.prefetch(1);
 
   await ch.consume(
