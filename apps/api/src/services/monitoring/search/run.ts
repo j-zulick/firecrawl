@@ -1,4 +1,3 @@
-import { v7 as uuidv7 } from "uuid";
 import type { Logger } from "winston";
 import { search } from "../../../search/v2";
 import { buildSearchQuery } from "../../../lib/search-query-builder";
@@ -12,23 +11,8 @@ import {
   windowToMs,
   type SearchVerdict,
 } from "./judge";
-import {
-  judgeMaterialDevelopment,
-  judgeSnippets,
-  resolveEvent,
-  reviewAlert,
-  routeSearchResults,
-  summarizeRun,
-  type KnownEvent,
-  type RouteDecision,
-  type SkepticVerdict,
-  type SnippetVerdict,
-} from "./llm";
-import {
-  compileGoalCriteria,
-  compileGoalCriteriaWithLlm,
-  type GoalCriteria,
-} from "./criteria";
+import { judgeSnippets, type KnownEvent, type SnippetVerdict } from "./llm";
+import { compileGoalCriteria, type GoalCriteria } from "./criteria";
 import {
   verifyAlertCandidate,
   type VerificationResult,
@@ -334,67 +318,14 @@ export async function runSearchTarget(params: {
 
   const judgeGoal: string = goal ?? "";
 
-  let criteria: GoalCriteria = compileGoalCriteria({
+  // Deterministic criteria for the (non-LLM) verifier — no LLM enrich/router.
+  const criteria: GoalCriteria = compileGoalCriteria({
     goal: judgeGoal,
     subject,
     goalVersion,
   });
-  if (llmStagesAvailable && depth !== "raw") {
-    try {
-      criteria = await compileGoalCriteriaWithLlm({
-        goal: judgeGoal,
-        subject,
-        queries: target.queries,
-        goalVersion,
-        costTracking,
-        labels,
-      });
-    } catch (error) {
-      logger.warn(
-        "search monitor criteria compile failed, keeping deterministic",
-        {
-          error,
-        },
-      );
-    }
-  }
 
-  let selected = candidates.slice(0, target.maxResults);
-  if (depth === "deep" && llmStagesAvailable && candidates.length > 0) {
-    if (candidates.length > 50) {
-      logger.info("search monitor router capped candidates at 50", {
-        total: candidates.length,
-      });
-    }
-    try {
-      const decisions = await routeSearchResults({
-        goal: judgeGoal,
-        subject,
-        searchWindow: target.searchWindow,
-        maxResults: target.maxResults,
-        costTracking,
-        labels,
-        candidates: candidates.map((c, i) => ({
-          id: `result_${i + 1}`,
-          query: c.query,
-          title: c.title,
-          url: c.url,
-          snippet: c.description,
-        })),
-      });
-      const byId = new Map<string, RouteDecision>(
-        decisions.map(d => [d.id, d]),
-      );
-      const routed = candidates
-        .map((c, i) => ({ c, routing: byId.get(`result_${i + 1}`) }))
-        .filter(r => r.routing?.decision === "scrape")
-        .sort((a, b) => (b.routing?.priority ?? 0) - (a.routing?.priority ?? 0))
-        .map(r => r.c);
-      selected = routed.slice(0, target.maxResults);
-    } catch (error) {
-      logger.warn("search monitor router failed open to top-K", { error });
-    }
-  }
+  const selected = candidates.slice(0, target.maxResults);
 
   const recheckMs = target.recheckAfter ? windowToMs(target.recheckAfter) : 0;
   const pageNeedsJudgment = (c: {
@@ -709,34 +640,6 @@ export async function runSearchTarget(params: {
       }
     }
 
-    if (decision === "notify" && llmStagesAvailable) {
-      try {
-        const skeptic: SkepticVerdict = await reviewAlert({
-          goal: judgeGoal,
-          subject,
-          criteria,
-          costTracking,
-          labels,
-          result: {
-            title: c.title,
-            url: c.url,
-            snippet: c.description,
-            concept: verdict.concept,
-            judgeAnswer: verdict.rationale,
-          },
-        });
-        if (skeptic.refuted) {
-          decision = "watch";
-          logger.info("search monitor alert refuted by skeptic", {
-            url: c.url,
-            failureMode: skeptic.failureMode,
-            reason: skeptic.reason,
-          });
-        }
-      } catch (error) {
-        logger.warn("search monitor skeptic failed open", { error });
-      }
-    }
     const baseMeta = {
       fingerprint,
       goalVersion,
@@ -782,60 +685,14 @@ export async function runSearchTarget(params: {
       continue;
     }
 
-    let resolution;
-    try {
-      resolution = await resolveEvent({
-        goal: judgeGoal,
-        subject,
-        costTracking,
-        labels,
-        result: {
-          title: c.title,
-          url: c.url,
-          evidence: verdict.rationale,
-        },
-        candidates: events,
-      });
-    } catch (error) {
-      logger.warn("search monitor event resolver failed open to new event", {
-        error,
-      });
-      resolution = {
-        matchedKey: null,
-        isNew: true,
-        label: verdict.concept,
-        reason: "resolver_failed",
-      };
-    }
-    const matched =
-      resolution.matchedKey &&
-      events.find(e => e.key === resolution.matchedKey);
-    const eventKey = matched ? matched.key : uuidv7();
-    const eventLabel = matched
-      ? matched.label
-      : resolution.label || verdict.concept;
+    // Deterministic event key: dedup by canonical URL (no LLM event resolver).
+    const eventKey = canonical;
+    const eventLabel = verdict.concept || canonical;
 
-    let alreadySatisfied = false;
-    if (satisfied.has(eventKey)) {
-      if (target.alertMode === "first_match") {
-        alreadySatisfied = true;
-      } else if (target.alertMode === "material_dev") {
-        try {
-          const dev = await judgeMaterialDevelopment({
-            goal: judgeGoal,
-            subject,
-            eventLabel,
-            costTracking,
-            labels,
-            result: { title: c.title, evidence: verdict.rationale },
-          });
-          alreadySatisfied = !dev.material;
-        } catch (error) {
-          logger.warn("search monitor material judge failed closed", { error });
-          alreadySatisfied = true;
-        }
-      }
-    }
+    // Re-alert on every new result only in every_new_result mode; otherwise the
+    // canonical URL is deduped so we don't re-alert the same page.
+    const alreadySatisfied =
+      satisfied.has(eventKey) && target.alertMode !== "every_new_result";
     const eventMeta = { ...baseMeta, eventKey, eventLabel };
 
     if (alreadySatisfied) {
@@ -905,32 +762,10 @@ export async function runSearchTarget(params: {
     s => s.status === "alert" || s.status === "already_seen",
   ).length;
 
-  let summary = "";
-  if (matches > 0 && depth === "raw") {
-    summary = `${matches} new search result${matches === 1 ? "" : "s"} matched the monitor queries.`;
-  } else if (matches > 0) {
-    try {
-      const out = await summarizeRun({
-        goal: judgeGoal,
-        subject,
-        costTracking,
-        labels,
-        evidence: sources
-          .filter(s => s.status === "alert")
-          .map(s => ({
-            title: s.title,
-            url: s.url,
-            rationale: s.rationale ?? "",
-          })),
-      });
-      summary = out.summary;
-    } catch (error) {
-      logger.warn("search monitor summarizer failed; using fallback summary", {
-        error,
-      });
-      summary = `${matches} new result${matches === 1 ? "" : "s"} matched the monitor goal.`;
-    }
-  }
+  let summary =
+    matches > 0
+      ? `${matches} match${matches === 1 ? "" : "es"} across ${resultCount} result${resultCount === 1 ? "" : "s"}.`
+      : "";
 
   const deepJudgeFailed =
     depth === "deep" &&

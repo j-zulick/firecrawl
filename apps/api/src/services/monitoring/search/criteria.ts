@@ -1,14 +1,4 @@
-import { generateObject } from "ai";
 import { z } from "zod";
-import {
-  googleModel,
-  googleProviderOptions,
-  type LlmUsageLabels,
-} from "./tuning";
-import { recordLlmCall } from "./cost";
-import type { CostTracking } from "../../../lib/cost-tracking";
-
-const CRITERIA_MODEL = "gemini-flash-lite-latest";
 
 export type GoalCriteria = {
   goalVersion: string;
@@ -21,12 +11,10 @@ export type GoalCriteria = {
 };
 
 export function tokenizeContent(text: string | null | undefined): string[] {
-  return (
-    String(text ?? "")
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter(token => token.length >= 2)
-  );
+  return String(text ?? "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(token => token.length >= 2);
 }
 
 function normalizeForContainment(text: string | null | undefined): string {
@@ -132,37 +120,4 @@ export function mergeCompiledCriteria(
       ),
   );
   return merged;
-}
-
-export async function compileGoalCriteriaWithLlm(params: {
-  goal: string;
-  subject: string;
-  queries: string[];
-  goalVersion: string;
-  costTracking?: CostTracking;
-  labels?: LlmUsageLabels;
-}): Promise<GoalCriteria> {
-  const deterministic = compileGoalCriteria(params);
-  const { object, usage } = await generateObject({
-    model: googleModel(CRITERIA_MODEL),
-    schema: criteriaSchema,
-    system:
-      "You compile a web-monitoring goal into machine-checkable criteria. The criteria are evaluated with exact string containment and set membership — no interpretation happens later, so be complete (list product names, abbreviations, obvious competitors). Only include entries you are confident about; an empty list disables that check, which is always safe.",
-    prompt: JSON.stringify({
-      goal: params.goal,
-      subject: params.subject,
-      queries: params.queries,
-    }),
-    temperature: 0,
-    ...googleProviderOptions("compileGoalCriteria", params.labels),
-  });
-  if (params.costTracking) {
-    recordLlmCall({
-      costTracking: params.costTracking,
-      model: CRITERIA_MODEL,
-      usage,
-      stage: "compileGoalCriteria",
-    });
-  }
-  return mergeCompiledCriteria(deterministic, object);
 }
