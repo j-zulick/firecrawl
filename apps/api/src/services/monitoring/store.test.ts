@@ -231,9 +231,9 @@ describe("FLAT deterministic search-monitor billing", () => {
       expect(estimateMonitorCreditsPerRun([searchTarget()], false)).toBe(2);
     });
 
-    it("judge ON: search call + flat 5 per judged result (all results, all queries)", () => {
-      // search = ceil(10/10)*2*1 = 2; judge = 5 * (10 results * 1 query) = 50.
-      expect(estimateMonitorCreditsPerRun([searchTarget()], true)).toBe(52);
+    it("judge ON: search call + flat 1 per judged result (capped at maxResults)", () => {
+      // search = ceil(10/10)*2*1 = 2; judge = 1 * min(maxResults, 10*1) = 10.
+      expect(estimateMonitorCreditsPerRun([searchTarget()], true)).toBe(12);
     });
 
     it("legacy depth:raw target is never judged even when judging is on", () => {
@@ -247,9 +247,9 @@ describe("FLAT deterministic search-monitor billing", () => {
         maxResults: 20,
         queries: ["a", "b", "c"],
       });
-      // search = ceil((20*3)/10)*2 = 12; judge = 5 * 20 (total cap, NOT *queries)
-      // = 100 → 112. The runner judges at most maxResults candidates total.
-      expect(estimateMonitorCreditsPerRun([t], true)).toBe(112);
+      // search = ceil((20*3)/10)*2 = 12; judge = 1 * 20 (maxResults cap, NOT *queries)
+      // = 20 → 32. The runner judges at most maxResults candidates total.
+      expect(estimateMonitorCreditsPerRun([t], true)).toBe(32);
     });
   });
 
