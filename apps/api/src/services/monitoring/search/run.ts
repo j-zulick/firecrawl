@@ -12,12 +12,6 @@ import {
   type SearchVerdict,
 } from "./judge";
 import { judgeSnippets, type KnownEvent, type SnippetVerdict } from "./llm";
-import { compileGoalCriteria, type GoalCriteria } from "./criteria";
-import {
-  verifyAlertCandidate,
-  type VerificationResult,
-  type VerifyEvidence,
-} from "./verify";
 import { hasLlmProvider } from "./tuning";
 import {
   searchCreditsForResultCount,
@@ -318,13 +312,6 @@ export async function runSearchTarget(params: {
 
   const judgeGoal: string = goal ?? "";
 
-  // Deterministic criteria for the (non-LLM) verifier — no LLM enrich/router.
-  const criteria: GoalCriteria = compileGoalCriteria({
-    goal: judgeGoal,
-    subject,
-    goalVersion,
-  });
-
   const selected = candidates.slice(0, target.maxResults);
 
   const recheckMs = target.recheckAfter ? windowToMs(target.recheckAfter) : 0;
@@ -545,7 +532,6 @@ export async function runSearchTarget(params: {
     }
 
     let verdict: SearchVerdict | null = null;
-    let pageText = "";
     let realDate: string | null = null;
     if (depth === "standard") {
       verdict = snippetVerdicts.get(canonical) ?? null;
@@ -608,37 +594,15 @@ export async function runSearchTarget(params: {
         pushUnevaluatedPage("verdict unparseable");
         continue;
       }
-      pageText = doc.markdown ?? "";
       realDate =
         doc.metadata?.publishedTime ?? doc.metadata?.modifiedTime ?? null;
     }
 
     resultsJudged += 1;
 
-    let decision = verdictToDecision(verdict);
-
-    let verification: VerificationResult | null = null;
-    if (decision === "notify") {
-      const evidence: VerifyEvidence = {
-        url: c.url,
-        titleText: c.title,
-        claimText: verdict.rationale,
-        pageText,
-      };
-      const result = verifyAlertCandidate({
-        criteria,
-        concept: verdict.concept,
-        evidence,
-      });
-      verification = result;
-      if (!result.pass) {
-        decision = "watch";
-        logger.info("search monitor alert downgraded by verifier", {
-          url: c.url,
-          failures: result.failures,
-        });
-      }
-    }
+    // The per-page JSON verdict is the gate — alert/watch/ignore comes straight
+    // from the judge that read the scraped page.
+    const decision = verdictToDecision(verdict);
 
     const baseMeta = {
       fingerprint,
@@ -649,7 +613,6 @@ export async function runSearchTarget(params: {
       rationale: verdict.rationale,
       matchedQueries: c.matchedQueries,
       judgedThisRun: true,
-      ...(verification && !verification.pass ? { verification } : {}),
     };
 
     if (decision === "ignore") {
