@@ -20,8 +20,24 @@ export type MonitorCheckJobData = {
   teamId: string;
 };
 
+type ConsumerHandler = (data: MonitorCheckJobData) => Promise<void>;
+
 let connection: amqp.ChannelModel | null = null;
-let channel: amqp.Channel | null = null;
+// Publish and consume use separate channels: a channel exception on one side
+// (a failed publish, or a PRECONDITION_FAILED on assert) must not tear down the
+// other.
+let publishChannel: amqp.Channel | null = null;
+let consumeChannel: amqp.Channel | null = null;
+
+// Registry of every consumer registered this process, so we can re-attach them
+// after a connection/channel drop. Without this the worker — which never
+// produces and so never re-triggers channel creation — goes permanently deaf
+// after any RabbitMQ blip, and only a restart heals it.
+const registeredConsumers: Array<{ queue: string; handler: ConsumerHandler }> =
+  [];
+let reconnectInFlight = false;
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 30000;
 
 // Declare a check queue + its dead-letter exchange/queue (same topology for both).
 async function assertCheckQueue(
@@ -49,48 +65,122 @@ async function assertCheckQueue(
   });
 }
 
-async function getChannel(): Promise<amqp.Channel> {
-  if (channel) return channel;
+async function assertTopology(ch: amqp.Channel): Promise<void> {
+  await assertCheckQueue(
+    ch,
+    MONITOR_CHECK_QUEUE,
+    MONITOR_CHECK_DLX,
+    MONITOR_CHECK_DLQ,
+  );
+  await assertCheckQueue(
+    ch,
+    MONITOR_SEARCH_CHECK_QUEUE,
+    MONITOR_SEARCH_CHECK_DLX,
+    MONITOR_SEARCH_CHECK_DLQ,
+  );
+}
+
+// Drop all cached state and, if any consumers were registered, kick off a
+// backoff reconnect that re-asserts topology and re-subscribes every consumer.
+function handleConnectionDrop(reason: string, error?: unknown): void {
+  if (connection || publishChannel || consumeChannel) {
+    logger.warn("Monitor queue dropped — will reconnect", { reason, error });
+  }
+  connection = null;
+  publishChannel = null;
+  consumeChannel = null;
+  if (registeredConsumers.length > 0) {
+    scheduleReconnect(RECONNECT_BASE_DELAY_MS);
+  }
+}
+
+function scheduleReconnect(delayMs: number): void {
+  if (reconnectInFlight) return;
+  reconnectInFlight = true;
+
+  setTimeout(async () => {
+    try {
+      const ch = await getConsumeChannel();
+      for (const { queue, handler } of registeredConsumers) {
+        await subscribe(ch, queue, handler);
+      }
+      reconnectInFlight = false;
+      logger.info("Monitor queue reconnected; consumers re-subscribed", {
+        consumers: registeredConsumers.length,
+      });
+    } catch (error) {
+      reconnectInFlight = false;
+      const nextDelay = Math.min(delayMs * 2, RECONNECT_MAX_DELAY_MS);
+      logger.error("Monitor queue reconnect failed; retrying", {
+        error,
+        nextDelayMs: nextDelay,
+      });
+      connection = null;
+      publishChannel = null;
+      consumeChannel = null;
+      scheduleReconnect(nextDelay);
+    }
+  }, delayMs);
+}
+
+async function getConnection(): Promise<amqp.ChannelModel> {
+  if (connection) return connection;
 
   const url = config.NUQ_RABBITMQ_URL;
   if (!url) {
     throw new Error("NUQ_RABBITMQ_URL is not configured");
   }
 
-  connection = await amqp.connect(url);
-  channel = await connection.createChannel();
-
-  await assertCheckQueue(
-    channel,
-    MONITOR_CHECK_QUEUE,
-    MONITOR_CHECK_DLX,
-    MONITOR_CHECK_DLQ,
-  );
-  await assertCheckQueue(
-    channel,
-    MONITOR_SEARCH_CHECK_QUEUE,
-    MONITOR_SEARCH_CHECK_DLX,
-    MONITOR_SEARCH_CHECK_DLQ,
-  );
-
-  connection.on("close", () => {
-    logger.warn("Monitor queue connection closed");
-    connection = null;
-    channel = null;
+  // Name the connection so operators can identify (and isolate) monitoring
+  // traffic in `rabbitmqctl list_connections` / the management UI.
+  const conn = await amqp.connect(url, {
+    clientProperties: { connection_name: "monitoring-queue" },
   });
+  conn.on("close", () => handleConnectionDrop("connection closed"));
+  conn.on("error", error =>
+    logger.error("Monitor queue connection error", { error }),
+  );
+  connection = conn;
+  return conn;
+}
 
-  connection.on("error", error => {
-    logger.error("Monitor queue connection error", { error });
+async function createChannel(label: string): Promise<amqp.Channel> {
+  const conn = await getConnection();
+  const ch = await conn.createChannel();
+  await assertTopology(ch);
+  // Channels can close independently of the connection (e.g. a
+  // PRECONDITION_FAILED from assertQueue). Without these handlers the cached
+  // channel would stay non-null and every send/consume would throw forever.
+  ch.on("close", () => {
+    if (label === "publish" && publishChannel === ch) publishChannel = null;
+    if (label === "consume" && consumeChannel === ch) {
+      consumeChannel = null;
+      handleConnectionDrop("consume channel closed");
+    }
   });
+  ch.on("error", error =>
+    logger.error("Monitor queue channel error", { label, error }),
+  );
+  return ch;
+}
 
-  return channel;
+async function getPublishChannel(): Promise<amqp.Channel> {
+  if (publishChannel) return publishChannel;
+  publishChannel = await createChannel("publish");
+  return publishChannel;
+}
+
+async function getConsumeChannel(): Promise<amqp.Channel> {
+  if (consumeChannel) return consumeChannel;
+  consumeChannel = await createChannel("consume");
+  return consumeChannel;
 }
 
 export async function addMonitorCheckJob(
   data: MonitorCheckJobData,
   opts: { search?: boolean } = {},
 ): Promise<void> {
-  const ch = await getChannel();
+  const ch = await getPublishChannel();
   const queue = opts.search ? MONITOR_SEARCH_CHECK_QUEUE : MONITOR_CHECK_QUEUE;
   const sent = ch.sendToQueue(queue, Buffer.from(JSON.stringify(data)), {
     persistent: true,
@@ -116,9 +206,21 @@ export async function addMonitorCheckJob(
 
 async function consumeQueue(
   queue: string,
-  handler: (data: MonitorCheckJobData) => Promise<void>,
+  handler: ConsumerHandler,
 ): Promise<void> {
-  const ch = await getChannel();
+  // Record the registration so a reconnect can re-attach this consumer.
+  if (!registeredConsumers.some(c => c.queue === queue)) {
+    registeredConsumers.push({ queue, handler });
+  }
+  const ch = await getConsumeChannel();
+  await subscribe(ch, queue, handler);
+}
+
+async function subscribe(
+  ch: amqp.Channel,
+  queue: string,
+  handler: ConsumerHandler,
+): Promise<void> {
   // Per-consumer prefetch (amqplib default): each consumer gets its own in-flight
   // slot, so the search and default consumers don't block each other.
   await ch.prefetch(1);
