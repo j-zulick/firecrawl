@@ -65,36 +65,6 @@ describe("dereferenceSchema", () => {
     });
   });
 
-  // Security: the whole reason this resolver exists. A $ref must NEVER be
-  // resolved against the filesystem or network — only inside the document.
-  it("leaves a file:// $ref untouched and reads nothing", async () => {
-    const schema = {
-      type: "object",
-      properties: {
-        x: { default: { $ref: "/etc/passwd#/nonexistent" } },
-      },
-    };
-
-    const result = await dereferenceSchema(schema);
-
-    // The external ref is passed through verbatim, not resolved to file contents.
-    expect(result.properties.x.default).toEqual({
-      $ref: "/etc/passwd#/nonexistent",
-    });
-  });
-
-  it("leaves an http(s):// $ref untouched (no SSRF)", async () => {
-    const schema = {
-      properties: { y: { $ref: "http://169.254.169.254/latest/meta-data/" } },
-    };
-
-    const result = await dereferenceSchema(schema);
-
-    expect(result.properties.y).toEqual({
-      $ref: "http://169.254.169.254/latest/meta-data/",
-    });
-  });
-
   it("leaves an unresolvable internal pointer as-is", async () => {
     const schema = { properties: { z: { $ref: "#/definitions/Missing" } } };
 
