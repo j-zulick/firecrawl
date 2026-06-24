@@ -422,3 +422,28 @@ describe("deep-path scrape failures mark the check degraded (no silent empty)", 
     expect(result.degradedReason).toMatch(/judged|incomplete/i);
   });
 });
+
+describe("run time budget (a single check can't wedge the consumer)", () => {
+  it("stops waiting on a hung pre-scrape and returns skipped+degraded", async () => {
+    vi.useFakeTimers();
+    try {
+      searchMock.mockResolvedValue([serpRow(1), serpRow(2)]);
+      // Scrapes never resolve — the pre-scrape can't finish on its own.
+      scrapeURLMock.mockReturnValue(new Promise(() => {}));
+
+      const pending = runSearchTarget(runParams({ depth: "deep" }));
+      // Advance past the 4-minute run budget so the deadline fires.
+      await vi.advanceTimersByTimeAsync(4 * 60 * 1000 + 1000);
+      const result = await pending;
+
+      expect(result.matches).toBe(0);
+      expect(result.resultsJudged).toBe(0);
+      expect(result.judgeDegraded).toBe(true);
+      const skipped = result.pageUpserts.filter(u => u.status === "skipped");
+      expect(skipped).toHaveLength(2);
+      expect(skipped[0].metadata.searchStatus).toBe("skipped");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

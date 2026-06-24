@@ -70,6 +70,32 @@ function windowToTbs(window: string): string {
 // a query that succeeds moments later.
 const SEARCH_RETRY_BACKOFF_MS = [400, 1200, 3000, 6000] as const;
 
+// Hard wall-clock budget for a single inline search run. The deep-mode page
+// scrapes are the only unbounded-ish step (each is capped at 20s, but a large
+// candidate set could still add up); if the concurrent pre-scrape blows past
+// this, we stop waiting and let the remaining candidates fall through as
+// skipped/degraded rather than holding the consumer. Kept well under the
+// 10-minute search stale timeout so a run always returns before the reaper.
+const SEARCH_RUN_BUDGET_MS = 4 * 60 * 1000;
+
+// Race a promise against a wall-clock deadline. Resolves false if the work
+// finishes first, true if the deadline hits. Never rejects; the underlying work
+// keeps running (bounded by its own per-scrape timeout) and populates its cache.
+async function raceDeadline(
+  work: Promise<unknown>,
+  budgetMs: number,
+): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = await Promise.race([
+    work.then(() => false),
+    new Promise<boolean>(resolve => {
+      timer = setTimeout(() => resolve(true), Math.max(0, budgetMs));
+    }),
+  ]);
+  if (timer) clearTimeout(timer);
+  return timedOut;
+}
+
 async function searchWithRetry(
   args: Parameters<typeof search>[0],
   logger: Logger,
@@ -217,6 +243,7 @@ export async function runSearchTarget(params: {
 }): Promise<SearchTargetRunResult> {
   const { target, knownPages, goalVersion, logger } = params;
   const judgeEnabled = params.monitor.judgeEnabled;
+  const runStart = Date.now();
 
   const goal = params.monitor.goal?.trim();
   if (judgeEnabled && !goal) {
@@ -402,13 +429,17 @@ export async function runSearchTarget(params: {
     string,
     { doc: ScrapeSearchResult | null; error?: unknown }
   >();
+  // Set if the concurrent pre-scrape exceeds the run budget: any candidate not
+  // yet cached is then treated as a scrape failure instead of being inline-scraped,
+  // so the loop returns promptly rather than holding the consumer.
+  let budgetExceeded = false;
   if (depth === "deep" && llmStagesAvailable) {
     const judgePrompt = buildJudgePrompt(
       judgeGoal,
       subject,
       target.searchWindow,
     );
-    await Promise.all(
+    const preScrape = Promise.all(
       selected
         .filter(
           c =>
@@ -426,6 +457,19 @@ export async function runSearchTarget(params: {
           }
         }),
     );
+    const remainingBudget = SEARCH_RUN_BUDGET_MS - (Date.now() - runStart);
+    budgetExceeded = await raceDeadline(preScrape, remainingBudget);
+    if (budgetExceeded) {
+      logger.warn(
+        "search monitor run exceeded its time budget; finishing with partial scrapes",
+        {
+          monitorId: params.monitor.id,
+          targetId: target.id,
+          budgetMs: SEARCH_RUN_BUDGET_MS,
+          scraped: deepDocs.size,
+        },
+      );
+    }
   }
 
   for (const c of selected) {
@@ -572,6 +616,14 @@ export async function runSearchTarget(params: {
         pushUnevaluatedPage(
           cached.error instanceof Error ? cached.error.message : "scrape threw",
         );
+        continue;
+      }
+      // The pre-scrape ran out of time before caching this page. Treat it as a
+      // scrape failure rather than inline-scraping (which would re-incur the time
+      // we just budgeted out of), so the run returns promptly.
+      if (!cached && budgetExceeded) {
+        judgeScrapeFailures += 1;
+        pushUnevaluatedPage("run budget exceeded before scrape");
         continue;
       }
       try {
