@@ -73,9 +73,6 @@ importers:
       '@ai-sdk/xai':
         specifier: ^3.0.83
         version: 3.0.83(zod@4.1.12)
-      '@apidevtools/json-schema-ref-parser':
-        specifier: ^15.1.2
-        version: 15.1.2(@types/json-schema@7.0.15)
       '@bull-board/api':
         specifier: ^6.14.0
         version: 6.14.2(@bull-board/ui@6.14.2)
@@ -504,12 +501,6 @@ packages:
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
-
-  '@apidevtools/json-schema-ref-parser@15.1.2':
-    resolution: {integrity: sha512-54vnqDyGsDAVM0LOIdGMnfVyCN1NlqoGnHEGpMfaDBLMvClfT4j2XbJgvfuF0Ca0kxT6Gb7xUgS5W1I14QqjiQ==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      '@types/json-schema': ^7.0.15
 
   '@apm-js-collab/code-transformer@0.8.2':
     resolution: {integrity: sha512-YRjJjNq5KFSjDUoqu5pFUWrrsvGOxl6c3bu+uMFc9HNNptZ2rNU/TI2nLw4jnhQNtka972Ee2m3uqbvDQtPeCA==}
@@ -2346,9 +2337,6 @@ packages:
 
   '@types/http-errors@2.0.4':
     resolution: {integrity: sha512-D0CFMMtydbJAegzOyHjtiKPLlvnm3iTZyZRSZoLq2mRhDdmLfIWOCYPfQJ4cu2erKghU++QvjcUjp/5h7hESpA==}
-
-  '@types/json-schema@7.0.15':
-    resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
   '@types/lodash@4.17.14':
     resolution: {integrity: sha512-jsxagdikDiDBeIRaPYtArcT8my4tN1og7MtMRquFT3XNA6axxyHDRUemqDz/taRDdOUn0GnGHRCuff4q48sW9A==}
@@ -5366,11 +5354,6 @@ snapshots:
       '@ai-sdk/provider-utils': 4.0.23(zod@4.1.12)
       zod: 4.1.12
 
-  '@apidevtools/json-schema-ref-parser@15.1.2(@types/json-schema@7.0.15)':
-    dependencies:
-      '@types/json-schema': 7.0.15
-      js-yaml: 4.2.0
-
   '@apm-js-collab/code-transformer@0.8.2': {}
 
   '@apm-js-collab/tracing-hooks@0.3.1':
@@ -7220,8 +7203,6 @@ snapshots:
   '@types/he@1.2.3': {}
 
   '@types/http-errors@2.0.4': {}
-
-  '@types/json-schema@7.0.15': {}
 
   '@types/lodash@4.17.14': {}
 
