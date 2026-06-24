@@ -1,5 +1,6 @@
 import type { Logger } from "winston";
 import type { SearchVerdict } from "./judge";
+import { canonicalizeUrl } from "./dedupe";
 
 // vi.mock is hoisted above declarations, so the mocks its factories reference
 // are created in vi.hoisted() (also hoisted) to avoid any TDZ surprises.
@@ -151,39 +152,12 @@ describe("standard depth (snippet judging, no scrapes)", () => {
   });
 });
 
-describe("alert boundary", () => {
+describe("alert boundary (the per-page JSON verdict is the gate)", () => {
   beforeEach(() => {
     searchMock.mockResolvedValue([serpRow(1)]);
-    routeMock.mockResolvedValue([
-      { id: "result_1", decision: "scrape", priority: 1, reason: "" },
-    ]);
   });
 
-  it("verifier downgrades a competitor-dominated story to watching", async () => {
-    searchMock.mockResolvedValue([
-      {
-        url: "https://news.example.com/parallel",
-        title: "Parallel launches Monitor API",
-        description: "Parallel launched a product; Firecrawl is a competitor.",
-      },
-    ]);
-    scrapeURLMock.mockResolvedValue({
-      success: true,
-      document: {
-        json: verdict({ concept: "Parallel Monitor API launch" }),
-        markdown:
-          "Parallel launched its Monitor API today. Firecrawl is named as a competitor.",
-        metadata: {},
-      },
-    });
-
-    const result = await runSearchTarget(runParams());
-    expect(result.matches).toBe(0);
-    expect(result.sources[0].status).toBe("watching");
-    expect(reviewAlertMock).not.toHaveBeenCalled();
-  });
-
-  it("skeptic refutation downgrades to watching", async () => {
+  it("a clean alert verdict on a fresh result alerts", async () => {
     scrapeURLMock.mockResolvedValue({
       success: true,
       document: {
@@ -192,70 +166,46 @@ describe("alert boundary", () => {
         metadata: {},
       },
     });
-    reviewAlertMock.mockResolvedValue({
-      refuted: true,
-      failureMode: "adjacent_event",
-      reason: "funding, not a launch",
-    });
-
-    const result = await runSearchTarget(runParams());
-    expect(result.matches).toBe(0);
-    expect(result.sources[0].status).toBe("watching");
-  });
-
-  it("skeptic outage fails open (alert proceeds)", async () => {
-    scrapeURLMock.mockResolvedValue({
-      success: true,
-      document: {
-        json: verdict(),
-        markdown: "Firecrawl announced a new product today in prose.",
-        metadata: {},
-      },
-    });
-    reviewAlertMock.mockRejectedValue(new Error("skeptic down"));
-
-    const result = await runSearchTarget(runParams());
-    expect(result.matches).toBe(1);
-  });
-
-  it("resolver outage fails open to a new event (alert proceeds)", async () => {
-    scrapeURLMock.mockResolvedValue({
-      success: true,
-      document: {
-        json: verdict(),
-        markdown: "Firecrawl announced a new product today in prose.",
-        metadata: {},
-      },
-    });
-    resolveEventMock.mockRejectedValue(new Error("resolver down"));
 
     const result = await runSearchTarget(runParams());
     expect(result.matches).toBe(1);
     expect(result.sources[0].status).toBe("alert");
   });
 
-  it("criteria LLM failure keeps the deterministic compile (run completes)", async () => {
-    criteriaLlmMock.mockRejectedValue(new Error("criteria down"));
+  it("a watch verdict does not alert", async () => {
     scrapeURLMock.mockResolvedValue({
       success: true,
       document: {
-        json: verdict(),
+        json: verdict({ alertAction: "watch" }),
         markdown: "Firecrawl announced a new product today in prose.",
         metadata: {},
       },
     });
 
     const result = await runSearchTarget(runParams());
-    expect(result.matches).toBe(1);
+    expect(result.matches).toBe(0);
+    expect(result.sources[0].status).toBe("watching");
+  });
+
+  it("an ignore verdict does not alert", async () => {
+    scrapeURLMock.mockResolvedValue({
+      success: true,
+      document: {
+        json: verdict({ alertAction: "ignore" }),
+        markdown: "Off-topic prose.",
+        metadata: {},
+      },
+    });
+
+    const result = await runSearchTarget(runParams());
+    expect(result.matches).toBe(0);
+    expect(result.sources[0].status).toBe("ignored");
   });
 });
 
 describe("event state stamps + judgment on alert pages", () => {
   it("stamps satisfiedAt/alertCount/lastAlertAt and a judgment on the alerting page", async () => {
     searchMock.mockResolvedValue([serpRow(1)]);
-    routeMock.mockResolvedValue([
-      { id: "result_1", decision: "scrape", priority: 1, reason: "" },
-    ]);
     scrapeURLMock.mockResolvedValue({
       success: true,
       document: {
@@ -277,11 +227,8 @@ describe("event state stamps + judgment on alert pages", () => {
     });
   });
 
-  it("a later alert on a known satisfied event increments alertCount and keeps satisfiedAt", async () => {
+  it("a later alert on a known event (every_new_result) increments alertCount and keeps satisfiedAt", async () => {
     searchMock.mockResolvedValue([serpRow(1)]);
-    routeMock.mockResolvedValue([
-      { id: "result_1", decision: "scrape", priority: 1, reason: "" },
-    ]);
     scrapeURLMock.mockResolvedValue({
       success: true,
       document: {
@@ -290,19 +237,12 @@ describe("event state stamps + judgment on alert pages", () => {
         metadata: {},
       },
     });
-    resolveEventMock.mockResolvedValue({
-      matchedKey: "evt-known",
-      isNew: false,
-      label: "Firecrawl product launch",
-      reason: "",
-    });
-    materialDevMock.mockResolvedValue({ material: true, reason: "new stage" });
 
     const result = await runSearchTarget({
-      ...runParams({ alertMode: "material_dev" }),
+      ...runParams({ alertMode: "every_new_result" }),
       knownEvents: [
         {
-          key: "evt-known",
+          key: canonicalizeUrl(serpRow(1).url),
           label: "Firecrawl product launch",
           satisfiedAt: "2026-06-01T00:00:00Z",
           alertCount: 2,
@@ -325,14 +265,9 @@ describe("judgeEnabled gates the LLM judge", () => {
       runParams({ depth: "deep" }, { judgeEnabled: false }),
     );
 
-    // No LLM stage ran.
-    expect(routeMock).not.toHaveBeenCalled();
+    // No judge stage ran: raw mode neither snippet-judges nor scrapes.
     expect(snippetsMock).not.toHaveBeenCalled();
     expect(scrapeURLMock).not.toHaveBeenCalled();
-    expect(reviewAlertMock).not.toHaveBeenCalled();
-    expect(resolveEventMock).not.toHaveBeenCalled();
-    expect(summarizeRunMock).not.toHaveBeenCalled();
-    expect(criteriaLlmMock).not.toHaveBeenCalled();
 
     // No judge credits billed (raw → nothing judged); search still ran and was billed.
     expect(result.judgeCredits).toBe(0);
@@ -362,11 +297,8 @@ describe("judgeEnabled gates the LLM judge", () => {
     expect(scrapeURLMock).not.toHaveBeenCalled();
   });
 
-  it("judge ON with depth:deep still runs the full judge", async () => {
+  it("judge ON with depth:deep scrapes and judges per page", async () => {
     searchMock.mockResolvedValue([serpRow(1)]);
-    routeMock.mockResolvedValue([
-      { id: "result_1", decision: "scrape", priority: 1, reason: "" },
-    ]);
     scrapeURLMock.mockResolvedValue({
       success: true,
       document: {
@@ -380,7 +312,6 @@ describe("judgeEnabled gates the LLM judge", () => {
       runParams({ depth: "deep" }, { judgeEnabled: true }),
     );
 
-    expect(routeMock).toHaveBeenCalled();
     expect(scrapeURLMock).toHaveBeenCalled();
     expect(result.matches).toBe(1);
     const alertUpsert = result.pageUpserts.find(u => u.status === "alert")!;
@@ -390,12 +321,8 @@ describe("judgeEnabled gates the LLM judge", () => {
 
 describe("deep-path scrape failures mark the check degraded (no silent empty)", () => {
   beforeEach(() => {
-    // Two candidates routed to scrape; scrape outcome varies per test.
+    // Two candidates scraped; scrape outcome varies per test.
     searchMock.mockResolvedValue([serpRow(1), serpRow(2)]);
-    routeMock.mockResolvedValue([
-      { id: "result_1", decision: "scrape", priority: 2, reason: "" },
-      { id: "result_2", decision: "scrape", priority: 1, reason: "" },
-    ]);
   });
 
   it("degraded=true when EVERY deep-path scrape fails (judging expected, nothing judged)", async () => {

@@ -405,43 +405,24 @@ describe("scrape payload validity (real validator, no mocks)", () => {
   });
 });
 
-describe("material_dev alert mode", () => {
-  const serp = [
-    {
-      url: "https://reuters.com/openai",
-      title: "OpenAI prices IPO",
-      description: "priced",
-    },
-  ];
+describe("material_dev alert mode (dedups a known URL like first_match)", () => {
+  const url = "https://reuters.com/openai";
+  const serp = [{ url, title: "OpenAI prices IPO", description: "priced" }];
   beforeEach(() => {
     setSearchResults(serp);
-    setVerdictsByUrl({ "https://reuters.com/openai": verdict() });
-    resolveEventMock.mockResolvedValue({
-      matchedKey: "evt-1",
-      isNew: false,
-      label: "OpenAI IPO",
-      reason: "same",
-    });
+    setVerdictsByUrl({ [url]: verdict() });
   });
 
-  it("re-alerts on a material development of a known event", async () => {
-    materialDevMock.mockResolvedValue({ material: true, reason: "now priced" });
-    const out = await run({
-      alertMode: "material_dev",
-      knownEvents: [{ key: "evt-1", label: "OpenAI IPO" }],
-    });
+  it("alerts on a URL not yet seen", async () => {
+    const out = await run({ alertMode: "material_dev" });
     expect(out.matches).toBe(1);
     expect(out.sources[0].status).toBe("alert");
   });
 
-  it("suppresses a non-material retelling of a known event", async () => {
-    materialDevMock.mockResolvedValue({
-      material: false,
-      reason: "just a retelling",
-    });
+  it("suppresses a URL that is already a known event", async () => {
     const out = await run({
       alertMode: "material_dev",
-      knownEvents: [{ key: "evt-1", label: "OpenAI IPO" }],
+      knownEvents: [{ key: canonicalizeUrl(url), label: "OpenAI IPO" }],
     });
     expect(out.matches).toBe(0);
     expect(out.sources[0].status).toBe("already_seen");
