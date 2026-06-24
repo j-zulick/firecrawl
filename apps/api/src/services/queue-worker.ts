@@ -30,7 +30,10 @@ import {
   reconcileRunningMonitorChecks,
 } from "./monitoring/runner";
 import { enqueueDueMonitorChecks } from "./monitoring/scheduler";
-import { consumeMonitorCheckJobs } from "./monitoring/queue";
+import {
+  consumeMonitorCheckJobs,
+  consumeMonitorSearchCheckJobs,
+} from "./monitoring/queue";
 
 configDotenv();
 
@@ -483,7 +486,12 @@ app.listen(workerPort, (error?: Error) => {
       _logger.error("Failed to reconcile running monitor checks", { error });
     });
 
-    await consumeMonitorCheckJobs(processMonitorCheckJob);
+    // Search-monitor checks drain on their own queue/consumer (see queue.ts) so a
+    // burst of heavy search checks can't starve page/site/batch monitor checks.
+    await Promise.all([
+      consumeMonitorCheckJobs(processMonitorCheckJob),
+      consumeMonitorSearchCheckJobs(processMonitorCheckJob),
+    ]);
   } else if (!config.USE_DB_AUTHENTICATION) {
     _logger.info(
       "Skipping monitor worker startup because database authentication is disabled",

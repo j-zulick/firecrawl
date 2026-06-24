@@ -6,6 +6,15 @@ const MONITOR_CHECK_QUEUE = "monitor.checks";
 const MONITOR_CHECK_DLX = "monitor.checks.dlx";
 const MONITOR_CHECK_DLQ = "monitor.checks.dlq";
 
+// Search-monitor checks are an order of magnitude heavier than scrape/crawl checks
+// (each one scrapes many result pages and runs a multi-stage LLM pipeline). They get
+// a DEDICATED queue + consumer so a burst of search checks drains on its own slot
+// and can't starve the consumer that processes everyone else's page/site/batch
+// checks. prefetch is applied per-consumer, so the two consumers run independently.
+const MONITOR_SEARCH_CHECK_QUEUE = "monitor.checks.search";
+const MONITOR_SEARCH_CHECK_DLX = "monitor.checks.search.dlx";
+const MONITOR_SEARCH_CHECK_DLQ = "monitor.checks.search.dlq";
+
 const logger = _logger.child({ module: "monitoring-queue" });
 
 export type MonitorCheckJobData = {
@@ -16,6 +25,33 @@ export type MonitorCheckJobData = {
 
 let connection: amqp.ChannelModel | null = null;
 let channel: amqp.Channel | null = null;
+
+// Declare a check queue with its dead-letter exchange/queue. Identical topology for
+// the default and search queues — only the names differ.
+async function assertCheckQueue(
+  ch: amqp.Channel,
+  queue: string,
+  dlx: string,
+  dlq: string,
+): Promise<void> {
+  await ch.assertExchange(dlx, "direct", { durable: true });
+  await ch.assertQueue(dlq, {
+    durable: true,
+    arguments: {
+      "x-queue-type": "quorum",
+    },
+  });
+  await ch.bindQueue(dlq, dlx, queue);
+  await ch.assertQueue(queue, {
+    durable: true,
+    arguments: {
+      "x-queue-type": "quorum",
+      "x-dead-letter-exchange": dlx,
+      "x-dead-letter-routing-key": queue,
+      "x-delivery-limit": 1,
+    },
+  });
+}
 
 async function getChannel(): Promise<amqp.Channel> {
   if (channel) return channel;
@@ -28,28 +64,18 @@ async function getChannel(): Promise<amqp.Channel> {
   connection = await amqp.connect(url);
   channel = await connection.createChannel();
 
-  await channel.assertExchange(MONITOR_CHECK_DLX, "direct", { durable: true });
-  await channel.assertQueue(MONITOR_CHECK_DLQ, {
-    durable: true,
-    arguments: {
-      "x-queue-type": "quorum",
-    },
-  });
-  await channel.bindQueue(
-    MONITOR_CHECK_DLQ,
-    MONITOR_CHECK_DLX,
+  await assertCheckQueue(
+    channel,
     MONITOR_CHECK_QUEUE,
+    MONITOR_CHECK_DLX,
+    MONITOR_CHECK_DLQ,
   );
-
-  await channel.assertQueue(MONITOR_CHECK_QUEUE, {
-    durable: true,
-    arguments: {
-      "x-queue-type": "quorum",
-      "x-dead-letter-exchange": MONITOR_CHECK_DLX,
-      "x-dead-letter-routing-key": MONITOR_CHECK_QUEUE,
-      "x-delivery-limit": 1,
-    },
-  });
+  await assertCheckQueue(
+    channel,
+    MONITOR_SEARCH_CHECK_QUEUE,
+    MONITOR_SEARCH_CHECK_DLX,
+    MONITOR_SEARCH_CHECK_DLQ,
+  );
 
   connection.on("close", () => {
     logger.warn("Monitor queue connection closed");
@@ -66,22 +92,21 @@ async function getChannel(): Promise<amqp.Channel> {
 
 export async function addMonitorCheckJob(
   data: MonitorCheckJobData,
+  opts: { search?: boolean } = {},
 ): Promise<void> {
   const ch = await getChannel();
-  const sent = ch.sendToQueue(
-    MONITOR_CHECK_QUEUE,
-    Buffer.from(JSON.stringify(data)),
-    {
-      persistent: true,
-      contentType: "application/json",
-      messageId: data.checkId,
-    },
-  );
+  const queue = opts.search ? MONITOR_SEARCH_CHECK_QUEUE : MONITOR_CHECK_QUEUE;
+  const sent = ch.sendToQueue(queue, Buffer.from(JSON.stringify(data)), {
+    persistent: true,
+    contentType: "application/json",
+    messageId: data.checkId,
+  });
 
   if (!sent) {
     logger.warn("Monitor check message buffer full", {
       monitorId: data.monitorId,
       checkId: data.checkId,
+      queue,
     });
   }
 
@@ -89,17 +114,22 @@ export async function addMonitorCheckJob(
     monitorId: data.monitorId,
     checkId: data.checkId,
     teamId: data.teamId,
+    queue,
   });
 }
 
-export async function consumeMonitorCheckJobs(
+async function consumeQueue(
+  queue: string,
   handler: (data: MonitorCheckJobData) => Promise<void>,
 ): Promise<void> {
   const ch = await getChannel();
+  // Per-consumer prefetch (amqplib default global=false): each consumer on the
+  // channel gets its own in-flight slot, so the search and default consumers don't
+  // block one another.
   await ch.prefetch(1);
 
   await ch.consume(
-    MONITOR_CHECK_QUEUE,
+    queue,
     async msg => {
       if (!msg) return;
 
@@ -129,5 +159,17 @@ export async function consumeMonitorCheckJobs(
     { noAck: false },
   );
 
-  logger.info("Started consuming monitor check jobs");
+  logger.info("Started consuming monitor check jobs", { queue });
+}
+
+export async function consumeMonitorCheckJobs(
+  handler: (data: MonitorCheckJobData) => Promise<void>,
+): Promise<void> {
+  await consumeQueue(MONITOR_CHECK_QUEUE, handler);
+}
+
+export async function consumeMonitorSearchCheckJobs(
+  handler: (data: MonitorCheckJobData) => Promise<void>,
+): Promise<void> {
+  await consumeQueue(MONITOR_SEARCH_CHECK_QUEUE, handler);
 }
