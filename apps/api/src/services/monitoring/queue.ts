@@ -22,6 +22,9 @@ export type MonitorCheckJobData = {
 type ConsumerHandler = (data: MonitorCheckJobData) => Promise<void>;
 
 let connection: amqp.ChannelModel | null = null;
+// Memoized so concurrent callers share one connect() instead of racing to open
+// (and orphan) duplicate connections.
+let connectionPromise: Promise<amqp.ChannelModel> | null = null;
 // Separate publish/consume channels so an exception on one can't tear down the other.
 let publishChannel: amqp.Channel | null = null;
 let consumeChannel: amqp.Channel | null = null;
@@ -88,6 +91,7 @@ function handleConnectionDrop(reason: string, error?: unknown): void {
     logger.warn("Monitor queue dropped — will reconnect", { reason, error });
   }
   connection = null;
+  connectionPromise = null;
   publishChannel = null;
   publishChannelPromise = null;
   consumeChannel = null;
@@ -124,6 +128,7 @@ function scheduleReconnect(delayMs: number): void {
       // make the next reconnect skip (subscribe early-returns) and deafen that queue.
       await consumeChannel?.close().catch(() => {});
       connection = null;
+      connectionPromise = null;
       publishChannel = null;
       publishChannelPromise = null;
       consumeChannel = null;
@@ -136,7 +141,21 @@ function scheduleReconnect(delayMs: number): void {
 
 async function getConnection(): Promise<amqp.ChannelModel> {
   if (connection) return connection;
+  if (!connectionPromise) {
+    connectionPromise = openConnection()
+      .then(conn => {
+        connection = conn;
+        return conn;
+      })
+      .catch(err => {
+        connectionPromise = null;
+        throw err;
+      });
+  }
+  return connectionPromise;
+}
 
+async function openConnection(): Promise<amqp.ChannelModel> {
   const url = config.NUQ_RABBITMQ_URL;
   if (!url) {
     throw new Error("NUQ_RABBITMQ_URL is not configured");
@@ -150,7 +169,6 @@ async function getConnection(): Promise<amqp.ChannelModel> {
   conn.on("error", error =>
     logger.error("Monitor queue connection error", { error }),
   );
-  connection = conn;
   return conn;
 }
 

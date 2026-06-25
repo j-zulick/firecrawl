@@ -1516,7 +1516,8 @@ async function failStaleMonitorCheck(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
 }): Promise<boolean> {
-  if (!isMonitorCheckStale(params.check)) return false;
+  if (!isMonitorCheckStale(params.check, new Date(), params.monitor.targets))
+    return false;
 
   const error = MONITOR_CHECK_STALE_ERROR;
   if (params.check.autumn_lock_id) {
@@ -1604,7 +1605,7 @@ async function failStaleMonitorCheck(params: {
     monitorId: params.monitor.id,
     checkId: params.check.id,
     startedAt: params.check.started_at,
-    timeoutMs: monitorCheckStaleTimeoutMs(params.check),
+    timeoutMs: monitorCheckStaleTimeoutMs(params.check, params.monitor.targets),
   });
 
   return true;

@@ -189,7 +189,8 @@ async function clearFinishedOrStaleCurrentCheck(
   if (!current) return false;
 
   if (current.status === "running" || current.status === "queued") {
-    if (!isMonitorCheckStale(current)) return false;
+    if (!isMonitorCheckStale(current, new Date(), monitor.targets))
+      return false;
 
     if (current.autumn_lock_id) {
       await autumnService
