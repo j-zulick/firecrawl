@@ -24,8 +24,7 @@ vi.mock("../../../search/v2", () => ({
   },
 }));
 // Deep mode (these tests) scrapes + parses a per-page JSON verdict and dedups by
-// canonical URL — no LLM chain. judgeSnippets (standard mode) is never reached.
-vi.mock("./llm", () => ({ judgeSnippets: vi.fn() }));
+// canonical URL — the only LLM stage is the injected per-page scrape verdict.
 vi.mock("./tuning", () => ({
   hasLlmProvider: () => false,
   googleProviderOptions: () => ({}),

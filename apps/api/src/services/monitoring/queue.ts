@@ -28,6 +28,12 @@ let connection: amqp.ChannelModel | null = null;
 // other.
 let publishChannel: amqp.Channel | null = null;
 let consumeChannel: amqp.Channel | null = null;
+// In-flight creation promises. Channel creation suspends on async asserts before
+// the channel is assigned, so two concurrent callers (e.g. the two consume
+// registrations started together at worker boot) would each create a channel and
+// orphan one. Memoizing the promise serializes concurrent callers onto one.
+let publishChannelPromise: Promise<amqp.Channel> | null = null;
+let consumeChannelPromise: Promise<amqp.Channel> | null = null;
 
 // Registry of every consumer registered this process, so we can re-attach them
 // after a connection/channel drop. Without this the worker — which never
@@ -92,7 +98,9 @@ function handleConnectionDrop(reason: string, error?: unknown): void {
   }
   connection = null;
   publishChannel = null;
+  publishChannelPromise = null;
   consumeChannel = null;
+  consumeChannelPromise = null;
   subscribedQueues.clear();
   if (registeredConsumers.length > 0) {
     scheduleReconnect(RECONNECT_BASE_DELAY_MS);
@@ -120,9 +128,18 @@ function scheduleReconnect(delayMs: number): void {
         error,
         nextDelayMs: nextDelay,
       });
+      // Best-effort close the half-set-up channel, then reset ALL cached state —
+      // including subscribedQueues. If a mid-loop subscribe() failed on an
+      // otherwise-healthy channel (so its "close" never fires), leaving
+      // subscribedQueues populated would make the next reconnect skip that queue
+      // (subscribe() early-returns on subscribedQueues.has) and deafen it forever.
+      await consumeChannel?.close().catch(() => {});
       connection = null;
       publishChannel = null;
+      publishChannelPromise = null;
       consumeChannel = null;
+      consumeChannelPromise = null;
+      subscribedQueues.clear();
       scheduleReconnect(nextDelay);
     }
   }, delayMs);
@@ -157,9 +174,13 @@ async function createChannel(label: string): Promise<amqp.Channel> {
   // PRECONDITION_FAILED from assertQueue). Without these handlers the cached
   // channel would stay non-null and every send/consume would throw forever.
   ch.on("close", () => {
-    if (label === "publish" && publishChannel === ch) publishChannel = null;
+    if (label === "publish" && publishChannel === ch) {
+      publishChannel = null;
+      publishChannelPromise = null;
+    }
     if (label === "consume" && consumeChannel === ch) {
       consumeChannel = null;
+      consumeChannelPromise = null;
       handleConnectionDrop("consume channel closed");
     }
   });
@@ -171,14 +192,34 @@ async function createChannel(label: string): Promise<amqp.Channel> {
 
 async function getPublishChannel(): Promise<amqp.Channel> {
   if (publishChannel) return publishChannel;
-  publishChannel = await createChannel("publish");
-  return publishChannel;
+  if (!publishChannelPromise) {
+    publishChannelPromise = createChannel("publish")
+      .then(ch => {
+        publishChannel = ch;
+        return ch;
+      })
+      .catch(err => {
+        publishChannelPromise = null;
+        throw err;
+      });
+  }
+  return publishChannelPromise;
 }
 
 async function getConsumeChannel(): Promise<amqp.Channel> {
   if (consumeChannel) return consumeChannel;
-  consumeChannel = await createChannel("consume");
-  return consumeChannel;
+  if (!consumeChannelPromise) {
+    consumeChannelPromise = createChannel("consume")
+      .then(ch => {
+        consumeChannel = ch;
+        return ch;
+      })
+      .catch(err => {
+        consumeChannelPromise = null;
+        throw err;
+      });
+  }
+  return consumeChannelPromise;
 }
 
 export async function addMonitorCheckJob(

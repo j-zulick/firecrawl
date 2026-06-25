@@ -332,11 +332,11 @@ async function runSingleScrape(params: {
   };
 }
 
-// Deep-mode search-monitor page scrape. Routes through the same internal
-// scrape path as every other monitor scrape (processJobInternal, skipNuq,
-// bypassBilling) instead of calling scrapeURL directly, so it respects the
-// team's concurrency queue and is never billed per-page (search monitors bill
-// flat at the check level).
+// Deep-mode search-monitor page scrape. Runs inline via processJobInternal
+// (skipNuq:true, bypassBilling) — it is NOT routed through NuQ, so it bypasses
+// per-team/global scrape concurrency; the caller bounds the fan-out via
+// SEARCH_SCRAPE_CONCURRENCY (search/run.ts). Never billed per-page (search
+// monitors bill flat at the check level).
 async function scrapeSearchMonitorPage(params: {
   teamId: string;
   checkId: string;
@@ -1337,6 +1337,14 @@ export async function processMonitorCheckJob(
         // Set LAST, after credits are stamped, so the reconciler never finalizes
         // with credits still at 0.
         targetRun.searchCompleted = true;
+        // Persist immediately (not just at the end of the loop): the search work
+        // — external search calls + per-page scrapes — already happened. If we
+        // crash before the end-of-loop flush, a redelivery would re-run and
+        // re-scrape everything. Flushing searchCompleted now lets
+        // findCompletedSearchTargetRun short-circuit the redelivery.
+        await updateMonitorCheck(check.id, {
+          target_results: targetResults,
+        });
       }
     }
 

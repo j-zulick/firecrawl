@@ -8,11 +8,14 @@ const MONITOR_SEARCH_CHECK_STALE_TIMEOUT_MS = 10 * 60 * 1000;
 export const MONITOR_CHECK_STALE_ERROR =
   "Monitor check exceeded the running timeout.";
 
-// A check is a search check if any of its target runs is of type "search".
-function isSearchCheck(check: { target_results?: unknown }): boolean {
+// The shorter search timeout only applies when EVERY target is a search target.
+// A mixed monitor (e.g. search + crawl) must keep the long timeout — its scrape
+// fan-out / crawl legitimately runs for many minutes and would otherwise be
+// falsely reaped at the 10-minute search cutoff.
+function isSearchOnlyCheck(check: { target_results?: unknown }): boolean {
   const targetResults = check.target_results;
-  if (!Array.isArray(targetResults)) return false;
-  return targetResults.some(
+  if (!Array.isArray(targetResults) || targetResults.length === 0) return false;
+  return targetResults.every(
     tr =>
       tr != null &&
       typeof tr === "object" &&
@@ -23,7 +26,7 @@ function isSearchCheck(check: { target_results?: unknown }): boolean {
 export function monitorCheckStaleTimeoutMs(check: {
   target_results?: unknown;
 }): number {
-  return isSearchCheck(check)
+  return isSearchOnlyCheck(check)
     ? MONITOR_SEARCH_CHECK_STALE_TIMEOUT_MS
     : MONITOR_CHECK_STALE_TIMEOUT_MS;
 }

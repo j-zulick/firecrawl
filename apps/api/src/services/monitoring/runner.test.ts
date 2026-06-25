@@ -91,6 +91,20 @@ describe("monitoring runner", () => {
           now,
         ),
       ).toBe(true);
+      // MIXED search+crawl: keeps the 1-hour timeout (the crawl can legitimately
+      // run for many minutes) — must NOT be reaped at 11 minutes.
+      expect(
+        isMonitorCheckStale(
+          {
+            ...base,
+            target_results: [
+              { type: "search", targetId: "t1" },
+              { type: "crawl", targetId: "t2" },
+            ],
+          },
+          now,
+        ),
+      ).toBe(false);
     });
   });
 });

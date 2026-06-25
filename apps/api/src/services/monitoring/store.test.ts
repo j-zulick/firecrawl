@@ -7,6 +7,7 @@ import {
   estimateMonitorCreditsPerRun,
   flatSearchTargetCredits,
 } from "./store";
+import { judgeCreditsForJudgedCount } from "./search/billing";
 import type { MonitorTarget } from "./types";
 
 describe("monitoring store credit helpers", () => {
@@ -255,17 +256,17 @@ describe("FLAT deterministic search-monitor billing", () => {
 
   describe("flatSearchTargetCredits (the deterministic actual)", () => {
     it("sums searchCredits + judgeCredits across search target_results", () => {
-      // The headline trace: search 2 + judge 5*3 = 17.
+      // The headline trace: search 2 + judge 1*3 = 5.
       const targetResults = [
         {
           targetId: "search-1",
           type: "search",
           searchCredits: 2,
-          judgeCredits: 15,
+          judgeCredits: 3,
           resultsJudged: 3,
         },
       ];
-      expect(flatSearchTargetCredits(targetResults)).toBe(17);
+      expect(flatSearchTargetCredits(targetResults)).toBe(5);
     });
 
     it("raw / judge-off: just the 2 search credits, 0 judge", () => {
@@ -301,7 +302,7 @@ describe("FLAT deterministic search-monitor billing", () => {
     });
   });
 
-  // Flat billing contract: actual = 2*ceil(totalResults/10) + 5*resultsJudged.
+  // Flat billing contract: actual = 2*ceil(totalResults/10) + 1*resultsJudged.
   describe("flat search billing contract (eval H regression guard)", () => {
     const searchCreditsFor = (totalResults: number) =>
       2 * Math.ceil(totalResults / 10);
@@ -311,19 +312,19 @@ describe("FLAT deterministic search-monitor billing", () => {
       searchCompleted: true,
       resultCount: totalResults,
       searchCredits: searchCreditsFor(totalResults),
-      judgeCredits: resultsJudged * 5,
+      judgeCredits: judgeCreditsForJudgedCount(resultsJudged),
       resultsJudged,
     });
 
-    it("is the exact deterministic flat sum (the headline 17-credit trace)", () => {
-      // results=6 -> search 2; judged=3 -> 15; total 17.
-      expect(flatSearchTargetCredits([stampedSearchRun(6, 3)])).toBe(17);
+    it("is the exact deterministic flat sum (the headline 5-credit trace)", () => {
+      // results=6 -> search 2; judged=3 -> 3; total 5.
+      expect(flatSearchTargetCredits([stampedSearchRun(6, 3)])).toBe(5);
     });
 
     it("never bills 0 on a check that returned results and judged them", () => {
-      // results=6, judged=4 -> 2 + 20 = 22 (the judged#2 case that landed on 0).
+      // results=6, judged=4 -> 2 + 4 = 6 (the judged#2 case that landed on 0).
       const credits = flatSearchTargetCredits([stampedSearchRun(6, 4)]);
-      expect(credits).toBe(22);
+      expect(credits).toBe(6);
       expect(credits).toBeGreaterThan(0);
     });
 
@@ -333,7 +334,7 @@ describe("FLAT deterministic search-monitor billing", () => {
       // searchCompleted=true guard ensures credits are stamped before summing.
       const retried = stampedSearchRun(6, 4);
       expect(retried.searchCompleted).toBe(true);
-      expect(flatSearchTargetCredits([retried])).toBe(22);
+      expect(flatSearchTargetCredits([retried])).toBe(6);
     });
 
     it("search-only (judge off) bills just the search portion, never the judge", () => {

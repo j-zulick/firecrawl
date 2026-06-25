@@ -502,8 +502,15 @@ export async function updateMonitor(params: {
   if (params.input.status !== undefined) patch.status = params.input.status;
   if (params.input.webhook !== undefined)
     patch.webhook = params.input.webhook ?? null;
-  if (params.input.notification !== undefined) {
-    patch.notification = params.input.notification ?? null;
+  // Defense-in-depth against a wiped notification: only write when the caller
+  // actually sent config. Treat an empty object (the legacy default-materialized
+  // {}) as "leave unchanged" rather than clobbering the stored email settings.
+  if (
+    params.input.notification !== undefined &&
+    params.input.notification !== null &&
+    Object.keys(params.input.notification).length > 0
+  ) {
+    patch.notification = params.input.notification;
   }
   if (params.input.retentionDays !== undefined) {
     patch.retention_days = params.input.retentionDays;

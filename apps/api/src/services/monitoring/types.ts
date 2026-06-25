@@ -129,16 +129,19 @@ const monitorScheduleSchema = z
     timezone: schedule.timezone,
   }));
 
-const monitorNotificationSchema = z
-  .strictObject({
-    email: z
-      .strictObject({
-        enabled: z.boolean().optional().default(false),
-        recipients: z.array(z.email()).max(25).optional().default([]),
-        includeDiffs: z.boolean().optional().default(false),
-      })
-      .optional(),
-  })
+const monitorNotificationInner = z.strictObject({
+  email: z
+    .strictObject({
+      enabled: z.boolean().optional().default(false),
+      recipients: z.array(z.email()).max(25).optional().default([]),
+      includeDiffs: z.boolean().optional().default(false),
+    })
+    .optional(),
+});
+// Create defaults a missing notification to {}. The UPDATE schema deliberately
+// does NOT (see updateMonitorSchema) — a default there would materialize {} on
+// any PATCH that omits notification and wipe the stored email config.
+const monitorNotificationSchema = monitorNotificationInner
   .optional()
   .default({});
 
@@ -223,6 +226,10 @@ export const updateMonitorSchema = createMonitorBaseSchema
   .partial()
   .extend({
     status: z.enum(["active", "paused"]).optional(),
+    // Override the create-path notification (which defaults to {}): on update a
+    // default would materialize {} for a PATCH that omits notification and wipe
+    // the stored email config. No default => omitted means "leave unchanged".
+    notification: monitorNotificationInner.optional(),
   })
   .superRefine(rejectGoalClearedWithSearchTargets)
   .refine(x => Object.keys(x).length > 0, "Update body cannot be empty");

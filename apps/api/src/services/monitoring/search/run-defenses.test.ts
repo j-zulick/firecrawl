@@ -4,12 +4,11 @@ import { canonicalizeUrl } from "./dedupe";
 
 // vi.mock is hoisted above declarations, so the mocks its factories reference
 // are created in vi.hoisted() (also hoisted) to avoid any TDZ surprises.
-// The lean pipeline has only one LLM stage left in deep mode (the per-page JSON
-// verdict, produced by the injected scrapePage) plus judgeSnippets for standard.
-const { searchMock, scrapeURLMock, snippetsMock } = vi.hoisted(() => ({
+// The lean pipeline has a single LLM stage: the deep-mode per-page JSON verdict,
+// produced by the injected scrapePage.
+const { searchMock, scrapeURLMock } = vi.hoisted(() => ({
   searchMock: vi.fn(),
   scrapeURLMock: vi.fn(),
-  snippetsMock: vi.fn(),
 }));
 
 vi.mock("uuid", () => ({ v7: () => "00000000-0000-7000-8000-000000000000" }));
@@ -20,9 +19,6 @@ vi.mock("../../../search/v2", () => ({
     const r = await searchMock(...a);
     return Array.isArray(r) ? { web: r } : r;
   },
-}));
-vi.mock("./llm", () => ({
-  judgeSnippets: (...a: unknown[]) => snippetsMock(...a),
 }));
 vi.mock("./tuning", () => ({
   hasLlmProvider: () => true,
@@ -118,36 +114,6 @@ describe("deep mode (scrape every selected candidate)", () => {
 
     const result = await runSearchTarget(runParams());
     expect(scrapeURLMock).toHaveBeenCalledTimes(3);
-    expect(result.matches).toBe(0);
-  });
-});
-
-describe("standard depth (snippet judging, no scrapes)", () => {
-  it("judges from snippets without any page fetch", async () => {
-    searchMock.mockResolvedValue([serpRow(1), serpRow(2)]);
-    snippetsMock.mockResolvedValue([
-      { id: "result_1", ...verdict() },
-      { id: "result_2", ...verdict({ alertAction: "watch" }) },
-    ]);
-
-    const result = await runSearchTarget(runParams({ depth: "standard" }));
-    expect(scrapeURLMock).not.toHaveBeenCalled();
-    expect(result.pagesChecked).toBe(2);
-    expect(result.matches).toBe(1);
-    expect(result.sources.map(s => s.status).sort()).toEqual([
-      "alert",
-      "watching",
-    ]);
-    // snippet-only judgments never bill a scrape
-    expect(result.pageUpserts.every(u => u.scraped === false)).toBe(true);
-  });
-
-  it("skips results the snippet judge failed to cover", async () => {
-    searchMock.mockResolvedValue([serpRow(1)]);
-    snippetsMock.mockRejectedValue(new Error("batch failed"));
-
-    const result = await runSearchTarget(runParams({ depth: "standard" }));
-    expect(result.skipped).toBe(1);
     expect(result.matches).toBe(0);
   });
 });
@@ -265,8 +231,7 @@ describe("judgeEnabled gates the LLM judge", () => {
       runParams({ depth: "deep" }, { judgeEnabled: false }),
     );
 
-    // No judge stage ran: raw mode neither snippet-judges nor scrapes.
-    expect(snippetsMock).not.toHaveBeenCalled();
+    // No judge stage ran: raw mode does not scrape.
     expect(scrapeURLMock).not.toHaveBeenCalled();
 
     // No judge credits billed (raw → nothing judged); search still ran and was billed.
@@ -410,16 +375,51 @@ describe("deep-path scrape failures mark the check degraded (no silent empty)", 
     expect(scrapeURLMock).not.toHaveBeenCalled();
   });
 
-  it("degraded=true when the standard snippet judge fails for every candidate", async () => {
-    searchMock.mockResolvedValue([serpRow(1), serpRow(2)]);
-    snippetsMock.mockRejectedValue(new Error("snippet judge outage"));
+  it("flags partialScrapeLoss (soft signal, NOT degraded) when most scrapes fail but some judge", async () => {
+    searchMock.mockResolvedValue([
+      serpRow(1),
+      serpRow(2),
+      serpRow(3),
+      serpRow(4),
+    ]);
+    // Only result 1 scrapes + judges; results 2-4 all fail to scrape.
+    scrapeURLMock.mockImplementation(({ url }: { url: string }) =>
+      url === serpRow(1).url
+        ? Promise.resolve({
+            success: true,
+            document: {
+              json: verdict({ alertAction: "ignore" }),
+              markdown: "prose",
+              metadata: {},
+            },
+          })
+        : Promise.resolve({ success: false }),
+    );
 
-    const result = await runSearchTarget(runParams({ depth: "standard" }));
+    const result = await runSearchTarget(runParams({ depth: "deep" }));
 
-    expect(result.resultsJudged).toBe(0);
-    expect(result.matches).toBe(0);
-    expect(result.judgeDegraded).toBe(true);
-    expect(result.degradedReason).toMatch(/judged|incomplete/i);
+    expect(result.resultsJudged).toBe(1);
+    expect(result.scrapeFailures).toBe(3);
+    // 3/(1+3) = 0.75 >= 0.5 -> soft partial-loss signal, but the run still
+    // produced a verdict so it is NOT a hard degrade.
+    expect(result.partialScrapeLoss).toBe(true);
+    expect(result.judgeDegraded).toBe(false);
+  });
+
+  it("does NOT flag partialScrapeLoss when every scrape succeeds", async () => {
+    scrapeURLMock.mockResolvedValue({
+      success: true,
+      document: {
+        json: verdict({ alertAction: "ignore" }),
+        markdown: "prose",
+        metadata: {},
+      },
+    });
+
+    const result = await runSearchTarget(runParams({ depth: "deep" }));
+
+    expect(result.scrapeFailures).toBe(0);
+    expect(result.partialScrapeLoss).toBe(false);
   });
 });
 

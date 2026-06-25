@@ -1,7 +1,6 @@
 import type { Logger } from "winston";
 import { search } from "../../../search/v2";
 import { buildSearchQuery } from "../../../lib/search-query-builder";
-import { CostTracking } from "../../../lib/cost-tracking";
 import { hashMonitorUrl } from "../store";
 import { canonicalizeUrl, stableSerpFingerprint } from "./dedupe";
 import {
@@ -11,13 +10,6 @@ import {
   windowToMs,
   type SearchVerdict,
 } from "./judge";
-import { judgeSnippets, type KnownEvent, type SnippetVerdict } from "./llm";
-import { compileGoalCriteria, type GoalCriteria } from "./criteria";
-import {
-  verifyAlertCandidate,
-  type VerificationResult,
-  type VerifyEvidence,
-} from "./verify";
 import { hasLlmProvider } from "./tuning";
 import {
   searchCreditsForResultCount,
@@ -77,6 +69,31 @@ const SEARCH_RETRY_BACKOFF_MS = [400, 1200, 3000, 6000] as const;
 // skipped/degraded rather than holding the consumer. Kept well under the
 // 10-minute search stale timeout so a run always returns before the reaper.
 const SEARCH_RUN_BUDGET_MS = 4 * 60 * 1000;
+
+// Deep-mode page scrapes run INLINE in the worker process (skipNuq), so they are
+// NOT bounded by NuQ's per-team/global concurrency. Cap the pre-scrape fan-out
+// ourselves so a single maxResults=50 check can't launch 50 simultaneous
+// fetch+LLM-extraction scrapes and starve the worker that owns the search consumer.
+const SEARCH_SCRAPE_CONCURRENCY = 6;
+
+// Run fn over items with at most `limit` in flight at once. Never rejects per the
+// caller's needs — fn is expected to swallow its own errors (it writes outcomes
+// into a shared cache).
+async function mapWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next++;
+      await fn(items[i]);
+    }
+  };
+  const pool = Array.from({ length: Math.min(limit, items.length) }, worker);
+  await Promise.all(pool);
+}
 
 // Race a promise against a wall-clock deadline. Resolves false if the work
 // finishes first, true if the deadline hits. Never rejects; the underlying work
@@ -170,6 +187,13 @@ export type KnownPage = {
   metadata?: Record<string, unknown>;
 };
 
+export type KnownEvent = {
+  key: string;
+  label: string;
+  satisfiedAt?: string;
+  alertCount?: number;
+};
+
 // Deep-mode page scrape. Injected by the caller so it can route through the
 // shared monitor scrape path (concurrency queue + bypassBilling), keeping this
 // module free of worker/queue dependencies. Resolves to null on scrape failure.
@@ -205,6 +229,11 @@ type SearchTargetRunResult = {
   summary: string;
   judgeDegraded: boolean;
   degradedReason: string | null;
+  // Per-page scrape failures in deep mode. partialScrapeLoss is a SOFT signal
+  // (distinct from judgeDegraded): some results judged, but a majority of the
+  // attempted scrapes failed — the run is usable but likely missed developments.
+  scrapeFailures: number;
+  partialScrapeLoss: boolean;
   sources: SearchSource[];
   searchCredits: number;
   judgeCredits: number;
@@ -250,13 +279,6 @@ export async function runSearchTarget(params: {
     throw new Error("search monitor target requires a non-empty monitor goal");
   }
   const subject = params.monitor.subject ?? "";
-  const teamId = params.monitor.teamId;
-  // Vertex billing labels attached to every LLM call for usage tracing.
-  const labels = {
-    teamId,
-    monitorId: params.monitor.id,
-    monitorCheckId: params.monitorCheckId,
-  };
 
   const tbs = windowToTbs(target.searchWindow);
   const events: KnownEvent[] = [...params.knownEvents];
@@ -267,11 +289,9 @@ export async function runSearchTarget(params: {
   let pagesChecked = 0;
   let skipped = 0;
   let matches = 0;
-  const costTracking = new CostTracking();
   let searchResultsBilled = 0;
   let resultsJudged = 0;
   let judgeScrapeFailures = 0;
-  let snippetJudgeFailed = false;
 
   const seenThisRun = new Map<string, number>();
   const candidates: Array<{
@@ -335,96 +355,22 @@ export async function runSearchTarget(params: {
   }
 
   const llmStagesAvailable = hasLlmProvider();
-  const depth: "raw" | "standard" | "deep" = !judgeEnabled
-    ? "raw"
-    : target.depth === "raw"
-      ? "raw"
-      : target.depth === "standard" && llmStagesAvailable
-        ? "standard"
-        : "deep";
+  // Judge depth is raw (no LLM) or deep (per-page scrape + verdict). Standard
+  // (snippet-only judging) was removed: it was unreachable via the API (depth is
+  // stripped) and used a divergent LLM provider; deep is the single judged path.
+  const depth: "raw" | "deep" =
+    !judgeEnabled || target.depth === "raw" ? "raw" : "deep";
 
   const judgeGoal: string = goal ?? "";
-
-  // Deterministic criteria for the (non-LLM) verifier — no LLM enrich/router.
-  const criteria: GoalCriteria = compileGoalCriteria({
-    goal: judgeGoal,
-    subject,
-    goalVersion,
-  });
 
   const selected = candidates.slice(0, target.maxResults);
 
   const recheckMs = target.recheckAfter ? windowToMs(target.recheckAfter) : 0;
-  const pageNeedsJudgment = (c: {
-    url: string;
-    title: string;
-    description: string;
-  }) => {
-    const canonical = canonicalizeUrl(c.url);
-    const known = knownPages.get(canonical);
-    const knownCurrent =
-      known && known.goalVersion === goalVersion ? known : undefined;
-    if (!knownCurrent) return true;
-    const fingerprint = stableSerpFingerprint({
-      url: c.url,
-      title: c.title,
-      snippet: c.description,
-    });
-    if (knownCurrent.fingerprint !== fingerprint) return true;
-    const isLive =
-      knownCurrent.lastStatus === "alert" ||
-      knownCurrent.lastStatus === "watching";
-    return Boolean(
-      recheckMs &&
-        isLive &&
-        knownCurrent.lastCheckedAt &&
-        Date.now() - Date.parse(knownCurrent.lastCheckedAt) > recheckMs,
-    );
-  };
 
-  const snippetVerdicts = new Map<string, SearchVerdict>();
-  const snippetCandidates = selected.filter(pageNeedsJudgment);
-  if (depth === "standard" && snippetCandidates.length > 0) {
-    try {
-      const verdicts = await judgeSnippets({
-        goal: judgeGoal,
-        subject,
-        searchWindow: target.searchWindow,
-        costTracking,
-        labels,
-        candidates: snippetCandidates.map((c, i) => ({
-          id: `result_${i + 1}`,
-          query: c.query,
-          title: c.title,
-          url: c.url,
-          snippet: c.description,
-        })),
-      });
-      const byId = new Map<string, SnippetVerdict>(
-        verdicts.map(v => [v.id, v]),
-      );
-      snippetCandidates.forEach((c, i) => {
-        const v = byId.get(`result_${i + 1}`);
-        if (v) {
-          snippetVerdicts.set(canonicalizeUrl(c.url), {
-            relevant: v.relevant,
-            alertAction: v.alertAction,
-            concept: v.concept,
-            rationale: v.rationale,
-          });
-        }
-      });
-    } catch (error) {
-      snippetJudgeFailed = true;
-      logger.warn("search monitor snippet judge failed; results skipped", {
-        error,
-      });
-    }
-  }
-
-  // Pre-scrape deep-mode pages concurrently and cache them, so the loop below isn't
-  // a serial scrape→judge→scrape chain. Only the I/O is parallel; all dedup/event
-  // state stays in the single-threaded loop. (NuQ bounds the actual scrape fan-out.)
+  // Pre-scrape deep-mode pages (bounded concurrency) and cache them, so the loop
+  // below isn't a serial scrape→judge→scrape chain. Only the I/O is parallel; all
+  // dedup/event state stays in the single-threaded loop. These scrapes run inline
+  // (skipNuq), so the fan-out is bounded by SEARCH_SCRAPE_CONCURRENCY, not NuQ.
   const deepDocs = new Map<
     string,
     { doc: ScrapeSearchResult | null; error?: unknown }
@@ -439,23 +385,24 @@ export async function runSearchTarget(params: {
       subject,
       target.searchWindow,
     );
-    const preScrape = Promise.all(
-      selected
-        .filter(
-          c =>
-            evaluateSerpCandidate(c, knownPages, goalVersion, recheckMs)
-              .isNewOrChanged,
-        )
-        .map(async c => {
-          const canonical = canonicalizeUrl(c.url);
-          try {
-            deepDocs.set(canonical, {
-              doc: await params.scrapePage({ url: c.url, judgePrompt }),
-            });
-          } catch (error) {
-            deepDocs.set(canonical, { doc: null, error });
-          }
-        }),
+    const toScrape = selected.filter(
+      c =>
+        evaluateSerpCandidate(c, knownPages, goalVersion, recheckMs)
+          .isNewOrChanged,
+    );
+    const preScrape = mapWithConcurrency(
+      toScrape,
+      SEARCH_SCRAPE_CONCURRENCY,
+      async c => {
+        const canonical = canonicalizeUrl(c.url);
+        try {
+          deepDocs.set(canonical, {
+            doc: await params.scrapePage({ url: c.url, judgePrompt }),
+          });
+        } catch (error) {
+          deepDocs.set(canonical, { doc: null, error });
+        }
+      },
     );
     const remainingBudget = SEARCH_RUN_BUDGET_MS - (Date.now() - runStart);
     budgetExceeded = await raceDeadline(preScrape, remainingBudget);
@@ -589,22 +536,9 @@ export async function runSearchTarget(params: {
     }
 
     let verdict: SearchVerdict | null = null;
-    let pageText = "";
     let realDate: string | null = null;
-    if (depth === "standard") {
-      verdict = snippetVerdicts.get(canonical) ?? null;
-      if (!verdict) {
-        if (snippetJudgeFailed) {
-          pushUnevaluatedPage("snippet judge failed");
-        } else {
-          skipped += 1;
-          sources.push({ url: c.url, title: c.title, status: "skipped" });
-        }
-        continue;
-      }
-      pagesChecked += 1;
-    } else {
-      // Read the doc from the pre-scrape cache; scrape inline only as a fallback.
+    {
+      // Deep mode: read the doc from the pre-scrape cache; scrape inline only as a fallback.
       let doc: ScrapeSearchResult | null;
       const cached = deepDocs.get(canonical);
       if (cached?.error !== undefined) {
@@ -660,37 +594,13 @@ export async function runSearchTarget(params: {
         pushUnevaluatedPage("verdict unparseable");
         continue;
       }
-      pageText = doc.markdown ?? "";
       realDate =
         doc.metadata?.publishedTime ?? doc.metadata?.modifiedTime ?? null;
     }
 
     resultsJudged += 1;
 
-    let decision = verdictToDecision(verdict);
-
-    let verification: VerificationResult | null = null;
-    if (decision === "notify") {
-      const evidence: VerifyEvidence = {
-        url: c.url,
-        titleText: c.title,
-        claimText: verdict.rationale,
-        pageText,
-      };
-      const result = verifyAlertCandidate({
-        criteria,
-        concept: verdict.concept,
-        evidence,
-      });
-      verification = result;
-      if (!result.pass) {
-        decision = "watch";
-        logger.info("search monitor alert downgraded by verifier", {
-          url: c.url,
-          failures: result.failures,
-        });
-      }
-    }
+    const decision = verdictToDecision(verdict);
 
     const baseMeta = {
       fingerprint,
@@ -701,7 +611,6 @@ export async function runSearchTarget(params: {
       rationale: verdict.rationale,
       matchedQueries: c.matchedQueries,
       judgedThisRun: true,
-      ...(verification && !verification.pass ? { verification } : {}),
     };
 
     if (decision === "ignore") {
@@ -819,14 +728,11 @@ export async function runSearchTarget(params: {
       ? `${matches} match${matches === 1 ? "" : "es"} across ${resultCount} result${resultCount === 1 ? "" : "s"}.`
       : "";
 
-  const deepJudgeFailed =
+  const judgeDegraded =
     depth === "deep" &&
     candidates.length > 0 &&
     resultsJudged === 0 &&
     judgeScrapeFailures > 0;
-  const standardJudgeFailed =
-    depth === "standard" && resultsJudged === 0 && snippetJudgeFailed;
-  const judgeDegraded = deepJudgeFailed || standardJudgeFailed;
   if (judgeDegraded) {
     logger.warn(
       "search monitor run is degraded: results were found but none could be judged; results may be incomplete (NOT a clean no-results)",
@@ -836,7 +742,6 @@ export async function runSearchTarget(params: {
         depth,
         candidates: candidates.length,
         scrapeFailures: judgeScrapeFailures,
-        snippetJudgeFailed,
         resultsJudged,
       },
     );
@@ -849,6 +754,25 @@ export async function runSearchTarget(params: {
   const degradedReason: string | null = judgeDegraded
     ? "results were found but none could be judged; results may be incomplete"
     : null;
+
+  // Soft signal (NOT judgeDegraded): the run produced verdicts, but a majority of
+  // the attempted deep scrapes failed, so it likely missed real developments.
+  // Surfaced for observability; does not fail the check.
+  const partialScrapeLoss =
+    resultsJudged > 0 &&
+    judgeScrapeFailures > 0 &&
+    judgeScrapeFailures / (resultsJudged + judgeScrapeFailures) >= 0.5;
+  if (partialScrapeLoss) {
+    logger.warn(
+      "search monitor run had heavy partial scrape loss: judged some results but most scrapes failed; coverage may be incomplete",
+      {
+        monitorId: params.monitor.id,
+        targetId: target.id,
+        resultsJudged,
+        scrapeFailures: judgeScrapeFailures,
+      },
+    );
+  }
 
   const isZDR = params.zeroDataRetention;
   const searchCredits = searchCreditsForResultCount(searchResultsBilled, isZDR);
@@ -865,6 +789,8 @@ export async function runSearchTarget(params: {
     summary,
     judgeDegraded,
     degradedReason,
+    scrapeFailures: judgeScrapeFailures,
+    partialScrapeLoss,
     sources,
     searchCredits,
     judgeCredits,
