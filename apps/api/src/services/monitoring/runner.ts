@@ -48,6 +48,7 @@ import {
   listRunningMonitorChecks,
   markMonitorRunning,
   updateMonitorCheck,
+  updateMonitorCheckIfRunning,
   updateMonitorScheduleAfterRun,
   upsertMonitorPage,
 } from "./store";
@@ -1050,20 +1051,24 @@ class MonitorFinalizeTimeoutError extends Error {
 }
 
 // Reject (not resolve) on timeout so a stalled write fails fast into the catch path.
-async function withFinalizeTimeout<T>(
-  work: () => Promise<T>,
+// The race rejects but can't truly cancel work(); we abort a signal so work() can
+// cooperatively stop issuing further writes, otherwise a stalled write may land
+// AFTER the catch has marked the check terminal — corrupting cross-run dedup state.
+export async function withFinalizeTimeout<T>(
+  work: (signal: AbortSignal) => Promise<T>,
   what: string,
   ms: number = MONITOR_FINALIZE_WRITE_TIMEOUT_MS,
 ): Promise<T> {
+  const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new MonitorFinalizeTimeoutError(what, ms)),
-      ms,
-    );
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new MonitorFinalizeTimeoutError(what, ms));
+    }, ms);
   });
   try {
-    return await Promise.race([work(), timeout]);
+    return await Promise.race([work(controller.signal), timeout]);
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -1175,8 +1180,19 @@ async function runMonitorSearchTarget(params: {
     };
   });
 
-  await withFinalizeTimeout(async () => {
+  await withFinalizeTimeout(async signal => {
+    // Per-check rows first: idempotent (delete+insert replace) and not read across runs.
+    // Clear rows from a prior (crashed/redelivered) run so the insert is a replace, not a duplicate.
+    if (signal.aborted) return;
+    await deleteMonitorCheckPages({ checkId: check.id, targetId: target.id });
+    if (signal.aborted) return;
+    await insertMonitorCheckPages(pages);
+
+    // Durable cross-run dedup baseline last, so a timeout before this point leaves
+    // monitor_pages untouched and the next run re-alerts. Pass the signal so an
+    // orphaned write that outran the timeout can't baseline a now-failed check.
     for (let i = 0; i < pages.length; i++) {
+      if (signal.aborted) return;
       const page = pages[i];
       await upsertMonitorPage({
         monitorId: monitor.id,
@@ -1188,12 +1204,9 @@ async function runMonitorSearchTarget(params: {
         scrapeId: null,
         status: page.status,
         metadata: page.metadata as Record<string, unknown>,
+        abortSignal: signal,
       });
     }
-
-    // Clear rows from a prior (crashed/redelivered) run so the insert is a replace, not a duplicate.
-    await deleteMonitorCheckPages({ checkId: check.id, targetId: target.id });
-    await insertMonitorCheckPages(pages);
   }, "monitor search page-write tail");
 
   for (const page of pages) {
@@ -1362,10 +1375,14 @@ export async function processMonitorCheckJob(
         // Persist searchCompleted now so a crash/redelivery short-circuits via
         // findCompletedSearchTargetRun instead of re-running and re-billing.
         await withFinalizeTimeout(
-          () =>
-            updateMonitorCheck(check.id, {
-              target_results: targetResults,
-            }),
+          signal =>
+            signal.aborted
+              ? Promise.resolve(null)
+              : // Atomic guard: if this write outran the timeout and the catch
+                // already failed the check, no-op instead of stamping searchCompleted.
+                updateMonitorCheckIfRunning(check.id, {
+                  target_results: targetResults,
+                }),
           "monitor search searchCompleted flush",
         );
       }

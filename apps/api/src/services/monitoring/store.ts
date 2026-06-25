@@ -840,6 +840,34 @@ export async function updateMonitorCheck(
   return data as MonitorCheckRow;
 }
 
+// Atomic variant of updateMonitorCheck that only writes while the check is still
+// running. A late finalize write that lost the race to the catch path (which marks
+// the check failed) becomes a no-op instead of stamping results/searchCompleted onto
+// an already-terminal check. Returns the row if it applied, else null.
+export async function updateMonitorCheckIfRunning(
+  checkId: string,
+  patch: Partial<MonitorCheckRow>,
+): Promise<MonitorCheckRow | null> {
+  const [data] = await run(
+    () =>
+      db
+        .update(schema.monitor_checks)
+        .set({
+          ...patch,
+          updated_at: new Date().toISOString(),
+        })
+        .where(
+          and(
+            eq(schema.monitor_checks.id, checkId),
+            eq(schema.monitor_checks.status, "running"),
+          ),
+        )
+        .returning(),
+    "Failed to update monitor check",
+  );
+  return (data as MonitorCheckRow) ?? null;
+}
+
 export async function insertMonitorCheckPages(
   pages: MonitorCheckPageInsert[],
 ): Promise<void> {
@@ -1003,6 +1031,9 @@ export async function upsertMonitorPage(params: {
   scrapeId: string | null;
   status: "same" | "new" | "changed" | "removed" | "error";
   metadata?: unknown;
+  // When the caller's finalize times out it aborts this signal; we then skip the
+  // write so an orphaned baseline can't poison the next run's dedup state.
+  abortSignal?: AbortSignal;
 }): Promise<void> {
   const now = new Date().toISOString();
 
@@ -1011,6 +1042,8 @@ export async function upsertMonitorPage(params: {
     targetId: params.targetId,
     url: params.url,
   });
+
+  if (params.abortSignal?.aborted) return;
 
   if (!existing) {
     await run(
