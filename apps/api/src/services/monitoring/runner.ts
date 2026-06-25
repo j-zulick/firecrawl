@@ -1038,6 +1038,37 @@ async function enqueueMonitorCrawlTarget(params: {
 
 // Runs inline, persisting onto the same monitor_pages / monitor_check_pages
 // tables the reconciler tallies.
+// Bound the inline finalize writes: under write-pool exhaustion they can wait forever,
+// stranding the check until the 10-min reaper. Throw so the catch fails it fast instead.
+const MONITOR_FINALIZE_WRITE_TIMEOUT_MS = 60_000;
+
+class MonitorFinalizeTimeoutError extends Error {
+  constructor(what: string, ms: number) {
+    super(`${what} exceeded ${ms}ms`);
+    this.name = "MonitorFinalizeTimeoutError";
+  }
+}
+
+// Reject (not resolve) on timeout so a stalled write fails fast into the catch path.
+async function withFinalizeTimeout<T>(
+  work: () => Promise<T>,
+  what: string,
+  ms: number = MONITOR_FINALIZE_WRITE_TIMEOUT_MS,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new MonitorFinalizeTimeoutError(what, ms)),
+      ms,
+    );
+  });
+  try {
+    return await Promise.race([work(), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function runMonitorSearchTarget(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
@@ -1144,24 +1175,26 @@ async function runMonitorSearchTarget(params: {
     };
   });
 
-  for (let i = 0; i < pages.length; i++) {
-    const page = pages[i];
-    await upsertMonitorPage({
-      monitorId: monitor.id,
-      teamId: monitor.team_id,
-      targetId: target.id,
-      url: page.url,
-      source: "discovered",
-      checkId: check.id,
-      scrapeId: null,
-      status: page.status,
-      metadata: page.metadata as Record<string, unknown>,
-    });
-  }
+  await withFinalizeTimeout(async () => {
+    for (let i = 0; i < pages.length; i++) {
+      const page = pages[i];
+      await upsertMonitorPage({
+        monitorId: monitor.id,
+        teamId: monitor.team_id,
+        targetId: target.id,
+        url: page.url,
+        source: "discovered",
+        checkId: check.id,
+        scrapeId: null,
+        status: page.status,
+        metadata: page.metadata as Record<string, unknown>,
+      });
+    }
 
-  // Clear rows from a prior (crashed/redelivered) run so the insert is a replace, not a duplicate.
-  await deleteMonitorCheckPages({ checkId: check.id, targetId: target.id });
-  await insertMonitorCheckPages(pages);
+    // Clear rows from a prior (crashed/redelivered) run so the insert is a replace, not a duplicate.
+    await deleteMonitorCheckPages({ checkId: check.id, targetId: target.id });
+    await insertMonitorCheckPages(pages);
+  }, "monitor search page-write tail");
 
   for (const page of pages) {
     if (page.status !== "new" && page.status !== "error") continue;
@@ -1326,12 +1359,15 @@ export async function processMonitorCheckJob(
         targetRun.resultsJudged = searchResult.resultsJudged;
         // Set last, after credits are stamped, so the reconciler never finalizes with credits at 0.
         targetRun.searchCompleted = true;
-        // Persist now, not just at end-of-loop: the search work already happened,
-        // so a crash before the final flush would re-run and re-scrape everything;
-        // flushing searchCompleted lets findCompletedSearchTargetRun short-circuit.
-        await updateMonitorCheck(check.id, {
-          target_results: targetResults,
-        });
+        // Persist searchCompleted now so a crash/redelivery short-circuits via
+        // findCompletedSearchTargetRun instead of re-running and re-billing.
+        await withFinalizeTimeout(
+          () =>
+            updateMonitorCheck(check.id, {
+              target_results: targetResults,
+            }),
+          "monitor search searchCompleted flush",
+        );
       }
     }
 
