@@ -1,17 +1,12 @@
 import type { MonitorCheckRow } from "./types";
 
 export const MONITOR_CHECK_STALE_TIMEOUT_MS = 60 * 60 * 1000;
-// Search checks run their whole search+scrape+judge inline and realistically
-// finish in seconds-to-low-minutes. A stranded one (crash between the inline
-// work and the ack) should self-heal quickly rather than look dead for an hour.
+// Search checks run inline and finish in minutes; a stranded one should self-heal quickly, not look dead for an hour.
 const MONITOR_SEARCH_CHECK_STALE_TIMEOUT_MS = 10 * 60 * 1000;
 export const MONITOR_CHECK_STALE_ERROR =
   "Monitor check exceeded the running timeout.";
 
-// The shorter search timeout only applies when EVERY target is a search target.
-// A mixed monitor (e.g. search + crawl) must keep the long timeout — its scrape
-// fan-out / crawl legitimately runs for many minutes and would otherwise be
-// falsely reaped at the 10-minute search cutoff.
+// Short timeout only when EVERY target is search; a mixed monitor's crawl/scrape fan-out legitimately runs for many minutes.
 function isSearchOnlyCheck(check: { target_results?: unknown }): boolean {
   const targetResults = check.target_results;
   if (!Array.isArray(targetResults) || targetResults.length === 0) return false;

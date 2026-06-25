@@ -233,7 +233,7 @@ describe("FLAT deterministic search-monitor billing", () => {
     });
 
     it("judge ON: search call + flat 1 per judged result (capped at maxResults)", () => {
-      // search = ceil(10/10)*2*1 = 2; judge = 1 * min(maxResults, 10*1) = 10.
+      // search 2 + judge min(maxResults, 10) = 10.
       expect(estimateMonitorCreditsPerRun([searchTarget()], true)).toBe(12);
     });
 
@@ -248,15 +248,14 @@ describe("FLAT deterministic search-monitor billing", () => {
         maxResults: 20,
         queries: ["a", "b", "c"],
       });
-      // search = ceil((20*3)/10)*2 = 12; judge = 1 * 20 (maxResults cap, NOT *queries)
-      // = 20 → 32. The runner judges at most maxResults candidates total.
+      // search ceil((20*3)/10)*2 = 12; judge caps at maxResults (20, not *queries) -> 32.
       expect(estimateMonitorCreditsPerRun([t], true)).toBe(32);
     });
   });
 
   describe("flatSearchTargetCredits (the deterministic actual)", () => {
     it("sums searchCredits + judgeCredits across search target_results", () => {
-      // The headline trace: search 2 + judge 1*3 = 5.
+      // search 2 + judge 1*3 = 5.
       const targetResults = [
         {
           targetId: "search-1",
@@ -290,7 +289,7 @@ describe("FLAT deterministic search-monitor billing", () => {
           { targetId: "search-1", type: "search", searchCredits: 4 },
           null,
           "garbage",
-          { type: "search" }, // missing credits → contributes 0
+          { type: "search" }, // missing credits -> 0
         ]),
       ).toBe(4);
     });
@@ -322,15 +321,14 @@ describe("FLAT deterministic search-monitor billing", () => {
     });
 
     it("never bills 0 on a check that returned results and judged them", () => {
-      // results=6, judged=4 -> 2 + 4 = 6 (the judged#2 case that landed on 0).
+      // results=6, judged=4 -> 2 + 4 = 6 (regression: this case once landed on 0).
       const credits = flatSearchTargetCredits([stampedSearchRun(6, 4)]);
       expect(credits).toBe(6);
       expect(credits).toBeGreaterThan(0);
     });
 
     it("the RETRY path still bills: rate-limited-then-succeeded run is summed", () => {
-      // A run that hit rate-limiting, retried, and finally returned 6 results +
-      // judged 4 must record the SAME deterministic figure as a clean run — the
+      // A retried run must record the same figure as a clean run; the
       // searchCompleted=true guard ensures credits are stamped before summing.
       const retried = stampedSearchRun(6, 4);
       expect(retried.searchCompleted).toBe(true);
@@ -338,15 +336,14 @@ describe("FLAT deterministic search-monitor billing", () => {
     });
 
     it("search-only (judge off) bills just the search portion, never the judge", () => {
-      // results=6, judged=0 -> 2 + 0 = 2 (the raw case, which is already correct).
+      // results=6, judged=0 -> 2 + 0 = 2 (raw case).
       expect(flatSearchTargetCredits([stampedSearchRun(6, 0)])).toBe(2);
     });
 
     it("a still-running search (no credits stamped yet) sums to 0 — the reconciler must NOT finalize here", () => {
-      // This is the pre-stamp shape the dispatcher writes before the inline
-      // search finishes. flatSearchTargetCredits sees 0; the never-zero
-      // guarantee instead relies on isMonitorCheckComplete refusing to finalize
-      // a run whose searchCompleted flag is not yet true (see runner.ts).
+      // Pre-stamp shape the dispatcher writes before the inline search finishes.
+      // The never-zero guarantee relies on isMonitorCheckComplete refusing to
+      // finalize a run whose searchCompleted flag is not yet true (see runner.ts).
       const pending = { targetId: "search-1", type: "search" as const };
       expect((pending as any).searchCompleted).toBeUndefined();
       expect(flatSearchTargetCredits([pending])).toBe(0);
@@ -355,8 +352,8 @@ describe("FLAT deterministic search-monitor billing", () => {
 
   it("page-sum never bills search-target pages (cost is at the check level)", () => {
     const targets: MonitorTarget[] = [searchTarget()];
-    // Even with judgment + status, a search page contributes 0 to the page sum;
-    // its credits live in target_results via flatSearchTargetCredits.
+    // A search page contributes 0 to the page sum; its credits live in
+    // target_results via flatSearchTargetCredits.
     expect(
       calculateMonitorCheckActualCreditsFromPages(
         [

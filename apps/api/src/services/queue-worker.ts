@@ -87,11 +87,9 @@ const processDeepResearchJobInternal = async (
     });
 
     if (result.success) {
-      // Move job to completed state in Redis and update research status
       await job.moveToCompleted(result, token, false);
       return result;
     } else {
-      // If the deep research failed but didn't throw an error
       const error = new Error("Deep research failed without specific error");
       await updateDeepResearch(job.data.researchId, {
         status: "failed",
@@ -104,7 +102,7 @@ const processDeepResearchJobInternal = async (
   } catch (error) {
     logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
 
-    // Filter out TransportableErrors (flow control)
+    // Skip TransportableErrors: they're flow control, not failures.
     if (!(error instanceof TransportableError)) {
       Sentry.captureException(error, {
         data: {
@@ -114,7 +112,6 @@ const processDeepResearchJobInternal = async (
     }
 
     try {
-      // Move job to failed state in Redis
       await job.moveToFailed(error, token, false);
     } catch (e) {
       logger.error("Failed to move job to failed state in Redis", { error });
@@ -182,7 +179,7 @@ const processGenerateLlmsTxtJobInternal = async (
   } catch (error) {
     logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
 
-    // Filter out TransportableErrors (flow control)
+    // Skip TransportableErrors: they're flow control, not failures.
     if (!(error instanceof TransportableError)) {
       Sentry.captureException(error, {
         data: {
@@ -263,9 +260,9 @@ const workerFun = async (
 
   const worker = new Worker(queue.name, null, {
     connection: getRedisConnection(),
-    lockDuration: 60 * 1000, // 60 seconds
-    stalledInterval: 60 * 1000, // 60 seconds
-    maxStalledCount: 10, // 10 times
+    lockDuration: 60 * 1000,
+    stalledInterval: 60 * 1000,
+    maxStalledCount: 10,
   });
 
   worker.startStalledCheckTimer();
@@ -293,7 +290,7 @@ const workerFun = async (
         });
       }
 
-      await sleep(cantAcceptConnectionInterval); // more sleep
+      await sleep(cantAcceptConnectionInterval);
       continue;
     } else if (!currentLiveness) {
       logger.info("Not accepting jobs because the liveness check failed");
@@ -410,7 +407,6 @@ const crawlFinishWorker = async () => {
   }
 };
 
-// Start all workers
 const app = Express();
 
 let currentLiveness: boolean = true;

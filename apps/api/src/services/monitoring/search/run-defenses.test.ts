@@ -2,10 +2,7 @@ import type { Logger } from "winston";
 import type { SearchVerdict } from "./judge";
 import { canonicalizeUrl } from "./dedupe";
 
-// vi.mock is hoisted above declarations, so the mocks its factories reference
-// are created in vi.hoisted() (also hoisted) to avoid any TDZ surprises.
-// The lean pipeline has a single LLM stage: the deep-mode per-page JSON verdict,
-// produced by the injected scrapePage.
+// Mocks live in vi.hoisted() so the hoisted vi.mock factories can reference them.
 const { searchMock, scrapeURLMock } = vi.hoisted(() => ({
   searchMock: vi.fn(),
   scrapeURLMock: vi.fn(),
@@ -13,8 +10,7 @@ const { searchMock, scrapeURLMock } = vi.hoisted(() => ({
 
 vi.mock("uuid", () => ({ v7: () => "00000000-0000-7000-8000-000000000000" }));
 vi.mock("../../../search/v2", () => ({
-  // Tests set the mock to resolve a bare result array; the real search() returns
-  // a SearchV2Response ({ web: [...] }), so wrap arrays to match that contract.
+  // Tests resolve a bare array; wrap it to match search()'s SearchV2Response shape.
   search: async (...a: unknown[]) => {
     const r = await searchMock(...a);
     return Array.isArray(r) ? { web: r } : r;
@@ -63,8 +59,7 @@ function runParams(
       ...targetOver,
     },
     monitorCheckId: "check-1",
-    // scrapeURLMock keeps the legacy { success, document } shape; adapt it to the
-    // ScrapeSearchResult the injected scrapePage now returns.
+    // Adapt scrapeURLMock's legacy { success, document } shape to ScrapeSearchResult.
     scrapePage: async (...a: unknown[]) => {
       const r = (await scrapeURLMock(...a)) as {
         success?: boolean;
@@ -223,24 +218,22 @@ describe("event state stamps + judgment on alert pages", () => {
 
 describe("judgeEnabled gates the LLM judge", () => {
   it("judge OFF behaves like raw: no LLM stages, no LLM credits, no concept/rationale", async () => {
-    // Monitor still has a goal and depth:"deep" — but judgeEnabled=false must
-    // collapse to raw and skip every LLM stage.
+    // judgeEnabled=false collapses to raw and skips every LLM stage, even with goal + depth:"deep".
     searchMock.mockResolvedValue([serpRow(1), serpRow(2)]);
 
     const result = await runSearchTarget(
       runParams({ depth: "deep" }, { judgeEnabled: false }),
     );
 
-    // No judge stage ran: raw mode does not scrape.
+    // Raw mode does not scrape.
     expect(scrapeURLMock).not.toHaveBeenCalled();
 
-    // No judge credits billed (raw → nothing judged); search still ran and was billed.
+    // Nothing judged, but search still ran and was billed.
     expect(result.judgeCredits).toBe(0);
     expect(result.resultsJudged).toBe(0);
     expect(result.resultCount).toBe(2);
 
-    // Raw alerts: deterministic searchStatus from dedup, but no LLM
-    // concept/rationale on any upsert.
+    // Deterministic searchStatus from dedup, but no LLM concept/rationale.
     for (const upsert of result.pageUpserts) {
       expect(upsert.scraped).toBe(false);
       expect(upsert.metadata.concept).toBeUndefined();
@@ -286,7 +279,6 @@ describe("judgeEnabled gates the LLM judge", () => {
 
 describe("deep-path scrape failures mark the check degraded (no silent empty)", () => {
   beforeEach(() => {
-    // Two candidates scraped; scrape outcome varies per test.
     searchMock.mockResolvedValue([serpRow(1), serpRow(2)]);
   });
 
@@ -295,15 +287,15 @@ describe("deep-path scrape failures mark the check degraded (no silent empty)", 
 
     const result = await runSearchTarget(runParams({ depth: "deep" }));
 
-    // The false-negative we must surface: 0 judged / 0 alerts, but degraded.
+    // 0 judged / 0 alerts but degraded — the false-negative we must surface.
     expect(result.resultsJudged).toBe(0);
     expect(result.matches).toBe(0);
     expect(result.judgeDegraded).toBe(true);
     expect(result.degradedReason).toMatch(/judged|incomplete/i);
-    // A non-empty summary so the check never reads as a clean "nothing new".
+    // Non-empty summary so the check never reads as a clean "nothing new".
     expect(result.summary).not.toBe("");
-    // Each unscrapeable result is persisted as a "skipped" page so it surfaces
-    // as an error check page (skipped -> error) instead of silently vanishing.
+    // Each unscrapeable result is persisted as "skipped" so it surfaces as an
+    // error check page instead of silently vanishing.
     const skippedUpserts = result.pageUpserts.filter(
       u => u.status === "skipped",
     );
@@ -338,8 +330,8 @@ describe("deep-path scrape failures mark the check degraded (no silent empty)", 
 
     const result = await runSearchTarget(runParams({ depth: "deep" }));
 
-    // One result was actually judged (ignored) — that's a real evaluation, not a
-    // failure, so the check is NOT degraded even though a sibling scrape failed.
+    // One result judged (ignored) is a real evaluation, so NOT degraded even
+    // though a sibling scrape failed.
     expect(result.resultsJudged).toBe(1);
     expect(result.judgeDegraded).toBe(false);
     expect(result.degradedReason).toBeNull();
@@ -357,7 +349,7 @@ describe("deep-path scrape failures mark the check degraded (no silent empty)", 
 
     const result = await runSearchTarget(runParams({ depth: "deep" }));
 
-    // Everything scraped fine and was evaluated; judge ignored it all. Normal.
+    // Everything scraped and was evaluated; judge ignored it all. Normal.
     expect(result.resultsJudged).toBe(2);
     expect(result.matches).toBe(0);
     expect(result.judgeDegraded).toBe(false);
@@ -373,9 +365,8 @@ describe("deep-path scrape failures mark the check degraded (no silent empty)", 
     expect(result.judgeDegraded).toBe(false);
     expect(result.degradedReason).toBeNull();
     expect(scrapeURLMock).not.toHaveBeenCalled();
-    // An empty SERP hedges with a BOUNDED retry (1 initial + 2 quick retries),
-    // NOT the old 5-attempt / ~11s growing backoff. Lock the budget so a genuinely
-    // empty query concludes fast instead of stalling the whole check.
+    // An empty SERP hedges with a bounded retry (1 initial + 2 quick), so a
+    // genuinely empty query concludes fast instead of stalling the check.
     expect(searchMock).toHaveBeenCalledTimes(3);
   });
 
@@ -386,7 +377,7 @@ describe("deep-path scrape failures mark the check degraded (no silent empty)", 
       serpRow(3),
       serpRow(4),
     ]);
-    // Only result 1 scrapes + judges; results 2-4 all fail to scrape.
+    // Only result 1 scrapes + judges; 2-4 fail to scrape.
     scrapeURLMock.mockImplementation(({ url }: { url: string }) =>
       url === serpRow(1).url
         ? Promise.resolve({
@@ -404,8 +395,8 @@ describe("deep-path scrape failures mark the check degraded (no silent empty)", 
 
     expect(result.resultsJudged).toBe(1);
     expect(result.scrapeFailures).toBe(3);
-    // 3/(1+3) = 0.75 >= 0.5 -> soft partial-loss signal, but the run still
-    // produced a verdict so it is NOT a hard degrade.
+    // 3/(1+3) = 0.75 >= 0.5 -> soft partial-loss signal, but a verdict was
+    // produced so it is NOT a hard degrade.
     expect(result.partialScrapeLoss).toBe(true);
     expect(result.judgeDegraded).toBe(false);
   });
@@ -432,7 +423,7 @@ describe("run time budget (a single check can't wedge the consumer)", () => {
     vi.useFakeTimers();
     try {
       searchMock.mockResolvedValue([serpRow(1), serpRow(2)]);
-      // Scrapes never resolve — the pre-scrape can't finish on its own.
+      // Scrapes never resolve, so the pre-scrape can't finish on its own.
       scrapeURLMock.mockReturnValue(new Promise(() => {}));
 
       const pending = runSearchTarget(runParams({ depth: "deep" }));

@@ -44,14 +44,14 @@ describe("search-monitor FLAT judge billing rate", () => {
   });
 
   it("computes judge credits as 1 * resultsJudged", () => {
-    expect(judgeCreditsForJudgedCount(0)).toBe(0); // raw / judge-off
-    expect(judgeCreditsForJudgedCount(3)).toBe(3); // deep, 3 results judged
+    expect(judgeCreditsForJudgedCount(0)).toBe(0);
+    expect(judgeCreditsForJudgedCount(3)).toBe(3);
     expect(judgeCreditsForJudgedCount(10)).toBe(10);
   });
 });
 
-// Billed count == pages with judgedThisRun=true (not every page, not every page
-// with a concept — reused/skipped pages keep a stale concept but aren't judged).
+// Billed count == pages with judgedThisRun=true: reused/skipped pages keep a
+// stale concept but aren't judged, so concept count overcounts.
 describe("canonical judged-result count (billing == persisted signal)", () => {
   type Page = {
     searchStatus: string;
@@ -71,10 +71,10 @@ describe("canonical judged-result count (billing == persisted signal)", () => {
         concept: "stale-1",
       },
       { searchStatus: "watching", judgedThisRun: false, concept: "stale-2" },
-      { searchStatus: "skipped" }, // no verdict, no judgedThisRun
+      { searchStatus: "skipped" },
     ];
-    expect(pages.filter(p => p.concept).length).toBe(3); // the misleading count
-    expect(billedJudgedCount(pages)).toBe(1); // the canonical, billed count
+    expect(pages.filter(p => p.concept).length).toBe(3); // misleading count
+    expect(billedJudgedCount(pages)).toBe(1); // canonical billed count
     expect(judgeCreditsForJudgedCount(billedJudgedCount(pages))).toBe(1);
   });
 
@@ -86,6 +86,6 @@ describe("canonical judged-result count (billing == persisted signal)", () => {
       { searchStatus: "already_seen", judgedThisRun: true },
       { searchStatus: "skipped" }, // verdict failed -> not billed
     ];
-    expect(billedJudgedCount(pages)).toBe(4); // -> 1*4 = 4 judge credits
+    expect(billedJudgedCount(pages)).toBe(4); // -> 4 judge credits
   });
 });

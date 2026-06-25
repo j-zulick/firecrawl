@@ -1,8 +1,6 @@
 const SEARCH_CREDITS_PER_TEN_RESULTS = 2;
 const SEARCH_CREDITS_PER_TEN_RESULTS_ZDR = 10;
-// The single source of truth for the per-judged-result judge credit rate.
-// Tests MUST import this rather than re-declaring a literal (which previously
-// drifted to 5 and silently misrepresented billing).
+// Single source of truth for the judge credit rate; import it rather than re-declaring (a duplicate literal previously drifted to 5).
 export const SEARCH_JUDGE_CREDITS_PER_RESULT = 1;
 
 export function searchCreditsForResultCount(

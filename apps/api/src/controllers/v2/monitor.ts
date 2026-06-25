@@ -376,7 +376,7 @@ export async function updateMonitorController(
     }),
   );
 
-  // Only re-sync when notification config actually changed.
+  // Only re-sync when notification config changed.
   let subscriptions: Awaited<
     ReturnType<typeof loadEmailRecipientSubscriptions>
   > = [];
@@ -594,12 +594,11 @@ export async function getMonitorCheckController(
   });
 }
 
-// Unauthenticated POST endpoints — the token is the credential. Backs the
-// firecrawl-web confirm/unsubscribe pages; POST-only so passive GET scanners
-// can't consume tokens against the dashboard URL.
+// Unauthenticated: the token is the credential. POST-only so passive GET
+// scanners can't consume tokens via the dashboard URL.
 
 const emailActionBodySchema = z.object({
-  // 32-byte base64url is 43 chars; range leaves room for future formats.
+  // 32-byte base64url is 43 chars; range leaves room for other formats.
   token: z.string().min(16).max(64),
 });
 
@@ -653,8 +652,7 @@ export async function confirmMonitorEmailController(
 
     const monitorName = await getMonitorNameById(row.monitor_id);
 
-    // Heuristic: if confirmed_at is older than 5s, this call was a no-op
-    // (already confirmed). Used only to flavor the rendered page.
+    // confirmed_at older than 5s means this call was a no-op (already confirmed).
     let result: "confirmed" | "already_confirmed" | "already_unsubscribed";
     if (row.status === "unsubscribed") {
       result = "already_unsubscribed";

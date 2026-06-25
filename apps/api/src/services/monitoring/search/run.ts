@@ -16,8 +16,7 @@ import {
   judgeCreditsForJudgedCount,
 } from "./billing";
 
-// Shared dedup decision for a search result, used by both the pre-scrape pass and
-// the per-result loop so they never disagree on which results to scrape/judge.
+// Shared dedup decision so the pre-scrape pass and per-result loop never disagree.
 function evaluateSerpCandidate(
   c: { url: string; title: string; description: string },
   knownPages: Map<string, KnownPage>,
@@ -58,31 +57,20 @@ function windowToTbs(window: string): string {
   return "qdr:w";
 }
 
-// A successful-but-empty SERP almost always means a genuine "no results" for this
-// query+window — NOT a transient failure. The backend can occasionally return 0 for
-// a query that succeeds a moment later, so hedge with a couple of QUICK retries, but
-// don't burn ~11s of growing backoff (the old [400,1200,3000,6000]) on a query that
-// simply has no matches — that latency stacks across queries and slows every check
-// whose results legitimately don't exist.
+// Empty SERPs are usually genuine "no results", not transient — hedge with a couple
+// of quick retries, but don't burn long backoff on queries that simply have no matches.
 const SEARCH_EMPTY_RETRY_BACKOFF_MS = [500, 1000] as const;
 
-// Hard wall-clock budget for a single inline search run. The deep-mode page
-// scrapes are the only unbounded-ish step (each is capped at 20s, but a large
-// candidate set could still add up); if the concurrent pre-scrape blows past
-// this, we stop waiting and let the remaining candidates fall through as
-// skipped/degraded rather than holding the consumer. Kept well under the
-// 10-minute search stale timeout so a run always returns before the reaper.
+// Wall-clock budget per run; if the pre-scrape blows past it, remaining candidates
+// fall through as skipped/degraded. Kept under the 10-min stale timeout so a run
+// always returns before the reaper.
 const SEARCH_RUN_BUDGET_MS = 4 * 60 * 1000;
 
-// Deep-mode page scrapes run INLINE in the worker process (skipNuq), so they are
-// NOT bounded by NuQ's per-team/global concurrency. Cap the pre-scrape fan-out
-// ourselves so a single maxResults=50 check can't launch 50 simultaneous
-// fetch+LLM-extraction scrapes and starve the worker that owns the search consumer.
+// Deep-mode scrapes run inline (skipNuq), so NuQ concurrency doesn't bound them; cap
+// the fan-out ourselves so one maxResults=50 check can't starve the search consumer.
 const SEARCH_SCRAPE_CONCURRENCY = 6;
 
-// Run fn over items with at most `limit` in flight at once. Never rejects per the
-// caller's needs — fn is expected to swallow its own errors (it writes outcomes
-// into a shared cache).
+// Never rejects: fn is expected to swallow its own errors into a shared cache.
 async function mapWithConcurrency<T>(
   items: T[],
   limit: number,
@@ -99,9 +87,8 @@ async function mapWithConcurrency<T>(
   await Promise.all(pool);
 }
 
-// Race a promise against a wall-clock deadline. Resolves false if the work
-// finishes first, true if the deadline hits. Never rejects; the underlying work
-// keeps running (bounded by its own per-scrape timeout) and populates its cache.
+// Resolves true if the deadline hits first, false if the work finishes. Never
+// rejects; the underlying work keeps running and populates its cache.
 async function raceDeadline(
   work: Promise<unknown>,
   budgetMs: number,
@@ -198,9 +185,7 @@ export type KnownEvent = {
   alertCount?: number;
 };
 
-// Deep-mode page scrape. Injected by the caller so it can route through the
-// shared monitor scrape path (concurrency queue + bypassBilling), keeping this
-// module free of worker/queue dependencies. Resolves to null on scrape failure.
+// Injected by the caller so this module stays free of worker/queue dependencies.
 export type ScrapeSearchResult = {
   json: unknown;
   markdown: string;
@@ -233,9 +218,8 @@ type SearchTargetRunResult = {
   summary: string;
   judgeDegraded: boolean;
   degradedReason: string | null;
-  // Per-page scrape failures in deep mode. partialScrapeLoss is a SOFT signal
-  // (distinct from judgeDegraded): some results judged, but a majority of the
-  // attempted scrapes failed — the run is usable but likely missed developments.
+  // partialScrapeLoss is a soft signal (distinct from judgeDegraded): some results
+  // judged, but most scrapes failed — usable but likely missed developments.
   scrapeFailures: number;
   partialScrapeLoss: boolean;
   sources: SearchSource[];
@@ -345,8 +329,7 @@ export async function runSearchTarget(params: {
   }
   resultCount = candidates.length;
 
-  // An empty retrieval is indistinguishable from "nothing matched", so log it to
-  // make a genuine miss diagnosable.
+  // An empty retrieval is indistinguishable from "nothing matched"; log to diagnose.
   if (resultCount === 0) {
     logger.warn(
       "search monitor: all queries returned no results after retries",
@@ -359,9 +342,7 @@ export async function runSearchTarget(params: {
   }
 
   const llmStagesAvailable = hasLlmProvider();
-  // Judge depth is raw (no LLM) or deep (per-page scrape + verdict). Standard
-  // (snippet-only judging) was removed: it was unreachable via the API (depth is
-  // stripped) and used a divergent LLM provider; deep is the single judged path.
+  // raw (no LLM) or deep (per-page scrape + verdict); the former "standard" path was removed.
   const depth: "raw" | "deep" =
     !judgeEnabled || target.depth === "raw" ? "raw" : "deep";
 
@@ -371,17 +352,15 @@ export async function runSearchTarget(params: {
 
   const recheckMs = target.recheckAfter ? windowToMs(target.recheckAfter) : 0;
 
-  // Pre-scrape deep-mode pages (bounded concurrency) and cache them, so the loop
-  // below isn't a serial scrape→judge→scrape chain. Only the I/O is parallel; all
-  // dedup/event state stays in the single-threaded loop. These scrapes run inline
-  // (skipNuq), so the fan-out is bounded by SEARCH_SCRAPE_CONCURRENCY, not NuQ.
+  // Pre-scrape deep-mode pages (bounded concurrency) into a cache so the loop isn't
+  // a serial scrape→judge chain. Only the I/O is parallel; dedup/event state stays
+  // in the single-threaded loop.
   const deepDocs = new Map<
     string,
     { doc: ScrapeSearchResult | null; error?: unknown }
   >();
-  // Set if the concurrent pre-scrape exceeds the run budget: any candidate not
-  // yet cached is then treated as a scrape failure instead of being inline-scraped,
-  // so the loop returns promptly rather than holding the consumer.
+  // If the pre-scrape exceeds the run budget, uncached candidates are treated as
+  // scrape failures rather than inline-scraped, so the loop returns promptly.
   let budgetExceeded = false;
   if (depth === "deep" && llmStagesAvailable) {
     const judgePrompt = buildJudgePrompt(
@@ -533,8 +512,7 @@ export async function runSearchTarget(params: {
           eventAlertCount,
           eventLastAlertAt: nowIso,
         },
-        // Raw mode does not run the judge, so it carries no judgment — these are
-        // surfaced as new results, not evaluated as "meaningful".
+        // Raw mode runs no judge: surfaced as new results, not evaluated as "meaningful".
       });
       continue;
     }
@@ -542,7 +520,7 @@ export async function runSearchTarget(params: {
     let verdict: SearchVerdict | null = null;
     let realDate: string | null = null;
     {
-      // Deep mode: read the doc from the pre-scrape cache; scrape inline only as a fallback.
+      // Read from the pre-scrape cache; scrape inline only as a fallback.
       let doc: ScrapeSearchResult | null;
       const cached = deepDocs.get(canonical);
       if (cached?.error !== undefined) {
@@ -556,9 +534,8 @@ export async function runSearchTarget(params: {
         );
         continue;
       }
-      // The pre-scrape ran out of time before caching this page. Treat it as a
-      // scrape failure rather than inline-scraping (which would re-incur the time
-      // we just budgeted out of), so the run returns promptly.
+      // Out of budget before caching this page: treat as a scrape failure rather
+      // than inline-scraping (which would re-incur the time we just budgeted out of).
       if (!cached && budgetExceeded) {
         judgeScrapeFailures += 1;
         pushUnevaluatedPage("run budget exceeded before scrape");
@@ -654,8 +631,7 @@ export async function runSearchTarget(params: {
     const eventKey = canonical;
     const eventLabel = verdict.concept || canonical;
 
-    // Re-alert on every new result only in every_new_result mode; otherwise the
-    // canonical URL is deduped so we don't re-alert the same page.
+    // Re-alert on every new result only in every_new_result mode; otherwise dedup.
     const alreadySatisfied =
       satisfied.has(eventKey) && target.alertMode !== "every_new_result";
     const eventMeta = { ...baseMeta, eventKey, eventLabel };
@@ -759,9 +735,8 @@ export async function runSearchTarget(params: {
     ? "results were found but none could be judged; results may be incomplete"
     : null;
 
-  // Soft signal (NOT judgeDegraded): the run produced verdicts, but a majority of
-  // the attempted deep scrapes failed, so it likely missed real developments.
-  // Surfaced for observability; does not fail the check.
+  // Soft signal (not judgeDegraded): verdicts produced but most scrapes failed, so
+  // it likely missed real developments. Surfaced for observability; doesn't fail the check.
   const partialScrapeLoss =
     resultsJudged > 0 &&
     judgeScrapeFailures > 0 &&

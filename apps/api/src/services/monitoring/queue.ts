@@ -6,8 +6,7 @@ const MONITOR_CHECK_QUEUE = "monitor.checks";
 const MONITOR_CHECK_DLX = "monitor.checks.dlx";
 const MONITOR_CHECK_DLQ = "monitor.checks.dlq";
 
-// Search checks are far heavier than scrape/crawl checks, so they get a dedicated
-// queue + consumer — a burst of them can't starve the page/site/batch checks.
+// Dedicated queue so a burst of heavy search checks can't starve page/site/batch checks.
 const MONITOR_SEARCH_CHECK_QUEUE = "monitor.checks.search";
 const MONITOR_SEARCH_CHECK_DLX = "monitor.checks.search.dlx";
 const MONITOR_SEARCH_CHECK_DLQ = "monitor.checks.search.dlq";
@@ -23,33 +22,26 @@ export type MonitorCheckJobData = {
 type ConsumerHandler = (data: MonitorCheckJobData) => Promise<void>;
 
 let connection: amqp.ChannelModel | null = null;
-// Publish and consume use separate channels: a channel exception on one side
-// (a failed publish, or a PRECONDITION_FAILED on assert) must not tear down the
-// other.
+// Separate publish/consume channels so an exception on one can't tear down the other.
 let publishChannel: amqp.Channel | null = null;
 let consumeChannel: amqp.Channel | null = null;
-// In-flight creation promises. Channel creation suspends on async asserts before
-// the channel is assigned, so two concurrent callers (e.g. the two consume
-// registrations started together at worker boot) would each create a channel and
-// orphan one. Memoizing the promise serializes concurrent callers onto one.
+// Memoized creation promises serialize concurrent callers onto one channel; without
+// this, two callers racing during the async asserts would each create one and orphan one.
 let publishChannelPromise: Promise<amqp.Channel> | null = null;
 let consumeChannelPromise: Promise<amqp.Channel> | null = null;
 
-// Registry of every consumer registered this process, so we can re-attach them
-// after a connection/channel drop. Without this the worker — which never
-// produces and so never re-triggers channel creation — goes permanently deaf
-// after any RabbitMQ blip, and only a restart heals it.
+// Registry of consumers so a reconnect can re-attach them; the worker never produces,
+// so without this it goes permanently deaf after any RabbitMQ blip until restart.
 const registeredConsumers: Array<{ queue: string; handler: ConsumerHandler }> =
   [];
-// Queues with a live consumer on the CURRENT consume channel. Cleared whenever
-// the channel drops, so a reconnect re-subscribes exactly once per queue and
-// repeated drops can't pile up duplicate consumers.
+// Queues with a live consumer on the CURRENT consume channel; cleared on drop so a
+// reconnect re-subscribes exactly once per queue and can't pile up duplicates.
 const subscribedQueues = new Set<string>();
 let reconnectInFlight = false;
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
 
-// Declare a check queue + its dead-letter exchange/queue (same topology for both).
+// Declare a check queue plus its dead-letter exchange/queue.
 async function assertCheckQueue(
   ch: amqp.Channel,
   queue: string,
@@ -90,8 +82,7 @@ async function assertTopology(ch: amqp.Channel): Promise<void> {
   );
 }
 
-// Drop all cached state and, if any consumers were registered, kick off a
-// backoff reconnect that re-asserts topology and re-subscribes every consumer.
+// Drop cached state and, if any consumers are registered, kick off a backoff reconnect.
 function handleConnectionDrop(reason: string, error?: unknown): void {
   if (connection || publishChannel || consumeChannel) {
     logger.warn("Monitor queue dropped — will reconnect", { reason, error });
@@ -128,11 +119,9 @@ function scheduleReconnect(delayMs: number): void {
         error,
         nextDelayMs: nextDelay,
       });
-      // Best-effort close the half-set-up channel, then reset ALL cached state —
-      // including subscribedQueues. If a mid-loop subscribe() failed on an
-      // otherwise-healthy channel (so its "close" never fires), leaving
-      // subscribedQueues populated would make the next reconnect skip that queue
-      // (subscribe() early-returns on subscribedQueues.has) and deafen it forever.
+      // Reset ALL cached state including subscribedQueues: a mid-loop subscribe()
+      // failure on a healthy channel never fires "close", so a stale entry would
+      // make the next reconnect skip (subscribe early-returns) and deafen that queue.
       await consumeChannel?.close().catch(() => {});
       connection = null;
       publishChannel = null;
@@ -153,8 +142,7 @@ async function getConnection(): Promise<amqp.ChannelModel> {
     throw new Error("NUQ_RABBITMQ_URL is not configured");
   }
 
-  // Name the connection so operators can identify (and isolate) monitoring
-  // traffic in `rabbitmqctl list_connections` / the management UI.
+  // Name the connection so operators can identify monitoring traffic in the management UI.
   const conn = await amqp.connect(url, {
     clientProperties: { connection_name: "monitoring-queue" },
   });
@@ -170,9 +158,8 @@ async function createChannel(label: string): Promise<amqp.Channel> {
   const conn = await getConnection();
   const ch = await conn.createChannel();
   await assertTopology(ch);
-  // Channels can close independently of the connection (e.g. a
-  // PRECONDITION_FAILED from assertQueue). Without these handlers the cached
-  // channel would stay non-null and every send/consume would throw forever.
+  // Channels can close independently of the connection (e.g. PRECONDITION_FAILED);
+  // without this the cached channel stays non-null and every send/consume throws forever.
   ch.on("close", () => {
     if (label === "publish" && publishChannel === ch) {
       publishChannel = null;
@@ -254,7 +241,6 @@ async function consumeQueue(
   queue: string,
   handler: ConsumerHandler,
 ): Promise<void> {
-  // Record the registration so a reconnect can re-attach this consumer.
   if (!registeredConsumers.some(c => c.queue === queue)) {
     registeredConsumers.push({ queue, handler });
   }
@@ -267,11 +253,9 @@ async function subscribe(
   queue: string,
   handler: ConsumerHandler,
 ): Promise<void> {
-  // Already consuming this queue on the current channel — don't add a duplicate
-  // (a reconnect could otherwise re-subscribe an already-subscribed queue).
+  // Don't add a duplicate consumer if a reconnect re-subscribes an already-subscribed queue.
   if (subscribedQueues.has(queue)) return;
-  // Per-consumer prefetch (amqplib default): each consumer gets its own in-flight
-  // slot, so the search and default consumers don't block each other.
+  // Per-consumer prefetch (amqplib default) so search and default consumers don't block each other.
   await ch.prefetch(1);
 
   await ch.consume(

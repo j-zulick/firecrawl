@@ -48,8 +48,8 @@ const monitorDomainSchema = z
     "Domain must be a valid hostname without protocol or path",
   );
 
-// depth/alertMode/recheckAfter are internal-only; scrapeOptions is unused for
-// search. Strip them before validation so older clients sending them don't 400.
+// Strip internal-only depth/alertMode/recheckAfter (and search-unused scrapeOptions)
+// before validation so older clients sending them don't 400.
 const searchTargetSchema = z.preprocess(
   value => {
     if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -138,9 +138,8 @@ const monitorNotificationInner = z.strictObject({
     })
     .optional(),
 });
-// Create defaults a missing notification to {}. The UPDATE schema deliberately
-// does NOT (see updateMonitorSchema) — a default there would materialize {} on
-// any PATCH that omits notification and wipe the stored email config.
+// Create defaults a missing notification to {}; the UPDATE schema deliberately does
+// not (a default there would materialize {} on a PATCH and wipe the stored email config).
 const monitorNotificationSchema = monitorNotificationInner
   .optional()
   .default({});
@@ -196,9 +195,8 @@ export const createMonitorSchema = createMonitorBaseSchema
   .superRefine(requireGoalForSearchTargets)
   .transform(applyJudgeEnabledDefault);
 
-// Patches are partial and may rely on the already-stored goal, so only reject
-// when the patch includes search targets AND explicitly clears the goal. The
-// controller re-validates the merged monitor.
+// Patches may rely on the already-stored goal, so only reject when the patch has
+// search targets AND explicitly clears the goal; the controller re-validates the merge.
 function rejectGoalClearedWithSearchTargets(
   input: { targets?: unknown; goal?: unknown; judgeEnabled?: unknown },
   ctx: z.RefinementCtx,
@@ -226,13 +224,10 @@ export const updateMonitorSchema = createMonitorBaseSchema
   .partial()
   .extend({
     status: z.enum(["active", "paused"]).optional(),
-    // Override the create-path notification (which defaults to {}): on update a
-    // default would materialize {} for a PATCH that omits notification and wipe
-    // the stored email config. No default => omitted means "leave unchanged".
+    // No default => omitted means "leave unchanged"; a default would materialize {} on
+    // a PATCH and wipe the stored email config.
     notification: monitorNotificationInner.optional(),
-    // Same default-materialization trap: createMonitorBaseSchema gives
-    // retentionDays .default(30), so a partial PATCH that omits it would parse to
-    // 30 and silently reset a user's configured retention. Drop the default here.
+    // Drop the create-path .default(30): otherwise an omitting PATCH resets configured retention.
     retentionDays: z.number().int().positive().max(365).optional(),
   })
   .superRefine(rejectGoalClearedWithSearchTargets)
@@ -265,16 +260,15 @@ export const monitorCheckDetailQuerySchema = z.object({
   status: z.enum(["same", "new", "changed", "removed", "error"]).optional(),
 });
 
-// Stripped from API input (see searchTargetSchema), but stored targets may
-// still carry them; surface as optional internal-only fields so runner/store
-// can read stored values without type errors.
+// Stripped from API input but stored targets may carry them; surface as optional
+// internal-only fields so runner/store can read stored values without type errors.
 export type MonitorTarget = z.infer<typeof monitorTargetSchema> & {
   id: string;
 } & {
   depth?: "raw" | "standard" | "deep";
   alertMode?: "first_match" | "every_new_result" | "material_dev";
   recheckAfter?: "1h" | "6h" | "24h" | "7d";
-  // Present on scrape/crawl, absent on search; optional so union reads compile.
+  // Absent on search; optional so union reads compile.
   scrapeOptions?: z.infer<typeof scrapeOptionsSchema>;
 };
 export type CreateMonitorRequest = z.infer<typeof createMonitorSchema>;

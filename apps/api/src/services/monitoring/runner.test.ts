@@ -69,7 +69,7 @@ describe("monitoring runner", () => {
     });
 
     it("uses the shorter search timeout when the check has a search target", () => {
-      // 11 minutes old: past the 10-min search cutoff but well under 1 hour.
+      // 11 min: past the 10-min search cutoff, under the 1-hour scrape cutoff.
       const elevenMinAgo = new Date(
         now.getTime() - 11 * 60 * 1000,
       ).toISOString();
@@ -78,22 +78,20 @@ describe("monitoring runner", () => {
         updated_at: now.toISOString(),
         created_at: now.toISOString(),
       };
-      // Scrape check: not stale yet (1-hour timeout).
       expect(
         isMonitorCheckStale(
           { ...base, target_results: [{ type: "scrape", targetId: "t1" }] },
           now,
         ),
       ).toBe(false);
-      // Search check: stale (10-minute timeout).
       expect(
         isMonitorCheckStale(
           { ...base, target_results: [{ type: "search", targetId: "t1" }] },
           now,
         ),
       ).toBe(true);
-      // MIXED search+crawl: keeps the 1-hour timeout (the crawl can legitimately
-      // run for many minutes) — must NOT be reaped at 11 minutes.
+      // Mixed search+crawl keeps the 1-hour timeout: the crawl can legitimately
+      // run for many minutes and must not be reaped at 11 minutes.
       expect(
         isMonitorCheckStale(
           {
@@ -110,10 +108,8 @@ describe("monitoring runner", () => {
   });
 });
 
-// The redelivery-idempotency guard: on a re-delivered check, the runner must
-// recognize a search target that ALREADY completed (searchCompleted:true) and
-// restore its persisted figures instead of re-running the search + re-scraping +
-// re-billing. findCompletedSearchTargetRun is that decision.
+// On a re-delivered check, an already-completed search target (searchCompleted)
+// must restore persisted figures instead of re-running/re-scraping/re-billing.
 describe("findCompletedSearchTargetRun (redelivery idempotency)", () => {
   const completed = {
     type: "search",
@@ -169,9 +165,8 @@ describe("findCompletedSearchTargetRun (redelivery idempotency)", () => {
       null,
       "garbage",
     ];
-    // t1's first (incomplete) entry must not match; the completed t1 does — but
-    // since find() returns the first match and the incomplete one is filtered by
-    // searchCompleted, the completed entry (also t1) is the one returned.
+    // t1's first (incomplete) entry is filtered by searchCompleted, so the
+    // completed t1 entry is the one returned.
     const found = findCompletedSearchTargetRun(results, "t1");
     expect(found).toMatchObject({ searchCredits: 2 });
   });

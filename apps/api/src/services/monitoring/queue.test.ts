@@ -1,7 +1,3 @@
-// Unit coverage for the branch's core RabbitMQ rework: prefetch(1), the
-// subscribe dedup guard, the message ack/nack contract, and — most importantly —
-// the reconnect/resubscribe wrapper (the A4 fix: a dropped consumer must
-// re-subscribe and never go permanently deaf).
 import type { Mock } from "vitest";
 
 const { connectMock, channelMock, connectionMock } = vi.hoisted(() => {
@@ -40,7 +36,6 @@ vi.mock("../../lib/logger", () => {
   return { logger: mk() };
 });
 
-// Pull the close handler that createChannel registered via ch.on("close", cb).
 function consumeChannelCloseHandler(): () => void {
   const call = (channelMock.on as Mock).mock.calls.find(c => c[0] === "close");
   return call?.[1] as () => void;
@@ -75,7 +70,6 @@ describe("monitoring queue (RabbitMQ wrapper)", () => {
     await q.consumeMonitorCheckJobs(vi.fn());
     await q.consumeMonitorCheckJobs(vi.fn());
 
-    // subscribedQueues guard => consume attached exactly once for the queue.
     expect(channelMock.consume).toHaveBeenCalledTimes(1);
   });
 
@@ -100,7 +94,7 @@ describe("monitoring queue (RabbitMQ wrapper)", () => {
     expect(channelMock.nack).not.toHaveBeenCalled();
 
     const boom = vi.fn().mockRejectedValue(new Error("handler boom"));
-    const q2mod = q; // same module instance, second queue consumer
+    const q2mod = q;
     await q2mod.consumeMonitorSearchCheckJobs(boom);
     const onSearchMessage = channelMock.consume.mock.calls.at(-1)![1];
     const msg2 = {
@@ -120,15 +114,13 @@ describe("monitoring queue (RabbitMQ wrapper)", () => {
       await q.consumeMonitorCheckJobs(vi.fn());
       expect(channelMock.consume).toHaveBeenCalledTimes(1);
 
-      // Simulate the consume channel closing (a RabbitMQ blip).
       const onClose = consumeChannelCloseHandler();
       expect(onClose).toBeTypeOf("function");
       onClose();
 
-      // The reconnect is scheduled on a backoff timer; advance past it.
+      // Reconnect is on a backoff timer; advance past it.
       await vi.advanceTimersByTimeAsync(1500);
 
-      // The registered consumer was re-attached on the fresh channel.
       expect(channelMock.consume.mock.calls.length).toBeGreaterThanOrEqual(2);
       expect(channelMock.consume.mock.calls.at(-1)![0]).toBe("monitor.checks");
     } finally {
