@@ -230,6 +230,10 @@ export const updateMonitorSchema = createMonitorBaseSchema
     // default would materialize {} for a PATCH that omits notification and wipe
     // the stored email config. No default => omitted means "leave unchanged".
     notification: monitorNotificationInner.optional(),
+    // Same default-materialization trap: createMonitorBaseSchema gives
+    // retentionDays .default(30), so a partial PATCH that omits it would parse to
+    // 30 and silently reset a user's configured retention. Drop the default here.
+    retentionDays: z.number().int().positive().max(365).optional(),
   })
   .superRefine(rejectGoalClearedWithSearchTargets)
   .refine(x => Object.keys(x).length > 0, "Update body cannot be empty");

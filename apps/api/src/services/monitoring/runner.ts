@@ -1199,7 +1199,8 @@ async function runMonitorSearchTarget(params: {
 
 // Find a persisted search target run that already completed, so a redelivered
 // check can restore its figures instead of re-running (and re-billing) it.
-function findCompletedSearchTargetRun(
+// Exported for unit coverage of the redelivery-idempotency decision.
+export function findCompletedSearchTargetRun(
   targetResults: unknown,
   targetId: string,
 ): Record<string, unknown> | null {

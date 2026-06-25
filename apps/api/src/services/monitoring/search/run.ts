@@ -58,9 +58,13 @@ function windowToTbs(window: string): string {
   return "qdr:w";
 }
 
-// Retry an empty result with growing backoff — the backend sometimes returns 0 for
-// a query that succeeds moments later.
-const SEARCH_RETRY_BACKOFF_MS = [400, 1200, 3000, 6000] as const;
+// A successful-but-empty SERP almost always means a genuine "no results" for this
+// query+window — NOT a transient failure. The backend can occasionally return 0 for
+// a query that succeeds a moment later, so hedge with a couple of QUICK retries, but
+// don't burn ~11s of growing backoff (the old [400,1200,3000,6000]) on a query that
+// simply has no matches — that latency stacks across queries and slows every check
+// whose results legitimately don't exist.
+const SEARCH_EMPTY_RETRY_BACKOFF_MS = [500, 1000] as const;
 
 // Hard wall-clock budget for a single inline search run. The deep-mode page
 // scrapes are the only unbounded-ish step (each is capped at 20s, but a large
@@ -117,7 +121,7 @@ async function searchWithRetry(
   args: Parameters<typeof search>[0],
   logger: Logger,
 ): Promise<Awaited<ReturnType<typeof search>>> {
-  const maxAttempts = SEARCH_RETRY_BACKOFF_MS.length + 1;
+  const maxAttempts = SEARCH_EMPTY_RETRY_BACKOFF_MS.length + 1;
   let lastResponse: Awaited<ReturnType<typeof search>> = {};
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -129,7 +133,7 @@ async function searchWithRetry(
 
     const isLastAttempt = attempt === maxAttempts - 1;
     if (!isLastAttempt) {
-      const base = SEARCH_RETRY_BACKOFF_MS[attempt];
+      const base = SEARCH_EMPTY_RETRY_BACKOFF_MS[attempt];
       const jitter = Math.floor(Math.random() * 250);
       logger.info("search monitor query empty; retrying", {
         query: args.query,

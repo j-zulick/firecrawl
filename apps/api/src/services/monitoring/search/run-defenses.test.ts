@@ -373,6 +373,10 @@ describe("deep-path scrape failures mark the check degraded (no silent empty)", 
     expect(result.judgeDegraded).toBe(false);
     expect(result.degradedReason).toBeNull();
     expect(scrapeURLMock).not.toHaveBeenCalled();
+    // An empty SERP hedges with a BOUNDED retry (1 initial + 2 quick retries),
+    // NOT the old 5-attempt / ~11s growing backoff. Lock the budget so a genuinely
+    // empty query concludes fast instead of stalling the whole check.
+    expect(searchMock).toHaveBeenCalledTimes(3);
   });
 
   it("flags partialScrapeLoss (soft signal, NOT degraded) when most scrapes fail but some judge", async () => {

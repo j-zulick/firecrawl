@@ -4,6 +4,7 @@ vi.mock("uuid", () => ({
 
 import {
   estimateActualCredits,
+  findCompletedSearchTargetRun,
   isMonitorCheckStale,
   MONITOR_CHECK_STALE_TIMEOUT_MS,
 } from "./runner";
@@ -106,5 +107,80 @@ describe("monitoring runner", () => {
         ),
       ).toBe(false);
     });
+  });
+});
+
+// The redelivery-idempotency guard: on a re-delivered check, the runner must
+// recognize a search target that ALREADY completed (searchCompleted:true) and
+// restore its persisted figures instead of re-running the search + re-scraping +
+// re-billing. findCompletedSearchTargetRun is that decision.
+describe("findCompletedSearchTargetRun (redelivery idempotency)", () => {
+  const completed = {
+    type: "search",
+    targetId: "t1",
+    searchCompleted: true,
+    resultCount: 5,
+    matches: 2,
+    searchCredits: 2,
+    judgeCredits: 4,
+  };
+
+  it("returns the completed run for a matching, searchCompleted target (skip re-run)", () => {
+    const found = findCompletedSearchTargetRun([completed], "t1");
+    expect(found).not.toBeNull();
+    expect(found).toMatchObject({
+      targetId: "t1",
+      searchCredits: 2,
+      matches: 2,
+    });
+  });
+
+  it("returns null when the search target has NOT completed (must re-run)", () => {
+    expect(
+      findCompletedSearchTargetRun(
+        [{ type: "search", targetId: "t1", searchCompleted: false }],
+        "t1",
+      ),
+    ).toBeNull();
+    // searchCompleted absent entirely
+    expect(
+      findCompletedSearchTargetRun([{ type: "search", targetId: "t1" }], "t1"),
+    ).toBeNull();
+  });
+
+  it("returns null when the targetId does not match", () => {
+    expect(findCompletedSearchTargetRun([completed], "other")).toBeNull();
+  });
+
+  it("ignores non-search completed targets (a finished scrape is not a search run)", () => {
+    expect(
+      findCompletedSearchTargetRun(
+        [{ type: "scrape", targetId: "t1", searchCompleted: true }],
+        "t1",
+      ),
+    ).toBeNull();
+  });
+
+  it("picks the right target out of a mixed target_results array", () => {
+    const results = [
+      { type: "scrape", targetId: "s1" },
+      { type: "search", targetId: "t1", searchCompleted: false },
+      completed,
+      null,
+      "garbage",
+    ];
+    // t1's first (incomplete) entry must not match; the completed t1 does — but
+    // since find() returns the first match and the incomplete one is filtered by
+    // searchCompleted, the completed entry (also t1) is the one returned.
+    const found = findCompletedSearchTargetRun(results, "t1");
+    expect(found).toMatchObject({ searchCredits: 2 });
+  });
+
+  it("returns null for non-array / empty / malformed input", () => {
+    expect(findCompletedSearchTargetRun(undefined, "t1")).toBeNull();
+    expect(findCompletedSearchTargetRun(null, "t1")).toBeNull();
+    expect(findCompletedSearchTargetRun([], "t1")).toBeNull();
+    expect(findCompletedSearchTargetRun("nope", "t1")).toBeNull();
+    expect(findCompletedSearchTargetRun([null, "x", 5], "t1")).toBeNull();
   });
 });
