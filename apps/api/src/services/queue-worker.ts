@@ -21,7 +21,6 @@ import Express from "express";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
-import { warmDataLayerCapabilities } from "../lib/data-layer";
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
@@ -466,7 +465,6 @@ app.listen(workerPort, (error?: Error) => {
   });
 
   initializeEngineForcing();
-  await warmDataLayerCapabilities();
 
   if (config.USE_DB_AUTHENTICATION && !config.DISABLE_MONITORING) {
     monitorSchedulerInterval = setInterval(() => {

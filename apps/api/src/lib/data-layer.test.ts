@@ -12,7 +12,6 @@ import {
   isSuccessfulDataLayerStatusCode,
   isSupportedDataLayerFormatRequest,
   setDataLayerCapabilitiesForTest,
-  warmDataLayerCapabilities,
 } from "./data-layer";
 
 vi.mock("undici", () => ({
@@ -66,25 +65,6 @@ describe("data layer routing", () => {
     await expect(
       isDataLayerSupportedUrl("https://profiles.example/person/example-person"),
     ).resolves.toBe(false);
-
-    expect(fetch).toHaveBeenCalledTimes(1);
-  });
-
-  it("warms capabilities before request-time URL checks", async () => {
-    clearDataLayerCapabilitiesForTest();
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        ttlSeconds: 300,
-        domains: ["profiles.example"],
-      }),
-    } as Awaited<ReturnType<typeof fetch>>);
-
-    await warmDataLayerCapabilities();
-    await expect(
-      isDataLayerSupportedUrl("https://profiles.example/person/example-person"),
-    ).resolves.toBe(true);
 
     expect(fetch).toHaveBeenCalledTimes(1);
   });

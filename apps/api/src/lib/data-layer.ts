@@ -131,19 +131,6 @@ async function getDataLayerCapabilities(): Promise<DataLayerCapabilities | null>
   return capabilities;
 }
 
-export async function warmDataLayerCapabilities(): Promise<void> {
-  if (!config.FIRE_ENGINE_BETA_URL) {
-    return;
-  }
-
-  const capabilities = await getDataLayerCapabilities();
-  rootLogger.info("Data layer capabilities warmup completed", {
-    available: capabilities !== null,
-    domains: capabilities?.domains.size ?? 0,
-    baseDomains: capabilities?.baseDomains.size ?? 0,
-  });
-}
-
 function dataLayerCapabilitiesMatchUrl(
   capabilities: DataLayerCapabilities,
   inputUrl: string,

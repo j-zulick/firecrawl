@@ -38,7 +38,6 @@ import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forci
 import responseTime from "response-time";
 import { shutdownWebhookQueue } from "./services/webhook";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
-import { warmDataLayerCapabilities } from "./lib/data-layer";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -120,7 +119,6 @@ async function startServer(port = DEFAULT_PORT) {
   try {
     await initializeBlocklist();
     initializeEngineForcing();
-    await warmDataLayerCapabilities();
   } catch (error) {
     logger.error("Failed to initialize API startup dependencies", {
       error,
