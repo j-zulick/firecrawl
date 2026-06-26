@@ -362,6 +362,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       timeout: meta.abort.scrapeTimeout() ?? 300000,
       disableSmartWaitCache: meta.internalOptions.disableSmartWaitCache,
       mobileProxy: meta.featureFlags.has("stealthProxy"),
+      maxAge: meta.options.maxAge,
       saveScrapeResultToGCS:
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
@@ -437,18 +438,23 @@ export async function scrapeURLWithFireEngineChromeCDP(
     const audioCookies = (response.actionResults ?? [])
       .filter(x => x.type === "getCookies")
       .flatMap(x => x.result.cookies);
+    const contentType =
+      (Object.entries(response.responseHeaders ?? {}).find(
+        x => x[0].toLowerCase() === "content-type",
+      ) ?? [])[1] ?? undefined;
 
     return {
       url: response.url ?? meta.url,
 
       html: response.content,
+      markdown: contentType?.includes("text/markdown")
+        ? response.content
+        : undefined,
+      json: response.json,
       error: response.pageError,
       statusCode: response.pageStatusCode,
 
-      contentType:
-        (Object.entries(response.responseHeaders ?? {}).find(
-          x => x[0].toLowerCase() === "content-type",
-        ) ?? [])[1] ?? undefined,
+      contentType,
 
       screenshot,
       ...(actions.length > 0
@@ -499,6 +505,7 @@ export async function scrapeURLWithFireEngineTLSClient(
       mobileProxy: meta.featureFlags.has("stealthProxy"),
 
       timeout: meta.abort.scrapeTimeout() ?? 300000,
+      maxAge: meta.options.maxAge,
       saveScrapeResultToGCS:
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
@@ -522,18 +529,23 @@ export async function scrapeURLWithFireEngineTLSClient(
         sourceURL: meta.url,
       });
     }
+    const contentType =
+      (Object.entries(response.responseHeaders ?? {}).find(
+        x => x[0].toLowerCase() === "content-type",
+      ) ?? [])[1] ?? undefined;
 
     return {
       url: response.url ?? meta.url,
 
       html: response.content,
+      markdown: contentType?.includes("text/markdown")
+        ? response.content
+        : undefined,
+      json: response.json,
       error: response.pageError,
       statusCode: response.pageStatusCode,
 
-      contentType:
-        (Object.entries(response.responseHeaders ?? {}).find(
-          x => x[0].toLowerCase() === "content-type",
-        ) ?? [])[1] ?? undefined,
+      contentType,
 
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
       timezone: response.timezone,
