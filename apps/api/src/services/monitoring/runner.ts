@@ -11,9 +11,7 @@ import {
   resolveNewGroupBackend,
 } from "../worker/nuq-router";
 import { ScrapeJobData } from "../../types";
-import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { includesFormat } from "../../lib/format-utils";
-import { computeAndPersistPageDiff } from "./diff-orchestrator";
 import { normalizeMonitorFormats } from "./diff";
 import { autumnService } from "../autumn/autumn.service";
 import { getBillingQueue } from "../queue-service";
@@ -39,9 +37,7 @@ import {
   calculateMonitorCheckActualCredits,
   getMonitorCheck,
   getMonitorForUpdate,
-  getMonitorPage,
   countMonitorCheckPages,
-  hashMonitorUrl,
   insertMonitorCheckPages,
   deleteMonitorCheckPages,
   listActiveMonitorPages,
@@ -78,7 +74,6 @@ import {
 } from "./search/persist";
 
 const logger = _logger.child({ module: "monitoring-runner" });
-const poll = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export { isMonitorCheckStale, MONITOR_CHECK_STALE_TIMEOUT_MS };
 
 const MONITOR_NOTIFY_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -244,16 +239,6 @@ function withMonitorScrapeDefaults(
   };
 }
 
-function getDocumentUrl(doc: any, fallback: string): string {
-  return doc?.metadata?.sourceURL ?? doc?.metadata?.url ?? doc?.url ?? fallback;
-}
-
-function getDocumentStatusCode(doc: any): number | null {
-  return typeof doc?.metadata?.statusCode === "number"
-    ? doc.metadata.statusCode
-    : null;
-}
-
 export function estimateActualCredits(doc: any, options?: any): number {
   // Prefer the credits the scrape path actually recorded when present.
   const creditsUsed = doc?.metadata?.creditsUsed;
@@ -269,67 +254,6 @@ export function estimateActualCredits(doc: any, options?: any): number {
   if (includesFormat(formats, "deterministicJson")) return 7;
   if (includesFormat(formats, "json")) return 5;
   return 1;
-}
-
-async function runSingleScrape(params: {
-  monitor: MonitorRow;
-  check: MonitorCheckRow;
-  target: MonitorTarget;
-  url: string;
-  requestId?: string;
-}): Promise<{ scrapeId: string; doc: any; credits: number }> {
-  const scrapeId = uuidv7();
-  const scrapeOptions = scrapeRequestSchema.parse({
-    url: params.url,
-    ...withMonitorScrapeDefaults(params.target.scrapeOptions ?? {}),
-    origin: "monitor",
-  });
-
-  await logRequest({
-    id: scrapeId,
-    kind: "scrape",
-    api_version: "v2",
-    team_id: params.monitor.team_id,
-    origin: "monitor",
-    integration: null,
-    target_hint: params.url,
-    zeroDataRetention: false,
-    api_key_id: null,
-  });
-
-  const internalOptions = {
-    teamId: params.monitor.team_id,
-    saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
-    bypassBilling: true,
-    zeroDataRetention: false,
-  };
-  const job: NuQJob<ScrapeJobData> = {
-    id: scrapeId,
-    status: "active",
-    createdAt: new Date(),
-    priority: 20,
-    data: {
-      mode: "single_urls",
-      url: params.url,
-      team_id: params.monitor.team_id,
-      scrapeOptions,
-      internalOptions,
-      skipNuq: true,
-      origin: "monitor",
-      integration: null,
-      billing: { endpoint: "monitor", jobId: params.check.id },
-      requestId: params.requestId,
-      zeroDataRetention: false,
-      apiKeyId: null,
-    },
-  };
-
-  const doc = await processJobInternal(job);
-  return {
-    scrapeId,
-    doc,
-    credits: estimateActualCredits(doc, params.target.scrapeOptions),
-  };
 }
 
 // Deep-mode search-monitor page scrape, inline (skipNuq) so it bypasses scrape
@@ -397,339 +321,6 @@ async function scrapeSearchMonitorPage(params: {
     metadata: {
       publishedTime: doc.metadata?.publishedTime ?? null,
       modifiedTime: doc.metadata?.modifiedTime ?? null,
-    },
-  };
-}
-
-async function diffAndPersistPage(params: {
-  monitor: MonitorRow;
-  check: MonitorCheckRow;
-  target: MonitorTarget;
-  url: string;
-  scrapeId: string;
-  doc: any;
-  source: "explicit" | "discovered";
-  creditsUsed?: number;
-}): Promise<PageResult> {
-  const previous = await getMonitorPage({
-    monitorId: params.monitor.id,
-    targetId: params.target.id,
-    url: params.url,
-  });
-
-  const ctFormat = Array.isArray(params.target.scrapeOptions?.formats)
-    ? (params.target.scrapeOptions!.formats as any[]).find(
-        (f: any) => f?.type === "changeTracking",
-      )
-    : undefined;
-  const { status, diffGcsKey, diffTextBytes, diffJsonBytes, judgment, error } =
-    await computeAndPersistPageDiff({
-      teamId: params.monitor.team_id,
-      monitorId: params.monitor.id,
-      checkId: params.check.id,
-      url: params.url,
-      scrapeId: params.scrapeId,
-      doc: params.doc,
-      previous: previous
-        ? {
-            last_scrape_id: previous.last_scrape_id,
-            is_removed: previous.is_removed,
-          }
-        : null,
-      formats: params.target.scrapeOptions?.formats,
-      goal: params.monitor.judge_enabled ? params.monitor.goal : null,
-      extractionPrompt: ctFormat?.prompt ?? null,
-    });
-
-  await upsertMonitorPage({
-    monitorId: params.monitor.id,
-    teamId: params.monitor.team_id,
-    targetId: params.target.id,
-    url: params.url,
-    source: params.source,
-    checkId: params.check.id,
-    scrapeId: params.scrapeId,
-    status,
-    metadata: {
-      title: params.doc?.metadata?.title ?? null,
-      statusCode: getDocumentStatusCode(params.doc),
-      contentType: params.doc?.metadata?.contentType ?? null,
-      numPages: params.doc?.metadata?.numPages ?? null,
-      proxyUsed: params.doc?.metadata?.proxyUsed ?? null,
-      postprocessorsUsed: params.doc?.metadata?.postprocessorsUsed ?? null,
-      creditsUsed: params.creditsUsed ?? null,
-    },
-  });
-
-  return {
-    check_id: params.check.id,
-    monitor_id: params.monitor.id,
-    team_id: params.monitor.team_id,
-    target_id: params.target.id,
-    url: params.url,
-    url_hash: hashMonitorUrl(params.url),
-    status,
-    previous_scrape_id: previous?.last_scrape_id ?? null,
-    current_scrape_id: params.scrapeId,
-    diff_gcs_key: diffGcsKey,
-    diff_text_bytes: diffTextBytes,
-    diff_json_bytes: diffJsonBytes,
-    status_code: getDocumentStatusCode(params.doc),
-    ...(error ? { error } : {}),
-    metadata: {
-      title: params.doc?.metadata?.title ?? null,
-      contentType: params.doc?.metadata?.contentType ?? null,
-      numPages: params.doc?.metadata?.numPages ?? null,
-      proxyUsed: params.doc?.metadata?.proxyUsed ?? null,
-      postprocessorsUsed: params.doc?.metadata?.postprocessorsUsed ?? null,
-      creditsUsed: params.creditsUsed ?? null,
-    },
-    judgment,
-    emailStatus: status,
-  };
-}
-
-async function runScrapeTarget(params: {
-  monitor: MonitorRow;
-  check: MonitorCheckRow;
-  target: MonitorTarget;
-}): Promise<{ pages: PageResult[]; credits: number; targetResult: any }> {
-  if (params.target.type !== "scrape") {
-    return { pages: [], credits: 0, targetResult: null };
-  }
-
-  const pages: PageResult[] = [];
-  let credits = 0;
-
-  for (const url of params.target.urls) {
-    try {
-      const result = await runSingleScrape({
-        monitor: params.monitor,
-        check: params.check,
-        target: params.target,
-        url,
-      });
-      credits += result.credits;
-      pages.push(
-        await diffAndPersistPage({
-          monitor: params.monitor,
-          check: params.check,
-          target: params.target,
-          url,
-          scrapeId: result.scrapeId,
-          doc: result.doc,
-          source: "explicit",
-          creditsUsed: result.credits,
-        }),
-      );
-    } catch (error) {
-      pages.push({
-        check_id: params.check.id,
-        monitor_id: params.monitor.id,
-        team_id: params.monitor.team_id,
-        target_id: params.target.id,
-        url,
-        url_hash: hashMonitorUrl(url),
-        status: "error",
-        error: error instanceof Error ? error.message : String(error),
-        emailStatus: "error",
-      });
-    }
-  }
-
-  return {
-    pages,
-    credits,
-    targetResult: {
-      targetId: params.target.id,
-      type: params.target.type,
-      pages: pages.length,
-      credits,
-    },
-  };
-}
-
-async function runCrawlTarget(params: {
-  monitor: MonitorRow;
-  check: MonitorCheckRow;
-  target: MonitorTarget;
-}): Promise<{ pages: PageResult[]; credits: number; targetResult: any }> {
-  if (params.target.type !== "crawl") {
-    return { pages: [], credits: 0, targetResult: null };
-  }
-
-  const crawlId = uuidv7();
-  const body = crawlRequestSchema.parse({
-    url: params.target.url,
-    ...(params.target.crawlOptions ?? {}),
-    scrapeOptions: withMonitorScrapeDefaults(params.target.scrapeOptions ?? {}),
-    origin: "monitor",
-  }) as CrawlRequest;
-
-  await logRequest({
-    id: crawlId,
-    kind: "crawl",
-    api_version: "v2",
-    team_id: params.monitor.team_id,
-    origin: "monitor",
-    integration: null,
-    target_hint: body.url,
-    zeroDataRetention: false,
-    api_key_id: null,
-  });
-
-  const crawlerOptions = {
-    ...body,
-    url: undefined,
-    scrapeOptions: undefined,
-    prompt: undefined,
-  };
-
-  const sc: StoredCrawl = {
-    originUrl: body.url,
-    crawlerOptions: toV0CrawlerOptions(crawlerOptions),
-    scrapeOptions: body.scrapeOptions,
-    internalOptions: {
-      disableSmartWaitCache: true,
-      teamId: params.monitor.team_id,
-      saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
-      zeroDataRetention: false,
-      bypassBilling: true,
-    },
-    team_id: params.monitor.team_id,
-    createdAt: Date.now(),
-    maxConcurrency: body.maxConcurrency,
-    zeroDataRetention: false,
-  };
-
-  const crawler = crawlToCrawler(crawlId, sc, null);
-  try {
-    sc.robots = await crawler.getRobotsTxt(
-      body.scrapeOptions.skipTlsVerification,
-    );
-  } catch {
-    // Non-fatal robots fetch failure, same as the public crawl controller.
-  }
-
-  sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
-  await crawlGroup.addGroup(crawlId, sc.team_id, 24 * 60 * 60 * 1000, {
-    backend: sc.queueBackend,
-    maxConcurrency: sc.maxConcurrency,
-    delaySeconds: sc.crawlerOptions?.delay,
-  });
-  await saveCrawl(crawlId, sc);
-  await markCrawlActive(crawlId);
-
-  await _addScrapeJobToBullMQ(
-    {
-      url: body.url,
-      mode: "kickoff",
-      team_id: params.monitor.team_id,
-      crawlerOptions,
-      scrapeOptions: sc.scrapeOptions,
-      internalOptions: sc.internalOptions,
-      origin: "monitor",
-      integration: null,
-      billing: { endpoint: "monitor", jobId: params.check.id },
-      crawl_id: crawlId,
-      v1: true,
-      zeroDataRetention: false,
-      apiKeyId: null,
-    },
-    uuidv7(),
-  );
-
-  const started = Date.now();
-  let status = "scraping";
-  let total = 0;
-  while (Date.now() - started < 30 * 60 * 1000) {
-    const group = await crawlGroup.getGroup(crawlId);
-    const stats = await scrapeQueue.getGroupNumericStats(crawlId, logger);
-    status = group?.status ?? "scraping";
-    total =
-      (stats.completed ?? 0) +
-      (stats.active ?? 0) +
-      (stats.queued ?? 0) +
-      (stats.backlog ?? 0);
-    if (status !== "active" && status !== "scraping") break;
-    await poll(1000);
-  }
-
-  const doneJobs = await scrapeQueue.getCrawlJobsForListing(
-    crawlId,
-    Math.max(total, 1),
-    0,
-    logger,
-  );
-
-  const pages: PageResult[] = [];
-  const seen = new Set<string>();
-  let credits = 0;
-
-  for (const job of doneJobs) {
-    const doc = job.returnvalue ?? (await getJobFromGCS(job.id))?.[0];
-    if (!doc) continue;
-    const url = getDocumentUrl(doc, (job.data as any)?.url ?? body.url);
-    seen.add(hashMonitorUrl(url).toString("hex"));
-    const pageCredits = estimateActualCredits(doc, body.scrapeOptions);
-    credits += pageCredits;
-    pages.push(
-      await diffAndPersistPage({
-        monitor: params.monitor,
-        check: params.check,
-        target: params.target,
-        url,
-        scrapeId: job.id,
-        doc,
-        source: "discovered",
-        creditsUsed: pageCredits,
-      }),
-    );
-  }
-
-  if (status === "completed") {
-    const previousPages = await listActiveMonitorPages({
-      monitorId: params.monitor.id,
-      targetId: params.target.id,
-    });
-    for (const previous of previousPages) {
-      if (seen.has(previous.url_hash.toString("hex"))) continue;
-      await upsertMonitorPage({
-        monitorId: params.monitor.id,
-        teamId: params.monitor.team_id,
-        targetId: params.target.id,
-        url: previous.url,
-        source: previous.source,
-        checkId: params.check.id,
-        scrapeId: previous.last_scrape_id,
-        status: "removed",
-        metadata: previous.metadata,
-      });
-      pages.push({
-        check_id: params.check.id,
-        monitor_id: params.monitor.id,
-        team_id: params.monitor.team_id,
-        target_id: params.target.id,
-        url: previous.url,
-        url_hash: previous.url_hash,
-        status: "removed",
-        previous_scrape_id: previous.last_scrape_id,
-        current_scrape_id: null,
-        emailStatus: "removed",
-      });
-    }
-  }
-
-  return {
-    pages,
-    credits,
-    targetResult: {
-      targetId: params.target.id,
-      type: params.target.type,
-      crawlId,
-      status,
-      pages: pages.length,
-      credits,
     },
   };
 }
@@ -1396,6 +987,23 @@ export async function processMonitorCheckJob(
       target_results: targetResults,
     });
   } catch (error) {
+    // Atomically flip running -> failed. Returns null when the check already
+    // reached a terminal status — i.e. the reconciler finalized it (completed,
+    // billed, lock confirmed) before this late catch ran. In that case we must
+    // not clobber its terminal state or release its now-confirmed credit lock;
+    // the reconciler already owns billing, notifications, and scheduling.
+    const failed = await updateMonitorCheckIfRunning(check.id, {
+      status: "failed",
+      finished_at: new Date().toISOString(),
+      billing_status: lockId ? "released" : "failed",
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    if (!failed) {
+      throw error;
+    }
+    check = failed;
+
     if (lockId) {
       await autumnService.finalizeCreditsLock({
         lockId,
@@ -1407,13 +1015,6 @@ export async function processMonitorCheckJob(
         },
       });
     }
-
-    check = await updateMonitorCheck(check.id, {
-      status: "failed",
-      finished_at: new Date().toISOString(),
-      billing_status: lockId ? "released" : "failed",
-      error: error instanceof Error ? error.message : String(error),
-    });
 
     if (
       await claimMonitorNotification(check.id).catch(error => {
@@ -1724,10 +1325,16 @@ export async function reconcileRunningMonitorChecks(
 
       if (await failStaleMonitorCheck({ monitor, check })) continue;
 
+      // Snapshot from listRunningMonitorChecks; may be stale relative to the
+      // inline handler that is still writing this check.
       let targetResults = Array.isArray(check.target_results)
         ? ([...check.target_results] as any[])
         : [];
-      if (targetResults.length === 0) {
+      // True only when the persisted snapshot was empty and we rebuild the target
+      // runs from recorded pages. That is the only case it is safe to write back
+      // below: there is no live target_results to overwrite.
+      const recoveredFromEmpty = targetResults.length === 0;
+      if (recoveredFromEmpty) {
         targetResults = await recoverTargetRunsFromRecordedPages({
           monitor,
           check,
@@ -1749,7 +1356,13 @@ export async function reconcileRunningMonitorChecks(
           monitor,
         ))
       ) {
-        if (targetResults.length > 0) {
+        // Only persist target_results we recovered from an empty snapshot. Writing
+        // back a non-empty stale snapshot here can DOWNGRADE a searchCompleted=true
+        // that the inline handler persisted after this reconciler loaded its
+        // snapshot, reverting the marker and stranding the check until the stale
+        // reaper. The complete-path write below is safe: a search target can only
+        // be complete once its snapshot already carries searchCompleted=true.
+        if (recoveredFromEmpty && targetResults.length > 0) {
           await updateMonitorCheck(check.id, { target_results: targetResults });
         }
         continue;
