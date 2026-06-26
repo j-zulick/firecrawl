@@ -374,7 +374,7 @@ async function billMonitorCheck(params: {
       // Deterministic per check so a re-finalize (e.g. the reconciler re-running this
       // check after the finalize lock TTL expired mid-finalize) re-enqueues the SAME
       // job id and the billing queue dedups it instead of charging the team twice.
-      jobId: `monitor-bill:${params.check.id}`,
+      jobId: `monitor-bill-${params.check.id}`,
       priority: 10,
     },
   );
