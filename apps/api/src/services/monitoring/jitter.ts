@@ -1,10 +1,6 @@
 import { createHash } from "crypto";
 
-// Cap the spread at 30 min: enough that hourly monitors fan out across :00-:30
-// (instead of piling at :00 and starving the consumer) while a daily/weekly cron
-// still fires within tens of minutes of its intended time. Sub-hourly intervals
-// stay bounded by intervalMs/2 below.
-const MAX_JITTER_MS = 30 * 60 * 1000;
+const MAX_JITTER_MS = 5 * 60 * 1000;
 
 export function monitorJitterOffsetMs(
   monitorId: string,
