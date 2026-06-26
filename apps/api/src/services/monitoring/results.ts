@@ -24,13 +24,37 @@ const MONITOR_PAGE_WEBHOOK_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
 // re-send the MONITOR_PAGE webhook. Returns true only for the first claimant; a
 // redis hiccup degrades to "don't send" rather than throwing out of the caller
 // (the page row is already persisted and stays pollable).
+function monitorPageNotifyKey(
+  checkId: string,
+  url: string,
+  kind: "page" | "error",
+): string {
+  return `monitor-page-notify:${checkId}:${hashMonitorUrl(url).toString(
+    "hex",
+  )}:${kind}`;
+}
+
+// Claims the right to send one MONITOR_PAGE webhook for a (check, url). The kind is
+// part of the key so a "page" (success/content) notification claims independently and
+// can't be suppressed by a prior "error" claim — otherwise a redelivery that flips
+// error->success would leave the consumer stuck on a stale error. The reverse is also
+// guarded: once a success was sent, an error is skipped so a redelivered failure can't
+// regress the consumer back to error. A redis hiccup degrades to "don't send" rather
+// than throwing out of the caller (the page row is already persisted and stays pollable).
 async function claimMonitorPageWebhook(
   checkId: string,
   url: string,
+  kind: "page" | "error",
 ): Promise<boolean> {
   try {
+    if (kind === "error") {
+      const pageSent = await redisEvictConnection.exists(
+        monitorPageNotifyKey(checkId, url, "page"),
+      );
+      if (pageSent) return false;
+    }
     const result = await redisEvictConnection.set(
-      `monitor-page-notify:${checkId}:${hashMonitorUrl(url).toString("hex")}`,
+      monitorPageNotifyKey(checkId, url, kind),
       "1",
       "EX",
       MONITOR_PAGE_WEBHOOK_CLAIM_TTL_SECONDS,
@@ -79,7 +103,13 @@ async function persistMonitorCheckError(params: {
     },
   ]);
 
-  if (await claimMonitorPageWebhook(params.monitoring.checkId, params.url)) {
+  if (
+    await claimMonitorPageWebhook(
+      params.monitoring.checkId,
+      params.url,
+      "error",
+    )
+  ) {
     await sendMonitorPageWebhook({
       teamId: params.teamId,
       monitorId: params.monitoring.monitorId,
@@ -334,7 +364,7 @@ export async function recordMonitorScrapeSuccess(
     judgmentMeaningful: judgment?.meaningful,
   });
 
-  if (await claimMonitorPageWebhook(monitoring.checkId, url)) {
+  if (await claimMonitorPageWebhook(monitoring.checkId, url, "page")) {
     await sendMonitorPageWebhook({
       teamId: job.data.team_id,
       monitorId: monitoring.monitorId,
