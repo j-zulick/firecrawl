@@ -35,6 +35,7 @@ import { createWebhookSender, WebhookEvent } from "../webhook";
 import { sendMonitorPageWebhook } from "./results";
 import { sendMonitoringEmailSummary } from "../notification/monitoring_email";
 import {
+  bulkUpsertMonitorPages,
   calculateMonitorCheckActualCredits,
   getMonitorCheck,
   getMonitorForUpdate,
@@ -779,7 +780,10 @@ async function billMonitorCheck(params: {
       autumnTrackInRequest: Boolean(params.lockId),
     },
     {
-      jobId: uuidv7(),
+      // Deterministic per check so a re-finalize (e.g. the reconciler re-running this
+      // check after the finalize lock TTL expired mid-finalize) re-enqueues the SAME
+      // job id and the billing queue dedups it instead of charging the team twice.
+      jobId: `monitor-bill:${params.check.id}`,
       priority: 10,
     },
   );
@@ -1189,24 +1193,24 @@ async function runMonitorSearchTarget(params: {
     await insertMonitorCheckPages(pages);
 
     // Durable cross-run dedup baseline last, so a timeout before this point leaves
-    // monitor_pages untouched and the next run re-alerts. Pass the signal so an
-    // orphaned write that outran the timeout can't baseline a now-failed check.
-    for (let i = 0; i < pages.length; i++) {
-      if (signal.aborted) return;
-      const page = pages[i];
-      await upsertMonitorPage({
-        monitorId: monitor.id,
-        teamId: monitor.team_id,
-        targetId: target.id,
+    // monitor_pages untouched and the next run re-alerts. One bulk upsert (~3 round-
+    // trips) instead of ~2N sequential pool acquisitions that stalled finalization;
+    // the signal lets an aborted finalize skip the write entirely.
+    await bulkUpsertMonitorPages({
+      monitorId: monitor.id,
+      teamId: monitor.team_id,
+      targetId: target.id,
+      checkId: check.id,
+      rows: pages.map(page => ({
         url: page.url,
-        source: "discovered",
-        checkId: check.id,
-        scrapeId: null,
+        urlHash: page.url_hash,
         status: page.status,
         metadata: page.metadata as Record<string, unknown>,
-        abortSignal: signal,
-      });
-    }
+        source: "discovered",
+        scrapeId: null,
+      })),
+      abortSignal: signal,
+    });
   }, "monitor search page-write tail");
 
   for (const page of pages) {
