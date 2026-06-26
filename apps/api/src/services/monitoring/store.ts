@@ -886,23 +886,27 @@ export async function insertMonitorCheckPages(
   );
 }
 
-// Makes the inline search write idempotent: a redelivered check clears its prior
-// (check, target) rows before re-inserting, so crash-and-redeliver can't duplicate
-// pages. Partition-safe (no unique constraint needed).
+// Makes an inline write idempotent: a redelivered check clears its prior rows
+// before re-inserting, so crash-and-redeliver can't duplicate pages. Pass `url`
+// to scope the clear to a single page so the per-URL scrape path replaces only
+// its own row without clobbering sibling pages of the same target. Partition-safe
+// (no unique constraint needed).
 export async function deleteMonitorCheckPages(params: {
   checkId: string;
   targetId: string;
+  url?: string;
 }): Promise<void> {
+  const conditions = [
+    eq(schema.monitor_check_pages.check_id, params.checkId),
+    eq(schema.monitor_check_pages.target_id, params.targetId),
+  ];
+  if (params.url !== undefined) {
+    conditions.push(
+      eq(schema.monitor_check_pages.url_hash, hashMonitorUrl(params.url)),
+    );
+  }
   await run(
-    () =>
-      db
-        .delete(schema.monitor_check_pages)
-        .where(
-          and(
-            eq(schema.monitor_check_pages.check_id, params.checkId),
-            eq(schema.monitor_check_pages.target_id, params.targetId),
-          ),
-        ),
+    () => db.delete(schema.monitor_check_pages).where(and(...conditions)),
     "Failed to delete monitor check pages",
   );
 }
