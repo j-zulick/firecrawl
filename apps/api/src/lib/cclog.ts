@@ -163,23 +163,32 @@ async function buildCclogAggregateEntries(
   }
 
   const created_at = floorToMinute(at).toISOString();
-  return Array.from(teamIds).map(team_id => {
+  const entries: CclogAggregateEntry[] = [];
+
+  for (const team_id of teamIds) {
     let total = 0;
-    let max = 0;
+    let maxConcurrency = 0;
 
     for (const sample of samples) {
       const concurrency = Number.parseInt(sample[team_id] ?? "0", 10);
       total += concurrency;
-      max = Math.max(max, concurrency);
+      maxConcurrency = Math.max(maxConcurrency, concurrency);
     }
 
-    return {
+    const avgConcurrency = Math.round(total / CCLOG_AGGREGATE_INTERVAL_MINUTES);
+    if (avgConcurrency === 0 && maxConcurrency === 0) {
+      continue;
+    }
+
+    entries.push({
       team_id,
-      avg_concurrency: Math.round(total / CCLOG_AGGREGATE_INTERVAL_MINUTES),
-      max_concurrency: max,
+      avg_concurrency: avgConcurrency,
+      max_concurrency: maxConcurrency,
       created_at,
-    };
-  });
+    });
+  }
+
+  return entries;
 }
 
 async function insertCclogAggregate(
