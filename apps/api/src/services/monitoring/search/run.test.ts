@@ -259,6 +259,21 @@ describe("runSearchTarget orchestration", () => {
       expect(byStatus(status).metadata.searchStatus).toBe(status);
       expect(byStatus(status).scraped).toBe(true);
     }
+    expect(byStatus("alert").judgment).toMatchObject({
+      meaningful: true,
+      reason: "filing confirmed",
+      meaningfulChanges: [],
+    });
+    expect(byStatus("watching").judgment).toMatchObject({
+      meaningful: false,
+      reason: "filing confirmed",
+      meaningfulChanges: [],
+    });
+    expect(byStatus("ignored").judgment).toMatchObject({
+      meaningful: false,
+      reason: "filing confirmed",
+      meaningfulChanges: [],
+    });
   });
 
   it("re-evaluates a known page when the goalVersion changed (stale memory)", async () => {
