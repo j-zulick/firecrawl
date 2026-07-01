@@ -323,6 +323,11 @@ describe("runSearchTarget orchestration", () => {
     const seen = out.pageUpserts.find(u => u.status === "already_seen")!;
     expect(seen.scraped).toBe(true);
     expect(seen.metadata.searchStatus).toBe("already_seen");
+    expect(seen.judgment).toMatchObject({
+      meaningful: true,
+      reason: "filing confirmed",
+      meaningfulChanges: [],
+    });
   });
 
   it("uses the canonical URL as the event key (label is the verdict concept)", async () => {
