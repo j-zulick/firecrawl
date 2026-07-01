@@ -14,7 +14,6 @@ export function sanitizeRedirectPath(path?: string | null): string {
     const base = new URL(config.FIRECRAWL_DASHBOARD_URL);
     const resolved = new URL(path, base);
     if (resolved.origin !== base.origin) return DEFAULT_REDIRECT_PATH;
-    // Return only the on-origin path so nothing host-like survives.
     return resolved.pathname + resolved.search + resolved.hash;
   } catch {
     return DEFAULT_REDIRECT_PATH;
