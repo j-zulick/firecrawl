@@ -17,7 +17,10 @@ import {
 import { decryptSlackToken } from "../../services/integrations/slack/crypto";
 import { listChannels } from "../../services/integrations/slack/client";
 import { verifySlackSignature } from "../../services/integrations/slack/signature";
-import { handleSlashCommand } from "../../services/integrations/slack/commands";
+import {
+  handleFirecrawlCommand,
+  handleSlashCommand,
+} from "../../services/integrations/slack/commands";
 import type { SlackConnectionStatus } from "../../services/integrations/slack/types";
 
 const logger = _logger.child({ module: "slack-controller" });
@@ -228,8 +231,14 @@ export async function slackCommandsController(req: Request, res: Response) {
     });
   }
 
+  // Both /monitor and /firecrawl post to this endpoint; route by which command
+  // Slack sent so account/workspace commands stay off /monitor.
+  const command = (body.command ?? "").toLowerCase();
+  const handler =
+    command === "/firecrawl" ? handleFirecrawlCommand : handleSlashCommand;
+
   try {
-    const response = await handleSlashCommand({
+    const response = await handler({
       installation,
       text: body.text ?? "",
       channelId: body.channel_id ?? "",

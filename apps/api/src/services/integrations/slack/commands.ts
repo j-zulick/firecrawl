@@ -3,12 +3,19 @@ import { config } from "../../../config";
 import { logger as _logger } from "../../../lib/logger";
 import {
   createMonitor,
-  listMonitors,
+  createMonitorCheck,
+  getMonitor,
   getMonitorForUpdate,
+  listMonitorChecks,
+  listMonitors,
   updateMonitor,
 } from "../../monitoring/store";
+import { enqueueMonitorCheck } from "../../monitoring/scheduler";
 import { validateMonitorCron } from "../../monitoring/cron";
-import { createMonitorSchema } from "../../monitoring/types";
+import { createMonitorSchema, type MonitorRow } from "../../monitoring/types";
+import { getTeamBalance } from "../../autumn/usage";
+import { getACUCTeam } from "../../../controllers/auth";
+import { getConcurrencyLimitActiveJobsCount } from "../../../lib/concurrency-redis";
 import type { SlackInstallationRow } from "./types";
 import { escapeSlackText, slackLink } from "./messages";
 
@@ -38,18 +45,151 @@ function ephemeral(text: string, blocks?: unknown[]): SlackCommandResponse {
   return { response_type: "ephemeral", text, blocks };
 }
 
+function invalidIdResponse(id: string): SlackCommandResponse {
+  return ephemeral(
+    `\`${escapeSlackText(id)}\` isn't a valid monitor id. Use \`/monitor list\` to find it.`,
+  );
+}
+
+function truncate(input: string, max: number): string {
+  if (input.length <= max) return input;
+  return input.slice(0, Math.max(0, max - 1)) + "…";
+}
+
+function formatNumber(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// Compact relative time: "3h ago" / "in 2h" / "just now".
+function relativeTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "—";
+  const diffMs = then - Date.now();
+  const mins = Math.round(Math.abs(diffMs) / 60000);
+  if (mins < 1) return diffMs >= 0 ? "in <1m" : "just now";
+  const unit =
+    mins < 60
+      ? `${mins}m`
+      : mins < 1440
+        ? `${Math.round(mins / 60)}h`
+        : `${Math.round(mins / 1440)}d`;
+  return diffMs >= 0 ? `in ${unit}` : `${unit} ago`;
+}
+
+function monitorStatusEmoji(status: string): string {
+  switch (status) {
+    case "active":
+      return ":green_circle:";
+    case "paused":
+      return ":pause_button:";
+    default:
+      return ":white_circle:";
+  }
+}
+
+function checkStatusEmoji(status: string): string {
+  switch (status) {
+    case "completed":
+      return ":white_check_mark:";
+    case "failed":
+      return ":x:";
+    case "partial":
+      return ":warning:";
+    case "queued":
+    case "running":
+      return ":hourglass_flowing_sand:";
+    default:
+      return ":fast_forward:"; // skipped_*
+  }
+}
+
+// Human summary of what a monitor watches (URLs / crawl root / search queries).
+function describeTargets(monitor: MonitorRow): string[] {
+  const targets = Array.isArray(monitor.targets) ? monitor.targets : [];
+  const parts: string[] = [];
+  for (const t of targets as Array<Record<string, any>>) {
+    if (t?.type === "scrape" && Array.isArray(t.urls)) {
+      parts.push(...t.urls.map((u: unknown) => String(u)));
+    } else if (t?.type === "crawl" && typeof t.url === "string") {
+      parts.push(t.url);
+    } else if (t?.type === "search" && Array.isArray(t.queries)) {
+      parts.push(...t.queries.map((q: unknown) => `"${String(q)}"`));
+    }
+  }
+  return parts;
+}
+
+function joinList(items: string[], max: number): string {
+  if (items.length === 0) return "—";
+  const shown = items.slice(0, max).join(", ");
+  const extra = items.length - max;
+  return extra > 0 ? `${shown} …+${extra} more` : shown;
+}
+
+function monitorHasSearchTarget(monitor: MonitorRow): boolean {
+  return (Array.isArray(monitor.targets) ? monitor.targets : []).some(
+    t => (t as { type?: string })?.type === "search",
+  );
+}
+
 function helpResponse(): SlackCommandResponse {
   const lines = [
-    "*Firecrawl monitor commands*",
-    "`/monitor watch <url> [what to watch for]` — monitor a page in this channel; add a prompt to alert only on *meaningful* changes",
-    "`/monitor list` — list your team's monitors",
-    "`/monitor cancel <monitor-id>` — pause a monitor",
-    "`/monitor status` — show this workspace's Firecrawl connection",
-    "`/monitor help` — show this help",
+    "*Firecrawl `/monitor` — commands*",
+    "`/monitor watch <url> [what to watch for]` — start monitoring; add a prompt to alert only on *meaningful* changes",
+    "`/monitor list` — list your monitors",
+    "`/monitor get <id>` — show a monitor's details",
+    "`/monitor checks <id>` — recent check history",
+    "`/monitor run <id>` — run a check now",
+    "`/monitor pause <id>` · `/monitor resume <id>` — pause or resume",
+    "`/monitor help` — show this",
     "",
-    `Manage everything in the ${slackLink(dashboardUrl("/app/monitoring"), "dashboard")}.`,
+    `Account & credits: \`/firecrawl account\`. Delete monitors from the ${slackLink(dashboardUrl("/app/monitoring"), "dashboard")}.`,
   ];
   return ephemeral(lines.join("\n"));
+}
+
+// The `/firecrawl` slash command — account/workspace things that aren't
+// monitor-specific. Monitoring lives under `/monitor`.
+function firecrawlHelpResponse(): SlackCommandResponse {
+  const lines = [
+    "*Firecrawl `/firecrawl` — commands*",
+    "`/firecrawl account` — credits, plan usage, and concurrency",
+    "`/firecrawl status` — this workspace's Firecrawl connection",
+    "`/firecrawl help` — show this",
+    "",
+    "Monitoring lives under `/monitor` — try `/monitor help`.",
+  ];
+  return ephemeral(lines.join("\n"));
+}
+
+export async function handleFirecrawlCommand(
+  input: SlackSlashCommandInput,
+): Promise<SlackCommandResponse> {
+  const [subcommand] = input.text.trim().split(/\s+/);
+  switch ((subcommand || "").toLowerCase()) {
+    case "":
+    case "account":
+    case "usage":
+    case "credits":
+    case "whoami":
+    case "me":
+      // Bare `/firecrawl` defaults to the account overview.
+      return accountResponse(input.installation);
+    case "status":
+    case "connection":
+      return statusResponse(input.installation);
+    case "help":
+      return firecrawlHelpResponse();
+    default:
+      return firecrawlHelpResponse();
+  }
 }
 
 function statusResponse(
@@ -234,6 +374,207 @@ async function cancelResponse(
   );
 }
 
+// CLI `firecrawl --status` / `credit-usage` equivalent: credits, plan usage,
+// and live concurrency for the linked team — no API key to paste.
+async function accountResponse(
+  installation: SlackInstallationRow,
+): Promise<SlackCommandResponse> {
+  const teamId = installation.team_id;
+  const [balance, acuc, activeJobs] = await Promise.all([
+    getTeamBalance(teamId).catch(() => null),
+    getACUCTeam(teamId).catch(() => null),
+    getConcurrencyLimitActiveJobsCount(teamId).catch(() => null),
+  ]);
+
+  const lines: string[] = [":bar_chart: *Your Firecrawl account*"];
+
+  if (balance) {
+    if (balance.unlimited) {
+      lines.push("*Credits:* Unlimited");
+    } else if (balance.planCredits > 0) {
+      const pctLeft = Math.max(
+        0,
+        Math.min(100, Math.round((balance.remaining / balance.planCredits) * 100)),
+      );
+      lines.push(
+        `*Credits:* ${formatNumber(balance.remaining)} / ${formatNumber(balance.planCredits)} (${pctLeft}% left this cycle)`,
+      );
+    } else {
+      lines.push(
+        `*Credits:* ${formatNumber(balance.remaining)} remaining (pay-as-you-go)`,
+      );
+    }
+    if (balance.periodStart && balance.periodEnd) {
+      lines.push(
+        `*Billing period:* ${formatShortDate(balance.periodStart)} – ${formatShortDate(balance.periodEnd)}`,
+      );
+    }
+  } else {
+    lines.push("*Credits:* unavailable right now");
+  }
+
+  if (typeof acuc?.concurrency === "number") {
+    lines.push(`*Concurrency:* ${activeJobs ?? 0} / ${acuc.concurrency} active`);
+  }
+
+  const workspace = installation.slack_team_name ?? installation.slack_team_id;
+  lines.push(`*Slack:* connected to *${escapeSlackText(workspace)}*`);
+  lines.push(`Open the ${slackLink(dashboardUrl("/app/monitoring"), "dashboard")}.`);
+
+  return ephemeral(lines.join("\n"));
+}
+
+// `firecrawl monitor get <id>` — a readable monitor summary.
+async function getResponse(
+  installation: SlackInstallationRow,
+  monitorId: string,
+): Promise<SlackCommandResponse> {
+  const trimmed = monitorId.trim();
+  if (!z.uuid().safeParse(trimmed).success) return invalidIdResponse(trimmed);
+
+  const m = await getMonitor(installation.team_id, trimmed);
+  if (!m) {
+    return ephemeral(
+      `No monitor with id \`${escapeSlackText(trimmed)}\` on your team.`,
+    );
+  }
+
+  const notif = m.notification as {
+    email?: { enabled?: boolean };
+    slack?: { enabled?: boolean; channelName?: string };
+  } | null;
+  const slackTarget = notif?.slack?.enabled
+    ? notif.slack.channelName
+      ? `#${notif.slack.channelName}`
+      : "on"
+    : "off";
+  const summary = m.last_check_summary;
+
+  const lines = [
+    `${monitorStatusEmoji(m.status)} *${escapeSlackText(m.name)}*  \`${m.id}\``,
+    `*Watching:* ${escapeSlackText(joinList(describeTargets(m), 5))}`,
+    `*Schedule:* \`${escapeSlackText(m.schedule_cron)}\` (${escapeSlackText(m.schedule_timezone)}) · next ${relativeTime(m.next_run_at)}`,
+    `*Goal:* ${
+      m.goal
+        ? `${escapeSlackText(truncate(m.goal, 200))} · meaningful-only ${m.judge_enabled ? "on" : "off"}`
+        : "—"
+    }`,
+    `*Notifications:* email ${notif?.email?.enabled ? "on" : "off"} · slack ${slackTarget}`,
+  ];
+  if (summary) {
+    lines.push(
+      `*Last check:* ${summary.changed} changed · ${summary.new} new · ${summary.removed} removed · ${summary.error} errors`,
+    );
+  }
+  lines.push(
+    `Open in the ${slackLink(dashboardUrl(`/app/monitoring/${m.id}`), "dashboard")}.`,
+  );
+  return ephemeral(lines.join("\n"));
+}
+
+// `firecrawl monitor checks <id>` — recent check history.
+async function checksResponse(
+  installation: SlackInstallationRow,
+  monitorId: string,
+): Promise<SlackCommandResponse> {
+  const trimmed = monitorId.trim();
+  if (!z.uuid().safeParse(trimmed).success) return invalidIdResponse(trimmed);
+
+  const monitor = await getMonitor(installation.team_id, trimmed);
+  if (!monitor) {
+    return ephemeral(
+      `No monitor with id \`${escapeSlackText(trimmed)}\` on your team.`,
+    );
+  }
+
+  const checks = await listMonitorChecks({
+    teamId: installation.team_id,
+    monitorId: trimmed,
+    limit: 8,
+    offset: 0,
+  });
+  if (checks.length === 0) {
+    return ephemeral(
+      `No checks yet for *${escapeSlackText(monitor.name)}*. Run one with \`/monitor run ${monitor.id}\`.`,
+    );
+  }
+
+  const lines = checks.map(c => {
+    const when = relativeTime(c.finished_at ?? c.started_at ?? c.created_at);
+    return `${checkStatusEmoji(c.status)} ${escapeSlackText(c.status)} · ${when} · ${c.changed_count}c ${c.new_count}n ${c.removed_count}r ${c.error_count}e`;
+  });
+  return ephemeral(
+    [`*Recent checks — ${escapeSlackText(monitor.name)}:*`, ...lines].join("\n"),
+  );
+}
+
+// `firecrawl monitor run <id>` — trigger a check now.
+async function runResponse(
+  installation: SlackInstallationRow,
+  monitorId: string,
+): Promise<SlackCommandResponse> {
+  const trimmed = monitorId.trim();
+  if (!z.uuid().safeParse(trimmed).success) return invalidIdResponse(trimmed);
+
+  const monitor = await getMonitorForUpdate(installation.team_id, trimmed);
+  if (!monitor) {
+    return ephemeral(
+      `No monitor with id \`${escapeSlackText(trimmed)}\` on your team.`,
+    );
+  }
+  if (monitor.status === "paused") {
+    return ephemeral(
+      `*${escapeSlackText(monitor.name)}* is paused. Resume it first: \`/monitor resume ${monitor.id}\`.`,
+    );
+  }
+  if (monitor.current_check_id) {
+    return ephemeral(
+      `A check is already running for *${escapeSlackText(monitor.name)}*.`,
+    );
+  }
+
+  const check = await createMonitorCheck({ monitor, trigger: "manual" });
+  await enqueueMonitorCheck({
+    monitorId: monitor.id,
+    checkId: check.id,
+    teamId: monitor.team_id,
+    search: monitorHasSearchTarget(monitor),
+  });
+
+  return ephemeral(
+    `:arrows_counterclockwise: Started a check for *${escapeSlackText(monitor.name)}*. Results post here when it finishes.`,
+  );
+}
+
+// `firecrawl monitor update <id> --state active` — resume a paused monitor.
+async function resumeResponse(
+  installation: SlackInstallationRow,
+  monitorId: string,
+): Promise<SlackCommandResponse> {
+  const trimmed = monitorId.trim();
+  if (!z.uuid().safeParse(trimmed).success) return invalidIdResponse(trimmed);
+
+  const existing = await getMonitorForUpdate(installation.team_id, trimmed);
+  if (!existing) {
+    return ephemeral(
+      `No monitor with id \`${escapeSlackText(trimmed)}\` on your team.`,
+    );
+  }
+
+  const updated = await updateMonitor({
+    teamId: installation.team_id,
+    monitorId: trimmed,
+    input: { status: "active" },
+  });
+  if (!updated) {
+    return ephemeral("Sorry, I couldn't resume that monitor. Try the dashboard.");
+  }
+
+  return ephemeral(
+    `:green_circle: Resumed *${escapeSlackText(updated.name)}*. Next run ${relativeTime(updated.next_run_at)}.`,
+  );
+}
+
 // Routes a parsed /monitor invocation to the right sub-handler.
 export async function handleSlashCommand(
   input: SlackSlashCommandInput,
@@ -246,11 +587,21 @@ export async function handleSlashCommand(
     case "":
     case "help":
       return helpResponse();
-    case "status":
-      return statusResponse(input.installation);
     case "list":
     case "ls":
       return listResponse(input.installation);
+    case "get":
+    case "show":
+    case "info":
+      if (!arg) return ephemeral("Usage: `/monitor get <monitor-id>`");
+      return getResponse(input.installation, arg);
+    case "checks":
+    case "history":
+      if (!arg) return ephemeral("Usage: `/monitor checks <monitor-id>`");
+      return checksResponse(input.installation, arg);
+    case "run":
+      if (!arg) return ephemeral("Usage: `/monitor run <monitor-id>`");
+      return runResponse(input.installation, arg);
     case "watch":
     case "add":
       if (!arg) {
@@ -263,9 +614,14 @@ export async function handleSlashCommand(
     case "pause":
     case "stop":
       if (!arg) {
-        return ephemeral("Usage: `/monitor cancel <monitor-id>`");
+        return ephemeral("Usage: `/monitor pause <monitor-id>`");
       }
       return cancelResponse(input.installation, arg);
+    case "resume":
+    case "start":
+    case "unpause":
+      if (!arg) return ephemeral("Usage: `/monitor resume <monitor-id>`");
+      return resumeResponse(input.installation, arg);
     default:
       // Bare `/monitor <url>` is a convenient alias for watch.
       if (/^https?:\/\//i.test(text)) {
