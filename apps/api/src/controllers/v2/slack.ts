@@ -24,6 +24,9 @@ const logger = _logger.child({ module: "slack-controller" });
 
 const startBodySchema = z.object({
   redirectPath: z.string().max(512).optional(),
+  // When present, the install is tied to this monitor so we can auto-enable
+  // Slack notifications on it once the user picks a channel during install.
+  monitorId: z.string().uuid().optional(),
 });
 
 // Builds an absolute dashboard URL for post-OAuth browser redirects.
@@ -47,11 +50,13 @@ export async function slackOAuthStartController(
 
   const body = startBodySchema.safeParse(req.body ?? {});
   const redirectPath = body.success ? body.data.redirectPath : undefined;
+  const monitorId = body.success ? body.data.monitorId : undefined;
 
   try {
     const { url } = await createAuthorizeUrl({
       teamId: req.auth.team_id,
       redirectPath,
+      monitorId,
     });
     return res.status(200).json({ success: true, url });
   } catch (error) {
@@ -131,6 +136,10 @@ export async function slackStatusController(
         scope: installation.scope,
         authedUserId: installation.authed_user_id,
         installedAt: installation.created_at,
+        defaultChannelId: installation.incoming_webhook?.channel_id ?? null,
+        defaultChannelName: installation.incoming_webhook?.channel
+          ? installation.incoming_webhook.channel.replace(/^#/, "")
+          : null,
       }
     : { connected: false };
 

@@ -54,4 +54,8 @@ export type SlackConnectionStatus =
       scope: string | null;
       authedUserId: string | null;
       installedAt: string;
+      // Channel chosen during install (incoming-webhook), used as the default
+      // target when enabling Slack on a monitor.
+      defaultChannelId: string | null;
+      defaultChannelName: string | null;
     };

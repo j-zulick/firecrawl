@@ -242,7 +242,7 @@ const configSchema = z.object({
   SLACK_OAUTH_SCOPES: z
     .string()
     .default(
-      "chat:write,chat:write.public,commands,channels:read,groups:read,team:read",
+      "chat:write,chat:write.public,commands,channels:read,groups:read,team:read,incoming-webhook",
     ),
   // Absolute URL Slack redirects back to after authorize. Must exactly match a
   // Redirect URL configured on the Slack app (e.g.

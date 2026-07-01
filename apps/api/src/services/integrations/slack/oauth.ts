@@ -6,6 +6,7 @@ import { exchangeOAuthCode } from "./client";
 import { encryptSlackToken } from "./crypto";
 import { sanitizeRedirectPath } from "./redirect";
 import { upsertSlackInstallation } from "./store";
+import { getMonitorForUpdate, updateMonitor } from "../../monitoring/store";
 import type { SlackInstallationRow } from "./types";
 
 const logger = _logger.child({ module: "slack-oauth" });
@@ -18,6 +19,9 @@ const AUTHORIZE_ENDPOINT = "https://slack.com/oauth/v2/authorize";
 type SlackOAuthStatePayload = {
   teamId: string;
   redirectPath: string;
+  // When the install was started from a specific monitor, we wire that monitor
+  // up to the channel the user picked during install so it can post right away.
+  monitorId?: string;
 };
 
 export function isSlackConfigured(): boolean {
@@ -35,6 +39,7 @@ export function isSlackConfigured(): boolean {
 export async function createAuthorizeUrl(params: {
   teamId: string;
   redirectPath?: string;
+  monitorId?: string;
 }): Promise<{ url: string; state: string }> {
   if (!isSlackConfigured()) {
     throw new Error("slack_not_configured");
@@ -44,6 +49,7 @@ export async function createAuthorizeUrl(params: {
   const payload: SlackOAuthStatePayload = {
     teamId: params.teamId,
     redirectPath: sanitizeRedirectPath(params.redirectPath),
+    ...(params.monitorId ? { monitorId: params.monitorId } : {}),
   };
   await redisEvictConnection.set(
     `${STATE_PREFIX}${state}`,
@@ -75,10 +81,40 @@ async function consumeState(
     return {
       teamId: parsed.teamId,
       redirectPath: sanitizeRedirectPath(parsed.redirectPath),
+      monitorId:
+        typeof parsed.monitorId === "string" ? parsed.monitorId : undefined,
     };
   } catch {
     return null;
   }
+}
+
+// Best-effort: turn on Slack notifications for the monitor the install was
+// started from, pointing at the channel the user picked during install. Scoped
+// by team, so an install can only touch that team's own monitors.
+async function attachSlackChannelToMonitor(params: {
+  teamId: string;
+  monitorId: string;
+  channelId: string;
+  channelName: string | null;
+}): Promise<void> {
+  const existing = await getMonitorForUpdate(params.teamId, params.monitorId);
+  if (!existing) return;
+  const currentNotification = existing.notification ?? {};
+  await updateMonitor({
+    teamId: params.teamId,
+    monitorId: params.monitorId,
+    input: {
+      notification: {
+        ...currentNotification,
+        slack: {
+          enabled: true,
+          channelId: params.channelId,
+          channelName: params.channelName ?? undefined,
+        },
+      },
+    },
+  });
 }
 
 type SlackOAuthCallbackResult =
@@ -120,6 +156,20 @@ export async function handleOAuthCallback(params: {
     };
   }
 
+  // Encrypt first so a misconfigured SLACK_TOKEN_ENCRYPTION_KEY reports a
+  // distinct reason instead of the opaque "persist_failed".
+  let botToken: string;
+  try {
+    botToken = encryptSlackToken(result.access_token);
+  } catch (error) {
+    logger.error("Failed to encrypt Slack bot token", { error });
+    return {
+      ok: false,
+      error: "token_encrypt_failed",
+      redirectPath: statePayload.redirectPath,
+    };
+  }
+
   try {
     const installation = await upsertSlackInstallation({
       teamId: statePayload.teamId,
@@ -127,7 +177,7 @@ export async function handleOAuthCallback(params: {
       slackTeamName: result.team.name ?? null,
       slackEnterpriseId: result.enterprise?.id ?? null,
       botUserId: result.bot_user_id ?? null,
-      botToken: encryptSlackToken(result.access_token),
+      botToken,
       scope: result.scope ?? null,
       authedUserId: result.authed_user?.id ?? null,
       appId: result.app_id ?? null,
@@ -138,6 +188,26 @@ export async function handleOAuthCallback(params: {
       teamId: statePayload.teamId,
       slackTeamId: result.team.id,
     });
+
+    // If the install was kicked off from a specific monitor, wire that monitor
+    // to the channel the user selected during install so alerts flow right away.
+    const installChannelId = installation.incoming_webhook?.channel_id;
+    if (statePayload.monitorId && installChannelId) {
+      const channelName = installation.incoming_webhook?.channel
+        ? installation.incoming_webhook.channel.replace(/^#/, "")
+        : null;
+      await attachSlackChannelToMonitor({
+        teamId: statePayload.teamId,
+        monitorId: statePayload.monitorId,
+        channelId: installChannelId,
+        channelName,
+      }).catch(error => {
+        logger.warn("Failed to attach Slack channel to monitor after install", {
+          error,
+          monitorId: statePayload.monitorId,
+        });
+      });
+    }
 
     return {
       ok: true,
