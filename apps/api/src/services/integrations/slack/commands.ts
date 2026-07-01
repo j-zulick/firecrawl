@@ -12,7 +12,11 @@ import {
 } from "../../monitoring/store";
 import { enqueueMonitorCheck } from "../../monitoring/scheduler";
 import { validateMonitorCron } from "../../monitoring/cron";
-import { createMonitorSchema, type MonitorRow } from "../../monitoring/types";
+import {
+  createMonitorSchema,
+  type CreateMonitorRequest,
+  type MonitorRow,
+} from "../../monitoring/types";
 import { getTeamBalance } from "../../autumn/usage";
 import { getACUCTeam } from "../../../controllers/auth";
 import { getConcurrencyLimitActiveJobsCount } from "../../../lib/concurrency-redis";
@@ -142,7 +146,8 @@ function monitorHasSearchTarget(monitor: MonitorRow): boolean {
 function helpResponse(): SlackCommandResponse {
   const lines = [
     "*Firecrawl `/monitor` — commands*",
-    "`/monitor watch <url> [what to watch for]` — start monitoring; add a prompt to alert only on *meaningful* changes",
+    "`/monitor watch <url> [prompt]` — monitor a page; add a prompt to alert only on *meaningful* changes",
+    "`/monitor watch <prompt>` — monitor the *whole web* for new results matching the prompt",
     "`/monitor list` — list your monitors",
     "`/monitor get <id>` — show a monitor's details",
     "`/monitor checks <id>` — recent check history",
@@ -238,37 +243,58 @@ async function listResponse(
   );
 }
 
+// Detects a URL as the first token — accepts explicit http(s):// and bare
+// domains like "example.com/pricing" (prepends https://). Returns the
+// normalized URL, or null when the token isn't URL-like (→ web search monitor).
+function parseWatchUrl(token: string): string | null {
+  const looksLikeDomain =
+    /^([a-z0-9-]+\.)+[a-z]{2,}(\/\S*)?(\?\S*)?$/i.test(token);
+  const candidate = /^https?:\/\//i.test(token)
+    ? token
+    : looksLikeDomain
+      ? `https://${token}`
+      : token;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+// `/monitor watch ...`: a URL as the first token creates a page (scrape)
+// monitor; otherwise the whole text is a web-search monitor goal — i.e. monitor
+// the entire web for new results matching the prompt.
 async function watchResponse(
   input: SlackSlashCommandInput,
   arg: string,
 ): Promise<SlackCommandResponse> {
   const trimmedArg = arg.trim();
-  // First whitespace-delimited token is the URL; everything after it is the
-  // optional prompt describing what to watch for.
   const spaceIdx = trimmedArg.search(/\s/);
-  const rawUrl = spaceIdx === -1 ? trimmedArg : trimmedArg.slice(0, spaceIdx);
-  const goal = spaceIdx === -1 ? "" : trimmedArg.slice(spaceIdx + 1).trim();
+  const firstToken = spaceIdx === -1 ? trimmedArg : trimmedArg.slice(0, spaceIdx);
+  const rest = spaceIdx === -1 ? "" : trimmedArg.slice(spaceIdx + 1).trim();
 
-  let url: string;
-  try {
-    const parsed = new URL(rawUrl);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new Error("bad protocol");
-    }
-    url = parsed.toString();
-  } catch {
-    return ephemeral(
-      `\`${escapeSlackText(rawUrl)}\` doesn't look like a valid URL. Try \`/monitor watch https://example.com pricing changes\`.`,
-    );
+  const url = parseWatchUrl(firstToken);
+  if (url) {
+    return createWebsiteMonitor(input, url, rest);
   }
+  // No URL → monitor the whole web using the full prompt as the goal.
+  return createSearchMonitor(input, trimmedArg);
+}
 
+async function createWebsiteMonitor(
+  input: SlackSlashCommandInput,
+  url: string,
+  goalText: string,
+): Promise<SlackCommandResponse> {
   let host: string;
   try {
     host = new URL(url).hostname;
   } catch {
     host = url;
   }
-
+  const goal = goalText.trim();
   const hasGoal = goal.length > 0;
 
   try {
@@ -276,11 +302,7 @@ async function watchResponse(
       name: `Slack: ${host}`,
       schedule: { cron: DEFAULT_WATCH_CRON, timezone: "UTC" },
       targets: [
-        {
-          type: "scrape",
-          urls: [url],
-          scrapeOptions: { formats: ["markdown"] },
-        },
+        { type: "scrape", urls: [url], scrapeOptions: { formats: ["markdown"] } },
       ],
       notification: {
         slack: {
@@ -295,41 +317,104 @@ async function watchResponse(
       origin: "slack",
     });
 
-    const schedule = validateMonitorCron(
-      parsedInput.schedule.cron,
-      parsedInput.schedule.timezone,
-    );
-
-    const monitor = await createMonitor({
-      teamId: input.installation.team_id,
-      input: parsedInput,
-      nextRunAt: schedule.nextRunAt,
-      intervalMs: schedule.intervalMs,
-    });
+    const monitor = await createMonitorFromInput(input, parsedInput);
 
     const lead = hasGoal
       ? `:fire: Now monitoring ${slackLink(url)} for: _${escapeSlackText(goal)}_\nOnly *meaningful* changes will be posted to *#${escapeSlackText(input.channelName)}*.`
       : `:fire: Now monitoring ${slackLink(url)} — changes will be posted to *#${escapeSlackText(input.channelName)}*.\n_Add a prompt to alert only on meaningful changes, e.g. \`/monitor watch <url> pricing changes\`._`;
 
+    return ephemeral([lead, ...watchFooter(monitor.id)].join("\n"));
+  } catch (error) {
+    return createFailedResponse(input, error);
+  }
+}
+
+async function createSearchMonitor(
+  input: SlackSlashCommandInput,
+  goalText: string,
+): Promise<SlackCommandResponse> {
+  const goal = goalText.trim();
+  if (!goal) {
+    return ephemeral(
+      "Usage: `/monitor watch <url>` to watch a page, or `/monitor watch <what to watch the web for>` to monitor the whole web.",
+    );
+  }
+
+  try {
+    const parsedInput = createMonitorSchema.parse({
+      name: `Slack: ${truncate(goal, 80)}`,
+      schedule: { cron: DEFAULT_WATCH_CRON, timezone: "UTC" },
+      goal,
+      judgeEnabled: true,
+      targets: [
+        {
+          type: "search",
+          queries: [goal.slice(0, 256)],
+          searchWindow: "24h",
+          maxResults: 10,
+        },
+      ],
+      notification: {
+        slack: {
+          enabled: true,
+          channelId: input.channelId,
+          channelName: input.channelName,
+        },
+      },
+      origin: "slack",
+    });
+
+    const monitor = await createMonitorFromInput(input, parsedInput);
+
     return ephemeral(
       [
-        lead,
-        `Runs daily. Manage it in the ${slackLink(
-          dashboardUrl(`/app/monitoring/${monitor.id}`),
-          "dashboard",
-        )} (\`${monitor.id}\`).`,
-        `_Tip: if you don't see alerts in a private channel, invite the bot with \`/invite @Firecrawl\`._`,
+        `:mag: Now monitoring *the web* for: _${escapeSlackText(goal)}_`,
+        `New matching results will be posted to *#${escapeSlackText(input.channelName)}*.`,
+        ...watchFooter(monitor.id),
       ].join("\n"),
     );
   } catch (error) {
-    logger.warn("Failed to create monitor from slash command", {
-      error,
-      teamId: input.installation.team_id,
-    });
-    return ephemeral(
-      "Sorry, I couldn't create that monitor. Please try again from the dashboard.",
-    );
+    return createFailedResponse(input, error);
   }
+}
+
+function watchFooter(monitorId: string): string[] {
+  return [
+    `Runs daily. Manage it in the ${slackLink(
+      dashboardUrl(`/app/monitoring/${monitorId}`),
+      "dashboard",
+    )} (\`${monitorId}\`).`,
+    `_Tip: if you don't see alerts in a private channel, invite the bot with \`/invite @Firecrawl\`._`,
+  ];
+}
+
+async function createMonitorFromInput(
+  input: SlackSlashCommandInput,
+  parsedInput: CreateMonitorRequest,
+): Promise<MonitorRow> {
+  const schedule = validateMonitorCron(
+    parsedInput.schedule.cron,
+    parsedInput.schedule.timezone,
+  );
+  return createMonitor({
+    teamId: input.installation.team_id,
+    input: parsedInput,
+    nextRunAt: schedule.nextRunAt,
+    intervalMs: schedule.intervalMs,
+  });
+}
+
+function createFailedResponse(
+  input: SlackSlashCommandInput,
+  error: unknown,
+): SlackCommandResponse {
+  logger.warn("Failed to create monitor from slash command", {
+    error,
+    teamId: input.installation.team_id,
+  });
+  return ephemeral(
+    "Sorry, I couldn't create that monitor. Please try again from the dashboard.",
+  );
 }
 
 async function cancelResponse(
@@ -606,7 +691,12 @@ export async function handleSlashCommand(
     case "add":
       if (!arg) {
         return ephemeral(
-          "Usage: `/monitor watch <url> [what to watch for]`\nExample: `/monitor watch https://example.com/pricing pricing or plan changes`",
+          [
+            "Usage:",
+            "• `/monitor watch <url> [what to watch for]` — watch a page",
+            "• `/monitor watch <what to watch the web for>` — watch the whole web",
+            "Example: `/monitor watch https://example.com/pricing pricing changes`",
+          ].join("\n"),
         );
       }
       return watchResponse(input, arg);
