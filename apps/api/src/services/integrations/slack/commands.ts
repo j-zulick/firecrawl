@@ -41,7 +41,7 @@ function ephemeral(text: string, blocks?: unknown[]): SlackCommandResponse {
 function helpResponse(): SlackCommandResponse {
   const lines = [
     "*Firecrawl monitor commands*",
-    "`/monitor watch <url>` — start monitoring a page and post changes to this channel",
+    "`/monitor watch <url> [what to watch for]` — monitor a page in this channel; add a prompt to alert only on *meaningful* changes",
     "`/monitor list` — list your team's monitors",
     "`/monitor cancel <monitor-id>` — pause a monitor",
     "`/monitor status` — show this workspace's Firecrawl connection",
@@ -100,18 +100,25 @@ async function listResponse(
 
 async function watchResponse(
   input: SlackSlashCommandInput,
-  rawUrl: string,
+  arg: string,
 ): Promise<SlackCommandResponse> {
+  const trimmedArg = arg.trim();
+  // First whitespace-delimited token is the URL; everything after it is the
+  // optional prompt describing what to watch for.
+  const spaceIdx = trimmedArg.search(/\s/);
+  const rawUrl = spaceIdx === -1 ? trimmedArg : trimmedArg.slice(0, spaceIdx);
+  const goal = spaceIdx === -1 ? "" : trimmedArg.slice(spaceIdx + 1).trim();
+
   let url: string;
   try {
-    const parsed = new URL(rawUrl.trim());
+    const parsed = new URL(rawUrl);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       throw new Error("bad protocol");
     }
     url = parsed.toString();
   } catch {
     return ephemeral(
-      `\`${escapeSlackText(rawUrl)}\` doesn't look like a valid URL. Try \`/monitor watch https://example.com\`.`,
+      `\`${escapeSlackText(rawUrl)}\` doesn't look like a valid URL. Try \`/monitor watch https://example.com pricing changes\`.`,
     );
   }
 
@@ -121,6 +128,8 @@ async function watchResponse(
   } catch {
     host = url;
   }
+
+  const hasGoal = goal.length > 0;
 
   try {
     const parsedInput = createMonitorSchema.parse({
@@ -140,6 +149,9 @@ async function watchResponse(
           channelName: input.channelName,
         },
       },
+      // A prompt enables meaningful-change judging, so we only alert on changes
+      // that match what the user asked to watch for.
+      ...(hasGoal ? { goal, judgeEnabled: true } : {}),
       origin: "slack",
     });
 
@@ -155,11 +167,13 @@ async function watchResponse(
       intervalMs: schedule.intervalMs,
     });
 
+    const lead = hasGoal
+      ? `:fire: Now monitoring ${slackLink(url)} for: _${escapeSlackText(goal)}_\nOnly *meaningful* changes will be posted to *#${escapeSlackText(input.channelName)}*.`
+      : `:fire: Now monitoring ${slackLink(url)} — changes will be posted to *#${escapeSlackText(input.channelName)}*.\n_Add a prompt to alert only on meaningful changes, e.g. \`/monitor watch <url> pricing changes\`._`;
+
     return ephemeral(
       [
-        `:fire: Now monitoring ${slackLink(url)} — changes will be posted to *#${escapeSlackText(
-          input.channelName,
-        )}*.`,
+        lead,
         `Runs daily. Manage it in the ${slackLink(
           dashboardUrl(`/app/monitoring/${monitor.id}`),
           "dashboard",
@@ -240,7 +254,9 @@ export async function handleSlashCommand(
     case "watch":
     case "add":
       if (!arg) {
-        return ephemeral("Usage: `/monitor watch <url>`");
+        return ephemeral(
+          "Usage: `/monitor watch <url> [what to watch for]`\nExample: `/monitor watch https://example.com/pricing pricing or plan changes`",
+        );
       }
       return watchResponse(input, arg);
     case "cancel":

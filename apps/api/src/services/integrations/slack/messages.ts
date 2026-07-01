@@ -59,20 +59,13 @@ export function buildMonitorAlertMessage(payload: MonitorSlackPayload): {
 } {
   const { summary } = payload;
 
-  const judged = payload.pages.filter(p => p.judgment);
-  const meaningful = judged.filter(p => p.judgment!.meaningful).length;
-  const changedLine =
-    judged.length > 0
-      ? `*Changed:* ${summary.changed} (${meaningful} meaningful)`
-      : `*Changed:* ${summary.changed}`;
-
-  const summaryLines = [
-    changedLine,
-    `*New:* ${summary.new}`,
-    `*Removed:* ${summary.removed}`,
-    `*Errors:* ${summary.error}`,
-    `*Pages checked:* ${summary.totalPages}`,
-  ].join("\n");
+  // Meaningful changes first — those carry the description the reader cares about.
+  const sortedPages = [...payload.pages].sort((a, b) => {
+    const aM = a.judgment?.meaningful === true ? 0 : 1;
+    const bM = b.judgment?.meaningful === true ? 0 : 1;
+    return aM - bM;
+  });
+  const shownPages = sortedPages.slice(0, MAX_PAGE_BLOCKS);
 
   const blocks: unknown[] = [
     {
@@ -83,50 +76,72 @@ export function buildMonitorAlertMessage(payload: MonitorSlackPayload): {
         emoji: true,
       },
     },
-    {
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: `Your Firecrawl monitor detected activity.\n${summaryLines}`,
-      },
-    },
   ];
 
-  const sortedPages = [...payload.pages].sort((a, b) => {
-    const aM = a.judgment?.meaningful === true ? 0 : 1;
-    const bM = b.judgment?.meaningful === true ? 0 : 1;
-    return aM - bM;
-  });
+  // Headline each page with WHAT changed (the judged description). The page's
+  // status + URL becomes a small secondary context line beneath it.
+  for (const page of shownPages) {
+    const reason = page.judgment?.reason?.trim();
+    const tag = page.judgment
+      ? page.judgment.meaningful
+        ? " · _meaningful_"
+        : " · _noise_"
+      : "";
+    const meta = `${statusEmoji(page.status)} *${escapeSlackText(page.status)}* · ${boundedPageLink(page.url)}${tag}`;
 
-  const shownPages = sortedPages.slice(0, MAX_PAGE_BLOCKS);
-  if (shownPages.length > 0) {
-    blocks.push({ type: "divider" });
-    for (const page of shownPages) {
-      let line = `*${escapeSlackText(page.status)}* ${boundedPageLink(page.url)}`;
-      if (page.judgment) {
-        line += page.judgment.meaningful
-          ? "  :large_orange_diamond: _meaningful_"
-          : "  :white_circle: _noise_";
-        if (page.judgment.reason) {
-          line += `\n_${escapeSlackText(truncate(page.judgment.reason, 240))}_`;
-        }
-      }
+    if (reason) {
       blocks.push({
         type: "section",
-        // Final safety net: never emit a section over Slack's hard limit.
-        text: { type: "mrkdwn", text: truncate(line, SECTION_TEXT_LIMIT) },
+        text: {
+          type: "mrkdwn",
+          // The change description leads; clamp only at Slack's hard limit.
+          text: truncate(escapeSlackText(reason), SECTION_TEXT_LIMIT),
+        },
       });
-    }
-    const remaining = sortedPages.length - shownPages.length;
-    if (remaining > 0) {
       blocks.push({
         type: "context",
-        elements: [
-          { type: "mrkdwn", text: `…and ${remaining} more page(s).` },
-        ],
+        elements: [{ type: "mrkdwn", text: truncate(meta, SECTION_TEXT_LIMIT) }],
+      });
+    } else {
+      // No judged description (e.g. unjudged monitor) — the page itself leads.
+      blocks.push({
+        type: "section",
+        text: { type: "mrkdwn", text: truncate(meta, SECTION_TEXT_LIMIT) },
       });
     }
   }
+
+  const remaining = sortedPages.length - shownPages.length;
+  if (remaining > 0) {
+    blocks.push({
+      type: "context",
+      elements: [{ type: "mrkdwn", text: `…and ${remaining} more page(s).` }],
+    });
+  }
+
+  blocks.push({ type: "divider" });
+
+  // Secondary: a compact one-line tally (only non-zero categories + total).
+  const meaningfulCount = payload.pages.filter(
+    p => p.judgment?.meaningful === true,
+  ).length;
+  const counts: string[] = [];
+  if (summary.changed > 0) {
+    counts.push(
+      `${summary.changed} changed${meaningfulCount > 0 ? ` (${meaningfulCount} meaningful)` : ""}`,
+    );
+  }
+  if (summary.new > 0) counts.push(`${summary.new} new`);
+  if (summary.removed > 0) counts.push(`${summary.removed} removed`);
+  if (summary.error > 0) {
+    counts.push(`${summary.error} error${summary.error === 1 ? "" : "s"}`);
+  }
+  counts.push(`${summary.totalPages} checked`);
+
+  blocks.push({
+    type: "context",
+    elements: [{ type: "mrkdwn", text: counts.join("  ·  ") }],
+  });
 
   blocks.push({
     type: "actions",
@@ -152,9 +167,30 @@ export function buildMonitorAlertMessage(payload: MonitorSlackPayload): {
     ],
   });
 
-  const text = `Monitor "${payload.monitorName}" detected activity: ${summary.changed} changed, ${summary.new} new, ${summary.removed} removed, ${summary.error} errors.`;
+  // Notification preview / fallback text also leads with the change itself.
+  const leadReason =
+    shownPages.find(p => p.judgment?.meaningful && p.judgment.reason)?.judgment
+      ?.reason ?? shownPages.find(p => p.judgment?.reason)?.judgment?.reason;
+  const text = leadReason
+    ? `${payload.monitorName}: ${truncate(leadReason.trim(), 280)}`
+    : `Monitor "${payload.monitorName}" detected activity: ${summary.changed} changed, ${summary.new} new, ${summary.removed} removed, ${summary.error} errors.`;
 
   return { text, blocks };
+}
+
+function statusEmoji(status: string): string {
+  switch (status) {
+    case "changed":
+      return ":large_orange_diamond:";
+    case "new":
+      return ":large_green_circle:";
+    case "removed":
+      return ":red_circle:";
+    case "error":
+      return ":warning:";
+    default:
+      return ":small_blue_diamond:";
+  }
 }
 
 function truncate(input: string, max: number): string {
