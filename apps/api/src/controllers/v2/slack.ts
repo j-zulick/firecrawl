@@ -15,7 +15,10 @@ import {
   getSlackInstallationBySlackTeam,
 } from "../../services/integrations/slack/store";
 import { decryptSlackToken } from "../../services/integrations/slack/crypto";
-import { listChannels } from "../../services/integrations/slack/client";
+import {
+  listChannels,
+  postToResponseUrl,
+} from "../../services/integrations/slack/client";
 import { verifySlackSignature } from "../../services/integrations/slack/signature";
 import {
   handleFirecrawlCommand,
@@ -195,8 +198,9 @@ export async function slackDisconnectController(
   return res.status(200).json({ success: true });
 }
 
-// POST /v2/slack/commands (public, signature-verified) — the /monitor slash
-// command. Slack expects a 200 with a JSON message within 3 seconds.
+// POST /v2/slack/commands (public, signature-verified) — the /monitor and
+// /firecrawl slash commands. Slack enforces a 3-second ack deadline, so we
+// respond immediately and deliver results via response_url.
 export async function slackCommandsController(req: Request, res: Response) {
   const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
   const valid = verifySlackSignature({
@@ -223,36 +227,64 @@ export async function slackCommandsController(req: Request, res: Response) {
     });
   }
 
-  const installation = await getSlackInstallationBySlackTeam(slackTeamId);
-  if (!installation) {
-    return res.status(200).json({
-      response_type: "ephemeral",
-      text: `This workspace isn't linked to Firecrawl yet. Connect it from the dashboard: ${config.FIRECRAWL_DASHBOARD_URL}/app/monitoring`,
-    });
-  }
+  const runCommand = async (): Promise<{
+    response_type: "ephemeral" | "in_channel";
+    text: string;
+    blocks?: unknown[];
+  }> => {
+    const installation = await getSlackInstallationBySlackTeam(slackTeamId);
+    if (!installation) {
+      return {
+        response_type: "ephemeral",
+        text: `This workspace isn't linked to Firecrawl yet. Connect it from the dashboard: ${config.FIRECRAWL_DASHBOARD_URL}/app/monitoring`,
+      };
+    }
 
-  // Both /monitor and /firecrawl post to this endpoint; route by which command
-  // Slack sent so account/workspace commands stay off /monitor.
-  const command = (body.command ?? "").toLowerCase();
-  const handler =
-    command === "/firecrawl" ? handleFirecrawlCommand : handleSlashCommand;
-
-  try {
-    const response = await handler({
+    // Both /monitor and /firecrawl post to this endpoint; route by which
+    // command Slack sent so account/workspace commands stay off /monitor.
+    const command = (body.command ?? "").toLowerCase();
+    const handler =
+      command === "/firecrawl" ? handleFirecrawlCommand : handleSlashCommand;
+    return handler({
       installation,
       text: body.text ?? "",
       channelId: body.channel_id ?? "",
       channelName: body.channel_name ?? "this channel",
       userId: body.user_id ?? "",
     });
-    return res.status(200).json(response);
-  } catch (error) {
-    logger.error("Slack slash command failed", { error, slackTeamId });
-    return res.status(200).json({
-      response_type: "ephemeral",
-      text: "Something went wrong handling that command.",
-    });
+  };
+
+  const responseUrl = body.response_url;
+  if (!responseUrl) {
+    // Shouldn't happen for real slash commands; handle inline as a fallback.
+    try {
+      return res.status(200).json(await runCommand());
+    } catch (error) {
+      logger.error("Slack slash command failed", { error, slackTeamId });
+      return res.status(200).json({
+        response_type: "ephemeral",
+        text: "Something went wrong handling that command.",
+      });
+    }
   }
+
+  // Ack immediately — Slack shows "operation_timeout" if we take >3s (DB and
+  // billing lookups can exceed that). The real result is delivered via the
+  // response_url, which stays valid for ~30 minutes.
+  res.status(200).send("");
+
+  void (async () => {
+    try {
+      const response = await runCommand();
+      await postToResponseUrl(responseUrl, response);
+    } catch (error) {
+      logger.error("Slack slash command failed", { error, slackTeamId });
+      await postToResponseUrl(responseUrl, {
+        response_type: "ephemeral",
+        text: "Something went wrong handling that command.",
+      }).catch(() => {});
+    }
+  })();
 }
 
 // POST /v2/slack/events (public, signature-verified) — URL verification during

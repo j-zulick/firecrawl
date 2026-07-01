@@ -104,6 +104,27 @@ export async function postSlackMessage(params: {
   return { ok: res.ok, error: res.error, ts: res.ts };
 }
 
+// Delivers a delayed slash-command result via the response_url Slack includes
+// in the payload (valid ~30 minutes). Used so the command endpoint can ack
+// within Slack's 3-second deadline and do the real work asynchronously.
+export async function postToResponseUrl(
+  responseUrl: string,
+  message: {
+    response_type: "ephemeral" | "in_channel";
+    text: string;
+    blocks?: unknown[];
+  },
+): Promise<void> {
+  const res = await fetch(responseUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(message),
+  });
+  if (!res.ok) {
+    logger.warn("Slack response_url delivery failed", { status: res.status });
+  }
+}
+
 // Public channels can be auto-joined by the bot; private channels require a
 // manual invite (surfaced to the user as an error).
 export async function joinChannel(params: {
