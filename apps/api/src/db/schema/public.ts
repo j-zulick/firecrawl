@@ -73,6 +73,8 @@ export const api_keys = pgTable(
     team_id: uuid("team_id"),
     owner_id: uuid("owner_id"),
     agent_provisioned: boolean("agent_provisioned").default(false),
+    // API-key-scoped concurrency limit; null = key inherits the team limit only
+    concurrency: integer("concurrency"),
   },
   table => [
     // Target of key_restriction_config's composite FK, which pins a
