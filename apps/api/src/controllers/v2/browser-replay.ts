@@ -128,16 +128,21 @@ export async function browserReplayController(
     });
   }
 
+  // The browser service response is only type-asserted (no runtime schema
+  // validation), so defend against a well-formed 200 that omits `pages`
+  // (e.g. version skew) — turn a would-be TypeError/500 into an empty list.
+  const pages = recording.pages ?? [];
+
   return res.status(200).json({
     success: true,
-    pages: recording.pages.map(page => ({
+    pages: pages.map(page => ({
       pageId: page.pageId,
       url: `/v2/interact/${req.params.sessionId}/replay/${page.pageId}`,
       pageUrl: page.url,
       startTimeMs: page.startTimeMs,
       endTimeMs: page.endTimeMs,
     })),
-    pageCount: recording.pageCount,
+    pageCount: recording.pageCount ?? pages.length,
   });
 }
 

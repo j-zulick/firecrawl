@@ -628,6 +628,11 @@ async function createSessionForScrape(
         "/browsers",
         {
           ttl,
+          // Record interact sessions so the replay endpoints (which we expose
+          // via the returned sessionId) have data. Set explicitly rather than
+          // relying on the browser service's implicit default, matching the
+          // standalone browser create path.
+          record: true,
           ...(activityTtl !== undefined ? { activityTtl } : {}),
           ...(persistentStorage !== undefined ? { persistentStorage } : {}),
         },

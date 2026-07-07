@@ -98,6 +98,9 @@ describe("Interact session replay", () => {
       expect(page.url).toBe(
         `/v2/interact/${sessionId}/replay/${page.pageId}`,
       );
+      // pageUrl is the recorded page URL — should reflect where we navigated.
+      expect(typeof page.pageUrl).toBe("string");
+      expect(page.pageUrl).toContain(TEST_SUITE_WEBSITE);
       expect(page.endTimeMs).toBeGreaterThan(page.startTimeMs);
 
       const playlistResponse = await browserReplayPageRaw(
