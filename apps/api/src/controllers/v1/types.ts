@@ -1287,6 +1287,7 @@ export type AuthCreditUsageChunk = {
     scrapeAgentPreview?: number;
     browser?: number;
     browserExecute?: number;
+    browserReplay?: number;
     account?: number;
     supportAsk?: number;
     supportDocsSearch?: number;
