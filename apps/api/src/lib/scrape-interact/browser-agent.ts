@@ -341,7 +341,7 @@ export async function executePromptViaBrowserAgent(
 
   try {
     const result = await generateText({
-      model: getModel("gemini-2.5-flash", "google"),
+      model: getModel("gemini-3.5-flash", "google"),
       system: SYSTEM_PROMPT,
       messages: [
         {
