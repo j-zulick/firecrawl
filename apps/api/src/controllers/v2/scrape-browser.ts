@@ -574,7 +574,11 @@ async function createSessionForScrape(
   const autumnResult = await autumnService.checkCredits({
     teamId: req.auth.team_id,
     value: estimatedCredits,
-    properties: { source: "scrapeBrowserCreate", path: req.path },
+    properties: {
+      source: "scrapeBrowserCreate",
+      path: req.path,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+    },
   });
 
   if (autumnResult !== null && !autumnResult.allowed) {
