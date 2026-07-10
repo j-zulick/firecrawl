@@ -334,7 +334,7 @@ async function sendNotificationInternal(
 
       if (config.SLACK_ADMIN_WEBHOOK_URL && emails.length > 0) {
         sendSlackWebhook(
-          `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}. Number of credits used: ${chunk.adjusted_credits_used} | Number of credits in the plan: ${chunk.price_credits}`,
+          `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}. Number of credits in the plan: ${chunk.price_credits}`,
           false,
           config.SLACK_ADMIN_WEBHOOK_URL,
         ).catch(error => {

@@ -36,7 +36,7 @@ function normalizedApiIsUuid(potentialUuid: string): boolean {
   return isValidUuid(potentialUuid);
 }
 
-export async function setCachedACUC(
+async function setCachedACUC(
   api_key: string,
   is_extract: boolean,
   acuc:
@@ -325,7 +325,7 @@ export async function getACUC(
   }
 }
 
-export async function setCachedACUCTeam(
+async function setCachedACUCTeam(
   team_id: string,
   is_extract: boolean,
   acuc:

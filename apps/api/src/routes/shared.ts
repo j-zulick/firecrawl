@@ -260,13 +260,6 @@ export function authMiddleware(
 
       req.auth = { team_id, org_id };
       req.acuc = chunk ?? undefined;
-      if (chunk) {
-        req.account = {
-          remainingCredits: chunk.price_should_be_graceful
-            ? chunk.remaining_credits + chunk.price_credits
-            : chunk.remaining_credits,
-        };
-      }
       next();
     })().catch(err => next(err));
   };
