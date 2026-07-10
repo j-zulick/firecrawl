@@ -19,7 +19,6 @@ enum IntegrationEnum {
   HERMES = "hermes",
   GSTACK = "gstack",
   PROMETHEUS = "prometheus",
-  LARAVEL_AI = "laravel-ai",
 }
 
 export const integrationSchema = z
