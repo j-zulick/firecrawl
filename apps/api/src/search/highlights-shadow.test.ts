@@ -19,14 +19,14 @@ const logger = {
   warn: vi.fn(),
 } as any;
 
-let runSearchHighlightsShadow = createSearchHighlightsShadowRunner();
+let runSearchHighlightsShadow = createSearchHighlightsShadowRunner(logger);
 
 afterEach(() => {
   vi.clearAllMocks();
   config.HIGHLIGHT_SHADOW_RATE = 1;
   config.HIGHLIGHT_SHADOW_MAX_INFLIGHT = 1;
   vi.mocked(highlightsEnvReady).mockReturnValue(true);
-  runSearchHighlightsShadow = createSearchHighlightsShadowRunner();
+  runSearchHighlightsShadow = createSearchHighlightsShadowRunner(logger);
 });
 
 describe("runSearchHighlightsShadow", () => {
@@ -45,7 +45,6 @@ describe("runSearchHighlightsShadow", () => {
         requestId: "request-1",
         teamId: "team-1",
         zeroDataRetention: false,
-        logger,
       }),
     ).toBe("started");
     await new Promise(resolve => setImmediate(resolve));
@@ -95,7 +94,6 @@ describe("runSearchHighlightsShadow", () => {
       query: "query",
       teamId: "team-1",
       zeroDataRetention: false,
-      logger,
     };
     expect(
       runSearchHighlightsShadow({ ...input, requestId: "request-1" }),
@@ -122,7 +120,6 @@ describe("runSearchHighlightsShadow", () => {
       query: "query",
       requestId: "request-1",
       teamId: "team-1",
-      logger,
     };
 
     expect(

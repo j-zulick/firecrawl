@@ -1,6 +1,7 @@
 import { createLogger, type Logger } from "winston";
 import type { SearchV2Response } from "../lib/entities";
 import { config } from "../config";
+import { logger as rootLogger } from "../lib/logger";
 import { applySearchHighlights, highlightsEnvReady } from "./highlights";
 
 const CANONICAL_LOG = "search/highlights-shadow";
@@ -18,13 +19,14 @@ function sampled(requestId: string, rate: number): boolean {
   return (hash >>> 0) / 0x1_0000_0000 < rate;
 }
 
-export function createSearchHighlightsShadowRunner(): (options: {
+export function createSearchHighlightsShadowRunner(
+  canonicalLogger: Pick<Logger, "info" | "warn"> = rootLogger,
+): (options: {
   response: SearchV2Response;
   query: string;
   requestId: string;
   teamId: string;
   zeroDataRetention: boolean;
-  logger: Logger;
 }) => "skipped" | "dropped" | "started" {
   let inFlight = 0;
 
@@ -38,7 +40,7 @@ export function createSearchHighlightsShadowRunner(): (options: {
     }
 
     if (inFlight >= config.HIGHLIGHT_SHADOW_MAX_INFLIGHT) {
-      options.logger.info("Search highlights shadow dropped", {
+      canonicalLogger.info("Search highlights shadow dropped", {
         canonicalLog: CANONICAL_LOG,
         outcome: "dropped",
         reason: "max_inflight",
@@ -60,7 +62,7 @@ export function createSearchHighlightsShadowRunner(): (options: {
       allowLegacyFallback: false,
     })
       .then(result => {
-        options.logger.info("Search highlights shadow completed", {
+        canonicalLogger.info("Search highlights shadow completed", {
           canonicalLog: CANONICAL_LOG,
           outcome: result.succeeded ? "completed" : "failed",
           requestId: options.requestId,
@@ -75,7 +77,7 @@ export function createSearchHighlightsShadowRunner(): (options: {
         });
       })
       .catch(error => {
-        options.logger.warn("Search highlights shadow failed", {
+        canonicalLogger.warn("Search highlights shadow failed", {
           canonicalLog: CANONICAL_LOG,
           outcome: "failed",
           requestId: options.requestId,

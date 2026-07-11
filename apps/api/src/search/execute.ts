@@ -261,7 +261,6 @@ export async function executeSearch(
       requestId: context.requestId,
       teamId,
       zeroDataRetention: zeroDataRetention === true || isZDR === true,
-      logger,
     });
   }
 
