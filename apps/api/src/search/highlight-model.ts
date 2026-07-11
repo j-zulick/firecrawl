@@ -66,7 +66,11 @@ function requestHeaders(): Record<string, string> {
 export async function generateHighlightsBatch(
   query: string,
   pages: HighlightPage[],
-  opts: { logger: Logger },
+  opts: {
+    logger: Logger;
+    logPayload?: boolean;
+    allowLegacyFallback?: boolean;
+  },
 ): Promise<Map<string, HighlightResult> | null> {
   if (pages.length === 0) {
     return new Map();
@@ -89,7 +93,10 @@ export async function generateHighlightsBatch(
       // During rollout the configured service may still be the legacy Modal
       // endpoint, whose /batch_highlight contract uses {requests: [...]}. Keep
       // highlights available until infra switches the URL to GCP Stage 1.
-      if (res.status === 400 || res.status === 404) {
+      if (
+        opts.allowLegacyFallback !== false &&
+        (res.status === 400 || res.status === 404)
+      ) {
         opts.logger.info("query highlights using legacy per-page fallback", {
           canonicalLog: "search/highlights",
           status: res.status,
@@ -121,10 +128,14 @@ export async function generateHighlightsBatch(
       canonicalLog: "search/highlights",
       requestedPages: pages.length,
       returnedPages: results.size,
-      pages: Array.from(results, ([id, result]) => ({
-        id,
-        highlights: result.highlights,
-      })),
+      ...(opts.logPayload === false
+        ? {}
+        : {
+            pages: Array.from(results, ([id, result]) => ({
+              id,
+              highlights: result.highlights,
+            })),
+          }),
       elapsedMs: Date.now() - start,
     });
 

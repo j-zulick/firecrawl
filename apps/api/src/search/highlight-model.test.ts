@@ -227,4 +227,20 @@ describe("generateHighlightsBatch", () => {
       expect.objectContaining({ pageId: "1" }),
     );
   });
+
+  it("does not fan out fallback requests when fallback is disabled", async () => {
+    const fetchMock = mockFetchOnce({ error: "not found" }, false, 404);
+
+    const out = await generateHighlightsBatch(
+      "q",
+      [
+        { id: "0", markdown: "first" },
+        { id: "1", markdown: "second" },
+      ],
+      { logger, allowLegacyFallback: false, logPayload: false },
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(out).toBeNull();
+  });
 });
