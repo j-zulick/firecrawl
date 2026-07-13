@@ -66,7 +66,10 @@ jobs:
       - name: Tag release on firecrawl-php
         if: ${{ env.VERSION_INCREMENTED == 'true' }}
         run: |
-          VERSION=$(sed -nE "s/.*SDK_VERSION[[:space:]]*=[[:space:]]*'([0-9]+\.[0-9]+\.[0-9]+)'.*/\1/p" apps/php-sdk/src/Version.php)
+          # Same permissive extraction as check_version_has_incremented.py: the
+          # gate already validates the version, so any format it approves
+          # (including pre-releases) must reach the tag push.
+          VERSION=$(sed -nE "s/.*SDK_VERSION[[:space:]]*=[[:space:]]*'([^']+)'.*/\1/p" apps/php-sdk/src/Version.php)
           if [ -z "$VERSION" ]; then
             echo "Could not read SDK_VERSION from apps/php-sdk/src/Version.php" >&2
             exit 1
