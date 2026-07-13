@@ -138,10 +138,6 @@ export function monitoringClaimDueMonitors<T = Record<string, any>>(params: {
   );
 }
 
-export async function updateTallyTeam(i_team_id: string): Promise<void> {
-  await db.execute(sql`select update_tally_10_team(i_team_id => ${i_team_id})`);
-}
-
 // ============================================================================
 // Index database RPCs
 // ============================================================================
