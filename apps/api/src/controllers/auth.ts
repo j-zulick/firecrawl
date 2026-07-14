@@ -79,11 +79,7 @@ const mockPreviewACUC: (
   api_key: "preview",
   api_key_id: 0,
   team_id,
-  sub_id: null,
-  sub_current_period_start: null,
-  sub_current_period_end: null,
   sub_user_id: null,
-  price_id: null,
   rate_limits: {
     crawl: 2,
     scrape: 10,
@@ -96,8 +92,6 @@ const mockPreviewACUC: (
     extractAgentPreview: 1,
     scrapeAgentPreview: 5,
   },
-  price_should_be_graceful: false,
-  price_associated_auto_recharge_price_id: null,
   plan_priority: {
     bucketLimit: 25,
     planModifier: 0.1,
@@ -111,13 +105,7 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
   api_key: "bypass",
   api_key_id: 0,
   team_id: "bypass",
-  sub_id: "bypass",
-  sub_current_period_start: new Date().toISOString(),
-  sub_current_period_end: new Date(
-    new Date().getTime() + 30 * 24 * 60 * 60 * 1000,
-  ).toISOString(),
   sub_user_id: "bypass",
-  price_id: "bypass",
   rate_limits: {
     crawl: 99999999,
     scrape: 99999999,
@@ -130,8 +118,6 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
     extractAgentPreview: 99999999,
     scrapeAgentPreview: 99999999,
   },
-  price_should_be_graceful: false,
-  price_associated_auto_recharge_price_id: null,
   plan_priority: {
     bucketLimit: 25,
     planModifier: 0.1,
@@ -702,7 +688,6 @@ async function supaAuthenticateUser(
   let normalizedApi: string;
 
   let teamId: string | null = null;
-  let priceId: string | null = null;
   let chunk: AuthCreditUsageChunk | null = null;
   if (token == "this_is_just_a_preview_token") {
     throw new Error(
@@ -743,7 +728,6 @@ async function supaAuthenticateUser(
     }
 
     teamId = chunk.team_id;
-    priceId = chunk.price_id;
 
     subscriptionData = {
       team_id: teamId,
@@ -774,7 +758,6 @@ async function supaAuthenticateUser(
     }
 
     teamId = chunk.team_id;
-    priceId = chunk.price_id;
 
     subscriptionData = {
       team_id: teamId,
@@ -824,7 +807,6 @@ async function supaAuthenticateUser(
   } catch (rateLimiterRes) {
     // logger.error(`Rate limit exceeded: ${rateLimiterRes}`, {
     //   teamId,
-    //   priceId,
     //   mode,
     //   rateLimits: chunk?.rate_limits,
     //   rateLimiterRes,
