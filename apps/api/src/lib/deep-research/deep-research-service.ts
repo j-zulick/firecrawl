@@ -19,7 +19,6 @@ export interface DeepResearchServiceOptions {
   systemPrompt: string;
   formats: string[];
   jsonOptions: ExtractOptions;
-  subId?: string;
   apiKeyId: number | null;
 }
 

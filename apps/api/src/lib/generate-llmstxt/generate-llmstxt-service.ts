@@ -21,7 +21,6 @@ interface GenerateLLMsTextServiceOptions {
   maxUrls: number;
   showFullText: boolean;
   cache?: boolean;
-  subId?: string;
 }
 
 const descriptionSchema = z.object({

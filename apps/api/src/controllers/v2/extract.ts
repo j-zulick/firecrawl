@@ -51,7 +51,6 @@ export async function extractController(
     originalRequest,
     teamId: req.auth.team_id,
     team_id: req.auth.team_id,
-    subId: req.acuc?.sub_id,
     extractId,
     zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
   });
@@ -151,7 +150,6 @@ export async function extractController(
   const jobData = {
     request: req.body,
     teamId: req.auth.team_id,
-    subId: req.acuc?.sub_id,
     extractId,
     agent: req.body.agent,
     createdAt,

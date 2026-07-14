@@ -49,7 +49,6 @@ export async function agentController(
   _logger.info("Agent starting...", {
     request: req.body,
     originalRequest,
-    subId: req.acuc?.sub_id,
     zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
   });
 
