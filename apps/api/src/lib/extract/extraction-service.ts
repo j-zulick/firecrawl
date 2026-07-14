@@ -150,7 +150,6 @@ async function performExtraction(
 
       await billTeam(
         teamId,
-        subId,
         creditsToBill,
         apiKeyId,
         { endpoint: "extract", jobId: extractId },
@@ -666,7 +665,6 @@ async function performExtraction(
         });
         await billTeam(
           teamId,
-          subId,
           creditsToBill,
           apiKeyId,
           { endpoint: "extract", jobId: extractId },
@@ -778,7 +776,6 @@ async function performExtraction(
         });
         await billTeam(
           teamId,
-          subId,
           creditsToBill,
           apiKeyId,
           { endpoint: "extract", jobId: extractId },
@@ -806,7 +803,6 @@ async function performExtraction(
         const creditsToBill = Math.ceil(tokens_billed / 15);
         await billTeam(
           teamId,
-          subId,
           creditsToBill,
           apiKeyId,
           { endpoint: "extract", jobId: extractId },
@@ -998,7 +994,6 @@ async function performExtraction(
     // Bill team for usage
     await billTeam(
       teamId,
-      subId,
       creditsToBill,
       apiKeyId,
       { endpoint: "extract" },
@@ -1066,7 +1061,6 @@ async function performExtraction(
     const creditsToBill = Math.ceil(tokens_billed / 15);
     await billTeam(
       teamId,
-      subId,
       creditsToBill,
       apiKeyId,
       { endpoint: "extract" },

@@ -59,7 +59,6 @@ const processExtractJob = async (
     result = await performExtraction_F0(data.extractId, {
       request: data.request,
       teamId: data.teamId,
-      subId: data.subId ?? undefined,
       apiKeyId: data.apiKeyId ?? null,
     });
 

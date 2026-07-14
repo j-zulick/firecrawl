@@ -67,7 +67,6 @@ async function oldExtract(
     result = await performExtraction_F0(extractId, {
       request,
       teamId: req.auth.team_id,
-      subId: req.acuc?.sub_id ?? undefined,
       apiKeyId: req.acuc?.api_key_id ?? null,
     });
 
@@ -171,7 +170,6 @@ export async function extractController(
     if (threatScanCredits > 0) {
       billTeam(
         req.auth.team_id,
-        req.acuc?.sub_id ?? undefined,
         threatScanCredits,
         req.acuc?.api_key_id ?? null,
         { endpoint: "extract" },

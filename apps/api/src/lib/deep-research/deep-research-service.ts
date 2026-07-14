@@ -25,7 +25,7 @@ export interface DeepResearchServiceOptions {
 
 export async function performDeepResearch(options: DeepResearchServiceOptions) {
   const costTracking = new CostTracking();
-  const { researchId, teamId, timeLimit, subId, maxUrls, apiKeyId } = options;
+  const { researchId, teamId, timeLimit, maxUrls, apiKeyId } = options;
   const startTime = Date.now();
   let currentTopic = options.query;
   let urlsAnalyzed = 0;
@@ -427,7 +427,6 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
     // Bill team for usage based on URLs analyzed
     billTeam(
       teamId,
-      subId,
       credits_billed,
       apiKeyId,
       { endpoint: "deep_research", jobId: researchId },
