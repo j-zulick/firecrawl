@@ -278,7 +278,6 @@ export async function scrapeInteractController(
   // so LangSmith metadata filters don't match empty strings.
   const traceIdentity = {
     orgId: req.auth.org_id ?? undefined,
-    subUserId: req.acuc?.sub_user_id ?? undefined,
   };
 
   let execResult: BrowserServiceExecResponse | AgentResult;
