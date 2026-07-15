@@ -7,11 +7,16 @@ vi.mock("../config", () => ({
 
 vi.mock("./highlights", () => ({
   highlightsEnvReady: vi.fn(() => true),
-  applySearchHighlights: vi.fn(),
+  searchHighlightURLs: vi.fn(() => []),
+  runIndexedSearchHighlightsShadow: vi.fn(),
 }));
 
 import { config } from "../config";
-import { applySearchHighlights, highlightsEnvReady } from "./highlights";
+import {
+  highlightsEnvReady,
+  runIndexedSearchHighlightsShadow,
+  searchHighlightURLs,
+} from "./highlights";
 import { createSearchHighlightsShadowRunner } from "./highlights-shadow";
 
 const logger = {
@@ -31,7 +36,7 @@ afterEach(() => {
 
 describe("runSearchHighlightsShadow", () => {
   it("runs without applying results and emits a content-free canonical log", async () => {
-    vi.mocked(applySearchHighlights).mockResolvedValue({
+    vi.mocked(runIndexedSearchHighlightsShadow).mockResolvedValue({
       attempted: 10,
       indexHits: 7,
       replaced: 6,
@@ -49,17 +54,12 @@ describe("runSearchHighlightsShadow", () => {
     ).toBe("started");
     await new Promise(resolve => setImmediate(resolve));
 
-    expect(applySearchHighlights).toHaveBeenCalledWith(
-      {},
+    expect(searchHighlightURLs).toHaveBeenCalledWith({});
+    expect(runIndexedSearchHighlightsShadow).toHaveBeenCalledWith(
+      [],
       "private query",
       expect.objectContaining({ silent: true }),
-      {
-        applyResults: false,
-        suppressSummaryLog: true,
-        suppressPayloadLog: true,
-        allowLegacyFallback: false,
-        requestId: "request-1",
-      },
+      "request-1",
     );
     expect(logger.info).toHaveBeenCalledWith(
       "Search highlights shadow completed",
@@ -84,7 +84,7 @@ describe("runSearchHighlightsShadow", () => {
       replaced: number;
       succeeded: boolean;
     }) => void;
-    vi.mocked(applySearchHighlights).mockReturnValue(
+    vi.mocked(runIndexedSearchHighlightsShadow).mockReturnValue(
       new Promise(resolve => {
         finish = resolve;
       }),
@@ -116,7 +116,7 @@ describe("runSearchHighlightsShadow", () => {
   });
 
   it("emits the content-free failure category", async () => {
-    vi.mocked(applySearchHighlights).mockResolvedValue({
+    vi.mocked(runIndexedSearchHighlightsShadow).mockResolvedValue({
       attempted: 3,
       indexHits: 1,
       replaced: 0,
@@ -165,6 +165,6 @@ describe("runSearchHighlightsShadow", () => {
       runSearchHighlightsShadow({ ...input, zeroDataRetention: false }),
     ).toBe("skipped");
 
-    expect(applySearchHighlights).not.toHaveBeenCalled();
+    expect(runIndexedSearchHighlightsShadow).not.toHaveBeenCalled();
   });
 });

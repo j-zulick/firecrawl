@@ -10,7 +10,11 @@ import { indexGetRecent5 } from "../db/rpc";
 import { parseMarkdown } from "../lib/html-to-markdown";
 import { htmlTransform } from "../scraper/scrapeURL/lib/removeUnwantedElements";
 import type { ScrapeOptions } from "../controllers/v2/types";
-import { generateHighlightsBatch } from "./highlight-model";
+import {
+  generateHighlightsBatch,
+  generateHighlightsIndexedBatch,
+  type HighlightIndexedPage,
+} from "./highlight-model";
 import type { HighlightFailureReason } from "./highlight-model";
 import { config } from "../config";
 
@@ -47,6 +51,52 @@ async function getIndexedMarkdownForURL(
   logger: Logger,
   logUrl = true,
 ): Promise<string | null> {
+  const indexRef = await getIndexObjectForURL(url, logger, logUrl);
+  if (!indexRef) {
+    return null;
+  }
+
+  try {
+    const doc = await getIndexFromGCS(
+      indexRef.name,
+      logger.child({ module: "search/highlights", method: "getIndexFromGCS" }),
+      { indexCreatedAt: indexRef.createdAt },
+    );
+    if (!doc || !doc.html) {
+      return null;
+    }
+
+    // Skip raw base64 PDFs — they aren't useful as highlight source text.
+    if (typeof doc.html === "string" && doc.html.startsWith("JVBERi")) {
+      return null;
+    }
+
+    // The index stores rawHtml, so we must run the same cleaning the scrape
+    // pipeline does (strip <style>/<script>/nav, extract main content) before
+    // converting to markdown — otherwise CSS/JS leaks in and pollutes the
+    // highlight source text.
+    const cleanedHtml = await htmlTransform(doc.html, url, {
+      onlyMainContent: true,
+      includeTags: [],
+      excludeTags: [],
+    } as unknown as ScrapeOptions);
+
+    const markdown = await parseMarkdown(cleanedHtml, { logger });
+    return markdown && markdown.trim() !== "" ? markdown : null;
+  } catch (error) {
+    logger.warn("highlights: index content load failed", {
+      error: error instanceof Error ? error.message : String(error),
+      ...(logUrl ? { url } : {}),
+    });
+    return null;
+  }
+}
+
+async function getIndexObjectForURL(
+  url: string,
+  logger: Logger,
+  logUrl = true,
+): Promise<{ name: string; createdAt: string | null } | null> {
   if (!useIndex) {
     return null;
   }
@@ -83,32 +133,10 @@ async function getIndexedMarkdownForURL(
         ? rows[0]
         : rows[newest200Index];
 
-    const doc = await getIndexFromGCS(
-      selected.id + ".json",
-      logger.child({ module: "search/highlights", method: "getIndexFromGCS" }),
-      { indexCreatedAt: selected.created_at },
-    );
-    if (!doc || !doc.html) {
-      return null;
-    }
-
-    // Skip raw base64 PDFs — they aren't useful as highlight source text.
-    if (typeof doc.html === "string" && doc.html.startsWith("JVBERi")) {
-      return null;
-    }
-
-    // The index stores rawHtml, so we must run the same cleaning the scrape
-    // pipeline does (strip <style>/<script>/nav, extract main content) before
-    // converting to markdown — otherwise CSS/JS leaks in and pollutes the
-    // highlight source text.
-    const cleanedHtml = await htmlTransform(doc.html, url, {
-      onlyMainContent: true,
-      includeTags: [],
-      excludeTags: [],
-    } as unknown as ScrapeOptions);
-
-    const markdown = await parseMarkdown(cleanedHtml, { logger });
-    return markdown && markdown.trim() !== "" ? markdown : null;
+    return {
+      name: selected.id + ".json",
+      createdAt: selected.created_at,
+    };
   } catch (error) {
     logger.warn("highlights: index lookup failed", {
       error: error instanceof Error ? error.message : String(error),
@@ -116,6 +144,64 @@ async function getIndexedMarkdownForURL(
     });
     return null;
   }
+}
+
+export function searchHighlightURLs(response: SearchV2Response): string[] {
+  return [
+    ...(response.web ?? []).flatMap(result => (result.url ? [result.url] : [])),
+    ...(response.news ?? []).flatMap(result =>
+      result.url ? [result.url] : [],
+    ),
+  ];
+}
+
+export async function runIndexedSearchHighlightsShadow(
+  urls: string[],
+  query: string,
+  logger: Logger,
+  requestId: string,
+): Promise<{
+  attempted: number;
+  indexHits: number;
+  replaced: number;
+  succeeded: boolean;
+  failureReason?: HighlightFailureReason;
+}> {
+  const attempted = urls.length;
+  const resolved = await Promise.all(
+    urls.map(url => getIndexObjectForURL(url, logger, false)),
+  );
+  const pages: HighlightIndexedPage[] = [];
+  resolved.forEach((indexRef, index) => {
+    if (!indexRef) return;
+    pages.push({
+      id: String(index),
+      url: urls[index],
+      indexObject: indexRef.name,
+    });
+  });
+
+  let failureReason: HighlightFailureReason | undefined;
+  const results = await generateHighlightsIndexedBatch(query, pages, {
+    logger,
+    logPayload: false,
+    requestId,
+    onFailure: reason => {
+      failureReason = reason;
+    },
+  });
+  const replaced = results
+    ? Array.from(results.values()).filter(result => result.markdown.trim())
+        .length
+    : 0;
+
+  return {
+    attempted,
+    indexHits: pages.length,
+    replaced,
+    succeeded: results !== null,
+    ...(failureReason ? { failureReason } : {}),
+  };
 }
 
 /**
