@@ -45,6 +45,7 @@ import {
 import { config } from "../config";
 import { indexGetRecent5 } from "../db/rpc";
 import {
+  applyIndexedSearchHighlights,
   applySearchHighlights,
   highlightsEnvReady,
   runIndexedSearchHighlightsShadow,
@@ -110,6 +111,84 @@ describe("runIndexedSearchHighlightsShadow", () => {
       indexHits: 2,
       replaced: 1,
       succeeded: true,
+    });
+  });
+});
+
+describe("applyIndexedSearchHighlights", () => {
+  it("uses the shadow indexed request path and applies web and news responses by ID", async () => {
+    vi.mocked(generateHighlightsIndexedBatch).mockResolvedValue(
+      new Map([
+        ["0", { highlights: [], markdown: "first highlight" }],
+        ["1", { highlights: [], markdown: "second highlight" }],
+      ]),
+    );
+    const response = {
+      web: [{ url: "https://first.test", description: "first fallback" }],
+      news: [{ url: "https://second.test", snippet: "second fallback" }],
+    } as any;
+
+    const result = await applyIndexedSearchHighlights(
+      response,
+      "query",
+      logger,
+      "request-1",
+    );
+
+    expect(generateHighlightsIndexedBatch).toHaveBeenCalledWith(
+      "query",
+      [
+        {
+          id: "0",
+          url: "https://first.test",
+          indexObject: "index:https://first.test.json",
+        },
+        {
+          id: "1",
+          url: "https://second.test",
+          indexObject: "index:https://second.test.json",
+        },
+      ],
+      {
+        logger,
+        logPayload: false,
+        requestId: "request-1",
+        timeoutMs: null,
+        onFailure: expect.any(Function),
+      },
+    );
+    expect(generateHighlightsBatch).not.toHaveBeenCalled();
+    expect(response.web[0].description).toBe("first highlight");
+    expect(response.news[0].snippet).toBe("second highlight");
+    expect(result).toEqual({
+      attempted: 2,
+      indexHits: 2,
+      replaced: 2,
+      succeeded: true,
+    });
+  });
+
+  it("preserves provider snippets when the indexed Chain request fails", async () => {
+    vi.mocked(generateHighlightsIndexedBatch).mockResolvedValue(null);
+    const response = {
+      web: [{ url: "https://first.test", description: "first fallback" }],
+      news: [{ url: "https://second.test", snippet: "second fallback" }],
+    } as any;
+
+    const result = await applyIndexedSearchHighlights(
+      response,
+      "query",
+      logger,
+      "request-1",
+    );
+
+    expect(response.web[0].description).toBe("first fallback");
+    expect(response.news[0].snippet).toBe("second fallback");
+    expect(result).toEqual({
+      attempted: 2,
+      indexHits: 2,
+      replaced: 0,
+      succeeded: false,
     });
   });
 });

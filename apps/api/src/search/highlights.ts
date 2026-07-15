@@ -146,17 +146,42 @@ async function getIndexObjectForURL(
   }
 }
 
-export function searchHighlightURLs(response: SearchV2Response): string[] {
-  return [
-    ...(response.web ?? []).flatMap(result => (result.url ? [result.url] : [])),
-    ...(response.news ?? []).flatMap(result =>
-      result.url ? [result.url] : [],
-    ),
-  ];
+interface IndexedSearchHighlightTarget {
+  url: string;
+  apply?: (highlight: string) => void;
 }
 
-export async function runIndexedSearchHighlightsShadow(
-  urls: string[],
+function indexedSearchHighlightTargets(
+  response: SearchV2Response,
+): IndexedSearchHighlightTarget[] {
+  const targets: IndexedSearchHighlightTarget[] = [];
+  for (const result of response.web ?? []) {
+    if (!result.url) continue;
+    targets.push({
+      url: result.url,
+      apply: highlight => {
+        result.description = highlight;
+      },
+    });
+  }
+  for (const result of response.news ?? []) {
+    if (!result.url) continue;
+    targets.push({
+      url: result.url,
+      apply: highlight => {
+        result.snippet = highlight;
+      },
+    });
+  }
+  return targets;
+}
+
+export function searchHighlightURLs(response: SearchV2Response): string[] {
+  return indexedSearchHighlightTargets(response).map(target => target.url);
+}
+
+async function runIndexedSearchHighlights(
+  targets: IndexedSearchHighlightTarget[],
   query: string,
   logger: Logger,
   requestId: string,
@@ -167,16 +192,16 @@ export async function runIndexedSearchHighlightsShadow(
   succeeded: boolean;
   failureReason?: HighlightFailureReason;
 }> {
-  const attempted = urls.length;
+  const attempted = targets.length;
   const resolved = await Promise.all(
-    urls.map(url => getIndexObjectForURL(url, logger, false)),
+    targets.map(target => getIndexObjectForURL(target.url, logger, false)),
   );
   const pages: HighlightIndexedPage[] = [];
   resolved.forEach((indexRef, index) => {
     if (!indexRef) return;
     pages.push({
       id: String(index),
-      url: urls[index],
+      url: targets[index].url,
       indexObject: indexRef.name,
     });
   });
@@ -191,10 +216,15 @@ export async function runIndexedSearchHighlightsShadow(
       failureReason = reason;
     },
   });
-  const replaced = results
-    ? Array.from(results.values()).filter(result => result.markdown.trim())
-        .length
-    : 0;
+  let replaced = 0;
+  if (results) {
+    for (const page of pages) {
+      const highlight = results.get(page.id)?.markdown;
+      if (!highlight?.trim()) continue;
+      targets[Number(page.id)].apply?.(highlight);
+      replaced++;
+    }
+  }
 
   return {
     attempted,
@@ -203,6 +233,42 @@ export async function runIndexedSearchHighlightsShadow(
     succeeded: results !== null,
     ...(failureReason ? { failureReason } : {}),
   };
+}
+
+export async function applyIndexedSearchHighlights(
+  response: SearchV2Response,
+  query: string,
+  logger: Logger,
+  requestId: string,
+): ReturnType<typeof runIndexedSearchHighlights> {
+  const start = Date.now();
+  const result = await runIndexedSearchHighlights(
+    indexedSearchHighlightTargets(response),
+    query,
+    logger,
+    requestId,
+  );
+  logger.info("Search highlights applied", {
+    attempted: result.attempted,
+    indexHits: result.indexHits,
+    replaced: result.replaced,
+    timeTakenMs: Date.now() - start,
+  });
+  return result;
+}
+
+export function runIndexedSearchHighlightsShadow(
+  urls: string[],
+  query: string,
+  logger: Logger,
+  requestId: string,
+): ReturnType<typeof runIndexedSearchHighlights> {
+  return runIndexedSearchHighlights(
+    urls.map(url => ({ url })),
+    query,
+    logger,
+    requestId,
+  );
 }
 
 /**
