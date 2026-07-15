@@ -31,7 +31,7 @@ export function createSearchHighlightsShadowRunner(
   requestId: string;
   teamId: string;
   zeroDataRetention: boolean;
-}) => "skipped" | "dropped" | "started" {
+}) => "skipped" | "started" {
   let inFlight = 0;
 
   return options => {
@@ -41,20 +41,6 @@ export function createSearchHighlightsShadowRunner(
       !sampled(options.requestId, config.HIGHLIGHT_SHADOW_RATE)
     ) {
       return "skipped";
-    }
-
-    if (inFlight >= config.HIGHLIGHT_SHADOW_MAX_INFLIGHT) {
-      canonicalLogger.info("Search highlights shadow dropped", {
-        canonicalLog: CANONICAL_LOG,
-        outcome: "dropped",
-        reason: "max_inflight",
-        requestId: options.requestId,
-        teamId: options.teamId,
-        inFlight,
-        maxInFlight: config.HIGHLIGHT_SHADOW_MAX_INFLIGHT,
-        sampleRate: config.HIGHLIGHT_SHADOW_RATE,
-      });
-      return "dropped";
     }
 
     const urls = searchHighlightURLs(options.response);
@@ -74,7 +60,6 @@ export function createSearchHighlightsShadowRunner(
           failureReason: result.failureReason,
           timeTakenMs: Date.now() - startedAt,
           inFlight,
-          maxInFlight: config.HIGHLIGHT_SHADOW_MAX_INFLIGHT,
           sampleRate: config.HIGHLIGHT_SHADOW_RATE,
         });
       })
@@ -87,7 +72,6 @@ export function createSearchHighlightsShadowRunner(
           errorType: error instanceof Error ? error.name : "unknown",
           timeTakenMs: Date.now() - startedAt,
           inFlight,
-          maxInFlight: config.HIGHLIGHT_SHADOW_MAX_INFLIGHT,
           sampleRate: config.HIGHLIGHT_SHADOW_RATE,
         });
       })

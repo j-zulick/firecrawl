@@ -1,7 +1,6 @@
 vi.mock("../config", () => ({
   config: {
     HIGHLIGHT_SHADOW_RATE: 1,
-    HIGHLIGHT_SHADOW_MAX_INFLIGHT: 1,
   },
 }));
 
@@ -29,7 +28,6 @@ let runSearchHighlightsShadow = createSearchHighlightsShadowRunner(logger);
 afterEach(() => {
   vi.clearAllMocks();
   config.HIGHLIGHT_SHADOW_RATE = 1;
-  config.HIGHLIGHT_SHADOW_MAX_INFLIGHT = 1;
   vi.mocked(highlightsEnvReady).mockReturnValue(true);
   runSearchHighlightsShadow = createSearchHighlightsShadowRunner(logger);
 });
@@ -77,18 +75,13 @@ describe("runSearchHighlightsShadow", () => {
     expect(fields).not.toHaveProperty("highlights");
   });
 
-  it("drops excess work instead of creating a backlog", async () => {
-    let finish!: (value: {
-      attempted: number;
-      indexHits: number;
-      replaced: number;
-      succeeded: boolean;
-    }) => void;
-    vi.mocked(runIndexedSearchHighlightsShadow).mockReturnValue(
-      new Promise(resolve => {
-        finish = resolve;
-      }),
-    );
+  it("forwards concurrent shadow work without admission drops", async () => {
+    vi.mocked(runIndexedSearchHighlightsShadow).mockResolvedValue({
+      attempted: 1,
+      indexHits: 1,
+      replaced: 1,
+      succeeded: true,
+    });
 
     const input = {
       response: {} as any,
@@ -101,18 +94,9 @@ describe("runSearchHighlightsShadow", () => {
     ).toBe("started");
     expect(
       runSearchHighlightsShadow({ ...input, requestId: "request-2" }),
-    ).toBe("dropped");
-    expect(logger.info).toHaveBeenCalledWith(
-      "Search highlights shadow dropped",
-      expect.objectContaining({
-        canonicalLog: "search/highlights-shadow",
-        outcome: "dropped",
-        reason: "max_inflight",
-      }),
-    );
-
-    finish({ attempted: 1, indexHits: 1, replaced: 1, succeeded: true });
+    ).toBe("started");
     await new Promise(resolve => setImmediate(resolve));
+    expect(runIndexedSearchHighlightsShadow).toHaveBeenCalledTimes(2);
   });
 
   it("emits the content-free failure category", async () => {

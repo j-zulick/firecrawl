@@ -160,6 +160,7 @@ interface HighlightBatchOptions {
   logPayload?: boolean;
   allowLegacyFallback?: boolean;
   requestId?: string;
+  timeoutMs?: number | null;
   onFailure?: (reason: HighlightFailureReason) => void;
 }
 
@@ -175,7 +176,12 @@ async function generateHighlightsBatchRequest(
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutMs =
+    opts.timeoutMs === undefined ? REQUEST_TIMEOUT_MS : opts.timeoutMs;
+  const timer =
+    timeoutMs === null
+      ? undefined
+      : setTimeout(() => controller.abort(), timeoutMs);
   const start = Date.now();
   try {
     const baseUrl = config.HIGHLIGHT_MODEL_URL!.replace(/\/$/, "");
@@ -260,7 +266,9 @@ async function generateHighlightsBatchRequest(
     });
     return null;
   } finally {
-    clearTimeout(timer);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
   }
 }
 

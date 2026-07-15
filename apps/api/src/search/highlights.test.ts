@@ -101,6 +101,7 @@ describe("runIndexedSearchHighlightsShadow", () => {
         logger,
         logPayload: false,
         requestId: "request-1",
+        timeoutMs: null,
         onFailure: expect.any(Function),
       },
     );

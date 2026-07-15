@@ -186,6 +186,7 @@ export async function runIndexedSearchHighlightsShadow(
     logger,
     logPayload: false,
     requestId,
+    timeoutMs: null,
     onFailure: reason => {
       failureReason = reason;
     },
