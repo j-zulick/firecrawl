@@ -31,14 +31,16 @@ export type AuthCreditUsageChunkRow = Record<string, any> & {
 export async function authCreditUsageChunk(
   database: DB,
   input_key: string,
+  input_credential_purpose: "general" | "hosted_mcp_oauth" = "general",
 ): Promise<AuthCreditUsageChunkRow[]> {
   const rows = await execRows<AuthCreditUsageChunkRow>(
     database,
-    sql`select * from auth_credit_usage_chunk_56(input_key => ${input_key})`,
+    sql`select * from auth_credit_usage_chunk_57(input_key => ${input_key}, input_credential_purpose => ${input_credential_purpose})`,
   );
   // api_key_id is a bigint column, so the pg driver hands it back as a string.
   for (const row of rows) {
     if (row.api_key_id != null) {
+      row.api_key_id_text = String(row.api_key_id);
       row.api_key_id = toNum(row.api_key_id);
     }
   }

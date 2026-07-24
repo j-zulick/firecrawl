@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import { config } from "../config";
 import { RateLimiterMode } from "../types";
+import { registerMcpActionLogReadRoute } from "./mcp-action-logs";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
@@ -96,7 +97,6 @@ import {
   slackOAuthStartController,
   slackStatusController,
 } from "../controllers/v2/slack";
-
 export const v2Router = express.Router();
 expressWs(express()).applyTo(v2Router);
 
@@ -160,6 +160,11 @@ v2Router.use(requestTimingMiddleware("v2"));
 // Internal: trusted-proxy (hosted MCP) keyless eligibility probe. Secret-gated
 // inside the controller; no auth middleware.
 v2Router.get("/keyless/eligibility", wrap(keylessEligibilityController));
+
+registerMcpActionLogReadRoute(
+  v2Router,
+  authMiddleware(RateLimiterMode.Account),
+);
 
 v2Router.post(
   "/search",

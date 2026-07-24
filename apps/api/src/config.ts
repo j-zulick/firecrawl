@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { z } from "zod";
+import { getMcpActionLogConfigErrors } from "./lib/mcp-action-log-config";
 
 /* Codecs */
 const delimitedList = (separator = ",") => {
@@ -43,6 +44,10 @@ const configSchema = z.object({
   // forward the real client IP for keyless rate-limiting via the
   // `x-firecrawl-keyless-ip` header. Untrusted callers can't override their IP.
   KEYLESS_PROXY_SECRET: z.string().optional(),
+  // Dedicated signer/verifier secret for short-lived MCP delegated credentials.
+  // Keep separate from KEYLESS_PROXY_SECRET because delegated credentials can
+  // authorize billed requests for a managed OAuth connection.
+  MCP_DELEGATED_CREDENTIAL_SECRET: emptyStringAsUndefined(z.string().min(32)),
   // Optional Spur Context API token (https://docs.spur.us/context-api). When
   // set, keyless requests have their client IP checked against Spur and are
   // refused if the IP fronts anonymizing/rotating infrastructure (VPN/proxy/
@@ -102,6 +107,9 @@ const configSchema = z.object({
   // OAuth token introspection
   OAUTH_INTROSPECT_URL: z.string().optional(),
   OAUTH_INTROSPECT_SECRET: z.string().optional(),
+  MCP_ACTION_LOG_SECRET: z.string().optional(),
+  MCP_ACTION_LOG_STORAGE_ENABLED: z.stringbool().default(false),
+  MCP_ACTION_LOG_WRITES_ENABLED: z.stringbool().default(false),
 
   // Agent auth discovery (RFC 9728 WWW-Authenticate on 401)
   AGENT_AUTH_RESOURCE_METADATA_URL: z
@@ -389,4 +397,14 @@ const configSchema = z.object({
   CODE_SANDBOX_URL: z.string().default("ws://code-sandbox:3001"),
 });
 
-export const config = configSchema.parse(process.env);
+const validatedConfigSchema = configSchema.superRefine((value, context) => {
+  for (const error of getMcpActionLogConfigErrors(value)) {
+    context.addIssue({
+      code: "custom",
+      path: [error.path],
+      message: error.message,
+    });
+  }
+});
+
+export const config = validatedConfigSchema.parse(process.env);

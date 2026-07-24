@@ -31,6 +31,9 @@ import { v7 as uuidv7 } from "uuid";
 import { attachWsProxy } from "./services/agentLivecastWS";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
+import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
+import { startMcpActionLogRetentionWorkerIfEnabled } from "./services/mcp/action-logs";
+import { db } from "./db/connection";
 import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
@@ -76,6 +79,8 @@ const captureRawBody = (
     (req as http.IncomingMessage & { rawBody?: Buffer }).rawBody = buf;
   }
 };
+
+registerMcpActionLogIngestRoute(app);
 
 app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
 app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));
@@ -144,6 +149,10 @@ async function startServer(port = DEFAULT_PORT) {
   // Attach WebSocket proxy to the Express app
   attachWsProxy(app);
 
+  const mcpActionLogRetention = startMcpActionLogRetentionWorkerIfEnabled({
+    enabled: config.MCP_ACTION_LOG_STORAGE_ENABLED,
+    db,
+  });
   const server = app.listen(Number(port), HOST, (error?: Error) => {
     if (error) {
       logger.error("Failed to start HTTP server", { error, port, host: HOST });
@@ -155,6 +164,7 @@ async function startServer(port = DEFAULT_PORT) {
 
   const exitHandler = async () => {
     logger.info("SIGTERM signal received: closing HTTP server");
+    mcpActionLogRetention?.stop();
     if (config.IS_KUBERNETES) {
       // Account for GCE load balancer drain timeout
       logger.info("Waiting 60s for GCE load balancer drain timeout");
@@ -258,6 +268,17 @@ app.use(
         success: false,
         code: "BAD_REQUEST_INVALID_JSON",
         error: "Bad request, malformed JSON",
+      });
+    }
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "status" in err &&
+      (err as { status?: number }).status === 413
+    ) {
+      return res.status(413).json({
+        success: false,
+        error: "Request body is too large",
       });
     }
 
