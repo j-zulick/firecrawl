@@ -76,13 +76,17 @@ export type ScrapeActivityResult =
 
 export interface ScrapeActivityThreat {
   decision: "allow" | "deny";
+  /**
+   * The rule that produced {@link decision}. Local-policy rules (blacklist,
+   * blocked-tld) deny without consulting a provider; only "risk-score" with a
+   * non-null {@link provider} is a provider-confirmed threat. The destination
+   * DCR transform keys ASim EventSeverity off exactly that distinction, so the
+   * three fields below always describe one decision — never a union across the
+   * decisions taken for one scrape.
+   */
   rule: ThreatDecisionRule;
   provider: ThreatProvider | null;
   categories: string[];
-  security_alert: {
-    detected: boolean;
-    category: string | null;
-  };
 }
 
 export interface ScrapeActivityEvent {
@@ -123,7 +127,7 @@ export interface ScrapeActivityEvent {
   threat?: ScrapeActivityThreat;
 }
 
-export interface SiemLoggingJobData {
+export interface SiemLoggingMessage {
   orgId: string;
   event: ScrapeActivityEvent;
 }
@@ -132,10 +136,17 @@ type SiemDeliveryErrorKind =
   | "invalid_credentials"
   | "schema_rejection"
   | "rate_limited"
-  | "delivery_error"
-  | "payload_too_large";
+  | "delivery_error";
 
 export class SiemDeliveryError extends Error {
+  /**
+   * Events the destination accepted before this failure. A batch is sent as
+   * several compressed chunks, so a late chunk failing does not undo the earlier
+   * ones — without this the caller would count accepted events as failed and
+   * then count them again as delivered when the batch retries.
+   */
+  public deliveredEvents = 0;
+
   constructor(
     public readonly kind: SiemDeliveryErrorKind,
     message: string,

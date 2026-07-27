@@ -7,9 +7,15 @@ import {
   type Response,
 } from "undici";
 import { config } from "../../config";
-import { siemLoggingDeliveryBatchesTotal } from "./metrics";
+import { logger as _logger } from "../logger";
+import {
+  siemLoggingDeliveryBatchesTotal,
+  siemLoggingEventsTotal,
+} from "./metrics";
 import type { AzureSentinelDestination, ScrapeActivityEvent } from "./types";
 import { SiemDeliveryError } from "./types";
+
+const logger = _logger.child({ module: "siem-logging-azure-sentinel" });
 
 const MAX_COMPRESSED_BODY_BYTES = 1_000_000;
 const MAX_ATTEMPTS = 3;
@@ -213,40 +219,61 @@ async function getAccessToken(
   );
 }
 
+function gzipEvents(events: ScrapeActivityEvent[]): Buffer {
+  return gzipSync(Buffer.from(JSON.stringify(events), "utf8"));
+}
+
+/**
+ * A gzipped request body plus how many events it carries, so the caller can
+ * report what was actually delivered rather than what it was handed — a batch
+ * can contain fewer events than the input if any were skipped as undeliverable.
+ */
+interface CompressedBatch {
+  body: Buffer;
+  eventCount: number;
+}
+
+function compressedBatch(events: ScrapeActivityEvent[]): CompressedBatch {
+  return { body: gzipEvents(events), eventCount: events.length };
+}
+
 export function* buildCompressedBatches(
   events: ScrapeActivityEvent[],
   maxBytes = MAX_COMPRESSED_BODY_BYTES,
-): Generator<Buffer> {
+): Generator<CompressedBatch> {
   let pending: ScrapeActivityEvent[] = [];
 
   for (const event of events) {
     const candidate = [...pending, event];
-    const compressed = gzipSync(Buffer.from(JSON.stringify(candidate), "utf8"));
-    if (compressed.byteLength <= maxBytes) {
+    if (gzipEvents(candidate).byteLength <= maxBytes) {
       pending = candidate;
       continue;
     }
 
-    if (pending.length === 0) {
-      throw new SiemDeliveryError(
-        "payload_too_large",
-        `A single SIEM event exceeds the ${maxBytes}-byte compressed payload limit`,
-      );
+    // The event doesn't fit alongside what's pending — close that batch out and
+    // consider the event on its own.
+    if (pending.length > 0) {
+      yield compressedBatch(pending);
+      pending = [];
     }
-    yield gzipSync(Buffer.from(JSON.stringify(pending), "utf8"));
+
+    if (gzipEvents([event]).byteLength > maxBytes) {
+      // Undeliverable at any batch size, and no retry will change that. Skip it
+      // and keep going: failing the call here would take down every other event
+      // in the batch, and dead-lettering the batch would duplicate the ones
+      // already POSTed in earlier chunks.
+      siemLoggingEventsTotal.inc({ result: "dropped_oversized" });
+      logger.error("Dropping a SIEM event larger than the payload limit", {
+        maxBytes,
+        scrapeId: event.scrape_id,
+        orgId: event.org_id,
+      });
+      continue;
+    }
     pending = [event];
-    const single = gzipSync(Buffer.from(JSON.stringify(pending), "utf8"));
-    if (single.byteLength > maxBytes) {
-      throw new SiemDeliveryError(
-        "payload_too_large",
-        `A single SIEM event exceeds the ${maxBytes}-byte compressed payload limit`,
-      );
-    }
   }
 
-  if (pending.length > 0) {
-    yield gzipSync(Buffer.from(JSON.stringify(pending), "utf8"));
-  }
+  if (pending.length > 0) yield compressedBatch(pending);
 }
 
 async function sendBatch(
@@ -321,14 +348,21 @@ async function sendBatch(
   }
 }
 
+/**
+ * Returns how many events were actually accepted by the destination, which is
+ * fewer than `events.length` when any were skipped as undeliverable. Callers
+ * must attribute their `delivered` metric to this count, not to what they
+ * passed in, or a skipped event gets counted as both dropped and delivered.
+ */
 export async function sendAzureSentinelEvents(
   destination: AzureSentinelDestination,
   events: ScrapeActivityEvent[],
   deps: SenderDependencies = {},
-): Promise<void> {
-  if (events.length === 0) return;
+): Promise<number> {
+  if (events.length === 0) return 0;
   let token: string | undefined;
-  for (const body of buildCompressedBatches(events)) {
+  let delivered = 0;
+  for (const { body, eventCount } of buildCompressedBatches(events)) {
     try {
       token ??= await getAccessToken(destination, deps);
       try {
@@ -345,18 +379,22 @@ export async function sendAzureSentinelEvents(
           throw error;
         }
       }
+      delivered += eventCount;
       siemLoggingDeliveryBatchesTotal.inc({ result: "success" });
     } catch (error) {
-      if (
-        error instanceof SiemDeliveryError &&
-        (error.statusCode === 401 || error.statusCode === 403)
-      ) {
-        invalidateToken(destination);
+      if (error instanceof SiemDeliveryError) {
+        if (error.statusCode === 401 || error.statusCode === 403) {
+          invalidateToken(destination);
+        }
+        // Tell the caller what already landed, so the chunks Azure accepted
+        // aren't counted as failures on the way out.
+        error.deliveredEvents = delivered;
       }
       siemLoggingDeliveryBatchesTotal.inc({ result: "failure" });
       throw error;
     }
   }
+  return delivered;
 }
 
 export function clearAzureTokenCache(): void {
