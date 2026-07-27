@@ -769,6 +769,23 @@ class ClientTest < Minitest::Test
     assert_equal "spark-1-pro", h["model"]
   end
 
+  def test_audit_metadata_to_h
+    metadata = { "requestId" => "req-123" }
+
+    assert_equal metadata, Firecrawl::Models::ScrapeOptions.new(audit_metadata: metadata).to_h["auditMetadata"]
+    assert_equal metadata, Firecrawl::Models::MapOptions.new(audit_metadata: metadata).to_h["auditMetadata"]
+    assert_equal metadata,
+                 Firecrawl::Models::AgentOptions.new(
+                   prompt: "find pricing",
+                   audit_metadata: metadata
+                 ).to_h["auditMetadata"]
+    assert_equal metadata, Firecrawl::Models::ParseOptions.new(audit_metadata: metadata).to_h["auditMetadata"]
+    crawl = Firecrawl::Models::CrawlOptions.new(
+      scrape_options: Firecrawl::Models::ScrapeOptions.new(audit_metadata: metadata)
+    )
+    assert_equal metadata, crawl.to_h.dig("scrapeOptions", "auditMetadata")
+  end
+
   def test_batch_scrape_options_to_h
     scrape_opts = Firecrawl::Models::ScrapeOptions.new(formats: ["markdown"])
     opts = Firecrawl::Models::BatchScrapeOptions.new(

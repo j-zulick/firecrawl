@@ -104,6 +104,7 @@ import {
   warmExchangeCatalog,
   type ExchangeScrapeMetadata,
 } from "../../lib/exchange";
+import { emitScrapeActivityEvent } from "../../lib/siem-logging";
 
 configDotenv();
 
@@ -836,9 +837,25 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       }
     }
 
+    emitScrapeActivityEvent(job.id, job.data, {
+      success: true,
+      document: doc,
+      threatDecisions: pipeline.threatDecisions,
+      startedAt: start,
+      completedAt: Date.now(),
+    });
+
     logger.info(`🐂 Job done ${job.id}`);
     return data;
   } catch (error) {
+    emitScrapeActivityEvent(job.id, job.data, {
+      success: false,
+      error,
+      threatDecisions: pipeline?.threatDecisions,
+      startedAt: start,
+      completedAt: Date.now(),
+    });
+
     // Record top-level robots.txt rejections so crawl status can warn
     try {
       if (

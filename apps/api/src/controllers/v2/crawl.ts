@@ -37,6 +37,7 @@ import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
+import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -44,6 +45,9 @@ export async function crawlController(
 ) {
   const preNormalizedBody = req.body;
   req.body = crawlRequestSchema.parse(req.body);
+  const id = uuidv7();
+  const zeroDataRetention =
+    getScrapeZDR(req.acuc?.flags) === "forced" || req.body.zeroDataRetention;
 
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
@@ -95,6 +99,20 @@ export async function crawlController(
         });
       }
       const error = new UnsafeDomainBlockedError(req.body.url, decision);
+      emitRejectedScrapeActivityEvent({
+        scrapeId: uuidv7(),
+        requestId: id,
+        endpoint: "crawl",
+        teamId: req.auth.team_id,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        auditMetadata: req.body.scrapeOptions?.auditMetadata,
+        url: req.body.url,
+        error,
+        threatDecisions: [decision],
+        origin: req.body.origin ?? "api",
+        integration: req.body.integration,
+        zeroDataRetention: zeroDataRetention ?? false,
+      });
       return res.status(403).json({
         success: false,
         code: error.code,
@@ -116,10 +134,6 @@ export async function crawlController(
     });
   }
 
-  const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" || req.body.zeroDataRetention;
-
-  const id = uuidv7();
   const logger = _logger.child({
     crawlId: id,
     module: "api/v2",

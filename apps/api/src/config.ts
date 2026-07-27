@@ -81,6 +81,12 @@ const configSchema = z.object({
     .positive()
     .default(6 * 60 * 60),
 
+  // Organization SIEM logging delivery. The encryption key must decode to
+  // exactly 32 bytes; validation happens when a secret is encrypted/decrypted
+  // so self-hosted deployments that do not use this feature need no key.
+  SIEM_LOGGING_ENCRYPTION_KEY: z.string().optional(),
+  PARTNER_EGRESS_PROXY_URL: z.string().url().optional(),
+
   // API Keys & Authentication
   BULL_AUTH_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
