@@ -198,3 +198,4 @@ labsRouter.delete(
   authMiddleware(RateLimiterMode.Search),
   wrap(labsProxyController),
 );
+
