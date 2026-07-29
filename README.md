@@ -189,7 +189,7 @@ Output:
 ```
 # Firecrawl
 
-Firecrawl helps AI systems search, scrape, and interact with the web.
+Firecrawl helps AI agents search, scrape, and interact with the web.
 
 ## Features
 - Search: Find information across the web
