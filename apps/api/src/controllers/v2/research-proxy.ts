@@ -140,6 +140,12 @@ type ResearchEndpointConfig = {
     req: RequestWithAuth<any, any, any>,
   ) => string;
   billAs: "scrape" | "search";
+  /**
+   * Org flag that must be exactly `true` for this endpoint. Absent means
+   * ungated (the research endpoints). Keyless callers have no acuc and so no
+   * flags, which makes them unentitled by construction.
+   */
+  betaGate?: { flag: string; error: string };
 };
 
 type ResearchController = (req: Request, res: Response) => Promise<any>;
@@ -245,6 +251,18 @@ function createResearchController(
 ): ResearchController {
   return async (req, res: Response) => {
     const authedReq = req as RequestWithAuth<any, any, any>;
+
+    // Beta gate: fail closed before any logging, billing, or upstream call.
+    if (endpoint.betaGate) {
+      const flags = authedReq.acuc?.flags as
+        | Record<string, unknown>
+        | null
+        | undefined;
+      if (flags?.[endpoint.betaGate.flag] !== true) {
+        return researchError(res, 403, endpoint.betaGate.error);
+      }
+    }
+
     const started = Date.now();
     const jobId = uuidv7();
     const logger = rootLogger.child({
@@ -494,6 +512,11 @@ export function createDeveloperRouter(options: { root?: boolean } = {}) {
         targetHint: params => String(params.query),
         upstreamPath: () => "/v2/code/search",
         billAs: "search",
+        betaGate: {
+          flag: "developerBeta",
+          error:
+            "Developer search is in beta and is not enabled for this team.",
+        },
       },
     ),
   );
