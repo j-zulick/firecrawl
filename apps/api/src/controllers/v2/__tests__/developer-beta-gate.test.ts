@@ -1,19 +1,20 @@
 import { vi } from "vitest";
 
-const mockLogRequest = vi.fn();
-const mockLogSearch = vi.fn();
-const mockLogResearchEndpoint = vi.fn();
-
-vi.mock("../../../services/logging/log_job", () => ({
-  logRequest: (...args: any[]) => mockLogRequest(...args),
-  logSearch: (...args: any[]) => mockLogSearch(...args),
-  logResearchEndpoint: (...args: any[]) => mockLogResearchEndpoint(...args),
+const mocks = vi.hoisted(() => ({
+  logRequest: vi.fn(),
+  logSearch: vi.fn(),
+  logResearchEndpoint: vi.fn(),
+  fetchResearchUpstream: vi.fn(),
 }));
 
-const mockFetchResearchUpstream = vi.fn();
+vi.mock("../../../services/logging/log_job", () => ({
+  logRequest: mocks.logRequest,
+  logSearch: mocks.logSearch,
+  logResearchEndpoint: mocks.logResearchEndpoint,
+}));
 
 vi.mock("../../../lib/research-upstream", () => ({
-  fetchResearchUpstream: (...args: any[]) => mockFetchResearchUpstream(...args),
+  fetchResearchUpstream: mocks.fetchResearchUpstream,
 }));
 
 vi.mock("../../../services/billing/credit_billing", () => ({
@@ -64,8 +65,8 @@ function makeRes() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockLogRequest.mockResolvedValue(undefined);
-  mockLogResearchEndpoint.mockResolvedValue(undefined);
+  mocks.logRequest.mockResolvedValue(undefined);
+  mocks.logResearchEndpoint.mockResolvedValue(undefined);
 });
 
 describe.each([
@@ -77,8 +78,8 @@ describe.each([
     await developerHandler(options)(makeReq({ developerBeta: false }), res);
 
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(mockFetchResearchUpstream).not.toHaveBeenCalled();
-    expect(mockLogRequest).not.toHaveBeenCalled();
+    expect(mocks.fetchResearchUpstream).not.toHaveBeenCalled();
+    expect(mocks.logRequest).not.toHaveBeenCalled();
   });
 
   it("403s a keyless caller (no acuc at all)", async () => {
@@ -86,11 +87,11 @@ describe.each([
     await developerHandler(options)(makeReq(null), res);
 
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(mockFetchResearchUpstream).not.toHaveBeenCalled();
+    expect(mocks.fetchResearchUpstream).not.toHaveBeenCalled();
   });
 
   it("does not 403 a team with developerBeta", async () => {
-    mockFetchResearchUpstream.mockResolvedValue(null); // 404 path, past the gate
+    mocks.fetchResearchUpstream.mockResolvedValue(null); // 404 path, past the gate
     const res = makeRes();
     await developerHandler(options)(makeReq({ developerBeta: true }), res);
 

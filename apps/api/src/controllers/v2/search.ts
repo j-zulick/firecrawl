@@ -84,9 +84,8 @@ export async function searchController(
     // key lacks access to a category that is about to be removed anyway.
     if (wantsDeveloperCategory(req.body.categories as CategoryOption[])) {
       if (req.acuc?.flags?.developerBeta !== true) {
-        logger.info(
-          "developer category requested without developerBeta flag; dropping",
-        );
+        // Expected, high-volume path (keyless + unentitled teams) — left
+        // unlogged on purpose to avoid log spam. See PR discussion.
         // filter() widens the union that categories is declared as (either an
         // all-string or an all-object array), so the result is cast back to
         // assign it.
