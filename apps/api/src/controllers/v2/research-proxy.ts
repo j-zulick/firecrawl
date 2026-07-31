@@ -95,7 +95,7 @@ const booleanFlag = z
     value === undefined ? undefined : value === true || value === "true",
   );
 
-const developerSearchSchema = z.strictObject({
+export const developerSearchSchema = z.strictObject({
   query: z.string().min(1),
   k: kSchema(100),
   types: multiString,
@@ -109,10 +109,11 @@ const developerSearchSchema = z.strictObject({
   max_stars: starsSchema,
   archived: booleanFlag,
   fork: booleanFlag,
+  skills: z.enum(["only"]).optional(),
   ...commonQuery,
 });
 
-const DEVELOPER_SEARCH_QUERY_KEYS = [
+export const DEVELOPER_SEARCH_QUERY_KEYS = [
   "query",
   "k",
   "types",
@@ -126,6 +127,7 @@ const DEVELOPER_SEARCH_QUERY_KEYS = [
   "max_stars",
   "archived",
   "fork",
+  "skills",
 ];
 
 type ResearchEndpointConfig = {
