@@ -39,11 +39,7 @@ import {
   checkKeyFormatRestriction,
   formatTypesOf,
 } from "../../lib/key-restriction";
-import {
-  isCategoryStringArray,
-  stripDeveloperCategory,
-  wantsDeveloperCategory,
-} from "../../search/developer";
+import { wantsDeveloperCategory } from "../../search/developer";
 import { requestOrigin } from "../../lib/request-origin";
 
 export async function searchController(
@@ -91,20 +87,15 @@ export async function searchController(
         logger.info(
           "developer category requested without developerBeta flag; dropping",
         );
-        // Narrow first: req.body.categories is a union of two homogeneous
-        // arrays (all-string or all-object), and calling the generic helper
-        // directly on that union collapses T to a mixed type that no longer
-        // matches either branch on assignment back. Branching on the guard
-        // lets each call infer T concretely, so both assignments typecheck
-        // with no cast.
-        const categories = req.body.categories;
-        if (categories !== undefined) {
-          if (isCategoryStringArray(categories)) {
-            req.body.categories = stripDeveloperCategory(categories);
-          } else {
-            req.body.categories = stripDeveloperCategory(categories);
-          }
-        }
+        // filter() widens the union that categories is declared as (either an
+        // all-string or an all-object array), so the result is cast back to
+        // assign it.
+        req.body.categories = (req.body.categories as CategoryOption[]).filter(
+          category =>
+            typeof category === "string"
+              ? category !== "developer"
+              : category.type !== "developer",
+        ) as typeof req.body.categories;
       }
     }
 

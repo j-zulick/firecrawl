@@ -8,11 +8,7 @@ vi.mock("../config", () => ({
 }));
 
 import { fetch } from "undici";
-import {
-  searchDeveloperCategory,
-  stripDeveloperCategory,
-  wantsDeveloperCategory,
-} from "./developer";
+import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
 
 const fetchMock = vi.mocked(fetch);
 
@@ -151,25 +147,5 @@ describe("searchDeveloperCategory", () => {
         logger,
       ),
     ).resolves.toEqual([]);
-  });
-});
-
-describe("stripDeveloperCategory", () => {
-  it("removes both the string form and the object form", () => {
-    expect(
-      stripDeveloperCategory(["github", "developer"] as any),
-    ).toEqual(["github"]);
-    expect(
-      stripDeveloperCategory([{ type: "github" }, { type: "developer" }] as any),
-    ).toEqual([{ type: "github" }]);
-  });
-
-  it("passes undefined through and leaves unrelated categories alone", () => {
-    expect(stripDeveloperCategory(undefined)).toBeUndefined();
-    expect(stripDeveloperCategory(["github"] as any)).toEqual(["github"]);
-  });
-
-  it("returns an empty array when developer was the only category", () => {
-    expect(stripDeveloperCategory(["developer"] as any)).toEqual([]);
   });
 });
