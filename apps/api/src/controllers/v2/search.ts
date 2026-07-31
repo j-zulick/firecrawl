@@ -87,11 +87,7 @@ export async function searchController(
     // the key-restriction check below so an unentitled team is never told its
     // key lacks access to a category that is about to be removed anyway.
     if (wantsDeveloperCategory(req.body.categories as CategoryOption[])) {
-      const flags = req.acuc?.flags as
-        | Record<string, unknown>
-        | null
-        | undefined;
-      if (flags?.developerBeta !== true) {
+      if (req.acuc?.flags?.developerBeta !== true) {
         logger.info(
           "developer category requested without developerBeta flag; dropping",
         );

@@ -15,6 +15,7 @@ import type {
   ResearchTableName,
 } from "../../services/logging/log_job";
 import type { RequestWithAuth } from "../v1/types";
+import type { TeamFlags } from "./types";
 import { wrap } from "../../routes/shared";
 import { integrationSchema } from "../../utils/integration";
 import { requestOrigin } from "../../lib/request-origin";
@@ -145,7 +146,7 @@ type ResearchEndpointConfig = {
    * ungated (the research endpoints). Keyless callers have no acuc and so no
    * flags, which makes them unentitled by construction.
    */
-  betaGate?: { flag: string; error: string };
+  betaGate?: { flag: keyof NonNullable<TeamFlags>; error: string };
 };
 
 type ResearchController = (req: Request, res: Response) => Promise<any>;
@@ -253,14 +254,11 @@ function createResearchController(
     const authedReq = req as RequestWithAuth<any, any, any>;
 
     // Beta gate: fail closed before any logging, billing, or upstream call.
-    if (endpoint.betaGate) {
-      const flags = authedReq.acuc?.flags as
-        | Record<string, unknown>
-        | null
-        | undefined;
-      if (flags?.[endpoint.betaGate.flag] !== true) {
-        return researchError(res, 403, endpoint.betaGate.error);
-      }
+    if (
+      endpoint.betaGate &&
+      authedReq.acuc?.flags?.[endpoint.betaGate.flag] !== true
+    ) {
+      return researchError(res, 403, endpoint.betaGate.error);
     }
 
     const started = Date.now();
