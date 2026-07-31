@@ -18,9 +18,9 @@ export function wantsDeveloperCategory(categories?: CategoryOption[]): boolean {
  * developerBeta gate: an unentitled team's search proceeds without it rather
  * than erroring.
  */
-export function stripDeveloperCategory(
-  categories?: CategoryOption[],
-): CategoryOption[] | undefined {
+export function stripDeveloperCategory<T extends CategoryOption>(
+  categories?: T[],
+): T[] | undefined {
   if (categories === undefined) {
     return undefined;
   }
@@ -29,6 +29,21 @@ export function stripDeveloperCategory(
       ? category !== "developer"
       : category.type !== "developer",
   );
+}
+
+/**
+ * The zod-inferred category type on SearchRequest is a union of two
+ * *homogeneous* arrays (all-string or all-object), not a single array of a
+ * union type. TypeScript's generic inference collapses that union to a mixed
+ * `(string | CategoryInput)[]` when `stripDeveloperCategory` is called
+ * directly on it, which no longer matches either branch on the way back out.
+ * Narrowing with this predicate first lets each call site infer `T` as the
+ * concrete branch, so the round trip typechecks with no cast.
+ */
+export function isCategoryStringArray(
+  categories: CategoryOption[],
+): categories is string[] {
+  return categories.every(category => typeof category === "string");
 }
 
 export async function searchDeveloperCategory(
