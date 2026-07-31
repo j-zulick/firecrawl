@@ -34,11 +34,12 @@ import { createDeveloperRouter } from "../research-proxy";
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 
-/** Pulls the GET /search handler out of the router's stack. */
-function developerHandler() {
-  const router: any = createDeveloperRouter();
+/** Pulls the GET handler out of the router's stack for either mount shape. */
+function developerHandler(options: { root?: boolean } = {}) {
+  const router: any = createDeveloperRouter(options);
+  const path = options.root ? "/" : "/search";
   const layer = router.stack.find(
-    (l: any) => l.route?.path === "/search" && l.route?.methods?.get,
+    (l: any) => l.route?.path === path && l.route?.methods?.get,
   );
   return layer.route.stack[0].handle;
 }
@@ -67,10 +68,13 @@ beforeEach(() => {
   mockLogResearchEndpoint.mockResolvedValue(undefined);
 });
 
-describe("developer endpoint beta gate", () => {
+describe.each([
+  { name: "/v2/developer/search", options: {} },
+  { name: "/v2/search/developer (root alias)", options: { root: true } },
+])("developer endpoint beta gate on $name", ({ options }) => {
   it("403s a team without developerBeta and never calls upstream", async () => {
     const res = makeRes();
-    await developerHandler()(makeReq({ developerBeta: false }), res);
+    await developerHandler(options)(makeReq({ developerBeta: false }), res);
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(mockFetchResearchUpstream).not.toHaveBeenCalled();
@@ -79,7 +83,7 @@ describe("developer endpoint beta gate", () => {
 
   it("403s a keyless caller (no acuc at all)", async () => {
     const res = makeRes();
-    await developerHandler()(makeReq(null), res);
+    await developerHandler(options)(makeReq(null), res);
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(mockFetchResearchUpstream).not.toHaveBeenCalled();
@@ -88,7 +92,7 @@ describe("developer endpoint beta gate", () => {
   it("does not 403 a team with developerBeta", async () => {
     mockFetchResearchUpstream.mockResolvedValue(null); // 404 path, past the gate
     const res = makeRes();
-    await developerHandler()(makeReq({ developerBeta: true }), res);
+    await developerHandler(options)(makeReq({ developerBeta: true }), res);
 
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
