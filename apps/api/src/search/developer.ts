@@ -13,6 +13,24 @@ export function wantsDeveloperCategory(categories?: CategoryOption[]): boolean {
   );
 }
 
+/**
+ * Removes the developer category from a normalized category list. Used by the
+ * developerBeta gate: an unentitled team's search proceeds without it rather
+ * than erroring.
+ */
+export function stripDeveloperCategory(
+  categories?: CategoryOption[],
+): CategoryOption[] | undefined {
+  if (categories === undefined) {
+    return undefined;
+  }
+  return categories.filter(category =>
+    typeof category === "string"
+      ? category !== "developer"
+      : category.type !== "developer",
+  );
+}
+
 export async function searchDeveloperCategory(
   options: { query: string; limit: number; teamId: string; timeout: number },
   logger: Logger,

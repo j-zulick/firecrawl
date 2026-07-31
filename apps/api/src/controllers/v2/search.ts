@@ -39,7 +39,10 @@ import {
   checkKeyFormatRestriction,
   formatTypesOf,
 } from "../../lib/key-restriction";
-import { wantsDeveloperCategory } from "../../search/developer";
+import {
+  stripDeveloperCategory,
+  wantsDeveloperCategory,
+} from "../../search/developer";
 import { requestOrigin } from "../../lib/request-origin";
 
 export async function searchController(
@@ -75,6 +78,27 @@ export async function searchController(
     const rawOrigin =
       typeof req.body?.origin === "string" ? req.body.origin : undefined;
     req.body = searchRequestSchema.parse(req.body);
+
+    // Beta gate: the developer category is limited to teams with the
+    // developerBeta flag. Fail closed and silent — an unentitled team gets
+    // normal web results with the category dropped, no error. Keyless callers
+    // have no org and so no flags, which makes them unentitled. Runs before
+    // the key-restriction check below so an unentitled team is never told its
+    // key lacks access to a category that is about to be removed anyway.
+    if (wantsDeveloperCategory(req.body.categories as CategoryOption[])) {
+      const flags = req.acuc?.flags as
+        | Record<string, unknown>
+        | null
+        | undefined;
+      if (flags?.developerBeta !== true) {
+        logger.info(
+          "developer category requested without developerBeta flag; dropping",
+        );
+        req.body.categories = stripDeveloperCategory(
+          req.body.categories as CategoryOption[],
+        );
+      }
+    }
 
     const requestedFormats = formatTypesOf(req.body.scrapeOptions?.formats);
     const keyRestriction = await checkKeyFormatRestriction(
