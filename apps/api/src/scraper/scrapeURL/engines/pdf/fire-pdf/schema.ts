@@ -48,8 +48,15 @@ export const pollResponseSchema = z.object({
 });
 
 export const resultResponseSchema = z.object({
-  schema_version: z.literal(1).optional(),
+  schema_version: z
+    .union([z.literal(1), z.literal(2), z.literal(3)])
+    .optional(),
   markdown: z.string(),
+  pages: z
+    .array(
+      z.object({ page: z.number().int().positive(), markdown: z.string() }),
+    )
+    .optional(),
   pages_processed: z.number().optional(),
   failed_pages: z.array(z.number()).nullable().optional(),
   partial_pages: z.array(z.number()).nullable().optional(),
