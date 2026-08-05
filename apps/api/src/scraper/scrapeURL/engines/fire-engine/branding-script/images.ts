@@ -5,6 +5,10 @@ import {
   recordError,
 } from "./helpers";
 import { resolveSvgStyles } from "./svg-utils";
+import {
+  findDeclaredJsonLdLogo,
+  findLargestAppleTouchIcon,
+} from "./declared-marks";
 
 interface LogoCandidate {
   src: string;
@@ -111,6 +115,24 @@ export const findImages = (): FindImagesResult => {
     )?.content,
     "twitter",
   );
+
+  // Declared brand marks — used server-side as a fallback when no logo is
+  // selected from the DOM. Sites explicitly declare these, so they're the
+  // most trustworthy signal available when heuristics/LLM come up empty.
+
+  // Largest apple-touch icon (square brand mark by convention).
+  try {
+    push(findLargestAppleTouchIcon(document), "apple-touch-icon");
+  } catch (_) {
+    // Ignore errors
+  }
+
+  // JSON-LD "logo" (Organization/WebSite/LocalBusiness structured data).
+  try {
+    push(findDeclaredJsonLdLogo(document), "logo-jsonld");
+  } catch (_) {
+    // Ignore errors
+  }
 
   const ensureSvgEncoded = (
     url: string | null | undefined,
