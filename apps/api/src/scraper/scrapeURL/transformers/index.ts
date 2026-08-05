@@ -73,6 +73,15 @@ async function deriveHTMLFromRawHTML(
   return document;
 }
 
+function requireRawHtml(document: Document): string {
+  if (document.rawHtml === undefined) {
+    throw new Error(
+      "rawHtml is undefined -- this transformer is being called out of order",
+    );
+  }
+  return document.rawHtml;
+}
+
 async function deriveMarkdownFromHTML(
   meta: Meta,
   document: Document,
@@ -127,14 +136,11 @@ async function deriveMarkdownFromHTML(
     return document;
   }
 
-  if (document.metadata.contentType?.includes("application/json")) {
-    if (document.rawHtml === undefined) {
-      throw new Error(
-        "rawHtml is undefined -- this transformer is being called out of order",
-      );
-    }
+  // Media types are case-insensitive per RFC, so normalize before matching.
+  const contentType = document.metadata.contentType?.toLowerCase();
 
-    document.markdown = "```json\n" + document.rawHtml + "\n```";
+  if (contentType?.includes("application/json")) {
+    document.markdown = "```json\n" + requireRawHtml(document) + "\n```";
     return document;
   }
 
@@ -142,14 +148,8 @@ async function deriveMarkdownFromHTML(
   // Running them through the HTML-to-markdown converter escapes markdown
   // punctuation like "_", which corrupts underscores inside link URLs. Pass
   // the raw body through untouched instead.
-  if (document.metadata.contentType?.includes("text/plain")) {
-    if (document.rawHtml === undefined) {
-      throw new Error(
-        "rawHtml is undefined -- this transformer is being called out of order",
-      );
-    }
-
-    document.markdown = document.rawHtml;
+  if (contentType?.includes("text/plain")) {
+    document.markdown = requireRawHtml(document);
     return document;
   }
 
