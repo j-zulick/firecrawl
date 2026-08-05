@@ -138,6 +138,21 @@ async function deriveMarkdownFromHTML(
     return document;
   }
 
+  // text/plain responses (e.g. llms.txt) are already plain text/markdown.
+  // Running them through the HTML-to-markdown converter escapes markdown
+  // punctuation like "_", which corrupts underscores inside link URLs. Pass
+  // the raw body through untouched instead.
+  if (document.metadata.contentType?.includes("text/plain")) {
+    if (document.rawHtml === undefined) {
+      throw new Error(
+        "rawHtml is undefined -- this transformer is being called out of order",
+      );
+    }
+
+    document.markdown = document.rawHtml;
+    return document;
+  }
+
   // Use scrape ID or crawl ID as request_id for tracing
   const requestId = meta.id || meta.internalOptions.crawlId;
   document.markdown = await parseMarkdown(document.html, {
