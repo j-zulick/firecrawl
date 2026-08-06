@@ -195,6 +195,6 @@ labsRouter.patch(
 
 labsRouter.delete(
   "/search/configs/:id",
-    authMiddleware(RateLimiterMode.Labs),
+  authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );
