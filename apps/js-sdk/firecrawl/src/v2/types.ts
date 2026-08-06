@@ -207,6 +207,10 @@ export interface ScrapeOptions {
   useMock?: string;
   blockAds?: boolean;
   proxy?: "basic" | "stealth" | "enhanced" | "auto" | string;
+  /**
+   * Maximum age, in milliseconds, of indexed content that may be reused.
+   * Set to `0` to bypass index reuse.
+   */
   maxAge?: number;
   minAge?: number;
   storeInCache?: boolean;
@@ -558,6 +562,7 @@ export interface DocumentMetadata {
   // Common metadata fields
   title?: string;
   description?: string;
+  /** URL reported by the selected scrape engine. */
   url?: string;
   language?: string;
   keywords?: string | string[];
@@ -594,7 +599,9 @@ export interface DocumentMetadata {
   articleSection?: string;
 
   // Response-level metadata
+  /** URL requested for the scrape. */
   sourceURL?: string;
+  /** HTTP status code reported for the scrape response. */
   statusCode?: number;
   scrapeId?: string;
   numPages?: number;

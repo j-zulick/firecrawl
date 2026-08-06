@@ -83,6 +83,7 @@ class DocumentMetadata(BaseModel):
     # Common metadata fields
     title: Optional[str] = None
     description: Optional[str] = None
+    # URL reported by the selected scrape engine.
     url: Optional[str] = None
     language: Optional[str] = None
     keywords: Optional[Union[str, List[str]]] = None
@@ -119,7 +120,9 @@ class DocumentMetadata(BaseModel):
     article_section: Optional[str] = None
 
     # Response-level metadata
+    # URL requested for the scrape.
     source_url: Optional[str] = None
+    # HTTP status code reported for the scrape response.
     status_code: Optional[int] = None
     scrape_id: Optional[str] = None
     num_pages: Optional[int] = None
@@ -822,6 +825,8 @@ class ScrapeOptions(BaseModel):
     use_mock: Optional[str] = None
     block_ads: Optional[bool] = None
     proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None
+    # Maximum age, in milliseconds, of indexed content that may be reused.
+    # Set to 0 to bypass index reuse.
     max_age: Optional[int] = None
     min_age: Optional[int] = None
     store_in_cache: Optional[bool] = None
