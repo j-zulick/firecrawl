@@ -139,96 +139,62 @@ export const labsRouter = express.Router();
 // No credit check or billing here on purpose: the service behind this proxy
 // makes its own calls to the public API with the caller's own key, so usage is
 // billed on those existing paths instead.
-//
-// This list mirrors the upstream service one route at a time; there is no
-// catch-all. An endpoint added upstream stays a 404 here until it is also
-// listed below, so keep the two in sync when the service grows.
 labsRouter.post(
   "/search",
-  authMiddleware(RateLimiterMode.Search),
+  authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );
 
 labsRouter.post(
   "/search/data/sites",
-  authMiddleware(RateLimiterMode.Search),
+  authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );
 
 labsRouter.post(
   "/search/data/documents",
-  authMiddleware(RateLimiterMode.Search),
-  wrap(labsProxyController),
-);
-
-labsRouter.post(
-  "/search/data/pages",
-  authMiddleware(RateLimiterMode.Search),
+  authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );
 
 labsRouter.get(
   "/search/data",
-  authMiddleware(RateLimiterMode.Search),
-  wrap(labsProxyController),
-);
-
-labsRouter.patch(
-  "/search/data/:sourceId",
-  authMiddleware(RateLimiterMode.Search),
+  authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );
 
 labsRouter.delete(
   "/search/data/:sourceId",
-  authMiddleware(RateLimiterMode.Search),
-  wrap(labsProxyController),
-);
-
-labsRouter.post(
-  "/search/data/:sourceId/refresh",
-  authMiddleware(RateLimiterMode.Search),
+  authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );
 
 labsRouter.get(
   "/search/providers",
-  authMiddleware(RateLimiterMode.Search),
-  wrap(labsProxyController),
-);
-
-labsRouter.get(
-  "/search/packs",
-  authMiddleware(RateLimiterMode.Search),
-  wrap(labsProxyController),
-);
-
-labsRouter.patch(
-  "/search/packs/:packId",
-  authMiddleware(RateLimiterMode.Search),
+  authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );
 
 labsRouter.post(
   "/search/configs",
-  authMiddleware(RateLimiterMode.Search),
+  authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );
 
 labsRouter.get(
   "/search/configs",
-  authMiddleware(RateLimiterMode.Search),
+  authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );
 
 labsRouter.patch(
   "/search/configs/:id",
-  authMiddleware(RateLimiterMode.Search),
+  authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );
 
 labsRouter.delete(
   "/search/configs/:id",
-  authMiddleware(RateLimiterMode.Search),
+    authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );

@@ -36,6 +36,7 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
   supportDocsSearch: 3,
   research: 100,
   developerSearch: 100,
+  labs: 1000,
 };
 
 /**
