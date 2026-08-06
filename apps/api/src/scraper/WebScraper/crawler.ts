@@ -19,6 +19,7 @@ import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
 import { extractBaseDomain } from "../../lib/url-utils";
 
 export const SITEMAP_LIMIT = 25;
+const SITEMAP_FETCH_CONCURRENCY = 3;
 const SITEMAP_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
 interface FilterResult {
@@ -542,6 +543,7 @@ export class WebCrawler {
       method: "tryGetSitemap",
     });
     let leftOfLimit = this.limit;
+    let deliveredCount = 0;
 
     const normalizeUrl = (url: string) => {
       url = url.replace(/^https?:\/\//, "").replace(/^www\./, "");
@@ -554,6 +556,7 @@ export class WebCrawler {
     const _urlsHandler = async (urls: string[]) => {
       this.logger.debug("urlsHandler invoked");
       if (fromMap && onlySitemap) {
+        deliveredCount += urls.length;
         return await urlsHandler(urls);
       } else {
         let filteredLinksResult = await this.filterLinks(
@@ -589,19 +592,25 @@ export class WebCrawler {
         );
 
         if (uniqueURLs.length > 0) {
+          deliveredCount += uniqueURLs.length;
           return await urlsHandler(uniqueURLs);
         }
       }
     };
 
     let timeoutHandle: NodeJS.Timeout;
+    const timeoutController = new AbortController();
     const timeoutPromise = new Promise((_, reject) => {
-      timeoutHandle = setTimeout(
-        () => reject(new Error("Sitemap fetch timeout")),
-        timeout,
-      );
+      timeoutHandle = setTimeout(() => {
+        timeoutController.abort();
+        reject(new Error("Sitemap fetch timeout"));
+      }, timeout);
     });
+    const fetchAbort = abort
+      ? AbortSignal.any([abort, timeoutController.signal])
+      : timeoutController.signal;
 
+    let count = 0;
     try {
       const robotsSitemaps = this.robots.getSitemaps();
       this.logger.debug("Attempting to fetch sitemap links", {
@@ -612,24 +621,59 @@ export class WebCrawler {
         hasRobotsTxt: this.robotsTxt.length > 0,
       });
 
-      let count = (await Promise.race([
-        Promise.all([
-          this.tryFetchSitemapLinks(
-            this.initialUrl,
-            _urlsHandler,
-            abort,
-            mock,
-            maxAge,
-          ),
-          ...robotsSitemaps.map(x =>
-            this.tryFetchSitemapLinks(x, _urlsHandler, abort, mock, maxAge),
-          ),
-        ]).then(results => results.reduce((a, x) => a + x, 0)),
-        timeoutPromise,
-      ]).finally(() => {
-        clearTimeout(timeoutHandle);
-      })) as number;
+      // Fetched in batches so children of early sitemap indexes claim
+      // SITEMAP_LIMIT slots before later top-level sitemaps do.
+      const sitemapSources = [this.initialUrl, ...robotsSitemaps];
 
+      const fetchSources = async () => {
+        let linkCount = 0;
+        for (
+          let i = 0;
+          i < sitemapSources.length &&
+          this.sitemapsHit.size < SITEMAP_LIMIT &&
+          !fetchAbort.aborted;
+          i += SITEMAP_FETCH_CONCURRENCY
+        ) {
+          const results = await Promise.all(
+            sitemapSources
+              .slice(i, i + SITEMAP_FETCH_CONCURRENCY)
+              .map(source =>
+                this.tryFetchSitemapLinks(
+                  source,
+                  _urlsHandler,
+                  fetchAbort,
+                  mock,
+                  maxAge,
+                ),
+              ),
+          );
+          linkCount += results.reduce((a, x) => a + x, 0);
+        }
+        return linkCount;
+      };
+
+      count = (await Promise.race([fetchSources(), timeoutPromise]).finally(
+        () => {
+          clearTimeout(timeoutHandle);
+        },
+      )) as number;
+    } catch (error) {
+      if (error instanceof Error && error.message === "Sitemap fetch timeout") {
+        this.logger.warn("Sitemap fetch timed out", {
+          method: "tryGetSitemap",
+          timeout,
+          deliveredCount,
+        });
+      } else {
+        this.logger.error("Error fetching sitemap", {
+          method: "tryGetSitemap",
+          error,
+        });
+      }
+      count = deliveredCount;
+    }
+
+    try {
       if (count > 0) {
         if (
           await redisEvictConnection.sadd(
@@ -647,22 +691,14 @@ export class WebCrawler {
         3600,
         "NX",
       );
-
-      return count;
     } catch (error) {
-      if (error.message === "Sitemap fetch timeout") {
-        this.logger.warn("Sitemap fetch timed out", {
-          method: "tryGetSitemap",
-          timeout,
-        });
-        return 0;
-      }
-      this.logger.error("Error fetching sitemap", {
+      this.logger.error("Error dispatching initial URL after sitemap fetch", {
         method: "tryGetSitemap",
         error,
       });
-      return 0;
     }
+
+    return count;
   }
 
   public async filterURL(href: string, url: string): Promise<FilterResult> {
