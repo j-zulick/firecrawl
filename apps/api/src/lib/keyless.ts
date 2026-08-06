@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { isIPv4 } from "node:net";
 import { v5 as uuidv5 } from "uuid";
 import { config } from "../config";
@@ -35,6 +36,34 @@ export function isKeylessConfigured(): boolean {
 }
 
 const DAY_SECONDS = 86400;
+
+// This value is emitted only on quota exhaustion. It is a versioned, keyed
+// pseudonym—not an IP address—so analytics can join the event to the existing
+// privacy-controlled signup/OAuth matching pipeline without expanding raw-IP
+// logging. Rotation intentionally creates a new cohort namespace.
+export const KEYLESS_CONVERSION_COHORT_VERSION = "v1";
+
+function normalizeKeylessIpv4(ip: string): string {
+  const trimmed = ip.trim();
+  const lower = trimmed.toLowerCase();
+  return lower.startsWith("::ffff:") && isIPv4(trimmed.slice(7))
+    ? trimmed.slice(7)
+    : trimmed;
+}
+
+export function keylessConversionCohort(ip: string): string | undefined {
+  const secret = config.KEYLESS_CONVERSION_HMAC_SECRET;
+  const normalizedIp = normalizeKeylessIpv4(ip);
+  if (!secret || !normalizedIp) return undefined;
+  return `${KEYLESS_CONVERSION_COHORT_VERSION}:${createHmac("sha256", secret)
+    .update(normalizedIp)
+    .digest("base64url")}`;
+}
+
+export function keylessExhaustionTelemetry(ip: string): Record<string, string> {
+  const conversionCohort = keylessConversionCohort(ip);
+  return conversionCohort ? { conversionCohort } : {};
+}
 
 // Keyless teams reuse the `preview_` prefix so billing (autumn `isPreviewTeam`)
 // and GCS persistence are skipped automatically, with a dedicated infix so the
@@ -80,8 +109,7 @@ export function keylessTeamUuid(
  * is treated as IPv4.
  */
 export function isKeylessIpEligible(ip: string): boolean {
-  const normalized = ip.startsWith("::ffff:") ? ip.slice("::ffff:".length) : ip;
-  return isIPv4(normalized);
+  return isIPv4(normalizeKeylessIpv4(ip));
 }
 
 const requestsKey = (ip: string) => `keyless_requests:${ip}`;
@@ -141,6 +169,7 @@ export async function keylessLimitBody(
     reason: "credits",
     mode,
     retryAfterSeconds,
+    ...keylessExhaustionTelemetry(ip ?? ""),
   });
   return {
     success: false,
