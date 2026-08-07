@@ -667,8 +667,15 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     const fallbackList = await buildFallbackList(meta);
 
-    // Check if actions are requested but no engines support them
-    if (meta.featureFlags.has("actions")) {
+    // Check if actions are requested but no engines support them.
+    // Skip when the content was already prefetched (a browser engine already
+    // ran the actions and downloaded the file); the re-run only needs the
+    // document/pdf engine to parse it, which does not support actions.
+    if (
+      meta.featureFlags.has("actions") &&
+      meta.pdfPrefetch === undefined &&
+      meta.documentPrefetch === undefined
+    ) {
       if (
         fallbackList.length === 0 ||
         fallbackList.every(engine => engine.unsupportedFeatures.has("actions"))
