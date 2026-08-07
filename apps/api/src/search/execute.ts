@@ -35,6 +35,7 @@ interface SearchOptions {
   lang?: string;
   country?: string;
   location?: string;
+  safe?: boolean;
   sources: Array<{ type: string }>;
   categories?: CategoryOption[];
   includeDomains?: string[];
@@ -122,6 +123,7 @@ export async function executeSearch(
     lang: options.lang,
     country: options.country,
     location: options.location,
+    safe: options.safe,
     type: searchTypes,
     enterprise: options.enterprise,
   })) as SearchV2Response;
