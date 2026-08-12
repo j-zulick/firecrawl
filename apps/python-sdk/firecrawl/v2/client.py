@@ -68,6 +68,14 @@ from .methods import agent as agent_module
 from .methods import browser as browser_module
 from .methods import monitor as monitor_module
 from .methods import research as research_module
+from .methods.research_docs import (
+    CLIENT_INSPECT_PAPER_DOC,
+    CLIENT_READ_PAPER_DOC,
+    CLIENT_RELATED_PAPERS_DOC,
+    CLIENT_SEARCH_GITHUB_DOC,
+    CLIENT_SEARCH_PAPERS_DOC,
+    doc,
+)
 from .watcher import Watcher
 
 # Kwargs that map to ScrapeOptions fields. Used by async crawl normalization
@@ -225,18 +233,24 @@ class FirecrawlClient:
         ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, profile, audit_metadata, integration]) else None
         return scrape_module.scrape(self.http_client, url, options)
 
+    # Research paper index (/v2/search/research)
+    @doc(CLIENT_SEARCH_PAPERS_DOC)
     def search_papers(self, query: str, **kwargs):
         return research_module.search_papers(self.http_client, query, **kwargs)
 
+    @doc(CLIENT_INSPECT_PAPER_DOC)
     def inspect_paper(self, paper_id: str):
         return research_module.inspect_paper(self.http_client, paper_id)
 
+    @doc(CLIENT_READ_PAPER_DOC)
     def read_paper(self, paper_id: str, query: str, **kwargs):
         return research_module.read_paper(self.http_client, paper_id, query, **kwargs)
 
+    @doc(CLIENT_RELATED_PAPERS_DOC)
     def related_papers(self, paper_id: str, intent: str, **kwargs):
         return research_module.related_papers(self.http_client, paper_id, intent, **kwargs)
 
+    @doc(CLIENT_SEARCH_GITHUB_DOC)
     def search_github(self, query: str, **kwargs):
         return research_module.search_github(self.http_client, query, **kwargs)
 
