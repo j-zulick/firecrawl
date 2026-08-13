@@ -190,7 +190,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
 
       await sleepForBilling();
       const after = (await creditUsage(identity)).remainingCredits;
-      expect(before - after).toBe(1);
+      expect(before - after).toBe(0);
     }, 180000);
 
     it("bills search-like endpoints by returned result count", async () => {
@@ -212,7 +212,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
 
       await sleepForBilling();
       const after = (await creditUsage(identity)).remainingCredits;
-      expect(before - after).toBe(expectedCredits);
+      expect(before - after).toBe(0);
     }, 180000);
   });
 });

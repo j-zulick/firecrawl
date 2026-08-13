@@ -324,7 +324,7 @@ export async function searchController(
         response: null,
         num_results: result.response.developer?.length ?? 0,
         time_taken: timeTakenInSeconds,
-        credits_cost: 0,
+        credits_cost: shouldBill ? result.searchCredits : 0,
         is_successful: true,
         zeroDataRetention,
       }).catch(ledgerError => {
