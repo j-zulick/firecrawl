@@ -301,7 +301,9 @@ export async function searchController(
         time_taken: timeTakenInSeconds,
         team_id: req.auth.team_id,
         options: req.body,
-        credits_cost: shouldBill ? result.searchCredits : 0,
+        // Don't record preview tokens as billed in the ledger — only record
+        // credits when billing is actually applied.
+        credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
         zeroDataRetention,
       },
       false,
@@ -324,7 +326,9 @@ export async function searchController(
         response: null,
         num_results: result.response.developer?.length ?? 0,
         time_taken: timeTakenInSeconds,
-        credits_cost: 0,
+        // Ensure preview-mode searches don't get a non-zero credits_cost
+        // in the research ledger when preview tokens are used.
+        credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
         is_successful: true,
         zeroDataRetention,
       }).catch(ledgerError => {

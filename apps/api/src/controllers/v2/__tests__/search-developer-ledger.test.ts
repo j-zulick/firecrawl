@@ -175,7 +175,7 @@ describe("developer category code_searches ledger", () => {
     expect(row.team_id).toBe(TEAM_ID);
     expect(row.target).toBe("vector database client");
     expect(row.num_results).toBe(2);
-    expect(row.credits_cost).toBe(0);
+    expect(row.credits_cost).toBe(2);
     expect(row.is_successful).toBe(true);
     expect(row.options.origin).toBe("sdk");
     expect(row.options.integration).toBe("cli");
