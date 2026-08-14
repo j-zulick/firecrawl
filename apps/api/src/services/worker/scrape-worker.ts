@@ -170,8 +170,10 @@ async function billScrapeJob(
       job.data.team_id !== config.BACKGROUND_INDEX_TEAM_ID! &&
       config.USE_DB_AUTHENTICATION
     ) {
+      // Resolved outside the try so the catch's refund decision can see it.
+      let routedToFirebill = false;
       try {
-        const routedToFirebill = await autumnService.isRoutedThroughFirebill(
+        routedToFirebill = await autumnService.isRoutedThroughFirebill(
           job.data.team_id,
         );
         trackedInRequest = await autumnService.trackCredits({
