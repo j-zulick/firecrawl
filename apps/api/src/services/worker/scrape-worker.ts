@@ -176,6 +176,12 @@ async function billScrapeJob(
           value: creditsToBeBilled,
           properties: autumnProperties,
           featureId,
+          // The worker job id is the one identity that is unique per charge
+          // (a crawl id is shared by every page — keying on it would collapse
+          // a crawl's pages into one billed event) AND survives a stall
+          // requeue, which re-runs the job under the same id: with this key,
+          // the re-run dedupes instead of double-billing (firebill route).
+          idempotencyKey: `fc:track:${billing.endpoint}:${job.id}`,
         });
         const billingJobId = uuidv7();
         logger.debug(
@@ -225,6 +231,9 @@ async function billScrapeJob(
             value: creditsToBeBilled,
             properties: autumnProperties,
             featureId,
+            // Distinct from the track key: a refund is its own charge event
+            // (same key would 409 as a duplicate of the track and be dropped).
+            idempotencyKey: `fc:refund:${billing.endpoint}:${job.id}`,
           });
         }
         // The billing operation never reached the queue, so no debit will

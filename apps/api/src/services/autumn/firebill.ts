@@ -53,6 +53,7 @@ export async function firebillTrack({
   featureId,
   value,
   properties,
+  idempotencyKey,
 }: TrackParams): Promise<boolean> {
   const path = value < 0 ? "/v1/refund" : "/v1/track";
   // Plain concatenation rather than new URL(path, base): a leading-slash path
@@ -74,6 +75,11 @@ export async function firebillTrack({
         feature_id: featureId,
         value: Math.abs(value),
         properties,
+        // Stable per-charge key: firebill makes it the intent row's primary
+        // key, so a caller retry (or a requeued job re-billing the same work)
+        // is answered from the existing row instead of charged again. Omitted
+        // → firebill mints a per-request UUID (dedupes only its own retries).
+        ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
       }),
       signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
     });

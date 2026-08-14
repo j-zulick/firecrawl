@@ -715,6 +715,48 @@ describe("firebill routing", () => {
     expect(String(url)).toBe("http://proxy.test/firebill/v1/track");
   });
 
+  it("sends a caller-supplied idempotency key to firebill, and omits the field otherwise", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.trackCredits({
+      teamId: "team-1",
+      value: 5,
+      properties: { source: "billScrapeJob", endpoint: "scrape" },
+      idempotencyKey: "fc:track:scrape:job-123",
+    });
+    expect(JSON.parse(mockFetch.mock.calls[0]![1].body).idempotency_key).toBe(
+      "fc:track:scrape:job-123",
+    );
+
+    await svc.trackCredits({
+      teamId: "team-1",
+      value: 5,
+      properties: { source: "billTeam", endpoint: "search" },
+    });
+    expect(
+      "idempotency_key" in JSON.parse(mockFetch.mock.calls[1]![1].body),
+    ).toBe(false);
+  });
+
+  it("gives a refund its own key, distinct from the track's", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.refundCredits({
+      teamId: "team-1",
+      value: 5,
+      properties: { source: "billScrapeJob", endpoint: "scrape" },
+      idempotencyKey: "fc:refund:scrape:job-123",
+    });
+
+    const [url, init] = mockFetch.mock.calls[0]!;
+    expect(String(url)).toContain("/v1/refund");
+    expect(JSON.parse(init.body).idempotency_key).toBe(
+      "fc:refund:scrape:job-123",
+    );
+  });
+
   it("routes trackCredits for an allowlisted org to firebill, not Autumn", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();

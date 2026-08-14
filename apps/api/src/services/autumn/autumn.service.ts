@@ -215,6 +215,7 @@ export class AutumnService {
     featureId,
     value,
     properties,
+    idempotencyKey,
   }: TrackParams): Promise<boolean> {
     // Gradual firebill rollout: allowlisted orgs record usage via firebill (a
     // durable store that forwards to Autumn) instead of calling Autumn
@@ -229,6 +230,7 @@ export class AutumnService {
         featureId,
         value,
         properties,
+        idempotencyKey,
       });
     }
 
@@ -516,6 +518,7 @@ export class AutumnService {
     value,
     properties,
     featureId = CREDITS_FEATURE_ID,
+    idempotencyKey,
   }: TrackCreditsParams): Promise<boolean> {
     if (!autumnClient) return false;
     if (this.isPreviewTeam(teamId)) return false;
@@ -528,6 +531,7 @@ export class AutumnService {
         featureId,
         value,
         properties,
+        idempotencyKey,
       });
     } catch (error) {
       logger.error(
@@ -693,6 +697,7 @@ export class AutumnService {
     value,
     properties,
     featureId = CREDITS_FEATURE_ID,
+    idempotencyKey,
   }: TrackCreditsParams): Promise<void> {
     if (!autumnClient) return;
     if (this.isPreviewTeam(teamId)) return;
@@ -705,6 +710,7 @@ export class AutumnService {
         featureId,
         value: -value,
         properties: { ...properties, source: "autumn_refund" },
+        idempotencyKey,
       });
     } catch (error) {
       logger.error(
