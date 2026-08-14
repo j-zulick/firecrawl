@@ -55,13 +55,19 @@ export async function firebillTrack({
   properties,
 }: TrackParams): Promise<boolean> {
   const path = value < 0 ? "/v1/refund" : "/v1/track";
+  // Plain concatenation rather than new URL(path, base): a leading-slash path
+  // would drop any base-path prefix (e.g. a reverse proxy at /firebill).
+  const url = `${config.FIREBILL_URL!.replace(/\/+$/, "")}${path}`;
   try {
-    const response = await fetch(new URL(path, config.FIREBILL_URL), {
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         authorization: `Bearer ${config.FIREBILL_SECRET}`,
         "content-type": "application/json",
       },
+      // No overage flag needed: firebill itself pins Autumn's
+      // overage_behavior to "overflow" on every upstream call, matching the
+      // direct-Autumn path below.
       body: JSON.stringify({
         customer_id: customerId,
         entity_id: entityId,

@@ -383,7 +383,7 @@ const configSchema = z.object({
   // FIREBILL_ORG_IDS (comma-separated org UUIDs) is routed through firebill
   // instead of directly to Autumn (gradual rollout).
   FIREBILL_URL: emptyStringAsUndefined(z.string().url()),
-  FIREBILL_SECRET: emptyStringAsUndefined(z.string()),
+  FIREBILL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   FIREBILL_ORG_IDS: delimitedList(",").optional(),
 
   // Miscellaneous

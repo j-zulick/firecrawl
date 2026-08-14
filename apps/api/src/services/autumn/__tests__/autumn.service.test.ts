@@ -698,6 +698,23 @@ describe("firebill routing", () => {
     vi.unstubAllGlobals();
   });
 
+  it("preserves a base-path prefix in FIREBILL_URL", async () => {
+    state.configRef = {
+      ...firebillConfig(),
+      FIREBILL_URL: "http://proxy.test/firebill/",
+    };
+
+    const svc = makeService();
+    await svc.trackCredits({
+      teamId: "team-1",
+      value: 3,
+      properties: { source: "billTeam", endpoint: "scrape" },
+    });
+
+    const [url] = mockFetch.mock.calls[0]!;
+    expect(String(url)).toBe("http://proxy.test/firebill/v1/track");
+  });
+
   it("routes trackCredits for an allowlisted org to firebill, not Autumn", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();
