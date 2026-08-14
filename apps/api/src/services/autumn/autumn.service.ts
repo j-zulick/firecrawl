@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { autumnClient } from "./client";
+import { firebillTrack, shouldRouteToFirebill } from "./firebill";
 import type {
   CreateEntityParams,
   CreateEntityResult,
@@ -215,6 +216,22 @@ export class AutumnService {
     value,
     properties,
   }: TrackParams): Promise<boolean> {
+    // Gradual firebill rollout: allowlisted orgs record usage via firebill (a
+    // durable store that forwards to Autumn) instead of calling Autumn
+    // directly. If the firebill call fails we must NOT fall back to Autumn —
+    // firebill may have durably recorded the event and will deliver it later,
+    // so a direct-Autumn fallback could double-bill the customer. firebillTrack
+    // returns false on failure, exactly like an Autumn track failure.
+    if (shouldRouteToFirebill(customerId)) {
+      return await firebillTrack({
+        customerId,
+        entityId,
+        featureId,
+        value,
+        properties,
+      });
+    }
+
     if (!autumnClient) return false;
 
     try {
