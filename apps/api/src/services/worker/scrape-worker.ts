@@ -171,6 +171,9 @@ async function billScrapeJob(
       config.USE_DB_AUTHENTICATION
     ) {
       try {
+        const routedToFirebill = await autumnService.isRoutedThroughFirebill(
+          job.data.team_id,
+        );
         trackedInRequest = await autumnService.trackCredits({
           teamId: job.data.team_id,
           value: creditsToBeBilled,
@@ -183,7 +186,13 @@ async function billScrapeJob(
           // the re-run dedupes instead of double-billing (firebill route).
           idempotencyKey: `fc:track:${billing.endpoint}:${job.id}`,
         });
-        const billingJobId = uuidv7();
+        // On the firebill route the ledger enqueue must be idempotent by the
+        // originating job: a stalled job reruns under the same job.id, the
+        // track dedupes in firebill, and a fresh random billing job id would
+        // debit the ledger twice (the same pattern monitors already use with
+        // their deterministic monitor-bill-{id}). Off the route, behavior is
+        // unchanged.
+        const billingJobId = routedToFirebill ? `bill-${job.id}` : uuidv7();
         logger.debug(
           `Adding billing job to queue for team ${job.data.team_id}`,
           {
@@ -226,15 +235,28 @@ async function billScrapeJob(
           { error },
         );
         if (trackedInRequest && creditsToBeBilled !== null) {
-          await autumnService.refundCredits({
-            teamId: job.data.team_id,
-            value: creditsToBeBilled,
-            properties: autumnProperties,
-            featureId,
-            // Distinct from the track key: a refund is its own charge event
-            // (same key would 409 as a duplicate of the track and be dropped).
-            idempotencyKey: `fc:refund:${billing.endpoint}:${job.id}`,
-          });
+          if (routedToFirebill) {
+            // No compensating refund on the firebill route: the tracked charge
+            // is durable and correct (the scrape ran), and refunding it here
+            // poisons a rerun — the rerun's track dedupes against the intent
+            // row (no new charge) while the ledger enqueue succeeds, leaving
+            // Autumn net-zero for work the ledger billed. The rerun retries
+            // the enqueue under the deterministic bill-{job.id} instead.
+            logger.warn(
+              "billing enqueue failed on the firebill route; charge stands, enqueue retries on rerun",
+              { jobId: job.id, credits: creditsToBeBilled },
+            );
+          } else {
+            await autumnService.refundCredits({
+              teamId: job.data.team_id,
+              value: creditsToBeBilled,
+              properties: autumnProperties,
+              featureId,
+              // Distinct from the track key: a refund is its own charge event
+              // (same key would 409 as a duplicate of the track and be dropped).
+              idempotencyKey: `fc:refund:${billing.endpoint}:${job.id}`,
+            });
+          }
         }
         // The billing operation never reached the queue, so no debit will
         // commit and no confirmation will ever arrive: void the Exchange

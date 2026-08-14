@@ -209,6 +209,22 @@ export class AutumnService {
     }
   }
 
+  /**
+   * Whether this team's usage is currently routed through firebill. Used by
+   * billers to pick route-specific failure handling (on the firebill route a
+   * recorded charge stands and dedupes, so compensating refunds and duplicate
+   * enqueues behave differently). Never throws: an error means "not routed",
+   * falling back to the pre-firebill behavior.
+   */
+  async isRoutedThroughFirebill(teamId: string): Promise<boolean> {
+    if (this.isPreviewTeam(teamId)) return false;
+    try {
+      return shouldRouteToFirebill(await this.resolveOrgId(teamId));
+    } catch {
+      return false;
+    }
+  }
+
   private async track({
     customerId,
     entityId,

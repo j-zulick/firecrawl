@@ -739,10 +739,19 @@ describe("firebill routing", () => {
     ).toBe(false);
   });
 
-  it("gives a refund its own key, distinct from the track's", async () => {
+  it("a track/refund pair for one charge carries two distinct keys", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();
 
+    // The convention the billers rely on: same charge identity, different
+    // prefix per direction — a shared key would 409 as a duplicate of the
+    // track and silently drop the refund.
+    await svc.trackCredits({
+      teamId: "team-1",
+      value: 5,
+      properties: { source: "billScrapeJob", endpoint: "scrape" },
+      idempotencyKey: "fc:track:scrape:job-123",
+    });
     await svc.refundCredits({
       teamId: "team-1",
       value: 5,
@@ -750,11 +759,15 @@ describe("firebill routing", () => {
       idempotencyKey: "fc:refund:scrape:job-123",
     });
 
-    const [url, init] = mockFetch.mock.calls[0]!;
-    expect(String(url)).toContain("/v1/refund");
-    expect(JSON.parse(init.body).idempotency_key).toBe(
-      "fc:refund:scrape:job-123",
-    );
+    const [trackUrl, trackInit] = mockFetch.mock.calls[0]!;
+    const [refundUrl, refundInit] = mockFetch.mock.calls[1]!;
+    expect(String(trackUrl)).toContain("/v1/track");
+    expect(String(refundUrl)).toContain("/v1/refund");
+    const trackKey = JSON.parse(trackInit.body).idempotency_key;
+    const refundKey = JSON.parse(refundInit.body).idempotency_key;
+    expect(trackKey).toBe("fc:track:scrape:job-123");
+    expect(refundKey).toBe("fc:refund:scrape:job-123");
+    expect(trackKey).not.toBe(refundKey);
   });
 
   it("routes trackCredits for an allowlisted org to firebill, not Autumn", async () => {
