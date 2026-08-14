@@ -192,6 +192,7 @@ export async function extractController(
         req.auth.team_id,
         threatScanCredits,
         req.acuc?.api_key_id ?? null,
+        // No chargeId: v1 has no extract id in scope on this path.
         { endpoint: "extract" },
       ).catch(error => {
         _logger.error(

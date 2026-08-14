@@ -214,7 +214,7 @@ export async function batchScrapeController(
           req.auth.team_id,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
-          { endpoint: "batch_scrape", jobId: id },
+          { endpoint: "batch_scrape", jobId: id, chargeId: `${id}:threat` },
         ).catch(error => {
           logger.error(
             `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,

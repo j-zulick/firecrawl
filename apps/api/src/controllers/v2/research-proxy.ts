@@ -335,6 +335,7 @@ function createResearchController(
             {
               endpoint: endpoint.billAs === "scrape" ? "scrape" : "search",
               jobId,
+              chargeId: jobId,
             },
           ).catch(billingError => {
             logger.error("Failed to bill research request", {

@@ -28,11 +28,16 @@ export async function billTeam(
         apiKeyId: api_key_id,
       };
       const featureId = featureIdForBillingEndpoint(billing.endpoint);
+      // Stable per-charge key (firebill route only): a caller retry or re-run
+      // job with the same chargeId dedupes instead of double-billing.
       const trackedInRequest = await autumnService.trackCredits({
         teamId: team_id,
         value: credits,
         properties: autumnProperties,
         featureId,
+        idempotencyKey: billing.chargeId
+          ? `fc:track:${billing.endpoint}:${billing.chargeId}`
+          : undefined,
       });
 
       const result = await queueBillingOperation(
@@ -50,6 +55,10 @@ export async function billTeam(
           value: credits,
           properties: autumnProperties,
           featureId,
+          // Distinct from the track key: the refund is its own charge event.
+          idempotencyKey: billing.chargeId
+            ? `fc:refund:${billing.endpoint}:${billing.chargeId}`
+            : undefined,
         });
       }
 

@@ -284,6 +284,10 @@ function billThreatBlockedDiscoveries(
     blocked.map(x => x.decision),
   );
   if (threatScanCredits <= 0) return;
+  // Deliberately no chargeId: MULTIPLE legitimate charges share this exact
+  // billing metadata (each page job that discovers new blocked URLs bills its
+  // own batch under the same crawl id) — a shared key would collapse them
+  // into one charge, i.e. underbill. Keyless until per-batch identity exists.
   billTeam(args.teamId, threatScanCredits, args.apiKeyId, args.billing).catch(
     error => {
       logger.error(

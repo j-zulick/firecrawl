@@ -90,7 +90,7 @@ async function searchHelper(
       team_id,
       searchCredits,
       api_key_id,
-      { endpoint: "search", jobId },
+      { endpoint: "search", jobId, chargeId: jobId },
       logger,
     ).catch(error => {
       logger.error(

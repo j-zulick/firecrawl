@@ -89,7 +89,7 @@ export async function agentController(
           req.auth.team_id,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
-          { endpoint: "agent", jobId: agentId },
+          { endpoint: "agent", jobId: agentId, chargeId: `${agentId}:threat` },
         ).catch(error => {
           logger.error(
             `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,

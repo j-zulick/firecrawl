@@ -615,6 +615,9 @@ export async function browserDeleteController(
   billTeam(req.auth.team_id, creditsBilled, req.acuc?.api_key_id ?? null, {
     endpoint: usedPrompt ? "interact" : "browser",
     jobId: session.id,
+    // Per-path suffix: the webhook teardown below bills the same session id
+    // through a different path; a shared key would silently drop one charge.
+    chargeId: `${session.id}:destroy`,
   }).catch(error => {
     logger.error("Failed to bill team for browser session", {
       error,
@@ -757,7 +760,11 @@ export async function browserWebhookDestroyedController(
     session.team_id,
     creditsBilled,
     null, // api_key_id not available in webhook context
-    { endpoint: usedPrompt ? "interact" : "browser", jobId: session.id },
+    {
+      endpoint: usedPrompt ? "interact" : "browser",
+      jobId: session.id,
+      chargeId: `${session.id}:webhook`,
+    },
   ).catch(error => {
     logger.error("Failed to bill team for browser session via webhook", {
       error,

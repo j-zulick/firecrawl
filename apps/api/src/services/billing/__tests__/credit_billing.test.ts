@@ -52,6 +52,40 @@ beforeEach(() => {
 });
 
 describe("billTeam", () => {
+  it("derives firebill idempotency keys from chargeId, and omits them without one", async () => {
+    await billTeam("team-1", 3, 123, {
+      endpoint: "search",
+      jobId: "job-9",
+      chargeId: "job-9",
+    });
+    expect(trackCredits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ idempotencyKey: "fc:track:search:job-9" }),
+    );
+
+    await billTeam("team-1", 3, 123, { endpoint: "search", jobId: "job-9" });
+    expect(trackCredits).toHaveBeenLastCalledWith(
+      expect.objectContaining({ idempotencyKey: undefined }),
+    );
+  });
+
+  it("gives the compensating refund its own fc:refund key", async () => {
+    queueBillingOperation.mockResolvedValueOnce({
+      success: false,
+      message: "enqueue failed",
+    });
+    trackCredits.mockResolvedValueOnce(true);
+
+    await billTeam("team-1", 3, 123, {
+      endpoint: "map",
+      jobId: "map-1",
+      chargeId: "map-1",
+    });
+
+    expect(refundCredits).toHaveBeenCalledWith(
+      expect.objectContaining({ idempotencyKey: "fc:refund:map:map-1" }),
+    );
+  });
+
   it("marks billing as already tracked when request tracking succeeds", async () => {
     await billTeam("team-1", 3, 123, {
       endpoint: "search",

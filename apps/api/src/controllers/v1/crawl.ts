@@ -87,6 +87,8 @@ export async function crawlController(
           req.auth.team_id,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
+          // No chargeId: the crawl id is not minted on this rejection path,
+          // and there is no other per-charge identity here.
           { endpoint: "crawl" },
         ).catch(error => {
           _logger.error(
