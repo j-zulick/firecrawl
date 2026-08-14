@@ -209,26 +209,48 @@ async function billScrapeJob(
         // the rest, including confirming the Exchange access event once the
         // debit actually commits. A failed commit leaves the event pending
         // for reconciliation - it is never voided on an ambiguous outcome.
-        await getBillingQueue().add(
-          "bill_team",
-          {
-            team_id: job.data.team_id,
-            credits: creditsToBeBilled,
-            billing,
-            is_extract: false,
-            timestamp: new Date().toISOString(),
-            originating_job_id: job.id,
-            api_key_id: job.data.apiKeyId,
-            autumnTrackInRequest: trackedInRequest,
-            ...(exchange?.accessEventId === undefined
-              ? {}
-              : { exchangeAccessEventId: exchange.accessEventId }),
-          },
-          {
-            jobId: billingJobId,
-            priority: 10,
-          },
-        );
+        //
+        // On the firebill route the enqueue is retried a few times before
+        // giving up: the Autumn charge is durable and will not be refunded
+        // (see the catch below), so a dropped enqueue would leave the ledger
+        // permanently un-debited. Retries are safe there BECAUSE the job id
+        // is deterministic — a duplicate add dedupes in BullMQ. Off the
+        // route the id is random, so it keeps today's single attempt (the
+        // compensating refund covers it).
+        const enqueueAttempts = routedToFirebill ? 3 : 1;
+        for (let attempt = 1; ; attempt++) {
+          try {
+            await getBillingQueue().add(
+              "bill_team",
+              {
+                team_id: job.data.team_id,
+                credits: creditsToBeBilled,
+                billing,
+                is_extract: false,
+                timestamp: new Date().toISOString(),
+                originating_job_id: job.id,
+                api_key_id: job.data.apiKeyId,
+                autumnTrackInRequest: trackedInRequest,
+                ...(exchange?.accessEventId === undefined
+                  ? {}
+                  : { exchangeAccessEventId: exchange.accessEventId }),
+              },
+              {
+                jobId: billingJobId,
+                priority: 10,
+              },
+            );
+            break;
+          } catch (enqueueError) {
+            if (attempt >= enqueueAttempts) throw enqueueError;
+            logger.warn("billing enqueue failed; retrying", {
+              attempt,
+              billingJobId,
+              error: enqueueError,
+            });
+            await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+          }
+        }
 
         return creditsToBeBilled;
       } catch (error) {
@@ -240,13 +262,21 @@ async function billScrapeJob(
           if (routedToFirebill) {
             // No compensating refund on the firebill route: the tracked charge
             // is durable and correct (the scrape ran), and refunding it here
-            // poisons a rerun — the rerun's track dedupes against the intent
-            // row (no new charge) while the ledger enqueue succeeds, leaving
-            // Autumn net-zero for work the ledger billed. The rerun retries
-            // the enqueue under the deterministic bill-{job.id} instead.
-            logger.warn(
-              "billing enqueue failed on the firebill route; charge stands, enqueue retries on rerun",
-              { jobId: job.id, credits: creditsToBeBilled },
+            // poisons any rerun — its track would dedupe against the intent
+            // row (no new charge) while the enqueue succeeds, leaving Autumn
+            // net-zero for work the ledger billed. Reaching this line means
+            // the bounded enqueue retries above were exhausted: the ledger is
+            // un-debited for this charge until reconciliation (or a stall
+            // rerun's deterministic bill-{job.id} enqueue) repairs it — hence
+            // error level, with everything needed to replay by hand.
+            logger.error(
+              "billing enqueue failed after retries on the firebill route; charge stands, ledger un-debited pending reconciliation",
+              {
+                jobId: job.id,
+                teamId: job.data.team_id,
+                credits: creditsToBeBilled,
+                billing,
+              },
             );
           } else {
             await autumnService.refundCredits({

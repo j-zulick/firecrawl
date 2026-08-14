@@ -192,8 +192,12 @@ export async function extractController(
         req.auth.team_id,
         threatScanCredits,
         req.acuc?.api_key_id ?? null,
-        // No chargeId: v1 has no extract id in scope on this path.
-        { endpoint: "extract" },
+        {
+          endpoint: "extract",
+          // Suffixed: the extract's MAIN charge (fire-0) uses the bare
+          // extractId — a shared key would collapse the two into one charge.
+          chargeId: `${extractId}:threat`,
+        },
       ).catch(error => {
         _logger.error(
           `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,
