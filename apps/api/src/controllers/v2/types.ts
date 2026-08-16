@@ -1454,6 +1454,15 @@ export type AgentTraceResponse =
       creditsUsed: number;
     };
 
+export type AgentSnapshotResponse =
+  | ErrorResponse
+  | {
+      success: true;
+      id: string;
+      snapshotId: string;
+      snapshot: string;
+    };
+
 export type AgentCancelResponse =
   | ErrorResponse
   | {
