@@ -138,6 +138,35 @@ export async function listBrowserSessions(
   }
 }
 
+export async function listActiveBrowserSessionsForRequest(
+  teamId: string,
+  requestId: string,
+): Promise<BrowserSessionRow[]> {
+  try {
+    const data = await db
+      .select()
+      .from(schema.browser_sessions)
+      .where(
+        and(
+          eq(schema.browser_sessions.team_id, teamId),
+          eq(schema.browser_sessions.request_id, requestId),
+          eq(schema.browser_sessions.status, "active"),
+        ),
+      )
+      .orderBy(desc(schema.browser_sessions.created_at));
+    return data as BrowserSessionRow[];
+  } catch (error) {
+    logger.error("Failed to list active browser sessions for request", {
+      error,
+      teamId,
+      requestId,
+    });
+    throw new Error(
+      `Failed to list active browser sessions for request: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+    );
+  }
+}
+
 export async function updateBrowserSessionActivity(id: string): Promise<void> {
   try {
     await db

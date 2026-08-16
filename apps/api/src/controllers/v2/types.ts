@@ -1452,6 +1452,14 @@ export type AgentTraceResponse =
       id: string;
       events: object[];
       creditsUsed: number;
+      activeBrowserSessions?: Array<{
+        id: string;
+        liveViewUrl: string;
+        viewport: {
+          width: number;
+          height: number;
+        };
+      }>;
     };
 
 export type AgentSnapshotResponse =
