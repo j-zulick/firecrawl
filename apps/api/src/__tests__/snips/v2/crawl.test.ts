@@ -449,8 +449,12 @@ describe("Crawl tests", () => {
 
   // Regression for #4315: with allowExternalLinks, a discovered external link
   // that redirects within its own domain must be followed and scraped, not
-  // rejected as EXTERNAL_LINK. example.org links to iana.org/domains/example,
-  // which redirects to www.iana.org/help/example-domains.
+  // rejected as EXTERNAL_LINK. Depends on stable public sites: example.org
+  // links to https://iana.org/domains/example, which redirects to
+  // www.iana.org/help/example-domains. The assertions require both that the
+  // iana.org link was discovered/followed AND that it actually redirected, so
+  // if either external site changes the test fails loudly rather than silently
+  // passing as a no-op.
   concurrentIf(!process.env.TEST_SUITE_SELF_HOSTED)(
     "allowExternalLinks follows a redirecting external link",
     async () => {
@@ -467,16 +471,27 @@ describe("Crawl tests", () => {
 
       expect(res.success).toBe(true);
       if (res.success) {
-        const scrapedIana = res.data.some(page => {
+        const hostOf = (value?: string) => {
           try {
-            const host = new URL(page.metadata.url ?? page.metadata.sourceURL!)
-              .hostname;
-            return host === "iana.org" || host.endsWith(".iana.org");
+            return new URL(value!).hostname.replace(/^www\./, "");
           } catch {
-            return false;
+            return undefined;
           }
-        });
-        expect(scrapedIana).toBe(true);
+        };
+
+        // The page reached via the external iana.org link (identified by its
+        // pre-redirect sourceURL). Absent before the fix, when it was rejected
+        // as EXTERNAL_LINK.
+        const ianaPage = res.data.find(
+          page => hostOf(page.metadata.sourceURL) === "iana.org",
+        );
+        expect(ianaPage).toBeDefined();
+
+        // And the link genuinely redirected: the final URL differs from the
+        // discovered sourceURL.
+        expect(normalizeUrlForCompare(ianaPage!.metadata.url!)).not.toBe(
+          normalizeUrlForCompare(ianaPage!.metadata.sourceURL!),
+        );
       }
     },
     5 * scrapeTimeout,
