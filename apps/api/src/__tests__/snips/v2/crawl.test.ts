@@ -447,6 +447,41 @@ describe("Crawl tests", () => {
     5 * scrapeTimeout,
   );
 
+  // Regression for #4315: with allowExternalLinks, a discovered external link
+  // that redirects within its own domain must be followed and scraped, not
+  // rejected as EXTERNAL_LINK. example.org links to iana.org/domains/example,
+  // which redirects to www.iana.org/help/example-domains.
+  concurrentIf(!process.env.TEST_SUITE_SELF_HOSTED)(
+    "allowExternalLinks follows a redirecting external link",
+    async () => {
+      const res = await crawl(
+        {
+          url: "https://example.org/",
+          limit: 2,
+          maxDiscoveryDepth: 1,
+          allowExternalLinks: true,
+          sitemap: "skip",
+        },
+        identity,
+      );
+
+      expect(res.success).toBe(true);
+      if (res.success) {
+        const scrapedIana = res.data.some(page => {
+          try {
+            const host = new URL(page.metadata.url ?? page.metadata.sourceURL!)
+              .hostname;
+            return host === "iana.org" || host.endsWith(".iana.org");
+          } catch {
+            return false;
+          }
+        });
+        expect(scrapedIana).toBe(true);
+      }
+    },
+    5 * scrapeTimeout,
+  );
+
   describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
     "Crawl API with Prompt",
     () => {
