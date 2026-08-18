@@ -584,10 +584,11 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
     // Allow an external destination when external content links are enabled and
     // it is not an external site's homepage. Two cases qualify: the link was
     // found on an in-scope page, or an already-admitted external link redirected
-    // within its own domain (i.e. resolving to its canonical URL).
+    // within its own registrable domain (its canonical URL or a subdomain of
+    // it), matched via the same PSL check used for allowSubdomains.
     if data.allow_external_content_links
       && !is_external_main_page(url_str)
-      && (is_internal_link(&context_url, &base_url) || is_internal_link(&url, &context_url))
+      && (is_internal_link(&context_url, &base_url) || is_subdomain(&url, &context_url))
     {
       return Ok(FilterUrlResult {
         allowed: true,
@@ -1226,6 +1227,19 @@ mod tests {
     .unwrap();
     assert!(result.allowed);
     assert!(result.denial_reason.is_none());
+  }
+
+  // A redirect that stays within the source's registrable domain but changes to
+  // a real subdomain must be allowed (PSL-based, not just stripping "www.").
+  #[test]
+  fn test_filter_url_allows_external_link_redirect_to_subdomain() {
+    let result = _filter_url(filter_url_call(
+      "https://blog.example.com/post",
+      "https://example.com/link",
+      "https://crawlseed.org",
+    ))
+    .unwrap();
+    assert!(result.allowed);
   }
 
   // Same as above but the redirect keeps the exact hostname, only changing the
