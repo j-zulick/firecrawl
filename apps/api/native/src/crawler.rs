@@ -581,9 +581,14 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
       }
     };
 
-    if is_internal_link(&context_url, &base_url)
-      && data.allow_external_content_links
+    // Allow an external destination when external content links are enabled and
+    // it is not an external site's homepage. Two cases qualify: the link was
+    // found on an in-scope page, or an already-admitted external link redirected
+    // within its own registrable domain (its canonical URL or a subdomain of
+    // it), matched via the same PSL check used for allowSubdomains.
+    if data.allow_external_content_links
       && !is_external_main_page(url_str)
+      && (is_internal_link(&context_url, &base_url) || is_subdomain(&url, &context_url) || is_internal_link(&url, &context_url))
     {
       return Ok(FilterUrlResult {
         allowed: true,
@@ -1193,5 +1198,88 @@ mod tests {
     assert!(is_file("style.css"));
     assert!(!is_file("page"));
     assert!(!is_file("directory/"));
+  }
+
+  fn filter_url_call(href: &str, url: &str, base_url: &str) -> FilterUrlCall {
+    FilterUrlCall {
+      href: href.to_string(),
+      url: url.to_string(),
+      base_url: base_url.to_string(),
+      excludes: vec![],
+      ignore_robots_txt: true,
+      robots_txt: "".to_string(),
+      robots_user_agent: None,
+      allow_external_content_links: true,
+      allow_subdomains: false,
+    }
+  }
+
+  // A discovered external link that redirects within its own domain (the
+  // redirect target's URL and its source URL are both external to the crawl
+  // seed) must be allowed under allowExternalLinks. Regression test for #4315.
+  #[test]
+  fn test_filter_url_allows_external_link_redirect_same_domain() {
+    let result = _filter_url(filter_url_call(
+      "http://www.iana.org/help/example-domains",
+      "https://iana.org/domains/example",
+      "https://example.org",
+    ))
+    .unwrap();
+    assert!(result.allowed);
+    assert!(result.denial_reason.is_none());
+  }
+
+  // A redirect that stays within the source's registrable domain but changes to
+  // a real subdomain must be allowed (PSL-based, not just stripping "www.").
+  #[test]
+  fn test_filter_url_allows_external_link_redirect_to_subdomain() {
+    let result = _filter_url(filter_url_call(
+      "https://blog.example.com/post",
+      "https://example.com/link",
+      "https://crawlseed.org",
+    ))
+    .unwrap();
+    assert!(result.allowed);
+  }
+
+  // Same as above but the redirect keeps the exact hostname, only changing the
+  // path (the london.gov.uk case from #4315).
+  #[test]
+  fn test_filter_url_allows_external_link_redirect_same_host_path_change() {
+    let result = _filter_url(filter_url_call(
+      "https://www.london.gov.uk/programmes-strategies/planning/london-plan",
+      "https://www.london.gov.uk/what-we-do/planning/london-plan",
+      "https://example.org",
+    ))
+    .unwrap();
+    assert!(result.allowed);
+  }
+
+  // An in-scope URL that redirects to an unrelated external homepage stays
+  // denied — the external-main-page exclusion is intentional (#4316).
+  #[test]
+  fn test_filter_url_denies_redirect_to_external_homepage() {
+    let result = _filter_url(filter_url_call(
+      "https://www.peoplefirstinfo.org.uk/",
+      "https://www.westminster.gov.uk/node/21229",
+      "https://www.westminster.gov.uk",
+    ))
+    .unwrap();
+    assert!(!result.allowed);
+    assert_eq!(result.denial_reason.unwrap(), "EXTERNAL_LINK");
+  }
+
+  // A redirect that hops to an unrelated external domain (not the source's own
+  // domain, not in scope) remains denied.
+  #[test]
+  fn test_filter_url_denies_redirect_to_unrelated_external_domain() {
+    let result = _filter_url(filter_url_call(
+      "https://unrelated.com/article",
+      "https://iana.org/domains/example",
+      "https://example.org",
+    ))
+    .unwrap();
+    assert!(!result.allowed);
+    assert_eq!(result.denial_reason.unwrap(), "EXTERNAL_LINK");
   }
 }
