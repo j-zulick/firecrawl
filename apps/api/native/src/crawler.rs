@@ -588,7 +588,7 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
     // it), matched via the same PSL check used for allowSubdomains.
     if data.allow_external_content_links
       && !is_external_main_page(url_str)
-      && (is_internal_link(&context_url, &base_url) || is_subdomain(&url, &context_url))
+      && (is_internal_link(&context_url, &base_url) || is_subdomain(&url, &context_url) || is_internal_link(&url, &context_url))
     {
       return Ok(FilterUrlResult {
         allowed: true,
