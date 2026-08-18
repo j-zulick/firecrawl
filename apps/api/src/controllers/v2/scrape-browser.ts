@@ -496,6 +496,7 @@ export async function scrapeStopInteractiveBrowserController(
   billTeam(req.auth.team_id, creditsBilled, req.acuc?.api_key_id ?? null, {
     endpoint: "interact",
     jobId: session.id,
+    chargeId: `${session.id}:scrape-browser`,
   }).catch(error => {
     logger.error("Failed to bill team for interact session", {
       error,

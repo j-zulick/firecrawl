@@ -421,6 +421,13 @@ const configSchema = z.object({
 
   // Billing
   AUTO_RECHARGE_ENABLED: z.stringbool().default(false),
+  // firebill — durable usage-event store that sits in front of Autumn. When
+  // both URL and SECRET are set, usage tracking for orgs listed in
+  // FIREBILL_ORG_IDS (comma-separated org UUIDs) is routed through firebill
+  // instead of directly to Autumn (gradual rollout).
+  FIREBILL_URL: emptyStringAsUndefined(z.string().url()),
+  FIREBILL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  FIREBILL_ORG_IDS: delimitedList(",").optional(),
 
   // Miscellaneous
   IDMUX_URL: z.string().optional(),

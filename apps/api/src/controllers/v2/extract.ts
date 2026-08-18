@@ -132,7 +132,13 @@ export async function extractController(
         req.auth.team_id,
         threatScanCredits,
         req.acuc?.api_key_id ?? null,
-        { endpoint: "extract", jobId: extractId },
+        {
+          endpoint: "extract",
+          jobId: extractId,
+          // Suffixed: the extract's MAIN charge (fire-0) uses the bare
+          // extractId — a shared key would collapse the two into one charge.
+          chargeId: `${extractId}:threat`,
+        },
       ).catch(error => {
         _logger.error(
           `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,

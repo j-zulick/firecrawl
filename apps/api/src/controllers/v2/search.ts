@@ -266,7 +266,7 @@ export async function searchController(
         req.auth.team_id,
         result.searchCredits,
         req.acuc?.api_key_id ?? null,
-        billing,
+        { ...billing, chargeId: jobId },
       ).catch(error =>
         logger.error("Failed to bill team for search credits", {
           teamId: req.auth.team_id,

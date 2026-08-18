@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { autumnClient } from "./client";
+import { firebillTrack, shouldRouteToFirebill } from "./firebill";
 import type {
   CreateEntityParams,
   CreateEntityResult,
@@ -208,13 +209,47 @@ export class AutumnService {
     }
   }
 
+  /**
+   * Whether this team's usage is currently routed through firebill. Used by
+   * billers to pick route-specific failure handling (on the firebill route a
+   * recorded charge stands and dedupes, so compensating refunds and duplicate
+   * enqueues behave differently). Never throws: an error means "not routed",
+   * falling back to the pre-firebill behavior.
+   */
+  async isRoutedThroughFirebill(teamId: string): Promise<boolean> {
+    if (this.isPreviewTeam(teamId)) return false;
+    try {
+      return shouldRouteToFirebill(await this.resolveOrgId(teamId));
+    } catch {
+      return false;
+    }
+  }
+
   private async track({
     customerId,
     entityId,
     featureId,
     value,
     properties,
+    idempotencyKey,
   }: TrackParams): Promise<boolean> {
+    // Gradual firebill rollout: allowlisted orgs record usage via firebill (a
+    // durable store that forwards to Autumn) instead of calling Autumn
+    // directly. If the firebill call fails we must NOT fall back to Autumn —
+    // firebill may have durably recorded the event and will deliver it later,
+    // so a direct-Autumn fallback could double-bill the customer. firebillTrack
+    // returns false on failure, exactly like an Autumn track failure.
+    if (shouldRouteToFirebill(customerId)) {
+      return await firebillTrack({
+        customerId,
+        entityId,
+        featureId,
+        value,
+        properties,
+        idempotencyKey,
+      });
+    }
+
     if (!autumnClient) return false;
 
     try {
@@ -499,6 +534,7 @@ export class AutumnService {
     value,
     properties,
     featureId = CREDITS_FEATURE_ID,
+    idempotencyKey,
   }: TrackCreditsParams): Promise<boolean> {
     if (!autumnClient) return false;
     if (this.isPreviewTeam(teamId)) return false;
@@ -511,6 +547,7 @@ export class AutumnService {
         featureId,
         value,
         properties,
+        idempotencyKey,
       });
     } catch (error) {
       logger.error(
@@ -676,6 +713,7 @@ export class AutumnService {
     value,
     properties,
     featureId = CREDITS_FEATURE_ID,
+    idempotencyKey,
   }: TrackCreditsParams): Promise<void> {
     if (!autumnClient) return;
     if (this.isPreviewTeam(teamId)) return;
@@ -688,6 +726,7 @@ export class AutumnService {
         featureId,
         value: -value,
         properties: { ...properties, source: "autumn_refund" },
+        idempotencyKey,
       });
     } catch (error) {
       logger.error(

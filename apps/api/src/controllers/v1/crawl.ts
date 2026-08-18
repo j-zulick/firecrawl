@@ -87,6 +87,9 @@ export async function crawlController(
           req.auth.team_id,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
+          // No chargeId: a fresh crawl id is minted per request and the
+          // rejected crawl is never persisted or queued, so there is no
+          // stable per-charge identity that could dedupe a retry.
           { endpoint: "crawl" },
         ).catch(error => {
           _logger.error(
