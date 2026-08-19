@@ -971,6 +971,23 @@ describe("firebill routing", () => {
     expect(mockCheck).not.toHaveBeenCalled();
   });
 
+  it("maps success without a usable allowed to skipped, not denied", async () => {
+    state.configRef = firebillConfig();
+    // Not a shape firebill sends today; a denial here would hard-stop the
+    // monitor check (skipped_no_credits) on what is really a non-answer.
+    mockFetch.mockResolvedValue(lockResponse({ success: true }));
+    const svc = makeService();
+
+    const result = await svc.lockCredits({
+      teamId: "team-1",
+      value: 10,
+      lockId: "lock-1",
+    });
+
+    expect(result).toEqual({ status: "skipped" });
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
   it("maps firebill lock unavailability to skipped — proceed unlocked, no Autumn fallback", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();

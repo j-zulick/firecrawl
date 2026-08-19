@@ -229,7 +229,7 @@ export async function firebillLock({
       return { status: "unavailable" };
     }
 
-    if (body.allowed !== true) {
+    if (body.allowed === false) {
       logger.info("firebill lock denied", {
         customerId,
         entityId,
@@ -238,6 +238,21 @@ export async function firebillLock({
         lockId,
       });
       return { status: "denied" };
+    }
+
+    // Only an explicit `allowed: false` is a denial. `success: true` with a
+    // missing or mis-shaped `allowed` is not an answer firebill sends today;
+    // treating it as a denial would hard-stop the check (skipped_no_credits),
+    // so it maps to unavailable — proceed unlocked — instead.
+    if (body.allowed !== true) {
+      logger.error("firebill lock answered without a usable `allowed`", {
+        customerId,
+        entityId,
+        featureId,
+        value,
+        lockId,
+      });
+      return { status: "unavailable" };
     }
 
     logger.info("firebill lock succeeded", {
