@@ -560,6 +560,7 @@ export const requests = pgTable("requests", {
   target_hint: text("target_hint").notNull(),
   dr_clean_by: ts("dr_clean_by"),
   api_key_id: bigintNum("api_key_id"),
+  external_request_id: text("external_request_id"),
 });
 
 export const mcp_action_logs = pgTable(

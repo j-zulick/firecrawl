@@ -4,6 +4,7 @@ import { changeTrackingInsertScrape } from "../../db/rpc";
 import { config } from "../../config";
 import "dotenv/config";
 import { logger as _logger } from "../../lib/logger";
+import { EXTERNAL_REQUEST_ID_MAX_BYTES } from "../../lib/external-request-id";
 import { configDotenv } from "dotenv";
 import * as Sentry from "@sentry/node";
 import type { PgTable } from "drizzle-orm/pg-core";
@@ -186,7 +187,40 @@ type LoggedRequest = {
   target_hint: string;
   zeroDataRetention: boolean;
   api_key_id?: number | null;
+  /**
+   * Opaque per-operation id a caller sent as `External-Request-Id` (see
+   * `lib/external-request-id.ts`), stored for internal billing attribution
+   * and read back off this row by the request id.
+   */
+  external_request_id?: string | null;
 };
+
+/**
+ * The 2048-byte cap, re-checked at the one place the column is written.
+ *
+ * Belt and braces: the header helper (`lib/external-request-id.ts`) already
+ * drops oversized ids, but the bound must hold even for a future writer that
+ * bypasses it — and it cannot live in the database, where a length constraint
+ * would fail the whole `requests` insert (and the `scrapes`/`crawls` rows that
+ * FK into it) over a telemetry field. Oversized means null, never truncation:
+ * a truncated opaque id handed back downstream would be actively wrong, where
+ * an absent one is an honest reporting gap.
+ */
+function boundedExternalRequestId(
+  value: string | null,
+  logger: Logger,
+): string | null {
+  if (value === null) return null;
+  if (Buffer.byteLength(value) <= EXTERNAL_REQUEST_ID_MAX_BYTES) return value;
+  logger.warn(
+    "external_request_id exceeds the cap at the insert boundary; storing null",
+    {
+      bytes: Buffer.byteLength(value),
+      max: EXTERNAL_REQUEST_ID_MAX_BYTES,
+    },
+  );
+  return null;
+}
 
 export async function logRequest(request: LoggedRequest) {
   const logger = _logger.child({
@@ -235,6 +269,13 @@ export async function logRequest(request: LoggedRequest) {
         ? new Date(Date.now() + 24 * 60 * 60 * 1000)
         : null,
       api_key_id: request.api_key_id ?? null,
+      // Not redacted under zero data retention: it is the caller's own
+      // operation id (attribution it asked for), not customer content — and
+      // the row is cleaned at dr_clean_by regardless.
+      external_request_id: boundedExternalRequestId(
+        sanitizeString(request.external_request_id ?? null),
+        logger,
+      ),
     },
     true,
     logger,

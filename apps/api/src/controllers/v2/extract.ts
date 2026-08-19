@@ -12,6 +12,7 @@ import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { logger as _logger } from "../../lib/logger";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -179,6 +180,7 @@ export async function extractController(
     id: extractId,
     kind: "extract",
     api_version: "v2",
+    external_request_id: externalRequestId(req),
     team_id: req.auth.team_id,
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
