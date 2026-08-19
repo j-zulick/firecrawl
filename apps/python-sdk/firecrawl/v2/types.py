@@ -476,6 +476,15 @@ class PdfPageBlocks(BaseModel):
     items: List[PdfBlockItem] = Field(default_factory=list)
 
 
+class PdfPage(BaseModel):
+    """Physical PDF page markdown, present when parsers[].pages is true."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    page_number: int = Field(alias="pageNumber")
+    markdown: str
+
+
 class Document(BaseModel):
     """A scraped document."""
 
@@ -498,6 +507,7 @@ class Document(BaseModel):
     branding: Optional[BrandingProfile] = None
     product: Optional[ProductProfile] = None
     menu: Optional[MenuProfile] = None
+    pages: Optional[List[PdfPage]] = None
     blocks: Optional[List[PdfPageBlocks]] = None
 
     @property
@@ -1656,8 +1666,22 @@ class PDFParser(BaseModel):
     type: Literal["pdf"] = "pdf"
     mode: Optional[Literal["fast", "auto", "ocr"]] = None
     max_pages: Optional[int] = None
-    page_markdown: Optional[bool] = None
+    pages: Optional[bool] = None
     blocks: Optional[bool] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fold_deprecated_page_markdown(cls, data: Any) -> Any:
+        """Accept the pre-rename pageMarkdown alias and fold it into pages."""
+        if not isinstance(data, dict):
+            return data
+        folded = dict(data)
+        alias = folded.pop("page_markdown", None)
+        if alias is None:
+            alias = folded.pop("pageMarkdown", None)
+        if folded.get("pages") is None and alias is not None:
+            folded["pages"] = alias
+        return folded
 
 
 # Location types
