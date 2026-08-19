@@ -48,7 +48,11 @@ vi.mock("../../lib/extract/extract-redis", () => ({
   saveExtractResult: vi.fn(),
 }));
 
-import { logSearch, type LoggedSearch } from "./log_job";
+vi.mock("../posthog", () => ({
+  trackFirstSurfaceUse: vi.fn(),
+}));
+
+import { logRequest, logSearch, type LoggedSearch } from "./log_job";
 import * as schema from "../../db/schema";
 
 function makeSearch(overrides: Partial<LoggedSearch> = {}): LoggedSearch {
@@ -116,5 +120,57 @@ describe("logSearch", () => {
     };
     expect(context.extra.data).not.toContain("\\u0000");
     expect(context.extra.data).toContain("badquery");
+  });
+});
+
+describe("logRequest", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    values.mockResolvedValue(undefined);
+  });
+
+  function makeRequest(externalRequestId: string | null) {
+    return {
+      id: "019e6f45-7778-727d-adf0-0abe9d5062b6",
+      kind: "scrape" as const,
+      api_version: "v2",
+      team_id: "team-id",
+      origin: "api",
+      target_hint: "https://example.com",
+      zeroDataRetention: false,
+      api_key_id: null,
+      external_request_id: externalRequestId,
+    };
+  }
+
+  it("stores the caller's external_request_id verbatim", async () => {
+    await logRequest(makeRequest("op_integration_42"));
+
+    expect(insert).toHaveBeenCalledWith(schema.requests);
+    expect(values.mock.calls[0][0].external_request_id).toBe("op_integration_42");
+  });
+
+  it("stores null, not a truncation, when the id exceeds the byte cap", async () => {
+    // The header helper already drops these; this asserts the bound holds at
+    // the insert boundary too, for any writer that bypasses the helper. Null
+    // rather than a DB constraint, which would fail the whole requests row
+    // (and its scrapes/crawls children) over a telemetry field — and null
+    // rather than truncation, which would hand a wrong id back downstream.
+    await logRequest(makeRequest("x".repeat(2049)));
+
+    const inserted = values.mock.calls[0][0];
+    expect(inserted.external_request_id).toBeNull();
+    expect(inserted.id).toBe("019e6f45-7778-727d-adf0-0abe9d5062b6");
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it("counts the cap in bytes, not characters", async () => {
+    // 1025 two-byte characters: 1025 chars, 2050 bytes — over.
+    await logRequest(makeRequest("é".repeat(1025)));
+    expect(values.mock.calls[0][0].external_request_id).toBeNull();
+
+    // 1024 two-byte characters: 2048 bytes exactly — allowed.
+    await logRequest(makeRequest("é".repeat(1024)));
+    expect(values.mock.calls[1][0].external_request_id).toBe("é".repeat(1024));
   });
 });

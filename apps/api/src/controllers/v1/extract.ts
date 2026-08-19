@@ -20,6 +20,7 @@ import {
 } from "../v2/types";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 import { config } from "../../config";
@@ -253,6 +254,7 @@ export async function extractController(
     id: extractId,
     kind: "extract",
     api_version: "v1",
+    external_request_id: externalRequestId(req),
     team_id: req.auth.team_id,
     origin: req.body.origin ?? "api",
     integration: req.body.integration,

@@ -1,4 +1,5 @@
 import express, { Request, Response } from "express";
+import { externalRequestId } from "../../lib/external-request-id";
 import { z } from "zod";
 import { v7 as uuidv7 } from "uuid";
 import { logger as rootLogger } from "../../lib/logger";
@@ -286,6 +287,7 @@ function createResearchController(
       id: jobId,
       kind: endpoint.kind,
       api_version: "v2",
+      external_request_id: externalRequestId(authedReq),
       team_id: authedReq.auth.team_id,
       origin: requestOrigin(params, req),
       integration: params.integration ?? null,

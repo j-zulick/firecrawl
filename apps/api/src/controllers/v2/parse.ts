@@ -22,6 +22,7 @@ import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { getJobPriority } from "../../lib/job-priority";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { getErrorContactMessage } from "../../lib/deployment";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import type { BillingMetadata } from "../../services/billing/types";
@@ -395,6 +396,7 @@ export async function parseController(
           id: jobId,
           kind: "parse",
           api_version: "v2",
+          external_request_id: externalRequestId(req),
           team_id: req.auth.team_id,
           origin: req.body.origin ?? "api",
           integration: req.body.integration,

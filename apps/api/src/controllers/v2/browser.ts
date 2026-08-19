@@ -27,6 +27,7 @@ import { RequestWithAuth } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
 import { integrationSchema } from "../../utils/integration";
 import {
   BROWSER_CREDITS_PER_HOUR,
@@ -379,6 +380,7 @@ export async function browserCreateController(
         id: sessionId,
         kind: "browser",
         api_version: "v2",
+        external_request_id: externalRequestId(req),
         team_id: req.auth.team_id,
         target_hint: "Browser session",
         origin: "api",
