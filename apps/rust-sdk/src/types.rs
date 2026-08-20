@@ -993,6 +993,15 @@ pub enum AgentModel {
     Spark1Mini,
     #[serde(rename = "spark-2")]
     Spark2,
+    /// A model this SDK release does not know about.
+    ///
+    /// Read-only catch-all: the server ships models without an SDK release, so
+    /// an exhaustive enum would fail the whole `AgentStatusResponse` parse — and
+    /// therefore the status wait loop — the first time an unrecognized name came
+    /// back. Do not send this variant in a request; it serializes to `"unknown"`,
+    /// which the API rejects.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Search source types.
