@@ -1005,7 +1005,9 @@ export const agentRequestSchema = z.strictObject({
   webhook: agentWebhookSchema.optional(),
 
   overrideWhitelist: z.string().optional(),
-  model: z.enum(["spark-1-pro", "spark-1-mini", "spark-2"]).default("spark-2"),
+  model: z
+    .enum(["spark-1-pro", "spark-1-mini", "spark-2"])
+    .default("spark-1-pro"),
   threatProtection: threatProtectionOverrideSchema.optional(),
   auditMetadata: auditMetadataSchema.optional(),
 });
