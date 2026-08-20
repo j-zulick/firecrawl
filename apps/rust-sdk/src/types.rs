@@ -991,6 +991,8 @@ pub enum AgentModel {
     Spark1Pro,
     #[serde(rename = "spark-1-mini")]
     Spark1Mini,
+    #[serde(rename = "spark-2")]
+    Spark2,
 }
 
 /// Search source types.
