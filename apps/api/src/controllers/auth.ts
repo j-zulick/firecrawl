@@ -26,7 +26,11 @@ import {
   AuthCreditUsageChunkRow,
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
-import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
+import {
+  AuthCreditUsageChunk,
+  AuthCreditUsageChunkFromTeam,
+  TeamFlags,
+} from "./v1/types";
 import {
   FIRECRAWL_REST_RESOURCE,
   OAuthIntrospectionUnavailableError,
@@ -570,14 +574,18 @@ export async function authenticateUser(
  * Builds the rate limiter for an authenticated team from its Autumn rate-limit
  * multiplier. Shared by the OAuth and API-key paths so their limiter setup
  * can't diverge.
+ *
+ * The org flags carry the optional per-endpoint override, so they are passed
+ * on to getAutumnRateLimiter.
  */
 async function buildAuthenticatedRateLimiter(
   teamId: string,
   orgId: string | null | undefined,
   mode: RateLimiterMode,
+  flags: TeamFlags,
 ): Promise<RateLimiterRedis> {
   const multiplier = await autumnService.getRateLimitMultiplier(teamId, orgId);
-  return getAutumnRateLimiter(mode, multiplier);
+  return getAutumnRateLimiter(mode, multiplier, flags);
 }
 
 async function supaAuthenticateUser(
@@ -663,6 +671,7 @@ async function supaAuthenticateUser(
       teamId,
       chunk.org_id,
       mode,
+      chunk.flags,
     );
   } else if (token.startsWith("fco_")) {
     // OAuth access token — resolve via introspection endpoint
@@ -731,6 +740,7 @@ async function supaAuthenticateUser(
       teamId,
       chunk.org_id,
       mode,
+      chunk.flags,
     );
   } else {
     normalizedApi = parseApi(token);
@@ -761,6 +771,7 @@ async function supaAuthenticateUser(
       teamId,
       chunk.org_id,
       mode,
+      chunk.flags,
     );
   }
 
