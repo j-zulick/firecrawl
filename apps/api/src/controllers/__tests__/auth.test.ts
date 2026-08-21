@@ -51,10 +51,23 @@ vi.mock("../../db/rpc", () => ({
   authCreditUsageChunkFromTeam: vi.fn(),
 }));
 
-vi.mock("../../services/rate-limiter", () => ({
-  getRateLimiter: vi.fn(),
-  getAutumnRateLimiter: vi.fn(),
+// The limiter builders are mocked, but getRateLimitOverride is kept real: it is
+// the single source of truth for override resolution, and auth.ts calls it to
+// decide whether the Autumn multiplier is needed at all. Stub ioredis so
+// importing the real module doesn't open a connection.
+vi.mock("ioredis", () => ({
+  default: class {},
 }));
+
+vi.mock("../../services/rate-limiter", async importOriginal => {
+  const actual =
+    await importOriginal<typeof import("../../services/rate-limiter")>();
+  return {
+    ...actual,
+    getRateLimiter: vi.fn(),
+    getAutumnRateLimiter: vi.fn(),
+  };
+});
 
 vi.mock("../../lib/keyless", async importOriginal => {
   const actual = await importOriginal<typeof import("../../lib/keyless")>();
@@ -529,6 +542,47 @@ describe("authenticateUser", () => {
     );
 
     expect(auth.success).toBe(true);
+    // The override replaces the whole base × multiplier computation, so the
+    // Autumn multiplier is never fetched and a neutral 1 is passed instead.
+    expect(autumnService.getRateLimitMultiplier).not.toHaveBeenCalled();
+    expect(getAutumnRateLimiter).toHaveBeenCalledWith(
+      RateLimiterMode.Scrape,
+      1,
+      flags,
+    );
+  });
+
+  it("still fetches the Autumn multiplier when no override covers the mode", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(getValue).mockResolvedValue(null);
+    const flags = { rateLimitOverrides: { crawl: 42 } };
+    vi.mocked(authCreditUsageChunk).mockResolvedValue([
+      {
+        api_key: "00000000-0000-4000-8000-000000000000",
+        api_key_id: 1,
+        team_id: "team-1",
+        org_id: "org-1",
+        flags,
+      },
+    ]);
+    vi.mocked(redlock.using).mockImplementation(
+      async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+    );
+    vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(50);
+
+    const auth = await authenticateUser(
+      {
+        headers: {
+          authorization: "Bearer 00000000-0000-4000-8000-000000000000",
+        },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Scrape,
+    );
+
+    expect(auth.success).toBe(true);
+    expect(autumnService.getRateLimitMultiplier).toHaveBeenCalledTimes(1);
     expect(getAutumnRateLimiter).toHaveBeenCalledWith(
       RateLimiterMode.Scrape,
       50,

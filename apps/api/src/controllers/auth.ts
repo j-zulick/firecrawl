@@ -5,7 +5,11 @@ import { logger } from "../lib/logger";
 import { parseApi } from "../lib/parseApi";
 import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
-import { getRateLimiter, getAutumnRateLimiter } from "../services/rate-limiter";
+import {
+  getRateLimiter,
+  getAutumnRateLimiter,
+  getRateLimitOverride,
+} from "../services/rate-limiter";
 import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   consumeKeylessRequest,
@@ -576,7 +580,9 @@ export async function authenticateUser(
  * can't diverge.
  *
  * The org flags carry the optional per-endpoint override, so they are passed
- * on to getAutumnRateLimiter.
+ * on to getAutumnRateLimiter, which stays the only place deciding the final
+ * limit. An override makes the multiplier irrelevant, so we skip fetching it
+ * from Autumn in that case rather than paying for a value that is discarded.
  */
 async function buildAuthenticatedRateLimiter(
   teamId: string,
@@ -584,7 +590,10 @@ async function buildAuthenticatedRateLimiter(
   mode: RateLimiterMode,
   flags: TeamFlags,
 ): Promise<RateLimiterRedis> {
-  const multiplier = await autumnService.getRateLimitMultiplier(teamId, orgId);
+  const multiplier =
+    getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined
+      ? 1
+      : await autumnService.getRateLimitMultiplier(teamId, orgId);
   return getAutumnRateLimiter(mode, multiplier, flags);
 }
 

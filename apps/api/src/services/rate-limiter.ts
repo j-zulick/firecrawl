@@ -81,7 +81,7 @@ export function getRateLimiter(mode: RateLimiterMode): RateLimiterRedis {
  * broken entry must never break authentication. Only a finite integer above
  * zero counts.
  */
-function getRateLimitOverride(
+export function getRateLimitOverride(
   mode: RateLimiterMode,
   overrides: unknown,
 ): number | undefined {
