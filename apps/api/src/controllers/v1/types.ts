@@ -23,6 +23,7 @@ import { ProductProfile } from "../../types/product";
 import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
 import { auditMetadataSchema } from "../../lib/siem-logging/types";
+import type { RateLimiterMode } from "../../types";
 
 type Format =
   | "markdown"
@@ -1336,6 +1337,15 @@ export type TeamFlags = {
   >;
   // routes the team's new queue work to the FoundationDB backend
   nuqFdb?: boolean;
+  /**
+   * Per-endpoint rate-limit overrides, in requests per minute. A value here
+   * replaces the computed limit for that mode, so the Autumn multiplier is
+   * not applied. The map is sparse: a mode that is absent keeps the normal
+   * computation. Only a finite integer above zero is used; any other value is
+   * ignored. Read by getAutumnRateLimiter, so it never affects the preview
+   * token.
+   */
+  rateLimitOverrides?: Partial<Record<RateLimiterMode, number>>;
 } | null;
 
 export type AuthCreditUsageChunkFromTeam = Omit<

@@ -5,7 +5,11 @@ import { logger } from "../lib/logger";
 import { parseApi } from "../lib/parseApi";
 import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
-import { getRateLimiter, getAutumnRateLimiter } from "../services/rate-limiter";
+import {
+  getRateLimiter,
+  getAutumnRateLimiter,
+  getRateLimitOverride,
+} from "../services/rate-limiter";
 import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   consumeKeylessRequest,
@@ -26,7 +30,11 @@ import {
   AuthCreditUsageChunkRow,
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
-import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
+import {
+  AuthCreditUsageChunk,
+  AuthCreditUsageChunkFromTeam,
+  TeamFlags,
+} from "./v1/types";
 import {
   FIRECRAWL_REST_RESOURCE,
   OAuthIntrospectionUnavailableError,
@@ -570,14 +578,23 @@ export async function authenticateUser(
  * Builds the rate limiter for an authenticated team from its Autumn rate-limit
  * multiplier. Shared by the OAuth and API-key paths so their limiter setup
  * can't diverge.
+ *
+ * The org flags carry the optional per-endpoint override, so they are passed
+ * on to getAutumnRateLimiter, which stays the only place deciding the final
+ * limit. An override makes the multiplier irrelevant, so we skip fetching it
+ * from Autumn in that case rather than paying for a value that is discarded.
  */
 async function buildAuthenticatedRateLimiter(
   teamId: string,
   orgId: string | null | undefined,
   mode: RateLimiterMode,
+  flags: TeamFlags,
 ): Promise<RateLimiterRedis> {
-  const multiplier = await autumnService.getRateLimitMultiplier(teamId, orgId);
-  return getAutumnRateLimiter(mode, multiplier);
+  const multiplier =
+    getRateLimitOverride(mode, flags?.rateLimitOverrides) !== undefined
+      ? 1
+      : await autumnService.getRateLimitMultiplier(teamId, orgId);
+  return getAutumnRateLimiter(mode, multiplier, flags);
 }
 
 async function supaAuthenticateUser(
@@ -663,6 +680,7 @@ async function supaAuthenticateUser(
       teamId,
       chunk.org_id,
       mode,
+      chunk.flags,
     );
   } else if (token.startsWith("fco_")) {
     // OAuth access token — resolve via introspection endpoint
@@ -731,6 +749,7 @@ async function supaAuthenticateUser(
       teamId,
       chunk.org_id,
       mode,
+      chunk.flags,
     );
   } else {
     normalizedApi = parseApi(token);
@@ -761,6 +780,7 @@ async function supaAuthenticateUser(
       teamId,
       chunk.org_id,
       mode,
+      chunk.flags,
     );
   }
 
