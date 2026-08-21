@@ -195,24 +195,29 @@ async function performFireEngineScrape<
       status = scrape as FireEngineCheckStatusSuccess;
     }
 
-    await specialtyScrapeCheck(
-      logger.child({
-        method: "performFireEngineScrape/specialtyScrapeCheck",
-      }),
-      status.responseHeaders,
-      status,
-    );
+    const wantsRawBase64 =
+      hasFormatOfType(meta.options.formats, "rawBase64") !== undefined;
+
+    if (!wantsRawBase64) {
+      await specialtyScrapeCheck(
+        logger.child({
+          method: "performFireEngineScrape/specialtyScrapeCheck",
+        }),
+        status.responseHeaders,
+        status,
+      );
+    }
 
     const contentType =
       (Object.entries(status.responseHeaders ?? {}).find(
         x => x[0].toLowerCase() === "content-type",
       ) ?? [])[1] ?? "";
 
-    if (contentType.includes("application/json")) {
+    if (!wantsRawBase64 && contentType.includes("application/json")) {
       status.content = await getInnerJson(status.content);
     }
 
-    if (status.file) {
+    if (status.file && !wantsRawBase64) {
       const content = status.file.content;
       delete status.file;
       let buffer = Buffer.from(content, "base64");
@@ -318,16 +323,34 @@ export async function scrapeURLWithFireEngineChromeCDP(
       "engine.url": meta.url,
       "engine.team_id": meta.internalOptions.teamId,
     });
+    const wantsRawBase64 =
+      hasFormatOfType(meta.options.formats, "rawBase64") !== undefined;
+    if (
+      wantsRawBase64 &&
+      ((meta.options.waitFor ?? 0) > 0 ||
+        (meta.options.actions?.length ?? 0) > 0)
+    ) {
+      meta.logger.warn(
+        "rawBase64 returns the original response body; waitFor and actions are ignored.",
+        {
+          waitFor: meta.options.waitFor,
+          actionTypes: meta.options.actions?.map(action => action.type),
+        },
+      );
+    }
     const hasBranding = hasFormatOfType(meta.options.formats, "branding");
     const hasAudio = hasFormatOfType(meta.options.formats, "audio");
     const hasVideo = hasFormatOfType(meta.options.formats, "video");
-    const shouldRunYoutubePostprocessor = youtubePostprocessor.shouldRun(
-      meta,
-      new URL(meta.rewrittenUrl ?? meta.url),
-    );
+    const shouldRunYoutubePostprocessor =
+      !wantsRawBase64 &&
+      youtubePostprocessor.shouldRun(
+        meta,
+        new URL(meta.rewrittenUrl ?? meta.url),
+      );
     const defaultWait = hasBranding ? BRANDING_DEFAULT_WAIT_MS : 0;
-    const effectiveWait =
-      meta.options.waitFor != null && meta.options.waitFor !== 0
+    const effectiveWait = wantsRawBase64
+      ? 0
+      : meta.options.waitFor != null && meta.options.waitFor !== 0
         ? meta.options.waitFor
         : defaultWait;
 
@@ -344,7 +367,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
         : []),
 
       // Include specified actions
-      ...(meta.options.actions ?? []).map(action => {
+      ...(!wantsRawBase64 ? (meta.options.actions ?? []) : []).map(action => {
         const { metadata: _, ...rest } = action as InternalAction;
         return rest;
       }),
@@ -407,6 +430,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       url: meta.rewrittenUrl ?? meta.url,
       scrapeId: meta.id,
       engine: "chrome-cdp",
+      ...(wantsRawBase64 ? { format: "rawBase64" as const } : {}),
       instantReturn: false,
       skipTlsVerification: meta.options.skipTlsVerification,
       headers: meta.options.headers,
@@ -508,6 +532,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       url: response.url ?? meta.url,
 
       html: response.content,
+      rawBase64: response.file?.content,
       markdown: contentType?.includes("text/markdown")
         ? response.content
         : undefined,

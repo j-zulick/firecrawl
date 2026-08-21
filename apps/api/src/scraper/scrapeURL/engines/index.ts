@@ -34,7 +34,11 @@ import {
 } from "../../../controllers/v2/types";
 import type { PdfMetadata, PdfPageBlocks } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
-import { AgentIndexOnlyError, BrandingNotSupportedError } from "../error";
+import {
+  AgentIndexOnlyError,
+  BrandingNotSupportedError,
+  NoCachedDataError,
+} from "../error";
 import { isUrlBlocked } from "../../WebScraper/utils/blocklist";
 import {
   canUseExchangeForRequest,
@@ -141,6 +145,7 @@ export type EngineScrapeResult = {
   url: string;
 
   html: string;
+  rawBase64?: string;
   markdown?: string;
   pages?: Array<{ pageNumber: number; markdown: string }>;
   blocks?: PdfPageBlocks[];
@@ -587,6 +592,27 @@ export async function buildFallbackList(meta: Meta): Promise<
     unsupportedFeatures: Set<FeatureFlag>;
   }[]
 > {
+  if (hasFormatOfType(meta.options.formats, "rawBase64")) {
+    if (meta.internalOptions.agentIndexOnly) {
+      throw new AgentIndexOnlyError();
+    }
+
+    if (meta.options.minAge !== undefined) {
+      throw new NoCachedDataError();
+    }
+
+    if (meta.options.lockdown || (!useFireEngine && meta.mock === null)) {
+      return [];
+    }
+
+    return [
+      {
+        engine: "fire-engine;chrome-cdp",
+        unsupportedFeatures: new Set(),
+      },
+    ];
+  }
+
   if (
     !meta.internalOptions.agentIndexOnly &&
     meta.internalOptions.forceEngine === undefined

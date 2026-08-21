@@ -535,6 +535,7 @@ async function scrapeURLLoopIter(
     const hasQuestion = hasFormatOfType(meta.options.formats, "question");
     const hasHighlights = hasFormatOfType(meta.options.formats, "highlights");
     const hasQuery = hasFormatOfType(meta.options.formats, "query");
+    const hasRawBase64 = hasFormatOfType(meta.options.formats, "rawBase64");
     const needsMarkdown =
       hasMarkdown ||
       hasChangeTracking ||
@@ -548,7 +549,9 @@ async function scrapeURLLoopIter(
     const htmlSize = engineResult.html?.length ?? 0;
     const shouldSkipMarkdownCheck = htmlSize > MAX_HTML_SIZE_FOR_MARKDOWN_CHECK;
 
-    if (
+    if (hasRawBase64) {
+      checkMarkdown = engineResult.rawBase64 !== undefined ? "rawBase64" : "";
+    } else if (
       meta.internalOptions.teamId === "sitemap" ||
       meta.internalOptions.teamId === "robots-txt"
     ) {
@@ -597,6 +600,9 @@ async function scrapeURLLoopIter(
       (engineResult.statusCode >= 200 && engineResult.statusCode < 300) ||
       engineResult.statusCode === 304;
     const hasNoPageError = engineResult.error === undefined;
+    const hasRequiredOutput = hasRawBase64
+      ? engineResult.rawBase64 !== undefined
+      : isLongEnough || !isGoodStatusCode;
     const isLikelyProxyError = [401, 403, 429].includes(
       engineResult.statusCode,
     );
@@ -622,7 +628,7 @@ async function scrapeURLLoopIter(
     // NOTE: TODO: what to do when status code is bad is tough...
     // we cannot just rely on text because error messages can be brief and not hit the limit
     // should we just use all the fallbacks and pick the one with the longest text? - mogery
-    if (isLongEnough || !isGoodStatusCode) {
+    if (hasRequiredOutput) {
       meta.logger.info("Scrape via " + engine + " deemed successful.", {
         factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
       });
@@ -954,6 +960,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     for (const postprocessor of postprocessors) {
       if (
+        !hasFormatOfType(meta.options.formats, "rawBase64") &&
         postprocessor.shouldRun(
           meta,
           new URL(engineResult.url),
@@ -987,6 +994,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       pages: engineResult.pages,
       blocks: engineResult.blocks,
       rawHtml: engineResult.html,
+      rawBase64: engineResult.rawBase64,
       json: engineResult.json,
       screenshot: engineResult.screenshot,
       actions: engineResult.actions,
