@@ -7,9 +7,12 @@ on:
   push:
     branches: [main]
     paths:
-      - 'skills/**'
-      - '.github/workflows/sync-skills-catalog.yml'
+      - "skills/**"
+      - ".github/workflows/sync-skills-catalog.yml"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: catalog-sync
