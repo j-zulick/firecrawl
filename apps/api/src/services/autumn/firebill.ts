@@ -162,7 +162,8 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
 }
 
 type AttemptResult =
-  { ok: true } | { ok: false; reason: "not_ok" | "not_success" | "exception" };
+  | { ok: true }
+  | { ok: false; reason: "not_ok" | "not_success" | "exception" };
 
 async function firebillAttempt(
   path: string,
@@ -264,7 +265,7 @@ async function firebillAttempt(
  * Three outcomes, and callers must tell them apart: `answered` carries a real
  * yes/no, `unavailable` means firebill could not answer at all.
  */
-export type FirebillCheckResult =
+type FirebillCheckResult =
   | { status: "answered"; allowed: boolean; remaining: number }
   | { status: "unavailable" };
 
