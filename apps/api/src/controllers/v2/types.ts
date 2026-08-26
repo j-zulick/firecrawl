@@ -1031,17 +1031,25 @@ export const agentRequestSchema = z
 
     overrideWhitelist: z.string().optional(),
     // Optional, not defaulted: the resolver below must tell "the caller sent a
-    // model" apart from "the caller sent nothing", because sending both model
-    // and effort is an error rather than a precedence rule.
+    // model" apart from "the caller sent nothing", because effort without a
+    // model resolves to spark-2 while effort against another preset is an
+    // error.
     model: z.enum(["spark-1-pro", "spark-1-mini", "spark-2"]).optional(),
     effort: z.enum(["low", "medium", "high"]).optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     auditMetadata: auditMetadataSchema.optional(),
   })
-  .refine(x => !(x.model !== undefined && x.effort !== undefined), {
-    error:
-      "Send either 'model' or 'effort', not both. 'model' picks a preset and 'effort' picks a reasoning budget.",
-  })
+  // spark-2 is the first model with a reasoning budget, so effort only pairs
+  // with spark-2. Effort against an older preset is rejected rather than
+  // silently upgrading the model the caller asked for.
+  .refine(
+    x =>
+      x.effort === undefined || x.model === undefined || x.model === "spark-2",
+    {
+      error:
+        "'effort' is only supported with model 'spark-2'. The spark-1 presets have no reasoning budget; omit 'model' or send 'spark-2' to set one.",
+    },
+  )
   // Every effort level runs spark-2. The older presets have no trace or
   // snapshot endpoint and use a different credit ladder, so spreading effort
   // across presets would change features and price per level. Effort sets the
@@ -2214,18 +2222,15 @@ export const searchRequestSchema = z
     x => !(x.includeDomains?.length && x.excludeDomains?.length),
     "includeDomains and excludeDomains cannot both be specified",
   )
-  .refine(
-    x => {
-      const categories = x.categories ?? [];
-      const hasDeveloper = categories.some(category =>
-        typeof category === "string"
-          ? category === "developer"
-          : category.type === "developer",
-      );
-      return !hasDeveloper || categories.length === 1;
-    },
-    "the developer category cannot be combined with other categories",
-  )
+  .refine(x => {
+    const categories = x.categories ?? [];
+    const hasDeveloper = categories.some(category =>
+      typeof category === "string"
+        ? category === "developer"
+        : category.type === "developer",
+    );
+    return !hasDeveloper || categories.length === 1;
+  }, "the developer category cannot be combined with other categories")
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const country =

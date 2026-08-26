@@ -140,17 +140,32 @@ describe("agentRequestSchema model and effort resolution", () => {
     },
   );
 
-  it("rejects model and effort together, naming both fields", () => {
-    let message = "";
-    try {
-      agentRequestSchema.parse({ ...base, model: "spark-2", effort: "low" });
-    } catch (error) {
-      message = (error as { issues: { message: string }[] }).issues[0].message;
-    }
+  it("accepts spark-2 with effort, keeping both", () => {
+    const parsed = agentRequestSchema.parse({
+      ...base,
+      model: "spark-2",
+      effort: "high",
+    });
 
-    expect(message).toContain("model");
-    expect(message).toContain("effort");
+    expect(parsed.model).toBe("spark-2");
+    expect(parsed.effort).toBe("high");
   });
+
+  it.each(["spark-1-pro", "spark-1-mini"] as const)(
+    "rejects effort with %s, naming spark-2",
+    model => {
+      let message = "";
+      try {
+        agentRequestSchema.parse({ ...base, model, effort: "low" });
+      } catch (error) {
+        message = (error as { issues: { message: string }[] }).issues[0]
+          .message;
+      }
+
+      expect(message).toContain("effort");
+      expect(message).toContain("spark-2");
+    },
+  );
 
   it("falls back to the default model when the caller sends neither field", () => {
     const parsed = agentRequestSchema.parse({ ...base });
