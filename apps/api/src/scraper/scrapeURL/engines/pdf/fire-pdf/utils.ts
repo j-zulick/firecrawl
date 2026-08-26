@@ -39,9 +39,14 @@ export function nextPollDelay(
 }
 
 export function computeDeadlineMs(scrapeTimeoutMs: number | undefined): number {
-  // 5min default when there's no scrape budget (CLI/tests). Routing rejects
-  // budgets that are too short; only cap the upper bound here so we never
-  // advertise more time to FirePDF than the caller actually has.
+  // 5min default when there's no scrape budget. This matches the usable
+  // window exactly: scrapeURLLoop races every engine against
+  // `scrapeTimeout() ?? 300000`, so a no-timeout scrape dies at 5 minutes
+  // regardless of what we advertise to FirePDF. Long documents (large
+  // by-reference PDFs especially) need an explicit caller `timeout`, which
+  // unlocks up to MAX_DEADLINE_MS here and extends the loop's race alike.
+  // Only cap the upper bound so we never advertise more time to FirePDF
+  // than the caller actually has.
   const fallback = 5 * 60 * 1_000;
   const candidate = scrapeTimeoutMs ?? fallback;
   return Math.min(MAX_DEADLINE_MS, candidate);
