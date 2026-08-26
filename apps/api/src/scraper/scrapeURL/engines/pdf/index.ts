@@ -10,6 +10,7 @@ import {
   PDFPrefetchFailed,
   RemoveFeatureError,
   EngineUnsuccessfulError,
+  UnsupportedFileError,
 } from "../../error";
 import { open, readFile, stat, unlink } from "node:fs/promises";
 import type { Response } from "undici";
@@ -43,7 +44,10 @@ import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
 import {
-  byReferenceConfigured,
+  byReferenceReachableForRequest,
+  largePdfLimitBytes,
+  mineruDiverted,
+  rewritePdfInputForFirePdf,
   sha256OfFile,
   uploadPdfInputForFirePdf,
 } from "./fire-pdf/by-reference";
@@ -95,6 +99,13 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
   if (!shouldParse) {
     if (meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null) {
+      // The raw path returns the file base64'd inline in the response, so it
+      // keeps the historical cap even when a large prefetch (fire-engine GCS
+      // handoff) materialized a bigger file on disk for the parse path.
+      const prefetchSize = (await stat(meta.pdfPrefetch.filePath)).size;
+      if (prefetchSize > PDF_DOWNLOAD_MAX_FILE_SIZE) {
+        throw new UnsupportedFileError("File exceeds size limit");
+      }
       const content = (await readFile(meta.pdfPrefetch.filePath)).toString(
         "base64",
       );
@@ -154,29 +165,22 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       pageMarkers) &&
     !!config.FIRE_PDF_BASE_URL;
 
-  // The MinerU diversion draw happens BEFORE the download so the admission
-  // cap can honor it: a diverted request cannot use the by-reference route,
-  // so it must keep the historical download cap instead of pulling up to
-  // 256MB it would only hand to pdf-parse. Forced Fire PDF takes
-  // precedence — don't divert those requests.
-  const routeToMinerU =
-    !forceFirePDF &&
-    config.MINERU_PERCENT > 0 &&
-    Math.random() * 100 < config.MINERU_PERCENT;
+  // The MinerU diversion is deterministic on the scrape id (see
+  // mineruDiverted) so this routing verdict is BY CONSTRUCTION the same
+  // one inside byReferenceReachableForRequest() — and the same one
+  // fire-engine used when granting the handoff. Forced Fire PDF takes
+  // precedence and is never diverted.
+  const routeToMinerU = !forceFirePDF && mineruDiverted(meta);
 
   // Only admit large downloads when the by-reference FirePDF path is even
   // reachable for this request (same predicate the routing gate uses; the
   // gate adds the signals that need the file first). Otherwise keep the
   // historical cap — an oversized file would only burn bandwidth and temp
   // disk to fall through to text-only extraction.
-  // Fast mode is excluded: its hard cost ceiling skips the whole OCR/
-  // FirePDF chain (skipOCR), so the by-reference route it would justify is
-  // unreachable and the raised admission would only buffer bytes for the
-  // native path.
-  const byReferenceReachable =
-    !routeToMinerU &&
-    mode !== "fast" &&
-    byReferenceConfigured(meta, forceFirePDF);
+  // The shared predicate covers fast-mode exclusion and the MinerU
+  // diversion too, so this is the same verdict fire-engine used when
+  // granting (or withholding) the handoff for this request.
+  const byReferenceReachable = byReferenceReachableForRequest(meta);
 
   const { response, tempFilePath } =
     meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
@@ -190,9 +194,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             signal: meta.abort.asSignal(),
           },
           // Parse path streams to disk and can hand large files to FirePDF
-          // by GCS reference, so it admits more than the raw fetch path.
+          // by GCS reference, so it admits more than the raw fetch path —
+          // up to the requesting team's large-PDF limit.
           byReferenceReachable
-            ? FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE
+            ? largePdfLimitBytes(meta)
             : PDF_DOWNLOAD_MAX_FILE_SIZE,
         );
 
@@ -449,15 +454,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     // the file-dependent conditions are added here.
     if (!result && !skipOCR) {
       const fileSizeBytes = (await stat(tempFilePath)).size;
-      // mode !== "fast" mirrors the admission gate above: fast mode keeps
-      // its pre-by-reference behavior on every path (with Rust extraction
-      // disabled, skipOCR alone would not exclude it here).
       const useFirePdfByReference =
-        !routeToMinerU &&
-        mode !== "fast" &&
-        byReferenceConfigured(meta, forceFirePDF) &&
+        byReferenceReachable &&
         fileSizeBytes >= FIRE_PDF_MAX_FILE_SIZE &&
-        fileSizeBytes <= FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE;
+        fileSizeBytes <= largePdfLimitBytes(meta);
 
       if (useFirePdfByReference) {
         if (effectivePageCount <= 0) {
@@ -480,11 +480,16 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           // a repeat scrape of the same document should cost one streamed
           // disk read, not a full re-upload. scrapePDFWithFirePDFAsync
           // deliberately skips the by-reference lookup for the same reason
-          // (it runs post-upload) and only saves. Uncacheable requests
-          // (fast mode / maxPages) skip the pre-hash entirely — it could
-          // never produce a hit, and the upload computes its own hash
-          // in-pipeline. A failed pre-hash falls through to the upload
-          // path (legacy fallback semantics), never errors the scrape.
+          // (it runs post-upload) and only saves.
+          //
+          // The local hash also verifies a fire-engine handoff before the
+          // server-side copy, so it is computed whenever a handoff carries
+          // a sha — even for uncacheable requests (maxPages), which skip
+          // only the cache LOOKUP. Requests with neither use skip the
+          // pre-hash entirely; the upload hashes in-pipeline. A failed
+          // pre-hash falls through to the upload path (legacy fallback
+          // semantics), never errors the scrape.
+          const handoff = meta.pdfPrefetch?.gcsReference;
           const { cacheable: byRefCacheable } = cacheKeyShape(
             mode,
             maxPages,
@@ -493,7 +498,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             pageMarkers,
           );
           let localSha256: string | undefined;
-          if (byRefCacheable) {
+          if (byRefCacheable || handoff?.sha256 !== undefined) {
             try {
               localSha256 = await sha256OfFile(
                 tempFilePath,
@@ -510,18 +515,19 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               );
             }
           }
-          const cachedByRef = localSha256
-            ? await tryGetCached(
-                meta,
-                { key: `raw-${localSha256}` },
-                mode,
-                maxPages,
-                effectivePageCount,
-                includePageMarkdown,
-                includeBlocks,
-                pageMarkers,
-              )
-            : null;
+          const cachedByRef =
+            byRefCacheable && localSha256
+              ? await tryGetCached(
+                  meta,
+                  { key: `raw-${localSha256}` },
+                  mode,
+                  maxPages,
+                  effectivePageCount,
+                  includePageMarkdown,
+                  includeBlocks,
+                  pageMarkers,
+                )
+              : null;
           // A scrape cancelled during the hash/lookup must not return a
           // success out of the cache.
           meta.abort.throwIfAborted();
@@ -532,16 +538,59 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               result,
             );
           }
+          // On a miss: when fire-engine already handed the file off via
+          // GCS, a server-side rewrite moves it into the fire-pdf input
+          // bucket without the bytes transiting this process; otherwise
+          // (or if the rewrite fails) stream-upload the local temp file.
+          // The handoff hash becomes fire-pdf's idempotency identity, so it
+          // must match the raw-byte sha already computed for the cache
+          // check above (no second disk read needed); any mismatch falls
+          // back to the hashing upload.
+          const handoffShaMatches =
+            localSha256 !== undefined &&
+            handoff?.sha256 !== undefined &&
+            handoff.sha256.toLowerCase() === localSha256;
+          if (
+            localSha256 !== undefined &&
+            handoff?.sha256 !== undefined &&
+            !handoffShaMatches
+          ) {
+            meta.logger.warn(
+              "fire-engine handoff sha256 does not match local bytes; using streaming upload",
+              {
+                method: "scrapePDF/firePdfByReference",
+                event: "fire_pdf_handoff_sha_mismatch",
+                scrape_id: meta.id,
+              },
+            );
+          }
+          const rewriteEligible =
+            !result &&
+            handoffShaMatches &&
+            handoff!.sizeBytes === fileSizeBytes;
           const uploaded = result
             ? null
-            : await uploadPdfInputForFirePdf(
+            : ((rewriteEligible && handoff
+                ? await rewritePdfInputForFirePdf(meta, {
+                    uri: handoff.uri,
+                    // rewriteEligible implies handoffShaMatches implies defined
+                    sha256: localSha256!,
+                    sizeBytes: fileSizeBytes,
+                    generation: handoff.generation,
+                  })
+                : null) ??
+              // A distinct key when a rewrite was attempted: a timed-out
+              // copy may still complete and must never overwrite this
+              // upload.
+              (await uploadPdfInputForFirePdf(
                 meta,
                 tempFilePath,
                 fileSizeBytes,
                 {
+                  keyVariant: rewriteEligible ? "s" : undefined,
                   precomputedSha256: localSha256,
                 },
-              );
+              )));
           if (uploaded) {
             try {
               result = await scrapePDFWithFirePDFAsync(

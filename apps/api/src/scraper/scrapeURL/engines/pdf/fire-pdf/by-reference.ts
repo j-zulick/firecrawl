@@ -4,7 +4,15 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Meta } from "../../..";
 import { config } from "../../../../../config";
+import {
+  getPDFBlocks,
+  getPDFMode,
+  getPDFPageMarkdown,
+  getPDFPageMarkers,
+} from "../../../../../controllers/v2/types";
+import { deterministicPercentage } from "./routing";
 import { storage } from "../../../../../lib/gcs-jobs";
+import { FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE } from "../types";
 
 /** Input handle for a FirePDF async submit that travels by GCS reference
  * instead of inline base64. Produced by {@link uploadPdfInputForFirePdf}. */
@@ -18,19 +26,191 @@ export type FirePdfByReferenceInput = {
  * stuck stream cannot hold a scrape slot indefinitely. */
 const UPLOAD_TIMEOUT_MS = 120_000;
 
+/** Server-side rewrites are metadata-speed regardless of object size. */
+const REWRITE_TIMEOUT_MS = 30_000;
+
+function firePdfInputObjectKey(scrapeId: string, variant?: string): string {
+  // Scrape ids are UUIDv7 (time-ordered); a short hash prefix spreads the
+  // keys across GCS partitions, same convention as gcs-jobs.ts. The variant
+  // suffix keeps transports on distinct keys: a timed-out (but still
+  // running) rewrite must never race a fallback upload on the same object.
+  const keyPrefix = createHash("sha256")
+    .update(scrapeId)
+    .digest("hex")
+    .slice(0, 8);
+  return `inputs/${keyPrefix}-${scrapeId}${variant ? `-${variant}` : ""}.pdf`;
+}
+
+/**
+ * Server-side copy a fire-engine-uploaded PDF (the large-file GCS handoff)
+ * into the fire-pdf input bucket, so the bytes never transit this process
+ * at all. Requires the handoff to carry a sha256 (fire-pdf's idempotency
+ * identity) — without one the caller must fall back to
+ * {@link uploadPdfInputForFirePdf}, which computes it while streaming.
+ *
+ * Returns null on any failure; callers fall back to the streaming upload
+ * (the bytes are already on local disk for detection anyway).
+ */
+export async function rewritePdfInputForFirePdf(
+  meta: Meta,
+  source: {
+    uri: string;
+    sha256: string;
+    sizeBytes: number;
+    /** Generation validated (and read) by the prefetch download — the copy
+     * is pinned to it so a replaced object can never smuggle different
+     * bytes past the local size/sniff checks. Kept as the SDK's string
+     * representation: generations are int64 and must not be rounded
+     * through a JS number. */
+    generation?: string;
+  },
+): Promise<FirePdfByReferenceInput | null> {
+  const match = /^gs:\/\/([^/]+)\/(.+)$/.exec(source.uri);
+  if (!match || match[1] !== config.FIRE_ENGINE_PDF_GCS_BUCKET) {
+    // Only copy out of fire-engine's handoff bucket — never an arbitrary
+    // bucket named by response data.
+    return null;
+  }
+  const destBucket = config.FIRE_PDF_GCS_INPUT_BUCKET;
+  const destKey = firePdfInputObjectKey(meta.id);
+  const startedAt = Date.now();
+  try {
+    // Never start the server-side copy for an already-cancelled scrape —
+    // it would only create an orphaned input object.
+    meta.abort.throwIfAborted();
+    const destFile = storage.bucket(destBucket).file(destKey);
+    let timer: NodeJS.Timeout | undefined;
+    // copy() accepts no AbortSignal, so this only stops the wait (timeout or
+    // scrape cancellation); a late copy cannot clobber anything because the
+    // fallback upload uses a distinct object key.
+    const abortSignal = meta.abort.asSignal();
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(
+            new Error(`GCS rewrite timed out after ${REWRITE_TIMEOUT_MS}ms`),
+          ),
+        REWRITE_TIMEOUT_MS,
+      );
+      if (abortSignal.aborted) {
+        reject(abortSignal.reason ?? new Error("aborted"));
+        return;
+      }
+      abortSignal.addEventListener(
+        "abort",
+        () => reject(abortSignal.reason ?? new Error("aborted")),
+        { once: true },
+      );
+    });
+    try {
+      // The rewrite carries the source object's metadata (fire-engine sets
+      // contentType application/pdf at upload), so no overrides needed.
+      const sourceFile =
+        source.generation !== undefined
+          ? storage
+              .bucket(match[1])
+              .file(match[2], { generation: source.generation })
+          : storage.bucket(match[1]).file(match[2]);
+      await Promise.race([sourceFile.copy(destFile), timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+    meta.logger.info("Rewrote fire-engine PDF handoff into fire-pdf inputs", {
+      method: "scrapePDF/firePdfByReference",
+      event: "fire_pdf_by_reference_rewritten",
+      scrape_id: meta.id,
+      size_bytes: source.sizeBytes,
+      duration_ms: Date.now() - startedAt,
+      source_uri: source.uri,
+      gcs_uri: `gs://${destBucket}/${destKey}`,
+    });
+    return {
+      gcsUri: `gs://${destBucket}/${destKey}`,
+      sha256: source.sha256,
+      sizeBytes: source.sizeBytes,
+    };
+  } catch (error) {
+    meta.abort.throwIfAborted();
+    meta.logger.warn(
+      "GCS rewrite of fire-engine PDF handoff failed; falling back to streaming upload",
+      {
+        method: "scrapePDF/firePdfByReference",
+        event: "fire_pdf_by_reference_rewrite_failed",
+        scrape_id: meta.id,
+        source_uri: source.uri,
+        error,
+      },
+    );
+    return null;
+  }
+}
+
+/**
+ * The per-team large-PDF byte limit: the privileged cap for allowlisted
+ * team ids, the default cap for everyone else, both clamped to the 256MB
+ * architectural ceiling. Every acquisition path enforces this one number —
+ * the direct-download admission, the fire-engine handoff download, the
+ * by-reference routing gate, and (as pdfMaxSize) fire-engine's own capture
+ * ceiling, so no path can admit bytes another would reject.
+ */
+export function largePdfLimitBytes(meta: Meta): number {
+  const teamId = meta.internalOptions.teamId;
+  const privilegedIds = new Set(
+    (config.PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS ?? "")
+      .split(",")
+      .map(id => id.trim())
+      .filter(Boolean),
+  );
+  const raw =
+    teamId && privilegedIds.has(teamId)
+      ? config.PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED
+      : config.PDF_BY_REFERENCE_MAX_BYTES_DEFAULT;
+  // Config is schema-validated to positive integers; the clamp bounds both
+  // ends anyway so an invalid value can never reject every PDF or send
+  // fire-engine a nonsensical pdfMaxSize.
+  return Math.min(Math.max(raw, 1), FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE);
+}
+
+/** Whether this request is diverted to MinerU. Deterministic on the scrape
+ * id (same distribution as a random draw) precisely so every gate — the
+ * fire-engine handoff grant, the download admission, and the PDF engine's
+ * routing — sees the SAME verdict; a per-call random draw would let them
+ * drift. Keyed apart from the async-cohort hash. */
+export function mineruDiverted(meta: Meta): boolean {
+  return (
+    config.MINERU_PERCENT > 0 &&
+    deterministicPercentage(`mineru:${meta.id}`) < config.MINERU_PERCENT
+  );
+}
+
+/** The full request-level reachability check — byReferenceConfigured plus
+ * the parser options that force FirePDF, fast-mode exclusion (its cost
+ * ceiling skips the whole FirePDF chain), and the MinerU diversion. One
+ * definition shared by the PDF engine's download admission/routing gate
+ * AND the fire-engine handoff grant, so the gates can never drift. */
+export function byReferenceReachableForRequest(meta: Meta): boolean {
+  const forceRequested =
+    !!meta.options.__forceFirePDF ||
+    getPDFPageMarkdown(meta.options.parsers) ||
+    getPDFBlocks(meta.options.parsers) ||
+    getPDFPageMarkers(meta.options.parsers);
+  return (
+    getPDFMode(meta.options.parsers) !== "fast" &&
+    !(!forceRequested && mineruDiverted(meta)) &&
+    byReferenceConfigured(meta, forceRequested)
+  );
+}
+
 /**
  * Whether by-reference FirePDF routing is configured and permitted for this
  * request, judged from signals available before the file is downloaded.
- * Both the download-size admission and the routing gate use this ONE
- * predicate; the routing gate then adds the file-dependent conditions
- * (size window, page count, MinerU diversion).
  *
  * ZDR is excluded because the by-reference input object persists in GCS.
  * A forced FirePDF request (pages/blocks/markers) needs only the base URL,
  * mirroring the inline path's rule; otherwise both the master switch and
  * the by-reference switch must be on.
  */
-export function byReferenceConfigured(
+function byReferenceConfigured(
   meta: Meta,
   forceFirePdfRequested: boolean,
 ): boolean {
@@ -84,16 +264,13 @@ export async function uploadPdfInputForFirePdf(
     /** sha-256 already computed over this exact file (e.g. for the
      * pre-upload cache check) — skips the in-pipeline hash pass. */
     precomputedSha256?: string;
+    /** Distinct object-key suffix — pass when another transport (e.g. a
+     * timed-out rewrite) may still be writing this scrape's default key. */
+    keyVariant?: string;
   },
 ): Promise<FirePdfByReferenceInput | null> {
   const bucketName = config.FIRE_PDF_GCS_INPUT_BUCKET;
-  // Scrape ids are UUIDv7 (time-ordered); a short hash prefix spreads the
-  // keys across GCS partitions, same convention as gcs-jobs.ts.
-  const keyPrefix = createHash("sha256")
-    .update(meta.id)
-    .digest("hex")
-    .slice(0, 8);
-  const objectKey = `inputs/${keyPrefix}-${meta.id}.pdf`;
+  const objectKey = firePdfInputObjectKey(meta.id, opts?.keyVariant);
   const startedAt = Date.now();
   try {
     // Both the hash pass and the upload stop on scrape cancellation as
