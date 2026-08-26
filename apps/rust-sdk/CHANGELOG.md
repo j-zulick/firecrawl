@@ -1,5 +1,15 @@
 ## CHANGELOG
 
+## [2.16.1] - 2026-08-26
+
+### Fixed
+
+- Agent, crawl, batch scrape, map, and parse requests now send
+  `origin: "rust-sdk@<version>"` for request attribution, matching the other
+  SDKs. Agent requests previously sent no origin at all, which made them
+  indistinguishable from raw API traffic server-side. A caller-provided
+  `origin` is still respected.
+
 ## [2.16.0] - 2026-08-21
 
 ### Added

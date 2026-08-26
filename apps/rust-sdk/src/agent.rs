@@ -26,6 +26,10 @@ pub struct AgentOptions {
     /// Integration identifier for tracking.
     pub integration: Option<String>,
 
+    /// Origin label for request attribution (e.g., "rust-sdk@2.16.1").
+    /// Defaults to `rust-sdk@<version>` when unset.
+    pub origin: Option<String>,
+
     /// Maximum credits the agent can use.
     pub max_credits: Option<u32>,
 
@@ -135,6 +139,11 @@ impl Client {
         &self,
         options: AgentOptions,
     ) -> Result<AgentResponse, FirecrawlError> {
+        let mut options = options;
+        if options.origin.is_none() {
+            options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
+        }
+
         let headers = self.prepare_headers(None);
 
         let response = self
@@ -431,6 +440,7 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mockito::Matcher;
     use serde_json::json;
 
     #[tokio::test]
@@ -461,6 +471,59 @@ mod tests {
 
         assert!(response.success);
         assert_eq!(response.id, "agent-123");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_start_agent_injects_sdk_origin() {
+        let mut server = mockito::Server::new_async().await;
+
+        // The mock only matches when the request body carries the SDK origin,
+        // so a regression in the injection fails the request itself.
+        let mock = server
+            .mock("POST", "/v2/agent")
+            .match_body(Matcher::PartialJson(json!({
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION"))
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"success": true, "id": "agent-123"}).to_string())
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let options = AgentOptions {
+            prompt: "Find the contact information".to_string(),
+            ..Default::default()
+        };
+
+        let response = client.start_agent(options).await.unwrap();
+
+        assert!(response.success);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_start_agent_preserves_custom_origin() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/agent")
+            .match_body(Matcher::PartialJson(json!({"origin": "my-app@1.0"})))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"success": true, "id": "agent-123"}).to_string())
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let options = AgentOptions {
+            prompt: "Find the contact information".to_string(),
+            origin: Some("my-app@1.0".to_string()),
+            ..Default::default()
+        };
+
+        let response = client.start_agent(options).await.unwrap();
+
+        assert!(response.success);
         mock.assert();
     }
 
