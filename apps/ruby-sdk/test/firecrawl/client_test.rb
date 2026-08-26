@@ -775,6 +775,30 @@ class ClientTest < Minitest::Test
     )
   end
 
+  def test_json_format_to_h
+    format = Firecrawl::Models::JsonFormat.new(
+      schema: { "type" => "object" },
+      prompt: "Extract the title",
+      check_prompt_injection: true
+    )
+    opts = Firecrawl::Models::ScrapeOptions.new(formats: [format])
+
+    assert_equal(
+      [{
+        "type" => "json",
+        "schema" => { "type" => "object" },
+        "prompt" => "Extract the title",
+        "checkPromptInjection" => true,
+      }],
+      opts.to_h["formats"]
+    )
+  end
+
+  def test_json_format_to_h_keeps_explicit_false
+    format = Firecrawl::Models::JsonFormat.new(check_prompt_injection: false)
+    assert_equal false, format.to_h["checkPromptInjection"]
+  end
+
   def test_query_format_rejects_invalid_mode
     assert_raises(ArgumentError) do
       Firecrawl::Models::QueryFormat.new(prompt: "What is Firecrawl?", mode: "quoted")
