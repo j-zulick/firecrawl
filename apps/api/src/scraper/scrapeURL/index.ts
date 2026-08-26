@@ -187,6 +187,11 @@ export type Meta = {
       submittedAtMs: number;
       jobDeadlineAtMs?: number;
       lastStatus: "queued" | "published" | "running";
+      /** fire-pdf's live remaining estimate from the last poll that
+       * carried one, with its observation time — one atomic datum,
+       * preferred over the static per-page math when composing the
+       * timeout message. */
+      serverEstimate?: { remainingMs: number; observedAtMs: number };
     };
   };
   documentPrefetch:

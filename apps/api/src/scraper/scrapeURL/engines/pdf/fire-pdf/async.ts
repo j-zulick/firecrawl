@@ -276,9 +276,15 @@ export async function scrapePDFWithFirePDFAsync(
           sleep,
           now,
           random,
-          onNonTerminalStatus: status => {
-            if (meta.largePdfProcessing?.current) {
-              meta.largePdfProcessing.current.lastStatus = status;
+          onNonTerminalStatus: (status, estimatedRemainingMs) => {
+            const current = meta.largePdfProcessing?.current;
+            if (!current) return;
+            current.lastStatus = status;
+            if (estimatedRemainingMs !== undefined) {
+              current.serverEstimate = {
+                remainingMs: estimatedRemainingMs,
+                observedAtMs: now(),
+              };
             }
           },
         });
