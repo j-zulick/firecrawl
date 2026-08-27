@@ -762,7 +762,7 @@ export async function listRunningMonitorChecks(
 ): Promise<MonitorCheckRow[]> {
   const data = await run(
     () =>
-      db
+      dbRr
         .select()
         .from(schema.monitor_checks)
         .where(eq(schema.monitor_checks.status, "running"))
