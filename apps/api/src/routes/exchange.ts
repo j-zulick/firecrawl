@@ -9,6 +9,7 @@ import { authMiddleware, wrap } from "./shared";
 const DISCOVER_TIMEOUT_MS = 10_000;
 const RETRIEVE_TIMEOUT_MS = 50_000;
 const ANALYTICS_TIMEOUT_MS = 20_000;
+const APPLICATIONS_TIMEOUT_MS = 15_000;
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
@@ -30,7 +31,17 @@ function upstreamBase(): string | null {
   return config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
 }
 
-function exchangeProxy(timeout: number) {
+/**
+ * `requiresRetrieveFlag` is opt-out for a reason: consuming the Exchange is what that flag grants,
+ * and every route here consumes it except the one where somebody offers something of their own. An
+ * applicant is not yet a customer, so gating their application on a consumption entitlement would
+ * refuse exactly the people the route exists for.
+ */
+function exchangeProxy(
+  timeout: number,
+  options: { requiresRetrieveFlag?: boolean } = {},
+) {
+  const requiresRetrieveFlag = options.requiresRetrieveFlag !== false;
   const dispatcher = dispatcherFor(timeout);
 
   return async function controller(req: Request, res: Response) {
@@ -47,7 +58,7 @@ function exchangeProxy(timeout: number) {
       return exchangeError(res, 503, "This endpoint is not available.");
     }
 
-    if (!authedReq.acuc?.flags?.exchangeRetrieve) {
+    if (requiresRetrieveFlag && !authedReq.acuc?.flags?.exchangeRetrieve) {
       return exchangeError(
         res,
         403,
@@ -122,4 +133,10 @@ exchangeRouter.get(
   "/analytics{/*path}",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS)),
+);
+
+exchangeRouter.post(
+  "/applications",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(APPLICATIONS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
