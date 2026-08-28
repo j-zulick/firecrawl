@@ -31,12 +31,6 @@ function upstreamBase(): string | null {
   return config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
 }
 
-/**
- * `requiresRetrieveFlag` is opt-out for a reason: consuming the Exchange is what that flag grants,
- * and every route here consumes it except the one where somebody offers something of their own. An
- * applicant is not yet a customer, so gating their application on a consumption entitlement would
- * refuse exactly the people the route exists for.
- */
 function exchangeProxy(
   timeout: number,
   options: { requiresRetrieveFlag?: boolean } = {},
