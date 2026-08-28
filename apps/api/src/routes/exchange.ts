@@ -142,6 +142,18 @@ exchangeRouter.post(
   wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
+exchangeRouter.post(
+  "/rates/lookup",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.get(
+  "/rates/lookup",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
 exchangeRouter.get(
   "/publisher{/*path}",
   authMiddleware(RateLimiterMode.Labs),
@@ -162,6 +174,12 @@ exchangeRouter.get(
 
 exchangeRouter.post(
   "/claims",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(CLAIMS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/claims/:id/release",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(CLAIMS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
