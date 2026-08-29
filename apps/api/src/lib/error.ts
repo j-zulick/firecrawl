@@ -37,6 +37,7 @@ export type ErrorCodes =
   | "MAP_FAILED"
   | "BAD_REQUEST_INVALID_JSON"
   | "BAD_REQUEST"
+  | "CONCURRENCY_QUEUE_TIMEOUT"
   // Threat protection (enterprise domain risk blocking). Lowercase by design:
   // this is the documented, user-facing error code for the feature.
   | "unsafe_domain_blocked";
@@ -200,6 +201,27 @@ export class ScrapeJobTimeoutError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ScrapeJobTimeoutError(data.message, data.processing);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class ConcurrencyQueueTimeoutError extends TransportableError {
+  constructor(
+    message: string = "The operation timed out while waiting for a concurrency slot to become available. This means that your requests are exhausting your concurrent browsers limit. Consider using batch endpoints which wait for concurrency slots to become available indefinitely, or consider upgrading your plan to incrase your concurrency limit at https://firecrawl.dev/pricing.",
+  ) {
+    super("CONCURRENCY_QUEUE_TIMEOUT", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _code: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ConcurrencyQueueTimeoutError(data.message);
     x.stack = data.stack;
     return x;
   }
