@@ -1508,6 +1508,36 @@ export interface ExtractResponse {
   creditsUsed?: number;
 }
 
+export type AgentListResponse =
+  | ErrorResponse
+  | {
+      success: true;
+      agents: {
+        id: string;
+        createdAt: string;
+        targetHint: string;
+        origin: string;
+        integration?: string;
+        settings: {
+          hidden: boolean;
+          starred: boolean;
+          label?: string;
+        };
+        status: "processing" | "completed" | "failed";
+        options?: {
+          urls?: string[];
+          prompt: string;
+          schema?: any;
+          // Widened past the known presets on purpose: this is the stored
+          // value from historical runs, and new models ship without an API
+          // type release.
+          model: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
+          effort?: "low" | "medium" | "high";
+        };
+      }[];
+      next?: string;
+    };
+
 export type AgentResponse =
   | ErrorResponse
   | {
