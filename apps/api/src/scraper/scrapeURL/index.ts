@@ -32,7 +32,9 @@ import {
   EngineError,
   NoEnginesLeftError,
   PDFAntibotError,
+  PDFFetchProxyError,
   DocumentAntibotError,
+  DocumentFetchProxyError,
   RemoveFeatureError,
   SiteError,
   UnsupportedFileError,
@@ -168,6 +170,9 @@ export type Meta = {
       }
     | null
     | undefined; // undefined: no prefetch yet, null: prefetch came back empty
+  // (null is preserved through the retry loop's AddFeatureError handler so
+  // antibot/proxy-failure handling can tell "never attempted" apart from
+  // "attempted, browser delivered no file")
   /** Live state of a by-reference FirePDF job (large PDFs) this scrape
    * submitted or adopted. Such jobs outlive an abandoned scrape BY
    * DESIGN (see fire-pdf/async.ts's cancel policy), so a SCRAPE_TIMEOUT
@@ -204,6 +209,7 @@ export type Meta = {
       }
     | null
     | undefined; // undefined: no prefetch yet, null: prefetch came back empty
+  // (null preserved through the retry loop, same as pdfPrefetch)
   fetchPrefetch:
     | {
         url?: string;
@@ -718,6 +724,12 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     // Skip when the content was already prefetched (a browser engine already
     // ran the actions and downloaded the file); the re-run only needs the
     // document/pdf engine to parse it, which does not support actions.
+    // Skip when a browser engine already ran the actions — i.e. any
+    // prefetch state exists, including the null sentinel (browser ran,
+    // delivered no file): the re-run only needs the pdf/document engine
+    // to parse the file, and the actions check must not preempt the
+    // antibot/proxy recovery paths below with a misleading
+    // ActionsNotSupportedError after the actions already executed.
     if (
       meta.featureFlags.has("actions") &&
       meta.pdfPrefetch === undefined &&
@@ -881,8 +893,10 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof ActionError ||
               error.error instanceof UnsupportedFileError ||
               error.error instanceof PDFAntibotError ||
+              error.error instanceof PDFFetchProxyError ||
               error.error instanceof PDFOCRRequiredError ||
               error.error instanceof DocumentAntibotError ||
+              error.error instanceof DocumentFetchProxyError ||
               error.error instanceof PDFInsufficientTimeError ||
               error.error instanceof ProxySelectionError ||
               error.error instanceof NoCachedDataError ||
@@ -1294,9 +1308,17 @@ export async function scrapeURL(
             );
             if (error.pdfPrefetch) {
               meta.pdfPrefetch = error.pdfPrefetch;
+            } else if (error.pdfPrefetch === null) {
+              // Browser round trip ran but delivered no file. Preserve the
+              // null sentinel: the antibot branches below still retry (the
+              // empty handoff may be transient), but the proxy-failure
+              // branches fail fast instead of re-running the browser.
+              meta.pdfPrefetch = null;
             }
             if (error.documentPrefetch) {
               meta.documentPrefetch = error.documentPrefetch;
+            } else if (error.documentPrefetch === null) {
+              meta.documentPrefetch = null;
             }
           } else if (
             error instanceof RemoveFeatureError &&
@@ -1318,7 +1340,10 @@ export async function scrapeURL(
             error instanceof PDFAntibotError &&
             meta.internalOptions.forceEngine === undefined
           ) {
-            if (meta.pdfPrefetch !== undefined) {
+            // null = browser ran but delivered no file (possibly transient) —
+            // still worth one more browser round trip, so only a real
+            // prefetch object fails here.
+            if (meta.pdfPrefetch != null) {
               meta.logger.error(
                 "PDF was prefetched and still blocked by antibot, failing",
               );
@@ -1333,10 +1358,36 @@ export async function scrapeURL(
               );
             }
           } else if (
+            error instanceof PDFFetchProxyError &&
+            meta.internalOptions.forceEngine === undefined
+          ) {
+            // meta.pdfPrefetch distinguishes "browser never attempted"
+            // (undefined — clear the pdf flag so the browser engine fetches
+            // the file through fire-engine's proxies) from "browser attempted,
+            // came back empty" (null — fail fast: another round trip would
+            // only burn the shared antibot+proxy prefetch budget).
+            if (meta.pdfPrefetch !== undefined) {
+              meta.logger.error(
+                "PDF was prefetched and the direct fetch still failed at the proxy, failing",
+              );
+              throw error;
+            } else {
+              retryTracker.record("pdf_fetch_proxy", error);
+              meta.logger.debug(
+                "PDF direct download failed at the proxy, prefetching with chrome-cdp",
+              );
+              meta.featureFlags = new Set(
+                [...meta.featureFlags].filter(x => x !== "pdf"),
+              );
+            }
+          } else if (
             error instanceof DocumentAntibotError &&
             meta.internalOptions.forceEngine === undefined
           ) {
-            if (meta.documentPrefetch !== undefined) {
+            // null = browser ran but delivered no file (possibly transient) —
+            // still worth one more browser round trip, so only a real
+            // prefetch object fails here.
+            if (meta.documentPrefetch != null) {
               meta.logger.error(
                 "Document was prefetched and still blocked by antibot, failing",
               );
@@ -1345,6 +1396,25 @@ export async function scrapeURL(
               retryTracker.record("document_antibot", error);
               meta.logger.debug(
                 "Document was blocked by anti-bot, prefetching with chrome-cdp",
+              );
+              meta.featureFlags = new Set(
+                [...meta.featureFlags].filter(x => x !== "document"),
+              );
+            }
+          } else if (
+            error instanceof DocumentFetchProxyError &&
+            meta.internalOptions.forceEngine === undefined
+          ) {
+            // Same undefined-vs-null distinction as the PDF branch above.
+            if (meta.documentPrefetch !== undefined) {
+              meta.logger.error(
+                "Document was prefetched and the direct fetch still failed at the proxy, failing",
+              );
+              throw error;
+            } else {
+              retryTracker.record("document_fetch_proxy", error);
+              meta.logger.debug(
+                "Document direct download failed at the proxy, prefetching with chrome-cdp",
               );
               meta.featureFlags = new Set(
                 [...meta.featureFlags].filter(x => x !== "document"),
@@ -1558,6 +1628,18 @@ export async function scrapeURL(
         errorType = "DocumentPrefetchFailed";
         meta.logger.warn(
           "scrapeURL: Failed to prefetch document that is protected by anti-bot",
+          { error },
+        );
+      } else if (error instanceof PDFFetchProxyError) {
+        errorType = "PDFFetchProxyError";
+        meta.logger.warn(
+          "scrapeURL: PDF download failed at the proxy and could not be recovered via browser prefetch",
+          { error },
+        );
+      } else if (error instanceof DocumentFetchProxyError) {
+        errorType = "DocumentFetchProxyError";
+        meta.logger.warn(
+          "scrapeURL: Document download failed at the proxy and could not be recovered via browser prefetch",
           { error },
         );
       } else if (error instanceof BrandingNotSupportedError) {

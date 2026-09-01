@@ -1,10 +1,17 @@
 import { Meta } from "../..";
 import { EngineScrapeResult } from "..";
-import { fetchFileToBuffer } from "../utils/downloadFile";
+import {
+  fetchFileGuardingProxyFailure,
+  fetchFileToBuffer,
+} from "../utils/downloadFile";
 import { convertDocumentToMarkdown } from "@mendable/firecrawl-rs";
 import { safeMarkdownToHtml } from "../pdf/markdownToHtml";
 import type { Response } from "undici";
-import { DocumentAntibotError, EngineUnsuccessfulError } from "../../error";
+import {
+  DocumentAntibotError,
+  DocumentFetchProxyError,
+  EngineUnsuccessfulError,
+} from "../../error";
 import {
   documentContentTypeFromExtension,
   documentExtensionFromContentType,
@@ -39,13 +46,15 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
       proxyUsed = meta.documentPrefetch.proxyUsed;
     } else {
       // Fetch the document normally
-      const result = await fetchFileToBuffer(
-        meta.rewrittenUrl ?? meta.url,
-        meta.options.skipTlsVerification,
-        {
-          headers: meta.options.headers,
-          signal: meta.abort.asSignal(),
-        },
+      const result = await fetchDocumentFileGuardingProxyFailure(meta, () =>
+        fetchFileToBuffer(
+          meta.rewrittenUrl ?? meta.url,
+          meta.options.skipTlsVerification,
+          {
+            headers: meta.options.headers,
+            signal: meta.abort.asSignal(),
+          },
+        ),
       );
       response = result.response;
       buffer = result.buffer;
@@ -112,4 +121,33 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
 
 export function documentMaxReasonableTime(meta: Meta): number {
   return 15000;
+}
+
+/**
+ * Guards the document engine's direct undici download: a proxy tunneling
+ * failure converts into DocumentFetchProxyError, which the scrapeURL retry
+ * loop handles exactly like DocumentAntibotError (clear the "document" flag,
+ * re-run the waterfall, browser engine fetches the file). See
+ * fetchFileGuardingProxyFailure for the conversion eligibility rules.
+ */
+function fetchDocumentFileGuardingProxyFailure<T>(
+  meta: Meta,
+  fetch: () => Promise<T>,
+): Promise<T> {
+  return fetchFileGuardingProxyFailure(
+    {
+      prefetch: meta.documentPrefetch,
+      // Same conversion-eligibility rules as the pdf engine: only when
+      // forceEngine is unset (retry loop recovers via browser fallback) or
+      // scalar-pinned to this engine (clean error surfaces); arrays keep the
+      // raw error so the waterfall continues through remaining forced
+      // engines.
+      flagMandated:
+        (meta.internalOptions.forceEngine === undefined &&
+          meta.featureFlags.has("document")) ||
+        meta.internalOptions.forceEngine === "document",
+      makeError: () => new DocumentFetchProxyError(),
+    },
+    fetch,
+  );
 }
