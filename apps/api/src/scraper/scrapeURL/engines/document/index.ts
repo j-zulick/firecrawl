@@ -18,8 +18,33 @@ import {
   documentExtensionFromUrlPath,
 } from "../../../../lib/document-formats";
 import { readFile, unlink } from "node:fs/promises";
+import { useFireEngine } from "../fire-engine/available";
 
 export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
+  // With fire-engine available this engine never downloads files itself:
+  // buildFallbackList routes file URLs through the browser engines and the
+  // file arrives here via documentPrefetch. Reaching the direct download
+  // means either an explicit forceEngine pin (the escape hatch, kept
+  // working) or a browser handoff that came back empty
+  // (documentPrefetch === null) — signal antibot so the retry loop can give
+  // the browser another round trip. In self-hosted deployments (no
+  // fire-engine) the direct download stays the primary path. Ordinary
+  // pages (no "document" flag) keep declining via EngineUnsuccessfulError
+  // so the waterfall just moves on.
+  if (
+    useFireEngine &&
+    meta.internalOptions.forceEngine === undefined &&
+    meta.documentPrefetch == null
+  ) {
+    // A cross-type handoff (a .docx URL serving a PDF) lands in
+    // pdfPrefetch: the file is in hand, just not for this engine — decline
+    // so the waterfall reaches the engine that can parse it.
+    if (meta.pdfPrefetch != null || !meta.featureFlags.has("document")) {
+      throw new EngineUnsuccessfulError("document");
+    }
+    throw new DocumentAntibotError();
+  }
+
   let response: Response;
   let buffer: Buffer;
   let proxyUsed: "basic" | "stealth" = "basic";

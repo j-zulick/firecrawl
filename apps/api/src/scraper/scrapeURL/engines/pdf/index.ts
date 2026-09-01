@@ -46,6 +46,7 @@ import {
 } from "../../../../lib/native-logging";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
+import { useFireEngine } from "../fire-engine/available";
 import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
 import {
@@ -107,6 +108,30 @@ function fetchPdfFileGuardingProxyFailure<T>(
 }
 
 export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
+  // With fire-engine available this engine never downloads files itself:
+  // buildFallbackList routes file URLs through the browser engines and the
+  // file arrives here via pdfPrefetch. Reaching the direct download means
+  // either an explicit forceEngine pin (the escape hatch, kept working) or
+  // a browser handoff that came back empty (pdfPrefetch === null) —
+  // signal antibot so the retry loop can give the browser another round
+  // trip, exactly like a handoff whose bytes failed the PDF sniff. In
+  // self-hosted deployments (no fire-engine) the direct download stays the
+  // primary path. Ordinary pages (no "pdf" flag) keep declining via
+  // EngineUnsuccessfulError so the waterfall just moves on.
+  if (
+    useFireEngine &&
+    meta.internalOptions.forceEngine === undefined &&
+    meta.pdfPrefetch == null
+  ) {
+    // A cross-type handoff (a .pdf URL serving a docx) lands in
+    // documentPrefetch: the file is in hand, just not for this engine —
+    // decline so the waterfall reaches the engine that can parse it.
+    if (meta.documentPrefetch != null || !meta.featureFlags.has("pdf")) {
+      throw new EngineUnsuccessfulError("pdf");
+    }
+    throw new PDFAntibotError();
+  }
+
   const shouldParse = shouldParsePDF(meta.options.parsers);
   const maxPages = getPDFMaxPages(meta.options.parsers);
   const mode: PDFMode = getPDFMode(meta.options.parsers);
@@ -911,7 +936,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       },
 
       contentType: "application/pdf",
-      proxyUsed: "basic",
+      // Report the proxy that actually delivered the file: a browser
+      // handoff may have come through the stealth proxy, while the direct
+      // download always uses the basic route.
+      proxyUsed: meta.pdfPrefetch?.proxyUsed ?? "basic",
     };
   } finally {
     // Always clean up temp file after we're done with it
