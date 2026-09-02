@@ -479,6 +479,8 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
     it(
       "OCRs a PNG URL as a one-page document",
       async () => {
+        // Image OCR is on by default for a flagged team: no parsers option
+        // needed.
         const response = await scrape(
           {
             url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
@@ -501,20 +503,61 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
     );
 
     it(
-      "returns the raw image when parsing is disabled",
+      "OCRs images with the image parser alone",
       async () => {
+        // The object form is reserved for future options, and the pdf parser
+        // is not needed for an image.
         const response = await scrape(
           {
             url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
             formats: ["markdown"],
-            parsers: [],
+            parsers: [{ type: "image" }],
+          },
+          identity,
+        );
+
+        expect(response.markdown).toMatch(/fire/i);
+        expect(response.metadata.contentType).toBe("image/png");
+      },
+      scrapeTimeout,
+    );
+
+    it(
+      "does not OCR images when the parsers list omits the image parser",
+      async () => {
+        // An explicit list without "image" opts out: the request keeps the
+        // unsupported-file rejection, and the error names the parser. The
+        // tests above OCR'd this URL already, so this also checks that the
+        // index does not hand that cached output to a request that opted
+        // out.
+        const response = await scrapeWithFailure(
+          {
+            url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
+            formats: ["markdown"],
+            parsers: ["pdf"],
+          },
+          identity,
+        );
+
+        expect(response.error).toContain("cannot process");
+        expect(response.error).toContain('"image"');
+      },
+      scrapeTimeout,
+    );
+
+    it(
+      "serves the raw image through the rawBase64 format",
+      async () => {
+        const response = await scrape(
+          {
+            url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
+            formats: ["rawBase64"],
           },
           identity,
         );
 
         // Base64 of the PNG signature.
-        expect(response.markdown).toMatch(/^iVBORw0KGgo/);
-        expect(response.metadata.contentType).toBe("image/png");
+        expect(response.rawBase64).toMatch(/^iVBORw0KGgo/);
       },
       scrapeTimeout,
     );
@@ -545,11 +588,13 @@ describeIf(SHOULD_RUN)("Image OCR (f-e and fire-pdf dependent)", () => {
     async () => {
       // A long-lived public sample photo: exercises the image/jpeg browser
       // handoff. The scrape itself only succeeds with non-empty markdown, so
-      // the assertions stick to the stable handoff properties.
+      // the assertions stick to the stable handoff properties. The bare
+      // string form of the image parser is exercised here.
       const response = await scrape(
         {
           url: "https://www.gstatic.com/webp/gallery/1.jpg",
           formats: ["markdown"],
+          parsers: ["image"],
         },
         identity,
       );
@@ -656,12 +701,13 @@ describe("Image OCR for a team without the imageOcr flag", () => {
     "scrape (f-e dependent)",
     () => {
       it(
-        "keeps failing image URLs as unsupported files",
+        "keeps failing image URLs as unsupported files even with the image parser",
         async () => {
           const response = await scrapeWithFailure(
             {
               url: `${TEST_SUITE_WEBSITE}/firecrawl-wordmark.png`,
               formats: ["markdown"],
+              parsers: ["pdf", "image"],
             },
             ungatedIdentity,
           );
