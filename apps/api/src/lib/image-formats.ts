@@ -1,8 +1,8 @@
 // Raster image formats the image engine can hand to FirePDF for OCR: the
-// formats FirePDF opens as a one-page image document (PNG, JPEG, TIFF, GIF,
-// BMP). WebP, SVG, AVIF and HEIC are deliberately absent: FirePDF cannot open
-// them, so they keep failing fast as unsupported files instead of burning a
-// round trip.
+// formats FirePDF opens as a one-page image document (PNG, JPEG, JPEG 2000,
+// TIFF, GIF, BMP). WebP, SVG, AVIF and HEIC are deliberately absent: FirePDF
+// cannot open them, so they keep failing fast as unsupported files instead of
+// burning a round trip.
 
 const CONTENT_TYPE_TO_EXTENSION = new Map<string, string>([
   ["image/png", ".png"],
@@ -15,11 +15,25 @@ const CONTENT_TYPE_TO_EXTENSION = new Map<string, string>([
   ["image/gif", ".gif"],
   ["image/bmp", ".bmp"],
   ["image/x-ms-bmp", ".bmp"],
+  // JPEG 2000: the JP2 container digitized book scans and IIIF tile sources
+  // are served in, and its extended JPX sibling. Raw codestreams (.j2k,
+  // .j2c) share the type: FirePDF opens them the same way.
+  ["image/jp2", ".jp2"],
+  ["image/jpx", ".jp2"],
+  // Raw codestreams have no registered type; these are the labels servers
+  // use for them.
+  ["image/j2k", ".jp2"],
+  ["image/j2c", ".jp2"],
+  ["image/x-j2c", ".jp2"],
 ]);
 
 const EXTENSION_ALIASES = new Map<string, string>([
   [".jpeg", ".jpg"],
   [".tiff", ".tif"],
+  [".jpx", ".jp2"],
+  [".jpf", ".jp2"],
+  [".j2k", ".jp2"],
+  [".j2c", ".jp2"],
 ]);
 
 export const IMAGE_EXTENSIONS = new Set([
@@ -69,6 +83,16 @@ const MAGIC_SIGNATURES: Array<{ contentType: string; bytes: number[] }> = [
   { contentType: "image/tiff", bytes: [0x49, 0x49, 0x2a, 0x00] },
   { contentType: "image/tiff", bytes: [0x4d, 0x4d, 0x00, 0x2a] },
   { contentType: "image/bmp", bytes: [0x42, 0x4d] },
+  // JPEG 2000: the JP2/JPX container's 12-byte signature box, and a raw
+  // codestream (SOC then SIZ marker). FirePDF opens both through the same
+  // loader, so both report the container type.
+  {
+    contentType: "image/jp2",
+    bytes: [
+      0x00, 0x00, 0x00, 0x0c, 0x6a, 0x50, 0x20, 0x20, 0x0d, 0x0a, 0x87, 0x0a,
+    ],
+  },
+  { contentType: "image/jp2", bytes: [0xff, 0x4f, 0xff, 0x51] },
 ];
 
 const SNIFF_WINDOW = Math.max(...MAGIC_SIGNATURES.map(s => s.bytes.length));
