@@ -909,6 +909,67 @@ describe("V2 Types Validation", () => {
 
       expect(result.sitemap).toBe("only");
     });
+
+    it("should accept anchored and substring path patterns", () => {
+      const result = crawlRequestSchema.parse({
+        url: "https://example.com",
+        excludePaths: ["^/?docs(/.*)?$", "/admin"],
+        includePaths: ["^/blog"],
+      });
+
+      expect(result.excludePaths).toEqual(["^/?docs(/.*)?$", "/admin"]);
+      expect(result.includePaths).toEqual(["^/blog"]);
+    });
+
+    it("should reject excludePaths patterns using a negative lookahead", () => {
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["^/?(?!blog|works-with)[^/]+/.+"],
+        }),
+      ).toThrow(
+        /look-around, including look-ahead and look-behind, is not supported/,
+      );
+    });
+
+    it("should reject includePaths patterns using a backreference", () => {
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          includePaths: ["(a)\\1"],
+        }),
+      ).toThrow(/backreferences/);
+    });
+
+    it("should report the real error without the look-around hint for unrelated syntax errors", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["[abc"],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message).toMatch(/unclosed character class/);
+      expect(message).not.toMatch(/Rewrite the pattern/);
+    });
+
+    it("should state the look-around limitation once and add a rewrite hint", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["^/?(?!blog)[^/]+/.+"],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message.match(/not supported/g)).toHaveLength(1);
+      expect(message).toMatch(/Rewrite the pattern/);
+    });
   });
 
   describe("mapRequestSchema", () => {
@@ -964,6 +1025,17 @@ describe("V2 Types Validation", () => {
 
       const result = mapRequestSchema.parse(input);
       expect(result.sitemap).toBe("only");
+    });
+
+    it("should reject path patterns the engine cannot honour", () => {
+      expect(() =>
+        mapRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["^/?(?!blog)[^/]+/.+"],
+        }),
+      ).toThrow(
+        /look-around, including look-ahead and look-behind, is not supported/,
+      );
     });
   });
 
