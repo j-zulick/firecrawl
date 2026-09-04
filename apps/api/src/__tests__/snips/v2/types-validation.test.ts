@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+  MAX_PATH_PATTERNS,
+  MAX_PATH_PATTERN_LENGTH,
+} from "../../../lib/crawl-regex";
+import {
   scrapeRequestSchema,
   parseRequestSchema,
   scrapeOptions,
@@ -969,6 +973,105 @@ describe("V2 Types Validation", () => {
 
       expect(message.match(/not supported/g)).toHaveLength(1);
       expect(message).toMatch(/Rewrite the pattern/);
+    });
+
+    it("should accept counted repetitions of word classes that real path filters use", () => {
+      // Unicode \w is hundreds of ranges, so these used to exceed the engine's
+      // compiled-size limit and were silently dropped. Path haystacks are
+      // percent-encoded ASCII, so they are compiled in ASCII mode and are cheap.
+      const result = crawlRequestSchema.parse({
+        url: "https://example.com",
+        includePaths: [
+          "^/[\\w-]{1,100}/[\\w-]{1,100}/[\\w-]{1,100}/?$",
+          "\\w{300}",
+        ],
+      });
+
+      expect(result.includePaths).toHaveLength(2);
+    });
+
+    it("should reject patterns whose compiled form exceeds the size limit", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["a{5}{5}{5}{5}{5}{5}"],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message).toMatch(/exceeds size limit/);
+      expect(message).toMatch(/stacked counted repetitions/);
+    });
+
+    it("should reject Unicode-only constructs with a hint", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["^/\\p{Greek}+"],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message).toMatch(/Unicode not allowed/);
+      expect(message).toMatch(/percent-encoded ASCII/);
+    });
+
+    it("should reject more than the maximum number of path patterns", () => {
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: Array.from(
+            { length: MAX_PATH_PATTERNS + 1 },
+            (_, i) => `^/p${i}`,
+          ),
+        }),
+      ).toThrow(/at most 100 patterns/);
+    });
+
+    it("should not compile patterns once the count cap is exceeded", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: [
+            ...Array.from({ length: MAX_PATH_PATTERNS }, (_, i) => `^/p${i}`),
+            "[abc",
+          ],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message).toMatch(/at most 100 patterns/);
+      expect(message).not.toMatch(/unclosed character class/);
+    });
+
+    it("should not derive hints from user pattern text", () => {
+      let message = "";
+      try {
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          excludePaths: ["[exceeds size limit"],
+        });
+      } catch (e) {
+        message = String(e);
+      }
+
+      expect(message).toMatch(/unclosed character class/);
+      expect(message).not.toMatch(/stacked counted repetitions/);
+    });
+
+    it("should reject path patterns longer than the maximum length", () => {
+      expect(() =>
+        crawlRequestSchema.parse({
+          url: "https://example.com",
+          includePaths: ["^/" + "a".repeat(MAX_PATH_PATTERN_LENGTH)],
+        }),
+      ).toThrow(/at most 2000 characters/);
     });
   });
 
