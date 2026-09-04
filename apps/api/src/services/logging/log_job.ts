@@ -23,21 +23,24 @@ import type { CostTracking } from "../../lib/cost-tracking";
 import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
 import { trackFirstSurfaceUse } from "../posthog";
-import { PubSub, type Topic } from "@google-cloud/pubsub";
+import { PubSub, type PublishOptions, type Topic } from "@google-cloud/pubsub";
+import { pubsubLogPublishTotal } from "../../lib/pubsub-log-metrics";
+import { sanitizeLogData, sanitizeText } from "./sanitize";
 configDotenv();
 
 const previewTeamId = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
-const nullByteRegex = /\u0000/g;
 
 /**
- * Sanitize string fields by removing null bytes (\u0000)
- * PostgreSQL doesn't allow null bytes in text fields
- * This can come from user-provided data like URLs, origin, integration fields
+ * Null-aware wrapper around the shared text sanitizer, kept where a cleaned
+ * value feeds a later decision (the external_request_id byte cap). Every row
+ * is deep-sanitized again in robustInsert before it reaches either store, so
+ * nothing else depends on this being called; see ./sanitize.ts for what gets
+ * cleaned and why.
  */
 function sanitizeString(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
 
-  return value.replace(nullByteRegex, "");
+  return sanitizeText(value);
 }
 
 const tableMap: Record<string, PgTable> = {
@@ -62,7 +65,46 @@ const tableMap: Record<string, PgTable> = {
 let pubSubClient: PubSub | null | undefined;
 const pubSubTopics = new Map<string, Topic>();
 let pubSubShutdown: Promise<void> | undefined;
-const PUBSUB_PUBLISH_TIMEOUT_MS = 60_000;
+
+// Publish retry policy. Passing only `timeout` makes google-gax collapse the
+// whole retry budget to that one value (CallSettings.merge), so a stalled RPC
+// used to be a single 60 s attempt and then a lost row. An explicit `retry`
+// is applied after that override and replaces the backoff settings wholesale.
+// Short attempts detect a hung channel quickly; the total budget covers every
+// stall measured in production so far, all of which cleared within 140 s.
+// Retry codes stay the client's defaults for Publish (DEADLINE_EXCEEDED,
+// UNAVAILABLE, INTERNAL, UNKNOWN, ABORTED, CANCELLED, RESOURCE_EXHAUSTED).
+// A retry can deliver a batch twice when the first attempt was persisted but
+// its response was lost; the ClickHouse tables dedupe on row id, not message
+// id, so those copies collapse.
+const PUBSUB_PUBLISH_OPTIONS: PublishOptions = {
+  gaxOpts: {
+    retry: {
+      backoffSettings: {
+        initialRetryDelayMillis: 250,
+        retryDelayMultiplier: 2,
+        maxRetryDelayMillis: 15_000,
+        initialRpcTimeoutMillis: 15_000,
+        rpcTimeoutMultiplier: 1,
+        maxRpcTimeoutMillis: 15_000,
+        totalTimeoutMillis: 300_000,
+      },
+    },
+  },
+};
+
+// Shutdown waits this long for in-flight publishes before closing the client.
+// It must fit inside the pods' termination grace period (60 s for nuq
+// workers); a stall that outlives it loses what is still in flight, which is
+// the same outcome as today and what a durable relay is for.
+const PUBSUB_SHUTDOWN_FLUSH_TIMEOUT_MS = 40_000;
+
+// Rows waiting on Pub/Sub across all topics. Publishing is fire-and-forget,
+// so during a stall this is what grows; see PUBSUB_MAX_OUTSTANDING_* in config.
+let outstandingMessages = 0;
+let outstandingBytes = 0;
+let droppedTotal = 0;
+let lastDropWarningAt = 0;
 
 function getPubSubClient(logger: Logger): PubSub | null {
   if (pubSubClient !== undefined) return pubSubClient;
@@ -90,9 +132,7 @@ function getPubSubClient(logger: Logger): PubSub | null {
 function getTopic(client: PubSub, table: string): Topic {
   let topic = pubSubTopics.get(table);
   if (!topic) {
-    topic = client.topic(table, {
-      gaxOpts: { timeout: PUBSUB_PUBLISH_TIMEOUT_MS },
-    });
+    topic = client.topic(table, PUBSUB_PUBLISH_OPTIONS);
     pubSubTopics.set(table, topic);
   }
   return topic;
@@ -102,15 +142,39 @@ async function publishLog(table: string, data: any, logger: Logger) {
   const client = getPubSubClient(logger);
   if (!client) return;
 
+  const payload = Buffer.from(JSON.stringify(data));
+  if (
+    outstandingMessages >= config.PUBSUB_MAX_OUTSTANDING_MESSAGES ||
+    outstandingBytes + payload.length > config.PUBSUB_MAX_OUTSTANDING_BYTES
+  ) {
+    droppedTotal++;
+    pubsubLogPublishTotal.inc({ table, outcome: "dropped" });
+    const now = Date.now();
+    if (now - lastDropWarningAt >= 60_000) {
+      lastDropWarningAt = now;
+      logger.warn("Dropping Pub/Sub log: publisher backlog is full", {
+        outstandingMessages,
+        outstandingBytes,
+        droppedTotal,
+      });
+    }
+    return;
+  }
+
+  outstandingMessages++;
+  outstandingBytes += payload.length;
   try {
-    await getTopic(client, table).publishMessage({
-      data: Buffer.from(JSON.stringify(data)),
-    });
+    await getTopic(client, table).publishMessage({ data: payload });
+    pubsubLogPublishTotal.inc({ table, outcome: "published" });
   } catch (error) {
+    pubsubLogPublishTotal.inc({ table, outcome: "failed" });
     logger.error("Failed to publish log to Pub/Sub", { error });
     Sentry.captureException(error, {
       tags: { table, operation: "publishPubSubLog" },
     });
+  } finally {
+    outstandingMessages--;
+    outstandingBytes -= payload.length;
   }
 }
 
@@ -129,19 +193,40 @@ async function shutdownPubSubLoggingOnce(): Promise<void> {
     module: "log_job",
     method: "shutdownPubSubLogging",
   });
-  const results = await Promise.allSettled(
+  const flushed = Promise.allSettled(
     [...pubSubTopics.values()].map(topic => topic.flush()),
   );
-  const errors = results.flatMap(result =>
-    result.status === "rejected" ? [result.reason] : [],
-  );
+  let deadline: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<"timeout">(resolve => {
+    deadline = setTimeout(
+      () => resolve("timeout"),
+      PUBSUB_SHUTDOWN_FLUSH_TIMEOUT_MS,
+    );
+  });
+  const results = await Promise.race([flushed, timedOut]);
+  clearTimeout(deadline);
 
-  if (errors.length > 0) {
-    logger.error("Failed to flush Pub/Sub log publisher", { errors });
-    Sentry.captureException(errors[0], {
-      tags: { operation: "flushPubSubLogPublisher" },
-      extra: { failures: errors.length },
-    });
+  if (results === "timeout") {
+    logger.warn(
+      "Pub/Sub log flush did not finish before the shutdown deadline; closing anyway",
+      {
+        timeoutMs: PUBSUB_SHUTDOWN_FLUSH_TIMEOUT_MS,
+        outstandingMessages,
+        outstandingBytes,
+      },
+    );
+  } else {
+    const errors = results.flatMap(result =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+
+    if (errors.length > 0) {
+      logger.error("Failed to flush Pub/Sub log publisher", { errors });
+      Sentry.captureException(errors[0], {
+        tags: { operation: "flushPubSubLogPublisher" },
+        extra: { failures: errors.length },
+      });
+    }
   }
 
   try {
@@ -175,7 +260,12 @@ async function robustInsert(
   }
 
   const target = tableMap[table];
-  data = { ...data, created_at: data.created_at ?? new Date() };
+  // The single point where a row leaves for both stores: clean it once so
+  // PostgreSQL and ClickHouse receive identical, accepted values.
+  data = sanitizeLogData({
+    ...data,
+    created_at: data.created_at ?? new Date(),
+  });
   void publishLog(table, data, logger);
 
   const attempts: { error: any; timeMs: number; backoffMs: number }[] = [];
