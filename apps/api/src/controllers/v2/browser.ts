@@ -37,6 +37,10 @@ import {
 import { autumnService } from "../../services/autumn/autumn.service";
 import { orgIdForTeam } from "../../lib/team-org";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
+import {
+  getSafeMode,
+  SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
+} from "../../lib/safe-mode";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -225,6 +229,13 @@ export async function browserCreateController(
   });
 
   req.body = browserCreateRequestSchema.parse(req.body);
+
+  if (getSafeMode(req.acuc?.flags)) {
+    return res.status(403).json({
+      success: false,
+      error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
+    });
+  }
 
   if (
     req.body.__agentInterop &&
@@ -470,6 +481,13 @@ export async function browserExecuteController(
   // }
 
   req.body = browserExecuteRequestSchema.parse(req.body);
+
+  if (getSafeMode(req.acuc?.flags)) {
+    return res.status(403).json({
+      success: false,
+      error: SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
+    });
+  }
 
   const id = req.params.sessionId;
   const { code, language, timeout, origin } = req.body;

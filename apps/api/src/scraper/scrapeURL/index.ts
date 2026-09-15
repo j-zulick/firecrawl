@@ -41,6 +41,7 @@ import {
   DocumentFetchProxyError,
   RemoveFeatureError,
   SiteError,
+  SiteRestrictionError,
   UnsupportedFileError,
   SSLError,
   PDFInsufficientTimeError,
@@ -113,6 +114,15 @@ import {
   type ThreatDecision,
   type ThreatProtectionPolicy,
 } from "../../lib/threat-protection";
+import {
+  type ResolvedSafeMode,
+  resolveSafeMode,
+  applySafeMode,
+  stripCredentialHeaders,
+  stripUrlUserinfo,
+  SAFE_MODE_LOGIN_ACTIONS,
+} from "../../lib/safe-mode";
+import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 
@@ -623,6 +633,12 @@ export type InternalOptions = {
    */
   threatProtection?: ThreatProtectionPolicy;
 
+  safeMode?: ResolvedSafeMode;
+  /** Set when a request legitimately opted out of Safe Mode at the controller
+   * (allowBypassSafeMode + safeMode:false). Tells the worker backstop NOT to
+   * re-resolve safe mode from teamFlags — otherwise the bypass would be undone. */
+  safeModeBypassed?: boolean;
+
   v1Agent?: ScrapeOptionsV1["agent"];
   v1JSONAgent?: Exclude<ScrapeOptionsV1["jsonOptions"], undefined>["agent"];
   v1JSONSystemPrompt?: string;
@@ -991,6 +1007,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof AddFeatureError ||
               error.error instanceof RemoveFeatureError ||
               error.error instanceof SiteError ||
+              error.error instanceof SiteRestrictionError ||
               error.error instanceof SSLError ||
               error.error instanceof DNSResolutionError ||
               error.error instanceof ActionError ||
@@ -1231,6 +1248,66 @@ export async function scrapeURL(
   return withSpan(
     "scrape.pipeline",
     async span => {
+      // Safe Mode: the universal enforcement choke point. The controller
+      // pre-resolves safe mode for a single scrape, but jobs that carry only
+      // team flags (crawl children, search / extract URLs, allowlisted single
+      // scrapes) resolve here, per-URL, so the allowlist applies to each
+      // discovered URL. Runs before buildMetaObject so forced lockdown reaches
+      // feature-flag/engine selection, and covers every endpoint that stamps
+      // teamFlags onto its job payload.
+      if (
+        !internalOptions.safeMode &&
+        !internalOptions.safeModeBypassed &&
+        internalOptions.teamFlags
+      ) {
+        internalOptions.safeMode = resolveSafeMode(
+          internalOptions.teamFlags,
+          undefined,
+          url,
+        ).safeMode;
+      }
+      if (internalOptions.safeMode) {
+        applySafeMode(internalOptions.safeMode, options);
+        // Auth-path enforcement for every engine (not just fire-engine) and for
+        // inherited options a request-time gate never saw (crawl children etc.).
+        if (internalOptions.safeMode.disableAuthentication) {
+          options.headers = stripCredentialHeaders(options.headers);
+          if (options.actions) {
+            options.actions = options.actions.filter(
+              a => !SAFE_MODE_LOGIN_ACTIONS.includes(a.type),
+            );
+          }
+          options.profile = undefined;
+          // Basic Auth embedded in the URL (user:pass@host) is another way to
+          // authenticate; strip the userinfo so no engine can use it, and from
+          // the preserved source URL so it isn't returned/persisted in metadata.
+          url = stripUrlUserinfo(url);
+          if (internalOptions.unnormalizedSourceURL) {
+            internalOptions.unnormalizedSourceURL = stripUrlUserinfo(
+              internalOptions.unnormalizedSourceURL,
+            );
+          }
+        }
+        if (
+          internalOptions.safeMode.domainControls &&
+          !internalOptions.threatProtection
+        ) {
+          const tp = await resolveThreatProtection({
+            teamId: internalOptions.teamId,
+            orgId: internalOptions.orgId,
+            flags: internalOptions.teamFlags ?? {},
+            force: true,
+          });
+          // Fail closed: domainControls must never silently disable itself.
+          if (tp.error) {
+            throw new Error(
+              `Safe Mode domain controls could not be resolved: ${tp.error}`,
+            );
+          }
+          internalOptions.threatProtection = tp.policy ?? undefined;
+        }
+      }
+
       const meta = await buildMetaObject(
         id,
         url,
@@ -1735,6 +1812,11 @@ export async function scrapeURL(
         } else if (error instanceof SiteError) {
           errorType = "SiteError";
           meta.logger.warn("scrapeURL: Site failed to load in browser", {
+            error,
+          });
+        } else if (error instanceof SiteRestrictionError) {
+          errorType = "SiteRestrictionError";
+          meta.logger.warn("scrapeURL: Site restriction returned (Safe Mode)", {
             error,
           });
         } else if (error instanceof SSLError) {
