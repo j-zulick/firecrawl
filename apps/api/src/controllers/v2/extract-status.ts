@@ -13,6 +13,8 @@ import {
 import { logger as _logger } from "../../lib/logger";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { getExtractJobAccess } from "../../lib/operational-job-access";
+import { readExtractJobState } from "../../lib/job-state-store";
+import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
 
 async function getExtractData(id: string): Promise<any> {
   // Try GCS first if configured
@@ -41,7 +43,7 @@ export async function extractStatusController(
     if (
       !access ||
       access.expiresAtMs <= Date.now() ||
-      access.teamId !== req.auth.team_id
+      access.teamId !== normalizeJobAccessTeamId(req.auth.team_id)
     ) {
       return res.status(404).json({
         success: false,
@@ -78,6 +80,27 @@ export async function extractStatusController(
   // If not in Redis, check the database for completed jobs
   if (!redisExtract) {
     if (config.USE_DB_AUTHENTICATION) {
+      const state = await readExtractJobState(req.params.jobId).catch(error => {
+        _logger.warn(
+          "Bigtable extract state read failed; using legacy lookup",
+          { error, extractId: req.params.jobId },
+        );
+        return null;
+      });
+      if (state) {
+        return res.status(200).json({
+          success: state.status === "completed",
+          data:
+            state.status === "completed"
+              ? await getExtractData(req.params.jobId)
+              : [],
+          status: state.status,
+          error: state.error,
+          expiresAt: new Date(access!.expiresAtMs).toISOString(),
+          creditsUsed: state.creditsBilled,
+        });
+      }
+
       const dbExtract = await supabaseGetExtractByIdDirect(req.params.jobId);
       if (dbExtract) {
         // Get result data

@@ -26,9 +26,18 @@ import { trackFirstSurfaceUse } from "../posthog";
 import { PubSub, type PublishOptions, type Topic } from "@google-cloud/pubsub";
 import { pubsubLogPublishTotal } from "../../lib/pubsub-log-metrics";
 import { sanitizeLogData, sanitizeText } from "./sanitize";
-import { isApiJobKind, writeApiJobAccess } from "../../lib/job-access-store";
+import {
+  isApiJobKind,
+  normalizeJobAccessTeamId,
+  writeApiJobAccess,
+} from "../../lib/job-access-store";
 import { writeFeedbackJob } from "../../lib/feedback-job-store";
 import { setSpanAttributes, withSpan } from "../../lib/otel-tracer";
+import {
+  writeExtractJobState,
+  writeScrapeJobState,
+} from "../../lib/job-state-store";
+import { buildReplayContextFromScrape } from "../../lib/scrape-interact/scrape-replay";
 configDotenv();
 
 const previewTeamId = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
@@ -551,7 +560,7 @@ async function logRequestInternal(request: LoggedRequest) {
     request.team_id === "preview" || request.team_id?.startsWith("preview_")
       ? previewTeamId
       : request.team_id;
-  const jobAccessTeamId = keylessTeamUuid(request.team_id) ?? storedTeamId;
+  const jobAccessTeamId = normalizeJobAccessTeamId(request.team_id);
 
   if (request.jobAccess !== false && isApiJobKind(request.kind)) {
     try {
@@ -699,6 +708,39 @@ async function logScrapeInternal(scrape: LoggedScrape, force: boolean = false) {
     force,
     logger,
   );
+
+  if (!scrape.is_parse && scrape.id === scrape.request_id) {
+    try {
+      const replay = scrape.zeroDataRetention
+        ? undefined
+        : buildReplayContextFromScrape({
+            id: scrape.id,
+            team_id: storedTeamId,
+            url: scrape.url,
+            options: scrape.options,
+          }).context;
+      await writeScrapeJobState(scrape.id, {
+        status: scrape.is_successful ? "completed" : "failed",
+        requestId: scrape.request_id,
+        completedAtMs: Date.now(),
+        creditsBilled: scrape.credits_cost,
+        ...(scrape.zeroDataRetention
+          ? {}
+          : {
+              ...(scrape.error ? { error: scrape.error } : {}),
+              ...(replay ? { replay } : {}),
+              ...(scrape.options.profile
+                ? { profile: scrape.options.profile }
+                : {}),
+              ...(typeof (scrape.options as any).origin === "string"
+                ? { origin: (scrape.options as any).origin }
+                : {}),
+            }),
+      });
+    } catch (error) {
+      logger.error("Failed to write scrape state to Bigtable", { error });
+    }
+  }
 
   if (
     !scrape.is_parse &&
@@ -1103,6 +1145,17 @@ async function logExtractInternal(
     force,
     logger,
   );
+
+  try {
+    await writeExtractJobState(extract.id, {
+      status: extract.is_successful ? "completed" : "failed",
+      completedAtMs: Date.now(),
+      creditsBilled: extract.credits_cost,
+      ...(extract.error ? { error: extract.error } : {}),
+    });
+  } catch (error) {
+    logger.error("Failed to write extract state to Bigtable", { error });
+  }
 
   if (extract.result) {
     if (config.GCS_BUCKET_NAME) {
