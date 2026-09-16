@@ -1092,7 +1092,6 @@ class DiscoveredTool(ExchangeSearchResult):
 
 
 class FindToolsData(BaseModel):
-    agent_hints: Optional[List[str]] = None
     level: Literal["providers", "groups", "tools"]
     items: List[Dict[str, Any]]
     total: int
@@ -1133,7 +1132,6 @@ class AlexandriaScrapeResult(BaseModel):
 
 
 class AlexandriaScrapeData(BaseModel):
-    agent_hints: Optional[List[str]] = None
     model_config = {"extra": "allow", "populate_by_name": True}
 
     scrape_id: Optional[str] = None
