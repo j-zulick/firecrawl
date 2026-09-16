@@ -1,49 +1,58 @@
 import { vi } from "vitest";
 import type { MutationConstructorObj } from "@google-cloud/bigtable";
 
-const { mutate, getBigtableTable, mutableConfig, withSpan, spans } = vi.hoisted(
-  () => {
-    const spans: { name: string; options: any }[] = [];
-    return {
-      mutate: vi.fn<(mutations: MutationConstructorObj[]) => Promise<void>>(
-        async () => {},
-      ),
-      getBigtableTable: vi.fn(),
-      mutableConfig: {
-        BIGTABLE_JOB_ACCESS_TABLE: "job-access",
-        BIGTABLE_FEEDBACK_JOBS_TABLE: "feedback-jobs",
-        SEARCH_FEEDBACK_MAX_AGE_SEC: 120,
-        FEEDBACK_MAX_AGE_SEC: 180,
-      } as {
-        BIGTABLE_JOB_ACCESS_TABLE?: string;
-        BIGTABLE_FEEDBACK_JOBS_TABLE?: string;
-        SEARCH_FEEDBACK_MAX_AGE_SEC: number;
-        FEEDBACK_MAX_AGE_SEC: number;
+const {
+  mutate,
+  getRows,
+  getBigtableTable,
+  mutableConfig,
+  setSpanAttributes,
+  withSpan,
+  spans,
+} = vi.hoisted(() => {
+  const spans: { name: string; options: any }[] = [];
+  return {
+    mutate: vi.fn<(mutations: MutationConstructorObj[]) => Promise<void>>(
+      async () => {},
+    ),
+    getRows: vi.fn(async () => [[]]),
+    setSpanAttributes: vi.fn(),
+    getBigtableTable: vi.fn(),
+    mutableConfig: {
+      BIGTABLE_JOB_ACCESS_TABLE: "job-access",
+      BIGTABLE_FEEDBACK_JOBS_TABLE: "feedback-jobs",
+      SEARCH_FEEDBACK_MAX_AGE_SEC: 120,
+      FEEDBACK_MAX_AGE_SEC: 180,
+    } as {
+      BIGTABLE_JOB_ACCESS_TABLE?: string;
+      BIGTABLE_FEEDBACK_JOBS_TABLE?: string;
+      SEARCH_FEEDBACK_MAX_AGE_SEC: number;
+      FEEDBACK_MAX_AGE_SEC: number;
+    },
+    withSpan: vi.fn(
+      async (name: string, fn: (span: any) => any, options?: any) => {
+        spans.push({ name, options });
+        return fn({});
       },
-      withSpan: vi.fn(
-        async (name: string, fn: (span: any) => any, options?: any) => {
-          spans.push({ name, options });
-          return fn({});
-        },
-      ),
-      spans,
-    };
-  },
-);
+    ),
+    spans,
+  };
+});
 
 vi.mock("../config", () => ({ config: mutableConfig }));
 vi.mock("./bigtable-client", () => ({ getBigtableTable }));
 vi.mock("./otel-tracer", () => ({
   withSpan,
-  setSpanAttributes: vi.fn(),
+  setSpanAttributes,
 }));
 
 import {
   API_JOB_KINDS,
   isApiJobKind,
+  readApiJobAccess,
   writeApiJobAccess,
 } from "./job-access-store";
-import { writeFeedbackJob } from "./feedback-job-store";
+import { readFeedbackJob, writeFeedbackJob } from "./feedback-job-store";
 import { saltedUuidV7RowKey } from "./bigtable-row-key";
 import { scrapeOptions } from "../controllers/v2/types";
 
@@ -60,7 +69,7 @@ function writtenValue(): Record<string, string | number | boolean> {
 describe("operational Bigtable stores", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getBigtableTable.mockResolvedValue({ mutate });
+    getBigtableTable.mockResolvedValue({ mutate, getRows });
     mutableConfig.BIGTABLE_JOB_ACCESS_TABLE = "job-access";
     mutableConfig.BIGTABLE_FEEDBACK_JOBS_TABLE = "feedback-jobs";
     spans.length = 0;
@@ -102,6 +111,73 @@ describe("operational Bigtable stores", () => {
     expect(spans).toContainEqual({
       name: "bigtable.job_access.write",
       options: { zeroDataRetention: undefined },
+    });
+  });
+
+  it("reads a job access row", async () => {
+    getRows.mockResolvedValueOnce([
+      [
+        {
+          data: {
+            j: {
+              v: [
+                {
+                  value: Buffer.from(
+                    JSON.stringify({
+                      version: 1,
+                      teamId: "team-id",
+                      kind: "crawl",
+                      expiresAtMs: Date.now() + 60_000,
+                    }),
+                  ),
+                },
+              ],
+            },
+          },
+        },
+      ],
+    ] as any);
+
+    await expect(readApiJobAccess(JOB_ID)).resolves.toMatchObject({
+      teamId: "team-id",
+      kind: "crawl",
+    });
+    expect(getRows).toHaveBeenCalledWith({
+      keys: [saltedUuidV7RowKey(JOB_ID)],
+      filter: [{ column: { name: "v", cellLimit: 1 } }],
+    });
+  });
+
+  it("reports a logically expired job access row", async () => {
+    const expiresAtMs = Date.now() - 1;
+    getRows.mockResolvedValueOnce([
+      [
+        {
+          data: {
+            j: {
+              v: [
+                {
+                  value: Buffer.from(
+                    JSON.stringify({
+                      version: 1,
+                      teamId: "team-id",
+                      kind: "crawl",
+                      expiresAtMs,
+                    }),
+                  ),
+                },
+              ],
+            },
+          },
+        },
+      ],
+    ] as any);
+
+    await expect(readApiJobAccess(JOB_ID)).resolves.toMatchObject({
+      expiresAtMs,
+    });
+    expect(setSpanAttributes).toHaveBeenCalledWith(expect.anything(), {
+      "bigtable.read.outcome": "expired",
     });
   });
 
@@ -211,6 +287,83 @@ describe("operational Bigtable stores", () => {
     expect(spans).toContainEqual({
       name: "bigtable.feedback_job.write",
       options: { zeroDataRetention: true },
+    });
+  });
+
+  it("reads precomputed feedback decisions", async () => {
+    const feedbackDeadlineMs = Date.now() + 60_000;
+    getRows.mockResolvedValueOnce([
+      [
+        {
+          data: {
+            f: {
+              v: [
+                {
+                  value: Buffer.from(
+                    JSON.stringify({
+                      version: 1,
+                      requestId: REQUEST_ID,
+                      teamId: "team-id",
+                      refundClass: "scrape_pdf",
+                      feedbackDeadlineMs,
+                      succeeded: true,
+                      creditsBilled: 12,
+                      zeroDataRetention: false,
+                    }),
+                  ),
+                },
+              ],
+            },
+          },
+        },
+      ],
+    ] as any);
+
+    await expect(readFeedbackJob(JOB_ID)).resolves.toEqual({
+      requestId: REQUEST_ID,
+      teamId: "team-id",
+      refundClass: "scrape_pdf",
+      feedbackDeadlineMs,
+      succeeded: true,
+      creditsBilled: 12,
+      zeroDataRetention: false,
+    });
+  });
+
+  it("reports a logically expired feedback decision", async () => {
+    const feedbackDeadlineMs = Date.now() - 1;
+    getRows.mockResolvedValueOnce([
+      [
+        {
+          data: {
+            f: {
+              v: [
+                {
+                  value: Buffer.from(
+                    JSON.stringify({
+                      version: 1,
+                      requestId: REQUEST_ID,
+                      teamId: "team-id",
+                      refundClass: "search",
+                      feedbackDeadlineMs,
+                      succeeded: true,
+                      creditsBilled: 1,
+                      zeroDataRetention: false,
+                    }),
+                  ),
+                },
+              ],
+            },
+          },
+        },
+      ],
+    ] as any);
+
+    await expect(readFeedbackJob(JOB_ID)).resolves.toMatchObject({
+      feedbackDeadlineMs,
+    });
+    expect(setSpanAttributes).toHaveBeenCalledWith(expect.anything(), {
+      "bigtable.read.outcome": "expired",
     });
   });
 });
