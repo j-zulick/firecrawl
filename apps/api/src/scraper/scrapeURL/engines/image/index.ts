@@ -152,6 +152,10 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
         undefined,
         1,
         "ocr",
+        false,
+        false,
+        false,
+        "image",
       );
     } catch (error) {
       // FirePDF answers 400 when it cannot open the bytes (truncated or
