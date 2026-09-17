@@ -1,4 +1,3 @@
-import { setAgentHintFeedback } from "../../middlewares/agent-hints";
 import { Response } from "express";
 import {
   mapRequestSchema,
@@ -180,8 +179,6 @@ export async function mapController(
         );
       });
 
-      setAgentHintFeedback(res, mapId);
-
       return res.status(200).json({
         success: true,
         id: mapId,
@@ -361,8 +358,6 @@ export async function mapController(
     links: result.mapResults,
     ...(warning && { warning }),
   };
-
-  setAgentHintFeedback(res, result.job_id);
 
   return res.status(200).json(response);
 }
