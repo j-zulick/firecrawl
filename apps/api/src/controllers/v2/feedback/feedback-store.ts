@@ -13,6 +13,7 @@ import {
   FeedbackRecordOptions,
   RefundPolicySnapshot,
 } from "./internal-types";
+import { recordJobStorePostgresFallback } from "../../../lib/job-store-fallback";
 
 type DbError = { code?: string } & Record<string, unknown>;
 
@@ -45,6 +46,7 @@ export async function lookupFeedbackJob(
   jobId: string,
   dbTeamId: string,
 ): Promise<FeedbackJobRow | null> {
+  let bigtableFailed = false;
   try {
     const job = await readFeedbackJob(jobId);
     if (job) {
@@ -72,6 +74,7 @@ export async function lookupFeedbackJob(
       };
     }
   } catch (error) {
+    bigtableFailed = true;
     logger.warn(
       "Bigtable feedback job read failed; falling back to PostgreSQL",
       {
@@ -98,6 +101,9 @@ export async function lookupFeedbackJob(
     .limit(1);
 
   if (!row) return null;
+  if (!bigtableFailed) {
+    recordJobStorePostgresFallback("feedback_job", jobId, { endpoint });
+  }
 
   return {
     endpoint,
