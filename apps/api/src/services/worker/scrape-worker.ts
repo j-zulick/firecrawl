@@ -98,7 +98,7 @@ import {
   setSpanAttributes,
 } from "../../lib/otel-tracer";
 import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
-import { logScrape } from "../logging/log_job";
+import { logScrape, type ScrapeStateOutcome } from "../logging/log_job";
 import { FeatureFlag } from "../../scraper/scrapeURL/engines";
 import {
   recordMonitorScrapeFailure,
@@ -112,6 +112,12 @@ import {
 import { emitScrapeActivityEvent } from "../../lib/siem-logging";
 
 configDotenv();
+
+/**
+ * How long a sync scrape waits for its Bigtable terminal state to be written
+ * before answering anyway. A write normally takes a few milliseconds.
+ */
+const SCRAPE_STATE_BARRIER_MS = 2_000;
 
 const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
 const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
@@ -931,6 +937,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
+      let stateWritten: (outcome: ScrapeStateOutcome) => void = () => {};
+      const scrapeStateWritten = new Promise<ScrapeStateOutcome>(resolve => {
+        stateWritten = resolve;
+      });
       const logScrapePromise = logScrape(
         {
           id: job.id,
@@ -952,6 +962,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           monitor_check_id: job.data.monitoring?.checkId,
         },
         false,
+        { onStateWritten: stateWritten },
+      );
+      // Release the barrier if logging dies before the state write settles.
+      logScrapePromise.then(
+        () => stateWritten("failed"),
+        () => stateWritten("failed"),
       );
 
       trackScrape({
@@ -972,10 +988,34 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       );
 
       if (job.data.skipNuq) {
-        // doesn't use GCS for result retrieval, safe to not await
+        // doesn't use GCS for result retrieval, safe to not await the rest
         logScrapePromise.catch(err =>
           logger.warn("Background scrape log failed", { error: err }),
         );
+        // ...but the terminal state must be readable before the sync response
+        // goes out: an interact call right after a fast scrape reads it for
+        // its replay context, and there is no NuQ job to fall back on. The
+        // wait is bounded so a Bigtable stall cannot hold every sync scrape.
+        let barrier: NodeJS.Timeout | undefined;
+        const outcome = await Promise.race([
+          scrapeStateWritten,
+          new Promise<"timed_out">(resolve => {
+            barrier = setTimeout(
+              () => resolve("timed_out"),
+              SCRAPE_STATE_BARRIER_MS,
+            );
+          }),
+        ]);
+        if (barrier !== undefined) clearTimeout(barrier);
+        if (outcome === "failed" || outcome === "timed_out") {
+          logger.warn(
+            "Sync scrape answered without a readable terminal state",
+            {
+              outcome,
+              barrierMs: SCRAPE_STATE_BARRIER_MS,
+            },
+          );
+        }
       } else {
         // v0 - must await because waitForJob reads from GCS
         await logScrapePromise;
