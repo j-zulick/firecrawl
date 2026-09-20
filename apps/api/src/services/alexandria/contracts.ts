@@ -68,7 +68,19 @@ export const toolSchema = z
       .passthrough(),
   })
   .passthrough();
-export type DiscoveredTool = z.infer<typeof toolSchema> & {
+export const toolSummarySchema = toolSchema
+  .omit({ options: true, response: true })
+  .strip()
+  .extend({
+    next: callSchema.passthrough().optional().catch(undefined),
+    attribution: z.unknown().optional(),
+    recordsPerUnit: z.number().positive().optional(),
+    zeroDataRetentionCreditsCost: credits.optional(),
+  });
+export type DiscoveredTool = (
+  | z.infer<typeof toolSchema>
+  | z.infer<typeof toolSummarySchema>
+) & {
   id: string;
   matchedBy: ("semantic" | "domain")[];
   matchedUrls: string[];
