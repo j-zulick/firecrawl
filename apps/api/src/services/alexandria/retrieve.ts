@@ -82,6 +82,7 @@ export async function retrieveProviders(input: {
    *  can be named, which is a skipped hold, the same as an unresolvable org. */
   orgId: string | null;
   apiKeyId: number | null;
+  apiKeyIdText?: string | null;
   flags: TeamFlags | null | undefined;
   calls: ProviderCall[];
   requestId: string;
@@ -119,10 +120,26 @@ export async function retrieveProviders(input: {
       ),
     );
 
+  const termsOnly =
+    input.calls.length > 0 &&
+    input.calls.every(
+      call =>
+        call.provider === "firecrawl" &&
+        (call.capability === "terms/show" ||
+          call.capability === "terms/accept"),
+    );
+  const termsIdentity =
+    termsOnly && input.orgId && input.apiKeyIdText
+      ? { organizationId: input.orgId, apiKeyId: input.apiKeyIdText }
+      : undefined;
   const billable = !input.bypassBilling;
   const id = hash([input.teamId, input.requestId]);
   const key = `alexandria:retrieve:${id}`;
-  const fingerprint = hash([input.calls, billable]);
+  const fingerprint = hash(
+    termsOnly
+      ? [input.calls, billable, termsIdentity ?? null]
+      : [input.calls, billable],
+  );
   const record: Retrieval = {
     fingerprint,
     phase: "executing",
@@ -333,6 +350,7 @@ export async function retrieveProviders(input: {
       ...(loadsSavedResult && input.resultAuthorization
         ? { resultAuthorization: input.resultAuthorization }
         : {}),
+      ...(termsIdentity ? { termsIdentity } : {}),
       maximumCredits,
     }).catch(error => {
       throw new Error(`Exchange did not answer: ${error?.message ?? error}`);
