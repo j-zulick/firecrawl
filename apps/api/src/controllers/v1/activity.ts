@@ -32,6 +32,7 @@ function toClickHouseDateTime(value: string): string {
 }
 
 const VALID_ENDPOINTS = [
+  "alexandria",
   "scrape",
   "crawl",
   "batch_scrape",
@@ -126,7 +127,11 @@ export async function activityController(
     limit: limit + 1,
   };
 
-  if (endpoint) {
+  if (endpoint === "alexandria") {
+    conditions.push(
+      "(kind = 'alexandria' OR (kind = 'scrape' AND startsWith(target_hint, 'alexandria:')))",
+    );
+  } else if (endpoint) {
     conditions.push("kind = {endpoint: String}");
     queryParams.endpoint = endpoint;
   }
