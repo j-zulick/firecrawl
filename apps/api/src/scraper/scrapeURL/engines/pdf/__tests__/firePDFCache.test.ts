@@ -9,26 +9,44 @@ import {
   provenanceFromResponse,
   tryGetCached,
 } from "../fire-pdf/cache";
-import { consumeRefresh, refreshDecisionFor } from "../fire-pdf/refresh-budget";
+import {
+  consumeRefresh,
+  recordRefreshDecision,
+  refreshDecisionFor,
+} from "../fire-pdf/refresh-budget";
 import { firePdfProvenanceSchema } from "../fire-pdf/schema";
 import {
   firePdfCacheEventsTotal,
   firePdfCacheRefusedWritesTotal,
 } from "../fire-pdf/metrics";
+import crypto from "crypto";
+import { config } from "../../../../../config";
+import { robustFetch } from "../../../lib/fetch";
 
 vi.mock("../fire-pdf/refresh-budget", () => ({
   consumeRefresh: vi.fn(async () => "allowed"),
   refreshDecisionFor: vi.fn(() => undefined),
+  recordRefreshDecision: vi.fn(),
 }));
 
-vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
-  pdfCacheConfigured: vi.fn(() => true),
-  getPdfResultFromCache: vi.fn(),
-  savePdfResultToCache: vi.fn(),
-  resolvePdfCacheKey: vi.fn((input: string | { key: string }) =>
-    typeof input === "string" ? `key-of-${input}` : input.key,
-  ),
+vi.mock("../../../lib/fetch", () => ({ robustFetch: vi.fn() }));
+vi.mock("../markdownToHtml", () => ({
+  safeMarkdownToHtml: vi.fn(async (markdown: string) => `<p>${markdown}</p>`),
 }));
+
+vi.mock("../../../../../lib/gcs-pdf-cache", async () => {
+  const { createHash } = await import("crypto");
+  return {
+    pdfCacheConfigured: vi.fn(() => true),
+    getPdfResultFromCache: vi.fn(),
+    savePdfResultToCache: vi.fn(),
+    resolvePdfCacheKey: vi.fn((input: string | { key: string }) =>
+      typeof input === "string" ? `key-of-${input}` : input.key,
+    ),
+    createPdfCacheKey: (input: string) =>
+      createHash("sha256").update(input).digest("hex"),
+  };
+});
 
 const getCached = vi.mocked(getPdfResultFromCache);
 const saveCached = vi.mocked(savePdfResultToCache);
@@ -1346,5 +1364,327 @@ describe("FirePDF cache counters", () => {
       event: "bypass_refresh_denied",
       variant: "base",
     });
+  });
+});
+
+describe("FirePDF cache through the lookup service", () => {
+  const fetchMock = vi.mocked(robustFetch);
+  // The service's answer is parsed with the schema the client hands to the
+  // fetch, so these fixtures pin the wire contract.
+  const answerWith = (fixture: unknown) =>
+    fetchMock.mockImplementationOnce(async ({ schema }: any) =>
+      schema.parse(fixture),
+    );
+  const base64 = Buffer.from("%PDF-1.7 service test").toString("base64");
+  const rawKey = `raw-${crypto
+    .createHash("sha256")
+    .update(Buffer.from(base64, "base64"))
+    .digest("hex")}`;
+  const inlineKey = crypto.createHash("sha256").update(base64).digest("hex");
+
+  function serviceMeta(parsers?: unknown[]) {
+    return {
+      id: "svc-test",
+      logger: { info: vi.fn(), warn: vi.fn() },
+      internalOptions: { zeroDataRetention: false, teamId: "team-1" },
+      mock: null,
+      abort: {
+        asSignal: () => new AbortController().signal,
+        throwIfAborted: vi.fn(),
+      },
+      ...(parsers ? { options: { parsers } } : {}),
+    } as any;
+  }
+  // Base64 of a PNG signature followed by padding: sniffs as image/png.
+  const PNG_BASE64 = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0,
+  ]).toString("base64");
+
+  beforeEach(() => {
+    config.FIRE_PDF_CACHE_BASE_URL = "http://cache";
+    fetchMock.mockReset();
+    getCached.mockReset();
+    saveCached.mockReset();
+    vi.mocked(consumeRefresh).mockClear();
+    vi.mocked(recordRefreshDecision).mockClear();
+  });
+
+  afterEach(() => {
+    config.FIRE_PDF_CACHE_BASE_URL = undefined;
+  });
+
+  it("asks the service once with both keys and the options, and serves a hit without reading the bucket", async () => {
+    answerWith({
+      outcome: "hit",
+      key: rawKey,
+      variant: "page-markdown-v1",
+      result: {
+        markdown: "# doc",
+        pages_processed: 2,
+        pages: [{ page: 1, markdown: "p1" }],
+      },
+    });
+    const result = await tryGetCached(
+      serviceMeta(),
+      base64,
+      "auto",
+      undefined,
+      5,
+      true,
+      false,
+    );
+    expect(result).toEqual({
+      markdown: "# doc",
+      html: "<p># doc</p>",
+      pagesProcessed: 2,
+      pageMarkdown: [{ page: 1, markdown: "p1" }],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const call = fetchMock.mock.calls[0][0];
+    expect(call.url).toBe("http://cache/cache/lookup");
+    expect(call.method).toBe("POST");
+    expect(call.body).toEqual({
+      keys: [rawKey, inlineKey],
+      options: { mode: "auto", include_page_markdown: true },
+      team_id: "team-1",
+      kind: "scrape",
+      refresh: false,
+      source_kind: "pdf",
+      scrape_id: "svc-test",
+    });
+    expect(getCached).not.toHaveBeenCalled();
+  });
+
+  it("uses the caller's key alone for a by-reference document", async () => {
+    answerWith({ outcome: "miss", reason: "not_found" });
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        { key: "raw-abc" },
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+      ),
+    ).toBeNull();
+    expect(fetchMock.mock.calls[0][0].body.keys).toEqual(["raw-abc"]);
+  });
+
+  it("serves a stale answer, and treats a failed lookup as a miss", async () => {
+    answerWith({
+      outcome: "stale",
+      key: inlineKey,
+      variant: "base",
+      campaign: "c1",
+      result: { markdown: "# old" },
+    });
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        base64,
+        undefined,
+        undefined,
+        3,
+        false,
+        false,
+      ),
+    ).toEqual({ markdown: "# old", html: "<p># old</p>", pagesProcessed: 3 });
+    fetchMock.mockRejectedValueOnce(new Error("timed out"));
+    const meta = serviceMeta();
+    expect(
+      await tryGetCached(meta, base64, undefined, undefined, 3, false, false),
+    ).toBeNull();
+    expect(meta.logger.warn).toHaveBeenCalledWith(
+      "FirePDF cache lookup failed, proceeding",
+      expect.objectContaining({ scrapeId: "svc-test" }),
+    );
+  });
+
+  it("passes refresh through for the service to budget", async () => {
+    answerWith({ outcome: "miss", reason: "refresh" });
+    expect(
+      await tryGetCached(
+        serviceMeta([{ type: "pdf", refresh: true }]),
+        base64,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+      ),
+    ).toBeNull();
+    expect(fetchMock.mock.calls[0][0].body.refresh).toBe(true);
+    expect(consumeRefresh).not.toHaveBeenCalled();
+    // The service's decision is remembered for a fallback engine.
+    expect(recordRefreshDecision).toHaveBeenCalledWith("svc-test", "allowed");
+    answerWith({
+      outcome: "hit",
+      key: inlineKey,
+      variant: "base",
+      result: { markdown: "# doc" },
+    });
+    await tryGetCached(
+      serviceMeta([{ type: "pdf", refresh: true }]),
+      base64,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      false,
+    );
+    expect(recordRefreshDecision).toHaveBeenLastCalledWith(
+      "svc-test",
+      "limited",
+    );
+  });
+
+  it("sends no refresh when the option is switched off locally", async () => {
+    const perMinute = config.FIRE_PDF_CACHE_REFRESH_PER_MINUTE;
+    config.FIRE_PDF_CACHE_REFRESH_PER_MINUTE = 0;
+    try {
+      answerWith({ outcome: "miss", reason: "not_found" });
+      await tryGetCached(
+        serviceMeta([{ type: "pdf", refresh: true }]),
+        base64,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+      );
+      expect(fetchMock.mock.calls[0][0].body.refresh).toBe(false);
+      expect(recordRefreshDecision).not.toHaveBeenCalled();
+    } finally {
+      config.FIRE_PDF_CACHE_REFRESH_PER_MINUTE = perMinute;
+    }
+  });
+
+  it("serves a marker request only an entry that carries markers", async () => {
+    answerWith({
+      outcome: "hit",
+      key: inlineKey,
+      variant: "markers-v1",
+      result: { markdown: "<!-- page 1 -->\n# doc" },
+    });
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        base64,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+        true,
+      ),
+    ).toBeNull();
+    answerWith({
+      outcome: "hit",
+      key: inlineKey,
+      variant: "markers-v1",
+      result: { markdown: "<!-- page 1 -->\n# doc", page_markers: true },
+    });
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        base64,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+        true,
+      ),
+    ).toMatchObject({ markdown: "<!-- page 1 -->\n# doc" });
+    expect(fetchMock.mock.calls[1][0].body.options).toEqual({
+      page_markers: true,
+    });
+  });
+
+  it("lets the scrape's own abort through instead of counting it as a lookup failure", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("aborted mid-lookup"));
+    const meta = serviceMeta();
+    // The abort lands once the request has gone out.
+    meta.abort.throwIfAborted.mockImplementation(() => {
+      if (fetchMock.mock.calls.length > 0) throw new Error("scrape aborted");
+    });
+    await expect(
+      tryGetCached(meta, base64, undefined, undefined, undefined, false, false),
+    ).rejects.toThrow("scrape aborted");
+    expect(meta.logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("never serves an empty result for a raster image, and names the image to the service", async () => {
+    answerWith({
+      outcome: "hit",
+      key: "k",
+      variant: "base",
+      result: { markdown: "   " },
+    });
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        PNG_BASE64,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+      ),
+    ).toBeNull();
+    expect(fetchMock.mock.calls[0][0].body.source_kind).toBe("image");
+  });
+
+  it("never lets a poorer entry satisfy a richer request", async () => {
+    answerWith({
+      outcome: "hit",
+      key: inlineKey,
+      variant: "base",
+      result: { markdown: "# doc" },
+    });
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        base64,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        false,
+      ),
+    ).toBeNull();
+    answerWith({
+      outcome: "hit",
+      key: inlineKey,
+      variant: "page-markdown-v1",
+      result: { markdown: "# doc", pages: [{ page: 1, markdown: "p1" }] },
+    });
+    expect(
+      await tryGetCached(
+        serviceMeta(),
+        base64,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    ).toBeNull();
+  });
+
+  it("does not write results itself while the service is in use", async () => {
+    await maybeSaveResult({
+      meta: serviceMeta(),
+      base64Content: base64,
+      mode: undefined,
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "# doc", html: "<p># doc</p>" },
+      provenance: undefined,
+      failedPages: [],
+    });
+    expect(saveCached).not.toHaveBeenCalled();
   });
 });
