@@ -19,19 +19,45 @@ type RecentAgent = {
     | "credit_limit_reached";
 };
 
+// ClickHouse returns the `agents.options` column as a JSON string, not an
+// object. Parse it so the option fields can be read. A value that does not
+// parse to an object reads as no options.
+function parseAgentOptions(options: unknown): Record<string, any> {
+  let parsed = options;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return {};
+    }
+  }
+  return parsed !== null && typeof parsed === "object" ? parsed : {};
+}
+
+// JSONEachRow can quote 64-bit integers, so a turn can arrive as "2". A turn
+// that a number cannot hold exactly is dropped, not rounded.
+function threadTurnOf(value: unknown): number | undefined {
+  const turn =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() !== ""
+        ? Number(value)
+        : NaN;
+  return Number.isSafeInteger(turn) ? turn : undefined;
+}
+
 // Each turn of a thread is its own run, so clients need the thread to list
 // a conversation once.
 function threadOptions(options: any): {
   threadId?: string;
   threadTurn?: number;
 } {
+  const threadTurn = threadTurnOf(options?.threadTurn);
   return {
     ...(typeof options?.threadId === "string" && {
       threadId: options.threadId,
     }),
-    ...(typeof options?.threadTurn === "number" && {
-      threadTurn: options.threadTurn,
-    }),
+    ...(threadTurn !== undefined && { threadTurn }),
   };
 }
 
@@ -196,7 +222,7 @@ export async function agentListController(
           error: string | null;
         }) => ({
           id: x.id,
-          options: x.options,
+          options: parseAgentOptions(x.options),
           isSuccessful: x.is_successful,
           error: x.error,
         }),
