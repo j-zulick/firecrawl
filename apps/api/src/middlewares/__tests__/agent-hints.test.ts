@@ -84,8 +84,8 @@ describe("agent hint response middleware", () => {
         .set("X-Firecrawl-Agent-Hints", "true")
         .send({});
       expect(response.body.agent_hints).toHaveLength(1);
-      expect(response.body.agent_hints[0]).toContain("POST /v2/search");
-      expect(response.body.agent_hints[0]).not.toContain("POST /v2/scrape");
+      expect(response.body.agent_hints[0]).toContain("firecrawl_search");
+      expect(response.body.agent_hints[0]).not.toContain("firecrawl_scrape");
     },
   );
 
@@ -112,7 +112,7 @@ describe("agent hint response middleware", () => {
       name: "empty web search",
       endpoint: "search",
       body: { success: true, data: { web: [] } },
-      expected: ["POST /v2/search"],
+      expected: ["firecrawl_search"],
     },
     {
       name: "search clustered on one origin",
@@ -201,7 +201,7 @@ describe("agent hint response middleware", () => {
     expect(response.body.agent_hints[0]).toBe(
       "The connected Firecrawl account is low on credits. Let the user know they should add more credits.",
     );
-    expect(response.body.agent_hints[1]).toContain("POST /v2/scrape");
+    expect(response.body.agent_hints[1]).toContain("firecrawl_scrape");
   });
 
   it("does not add a credit notice at the threshold", async () => {
