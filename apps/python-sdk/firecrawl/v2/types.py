@@ -1554,9 +1554,86 @@ class AgentExchangeOptions(BaseModel):
     toolkits: Optional[List[str]] = None
     max_calls: Optional[int] = Field(default=None, alias="maxCalls")
     require_approval: Optional[bool] = Field(default=None, alias="requireApproval")
-    # Answers a pending_approval from the previous turn of the thread.
+    # Answers a pending_approval from the previous turn of the thread. A
+    # "terms" approval is accepted or declined as a whole: callIds and always
+    # are ignored on it.
     approve: Optional[Dict[str, Any]] = None
     decline: Optional[Dict[str, Any]] = None
+    # What to do when a provider the agent would use needs data terms the team
+    # has not accepted. Gated providers are never called in any mode:
+    # - "skip" (server default): answer with accepted providers only and list
+    #   the gated ones in exchange.skipped_providers.
+    # - "ask": the same, plus exchange.requires_action and a "terms"
+    #   pending_approval. Get your user's explicit consent, call terms/accept,
+    #   then continue the thread with approve={"approvalId": ...}.
+    # There is no auto-accept mode. Omitted on a follow-up turn inherits the
+    # previous turn's value.
+    on_terms_required: Optional[Literal["skip", "ask"]] = Field(
+        default=None, alias="onTermsRequired"
+    )
+
+
+class AgentSkippedProvider(BaseModel):
+    """A gated provider the run would have used but did not."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    provider: Optional[str] = None
+    name: Optional[str] = None
+    capability: Optional[str] = None
+    # What it would have added, in the agent's words.
+    adds: Optional[str] = None
+    # "terms_required".
+    reason: Optional[str] = None
+    # The gating terms version.
+    version: Optional[str] = None
+    # Where a person accepts the terms in the dashboard.
+    terms_url: Optional[str] = Field(default=None, alias="termsUrl")
+
+
+class AgentExchangeCall(BaseModel):
+    """An Exchange call spelled out for the caller to make (terms/show, terms/accept)."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    provider: Optional[str] = None
+    capability: Optional[str] = None
+    options: Optional[Dict[str, Any]] = None
+
+
+class AgentTermsActionProvider(BaseModel):
+    """One provider whose terms the caller can view and accept."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    provider: Optional[str] = None
+    name: Optional[str] = None
+    capability: Optional[str] = None
+    adds: Optional[str] = None
+    version: Optional[str] = None
+    # None when the catalog published no digest; terms/show returns it.
+    digest: Optional[str] = None
+    url: Optional[str] = None
+    show: Optional[AgentExchangeCall] = None
+    # Only call this after the user has explicitly agreed to the terms. Its
+    # options.digest is None when the catalog published none; terms/show
+    # returns it.
+    accept: Optional[AgentExchangeCall] = None
+
+
+class AgentTermsRequiredAction(BaseModel):
+    """The exact calls to view and accept gated providers' terms. Never run for you."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    # "accept_terms".
+    type: Optional[str] = None
+    # Always set by the server: the "terms" pending_approval that answers this.
+    # After the user agrees and terms/accept succeeds, continue the thread with
+    # approve={"approvalId": ...}, or refuse with decline. Optional here only so a
+    # malformed payload cannot break status polling.
+    approval_id: Optional[str] = Field(default=None, alias="approvalId")
+    providers: Optional[List[AgentTermsActionProvider]] = None
 
 
 class AgentExchangeSummary(BaseModel):
@@ -1568,8 +1645,17 @@ class AgentExchangeSummary(BaseModel):
     # What the run resolved to after thread inheritance, not what it requested.
     toolkits: Optional[List[str]] = None
     require_approval: Optional[bool] = Field(default=None, alias="requireApproval")
+    on_terms_required: Optional[str] = Field(default=None, alias="onTermsRequired")
     paid_calls: Optional[int] = Field(default=None, alias="paidCalls")
     credits_used: Optional[int] = Field(default=None, alias="creditsUsed")
+    # Gated providers that would have helped and were not used. Any mode.
+    skipped_providers: Optional[List[AgentSkippedProvider]] = Field(
+        default=None, alias="skippedProviders"
+    )
+    # "ask" mode, when a terms offer ended the turn.
+    requires_action: Optional[AgentTermsRequiredAction] = Field(
+        default=None, alias="requiresAction"
+    )
 
 
 class AgentSuggestion(BaseModel):
@@ -1605,16 +1691,48 @@ class PendingApprovalResolution(BaseModel):
     by_run_id: Optional[str] = Field(default=None, alias="byRunId")
 
 
+class PendingApprovalTerms(BaseModel):
+    """A provider in a "terms" pending approval."""
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    provider: Optional[str] = None
+    name: Optional[str] = None
+    logo: Optional[str] = None
+    capability: Optional[str] = None
+    adds: Optional[str] = None
+    version: Optional[str] = None
+    # None when the catalog published no digest; terms/show returns it.
+    digest: Optional[str] = None
+    url: Optional[str] = None
+
+
 class PendingApproval(BaseModel):
-    """A turn that ended waiting for the caller to allow or refuse paid calls."""
+    """A turn that ended waiting for the caller.
+
+    Two shapes, told apart by ``kind``:
+
+    - calls (``kind`` "calls", or None on items written before terms offers):
+      allow or refuse the paid ``calls``.
+    - terms (``kind`` "terms"): accept the listed providers' data ``terms``;
+      ``calls`` is always empty. Use ``is_terms`` to branch.
+
+    One model rather than a pydantic discriminated union, so an item with an
+    unknown ``kind`` still parses and status polling keeps working.
+    """
 
     model_config = {"populate_by_name": True, "extra": "allow"}
 
     id: Optional[str] = None
+    kind: Optional[str] = None
     reason: Optional[str] = None
     calls: Optional[List[PendingApprovalCall]] = None
+    terms: Optional[List[PendingApprovalTerms]] = None
     resolution: Optional[PendingApprovalResolution] = None
 
+    @property
+    def is_terms(self) -> bool:
+        return self.kind == "terms"
 
 class AgentResponse(BaseModel):
     """Response for agent operations (start/status/final)."""
