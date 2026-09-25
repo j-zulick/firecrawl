@@ -1961,11 +1961,13 @@ export interface BrowserExecuteResponse {
   stderr?: string;
   exitCode?: number;
   killed?: boolean;
+  truncated?: boolean;
   error?: string;
 }
 
 export interface BrowserDeleteResponse {
   success: boolean;
+  status?: string;
   sessionDurationMs?: number;
   creditsBilled?: number;
   error?: string;

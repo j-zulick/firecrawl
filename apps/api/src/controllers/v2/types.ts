@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
 import { z } from "zod";
+import { browserProfileNameSchema } from "../../lib/browser-profiles";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
@@ -740,7 +741,7 @@ const redactPIISchema = z
   });
 // inferred shape: RedactPIIOptions | undefined after the transform
 
-const baseScrapeOptions = z.strictObject({
+const scrapeOptionFields = z.strictObject({
   formats: z
     .preprocess(
       val => {
@@ -838,7 +839,7 @@ const baseScrapeOptions = z.strictObject({
 
   profile: z
     .object({
-      name: z.string().min(1).max(128),
+      name: browserProfileNameSchema,
       saveChanges: z.boolean().default(true),
     })
     .optional(),
@@ -850,6 +851,14 @@ const baseScrapeOptions = z.strictObject({
   __experimental_engpicker: z.boolean().prefault(false).optional(),
   __forceFirePDF: z.boolean().prefault(false).optional(),
 });
+
+const baseScrapeOptions = scrapeOptionFields.refine(
+  options => !(options.profile && options.lockdown),
+  {
+    message: "Profiles require live browsing and cannot be used with lockdown.",
+    path: ["profile"],
+  },
+);
 
 type ScrapeOptionsBase = z.infer<typeof baseScrapeOptions>;
 
@@ -1125,7 +1134,7 @@ export const agentRequestSchema = z
 export type AgentRequest = z.infer<typeof agentRequestSchema>;
 // export type AgentRequestInput = z.input<typeof agentRequestSchema>;
 
-const scrapeRequestSchemaBase = baseScrapeOptions.extend({
+const scrapeRequestSchemaBase = baseScrapeOptions.safeExtend({
   url: URL,
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
@@ -1185,7 +1194,7 @@ const uploadedParseFileSchema = z.custom<UploadedParseFile>(
   },
 );
 
-const parseRequestSchemaBase = baseScrapeOptions.extend({
+const parseRequestSchemaBase = baseScrapeOptions.safeExtend({
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   zeroDataRetention: z.boolean().optional(),
@@ -1217,7 +1226,7 @@ export const parseRequestSchema = strictWithMessage(parseRequestSchemaBase)
 export type ParseRequest = z.infer<typeof parseRequestSchema>;
 export type ParseRequestInput = z.input<typeof parseRequestSchemaBase>;
 
-const batchScrapeRequestSchemaBase = baseScrapeOptions.extend({
+const batchScrapeRequestSchemaBase = baseScrapeOptions.safeExtend({
   urls: URL.array().min(1),
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
@@ -1241,23 +1250,24 @@ export const batchScrapeRequestSchema = strictWithMessage(
   .refine(waitForRefine, waitForRefineOpts)
   .transform(extractTransformRequired);
 
-const batchScrapeRequestSchemaNoURLValidationBase = baseScrapeOptions.extend({
-  urls: z.string().array().min(1),
-  origin: z.string().optional().prefault("api"),
-  integration: integrationSchema.optional().transform(val => val || null),
-  webhook: webhookSchema.optional(),
-  appendToId: z.uuid().optional(),
-  ignoreInvalidURLs: z.boolean().prefault(true),
-  maxConcurrency: z.int().positive().optional(),
-  zeroDataRetention: z.boolean().optional(),
-  __agentInterop: z
-    .object({
-      auth: z.string(),
-      requestId: z.string(),
-      shouldBill: z.boolean(),
-    })
-    .optional(),
-});
+const batchScrapeRequestSchemaNoURLValidationBase =
+  baseScrapeOptions.safeExtend({
+    urls: z.string().array().min(1),
+    origin: z.string().optional().prefault("api"),
+    integration: integrationSchema.optional().transform(val => val || null),
+    webhook: webhookSchema.optional(),
+    appendToId: z.uuid().optional(),
+    ignoreInvalidURLs: z.boolean().prefault(true),
+    maxConcurrency: z.int().positive().optional(),
+    zeroDataRetention: z.boolean().optional(),
+    __agentInterop: z
+      .object({
+        auth: z.string(),
+        requestId: z.string(),
+        shouldBill: z.boolean(),
+      })
+      .optional(),
+  });
 
 export const batchScrapeRequestSchemaNoURLValidation = strictWithMessage(
   batchScrapeRequestSchemaNoURLValidationBase,
@@ -2420,7 +2430,7 @@ export const searchRequestSchema = z
     __searchPreviewToken: z.string().optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     scrapeOptions: baseScrapeOptions
-      .extend({
+      .safeExtend({
         formats: z
           .preprocess(
             val => {

@@ -1971,6 +1971,7 @@ class BrowserExecuteResponse(BaseModel):
     stderr: Optional[str] = None
     exit_code: Optional[int] = None
     killed: Optional[bool] = None
+    truncated: Optional[bool] = None
     error: Optional[str] = None
 
 
@@ -1978,6 +1979,7 @@ class BrowserDeleteResponse(BaseModel):
     """Response from deleting a browser session."""
 
     success: bool
+    status: Optional[str] = None
     session_duration_ms: Optional[int] = None
     credits_billed: Optional[int] = None
     error: Optional[str] = None
