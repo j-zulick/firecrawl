@@ -221,6 +221,8 @@ export async function enhanceBrandingWithLLM(
         functionId: "enhanceBrandingWithLLM",
         metadata: {
           teamId: input.teamId || "unknown",
+          feature: "branding",
+          ...(input.scrapeId ? { scrapeId: input.scrapeId } : {}),
         },
       },
     });
