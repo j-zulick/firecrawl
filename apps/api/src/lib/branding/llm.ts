@@ -6,6 +6,77 @@ import { buildBrandingPrompt } from "./prompt";
 import { BrandingLLMInput } from "./types";
 import { getModel } from "../generic-ai";
 
+const JSON_SCHEMA_TYPES = new Set([
+  "string",
+  "number",
+  "integer",
+  "boolean",
+  "object",
+  "array",
+  "null",
+]);
+
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null && !Array.isArray(x);
+}
+
+// A node of an echoed schema, e.g. {"type": "number", "example": 2}. None of
+// the branding answer's own objects has a "type" key.
+function isSchemaNode(x: unknown): x is Record<string, unknown> {
+  return (
+    isRecord(x) && typeof x.type === "string" && JSON_SCHEMA_TYPES.has(x.type)
+  );
+}
+
+// Marks a schema node that carries no answer (no "example", no properties).
+const UNRESOLVED = Symbol("unresolved");
+
+function valueFromSchemaShape(node: unknown): unknown {
+  if (!isSchemaNode(node)) return node;
+  if ("example" in node) return node.example;
+  if (isRecord(node.properties)) return propertiesToValue(node.properties);
+  return UNRESOLVED;
+}
+
+function propertiesToValue(
+  properties: Record<string, unknown>,
+): Record<string, unknown> | typeof UNRESOLVED {
+  const value: Record<string, unknown> = {};
+  for (const [key, node] of Object.entries(properties)) {
+    const resolved = valueFromSchemaShape(node);
+    if (resolved === UNRESOLVED) return UNRESOLVED;
+    value[key] = resolved;
+  }
+  return value;
+}
+
+/**
+ * gpt-4o in non-strict mode sometimes answers in the shape of a JSON schema
+ * instead of an instance of it: the answer wrapped as
+ * {"type": "response", "properties": {...}}, or the schema echoed back with
+ * each answer in an "example" field. Both carry the whole answer, so unwrap
+ * them instead of failing the call. Returns null for anything else, including
+ * an echo with any field left without an answer, so the SDK reports the
+ * original error rather than one about half-repaired text.
+ */
+export function unwrapSchemaShapedAnswer(text: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (
+    !isRecord(parsed) ||
+    typeof parsed.type !== "string" ||
+    !isRecord(parsed.properties)
+  ) {
+    return null;
+  }
+  const value = propertiesToValue(parsed.properties);
+  return value === UNRESOLVED ? null : JSON.stringify(value);
+}
+
 function isDebugBrandingEnabled(input: BrandingLLMInput): boolean {
   return (
     config.DEBUG_BRANDING === true || input.teamFlags?.debugBranding === true
@@ -118,6 +189,9 @@ export async function enhanceBrandingWithLLM(
         },
       ],
       temperature: 0.1,
+      // Only called once the response failed to parse or validate.
+      experimental_repairText: async ({ text }) =>
+        unwrapSchemaShapedAnswer(text),
       experimental_telemetry: {
         isEnabled: true,
         // The input carries the page screenshot / raw page content; too large
