@@ -1,22 +1,137 @@
 import express, { Request, Response } from 'express';
-import bodyParser from 'body-parser';
-import { chromium, Browser, BrowserContext, Route, Request as PlaywrightRequest, Page } from 'playwright';
+import {
+  chromium,
+  Browser,
+  BrowserContext,
+  Route,
+  Request as PlaywrightRequest,
+  Page,
+} from 'playwright';
 import dotenv from 'dotenv';
 import UserAgent from 'user-agents';
 import { getError } from './helpers/get_error';
+import { Server } from 'proxy-chain';
+import { isInternalHost, ssrfPrepareRequest } from './helpers/ssrf';
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3003;
 
-app.use(bodyParser.json());
+app.use(express.json());
 
-const BLOCK_MEDIA = (process.env.BLOCK_MEDIA || 'False').toUpperCase() === 'TRUE';
+const BLOCK_MEDIA =
+  (process.env.BLOCK_MEDIA || 'False').toUpperCase() === 'TRUE';
+const MAX_CONCURRENT_PAGES = Math.max(
+  1,
+  Number.parseInt(process.env.MAX_CONCURRENT_PAGES ?? '10', 10) || 10,
+);
+const ALLOW_LOCAL_WEBHOOKS =
+  (process.env.ALLOW_LOCAL_WEBHOOKS || 'False').toUpperCase() === 'TRUE';
 
 const PROXY_SERVER = process.env.PROXY_SERVER || null;
 const PROXY_USERNAME = process.env.PROXY_USERNAME || null;
 const PROXY_PASSWORD = process.env.PROXY_PASSWORD || null;
+
+class InsecureConnectionError extends Error {
+  constructor(
+    public readonly blockedUrl: string,
+    reason: string,
+  ) {
+    super(`Blocked insecure target URL "${blockedUrl}": ${reason}`);
+    this.name = 'InsecureConnectionError';
+  }
+}
+
+const assertSafeTargetUrl = async (urlString: string): Promise<void> => {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(urlString);
+  } catch {
+    throw new InsecureConnectionError(urlString, 'URL is invalid');
+  }
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    throw new InsecureConnectionError(
+      urlString,
+      `unsupported protocol "${parsedUrl.protocol}"`,
+    );
+  }
+  if (!ALLOW_LOCAL_WEBHOOKS && (await isInternalHost(parsedUrl.hostname))) {
+    throw new InsecureConnectionError(
+      urlString,
+      'resolves to a private/internal address',
+    );
+  }
+};
+
+const buildUpstreamProxyUrl = (): string | undefined => {
+  if (!PROXY_SERVER) return undefined;
+  const server = PROXY_SERVER.includes('://')
+    ? PROXY_SERVER
+    : `http://${PROXY_SERVER}`;
+  const url = new URL(server);
+  if (PROXY_USERNAME) url.username = PROXY_USERNAME;
+  if (PROXY_PASSWORD) url.password = PROXY_PASSWORD;
+  return url.toString();
+};
+
+const startSSRFProxy = async (): Promise<number> => {
+  const server = new Server({
+    port: 0,
+    host: '127.0.0.1',
+    prepareRequestFunction: ssrfPrepareRequest({
+      allowLocal: ALLOW_LOCAL_WEBHOOKS,
+      upstreamProxyUrl: buildUpstreamProxyUrl(),
+    }),
+  });
+  await server.listen();
+  return server.port;
+};
+
+let ssrfProxyPort: number;
+
+type ContextSecurityState = {
+  blockedNavigationRequestUrl: string | null;
+};
+class Semaphore {
+  private permits: number;
+  private queue: (() => void)[] = [];
+
+  constructor(permits: number) {
+    this.permits = permits;
+  }
+
+  async acquire(): Promise<void> {
+    if (this.permits > 0) {
+      this.permits--;
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve) => {
+      this.queue.push(resolve);
+    });
+  }
+
+  release(): void {
+    this.permits++;
+    if (this.queue.length > 0) {
+      const nextResolve = this.queue.shift();
+      if (nextResolve) {
+        this.permits--;
+        nextResolve();
+      }
+    }
+  }
+
+  getAvailablePermits(): number {
+    return this.permits;
+  }
+
+  getQueueLength(): number {
+    return this.queue.length;
+  }
+}
+const pageSemaphore = new Semaphore(MAX_CONCURRENT_PAGES);
 
 const AD_SERVING_DOMAINS = [
   'doubleclick.net',
@@ -31,7 +146,7 @@ const AD_SERVING_DOMAINS = [
   'ads-twitter.com',
   'facebook.net',
   'fbcdn.net',
-  'amazon-adsystem.com'
+  'amazon-adsystem.com',
 ];
 
 interface UrlModel {
@@ -43,10 +158,10 @@ interface UrlModel {
   skip_tls_verification?: boolean;
 }
 
-let browser: Browser | null = null;
+let browser: Browser;
 
 const initializeBrowser = async () => {
-  const launched = await chromium.launch({
+  browser = await chromium.launch({
     headless: true,
     args: [
       '--no-sandbox',
@@ -54,66 +169,81 @@ const initializeBrowser = async () => {
       '--disable-dev-shm-usage',
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
-      '--disable-gpu'
-    ]
+      '--no-zygote',
+      '--disable-gpu',
+    ],
   });
+  // Local patch: relaunch on the next request if Chromium closes instead of failing every request.
+  const launched = browser;
   launched.on('disconnected', () => {
     console.warn('Browser disconnected; will relaunch on next request');
-    if (browser === launched) browser = null;
   });
-  browser = launched;
 };
 
-const ensureBrowser = async () => {
-  if (!browser || !browser.isConnected()) {
-    await initializeBrowser();
-  }
-  return browser as Browser;
-};
-
-const createContext = async (skipTlsVerification: boolean = false) => {
-  const userAgent = new UserAgent().toString();
+const createContext = async (
+  skipTlsVerification: boolean = false,
+  userAgentOverride?: string,
+): Promise<{
+  context: BrowserContext;
+  securityState: ContextSecurityState;
+}> => {
+  const userAgent = userAgentOverride || new UserAgent().toString();
   const viewport = { width: 1280, height: 800 };
+  const securityState: ContextSecurityState = {
+    blockedNavigationRequestUrl: null,
+  };
 
   const contextOptions: any = {
     userAgent,
     viewport,
     ignoreHTTPSErrors: skipTlsVerification,
+    serviceWorkers: 'block',
   };
 
-  if (PROXY_SERVER && PROXY_USERNAME && PROXY_PASSWORD) {
-    contextOptions.proxy = {
-      server: PROXY_SERVER,
-      username: PROXY_USERNAME,
-      password: PROXY_PASSWORD,
-    };
-  } else if (PROXY_SERVER) {
-    contextOptions.proxy = {
-      server: PROXY_SERVER,
-    };
-  }
+  contextOptions.proxy = {
+    server: `http://127.0.0.1:${ssrfProxyPort}`,
+  };
 
-  const newContext = await (await ensureBrowser()).newContext(contextOptions);
+  const newContext = await browser.newContext(contextOptions);
 
   if (BLOCK_MEDIA) {
-    await newContext.route('**/*.{png,jpg,jpeg,gif,svg,mp3,mp4,avi,flac,ogg,wav,webm}', async (route: Route, request: PlaywrightRequest) => {
-      await route.abort();
-    });
+    await newContext.route(
+      '**/*.{png,jpg,jpeg,gif,svg,mp3,mp4,avi,flac,ogg,wav,webm}',
+      async (route: Route, request: PlaywrightRequest) => {
+        await route.abort();
+      },
+    );
   }
 
   // Intercept all requests to avoid loading ads
-  await newContext.route('**/*', (route: Route, request: PlaywrightRequest) => {
-    const requestUrl = new URL(request.url());
-    const hostname = requestUrl.hostname;
+  await newContext.route(
+    '**/*',
+    async (route: Route, request: PlaywrightRequest) => {
+      const requestUrlString = request.url();
+      try {
+        await assertSafeTargetUrl(requestUrlString);
+      } catch (error) {
+        if (error instanceof InsecureConnectionError) {
+          if (request.isNavigationRequest()) {
+            securityState.blockedNavigationRequestUrl = requestUrlString;
+          }
+          console.warn(`Blocked request: ${requestUrlString}`);
+          return route.abort('blockedbyclient');
+        }
+        throw error;
+      }
 
-    if (AD_SERVING_DOMAINS.some(domain => hostname.includes(domain))) {
-      console.log(hostname);
-      return route.abort();
-    }
-    return route.continue();
-  });
-  
-  return newContext;
+      const hostname = new URL(requestUrlString).hostname.toLowerCase();
+
+      if (AD_SERVING_DOMAINS.some((domain) => hostname.includes(domain))) {
+        console.log(hostname);
+        return route.abort();
+      }
+      return route.continue();
+    },
+  );
+
+  return { context: newContext, securityState };
 };
 
 const shutdownBrowser = async () => {
@@ -131,9 +261,30 @@ const isValidUrl = (urlString: string): boolean => {
   }
 };
 
-const scrapePage = async (page: Page, url: string, waitUntil: 'load' | 'networkidle', waitAfterLoad: number, timeout: number, checkSelector: string | undefined) => {
-  console.log(`Navigating to ${url} with waitUntil: ${waitUntil} and timeout: ${timeout}ms`);
-  const response = await page.goto(url, { waitUntil, timeout });
+const scrapePage = async (
+  page: Page,
+  url: string,
+  waitUntil: 'load' | 'networkidle',
+  waitAfterLoad: number,
+  timeout: number,
+  checkSelector: string | undefined,
+  securityState: ContextSecurityState,
+) => {
+  console.log(
+    `Navigating to ${url} with waitUntil: ${waitUntil} and timeout: ${timeout}ms`,
+  );
+  let response;
+  try {
+    response = await page.goto(url, { waitUntil, timeout });
+  } catch (error) {
+    if (securityState.blockedNavigationRequestUrl) {
+      throw new InsecureConnectionError(
+        securityState.blockedNavigationRequestUrl,
+        'navigation to private/internal resource is not allowed',
+      );
+    }
+    throw error;
+  }
 
   if (waitAfterLoad > 0) {
     await page.waitForTimeout(waitAfterLoad);
@@ -147,18 +298,31 @@ const scrapePage = async (page: Page, url: string, waitUntil: 'load' | 'networki
     }
   }
 
-  let headers = null, content = await page.content();
+  let headers = null,
+    content = await page.content(),
+    landedUrl = page.url();
   let ct: string | undefined = undefined;
   if (response) {
     headers = await response.allHeaders();
-    ct = Object.entries(headers).find(x => x[0].toLowerCase() === "content-type")?.[1];
-    if (ct && (ct[1].includes("application/json") || ct[1].includes("text/plain"))) {
-      content = (await response.body()).toString("utf8"); // TODO: determine real encoding
+    ct = Object.entries(headers).find(
+      ([key]) => key.toLowerCase() === 'content-type',
+    )?.[1];
+    if (
+      ct &&
+      (ct.toLowerCase().includes('application/json') ||
+        ct.toLowerCase().includes('text/plain'))
+    ) {
+      content = (await response.body()).toString('utf8'); // TODO: determine real encoding
+      landedUrl = response.url();
     }
   }
 
   return {
     content,
+    // Where the returned content came from: page.url() for rendered HTML
+    // (covers HTTP 3xx and client-side redirects), response.url() for raw
+    // JSON/text bodies, which come from the page.goto response.
+    url: landedUrl,
     status: response ? response.status() : null,
     headers,
     contentType: ct,
@@ -167,27 +331,38 @@ const scrapePage = async (page: Page, url: string, waitUntil: 'load' | 'networki
 
 app.get('/health', async (req: Request, res: Response) => {
   try {
-    if (!browser) {
+    if (!browser || !browser.isConnected()) {
       await initializeBrowser();
     }
-    
-    const testContext = await createContext();
+
+    const { context: testContext } = await createContext();
     const testPage = await testContext.newPage();
     await testPage.close();
     await testContext.close();
-    
-    res.status(200).json({ status: 'healthy' });
+
+    res.status(200).json({
+      status: 'healthy',
+      maxConcurrentPages: MAX_CONCURRENT_PAGES,
+      activePages: MAX_CONCURRENT_PAGES - pageSemaphore.getAvailablePermits(),
+    });
   } catch (error) {
     console.error('Health check failed:', error);
-    res.status(503).json({ 
-      status: 'unhealthy', 
-      error: error instanceof Error ? error.message : 'Unknown error occurred' 
+    res.status(503).json({
+      status: 'unhealthy',
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
     });
   }
 });
 
 app.post('/scrape', async (req: Request, res: Response) => {
-  const { url, wait_after_load = 0, timeout = 15000, headers, check_selector, skip_tls_verification = false }: UrlModel = req.body;
+  const {
+    url,
+    wait_after_load = 0,
+    timeout = 15000,
+    headers,
+    check_selector,
+    skip_tls_verification = false,
+  }: UrlModel = req.body;
 
   console.log(`================= Scrape Request =================`);
   console.log(`URL: ${url}`);
@@ -206,81 +381,186 @@ app.post('/scrape', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid URL' });
   }
 
-  if (!PROXY_SERVER) {
-    console.warn('⚠️ WARNING: No proxy server provided. Your IP address may be blocked.');
-  }
-
-  let requestContext: Awaited<ReturnType<typeof createContext>>;
-  let page: Page;
   try {
-    requestContext = await createContext(skip_tls_verification);
-    page = await requestContext.newPage();
-  } catch (launchError) {
-    console.warn('Context/page creation failed; relaunching browser once:', (launchError as Error).message);
-    try {
-      browser = null;
-      requestContext = await createContext(skip_tls_verification);
-      page = await requestContext.newPage();
-    } catch (retryError) {
-      console.error('Browser unavailable after relaunch:', (retryError as Error).message);
-      return res.status(503).json({ error: 'Browser unavailable, please retry.' });
-    }
-  }
-
-  // Set headers if provided
-  if (headers) {
-    await page.setExtraHTTPHeaders(headers);
-  }
-
-  let result: Awaited<ReturnType<typeof scrapePage>>;
-  try {
-    // Strategy 1: Normal
-    console.log('Attempting strategy 1: Normal load');
-    result = await scrapePage(page, url, 'load', wait_after_load, timeout, check_selector);
+    await assertSafeTargetUrl(url);
   } catch (error) {
-    console.log('Strategy 1 failed, attempting strategy 2: Wait until networkidle');
-    try {
-      // Strategy 2: Wait until networkidle
-      result = await scrapePage(page, url, 'networkidle', wait_after_load, timeout, check_selector);
-    } catch (finalError) {
-      await page.close().catch(() => {});
-      await requestContext.close().catch(() => {});
-      return res.status(500).json({ error: 'An error occurred while fetching the page.' });
+    if (error instanceof InsecureConnectionError) {
+      return res.json({
+        content: '',
+        pageStatusCode: 403,
+        pageError: error.message,
+      });
     }
+    throw error;
   }
 
-  const pageError = result.status !== 200 ? getError(result.status) : undefined;
-
-  if (!pageError) {
-    console.log(`✅ Scrape successful!`);
-  } else {
-    console.log(`🚨 Scrape failed with status code: ${result.status} ${pageError}`);
+  if (!PROXY_SERVER) {
+    console.warn(
+      '⚠️ WARNING: No proxy server provided. Your IP address may be blocked.',
+    );
   }
 
-  await page.close().catch(() => {});
-  await requestContext.close().catch(() => {});
+  if (!browser || !browser.isConnected()) {
+    await initializeBrowser();
+  }
 
-  res.json({
-    content: result.content,
-    pageStatusCode: result.status,
-    contentType: result.contentType,
-    ...(pageError && { pageError })
-  });
+  await pageSemaphore.acquire();
+
+  let requestContext: BrowserContext | null = null;
+  let securityState: ContextSecurityState | null = null;
+  let page: Page | null = null;
+
+  try {
+    // Extract user-agent from request headers (case-insensitive) so it can
+    // be applied at the context level.  Playwright ignores user-agent in
+    // setExtraHTTPHeaders when the context already defines one (#2802).
+    const userAgentOverride = headers
+      ? Object.entries(headers).find(
+          ([k]) => k.toLowerCase() === 'user-agent',
+        )?.[1]
+      : undefined;
+
+    const contextBundle = await createContext(
+      skip_tls_verification,
+      userAgentOverride,
+    );
+    requestContext = contextBundle.context;
+    securityState = contextBundle.securityState;
+    page = await requestContext.newPage();
+
+    if (headers) {
+      // A Cookie header passed through setExtraHTTPHeaders is sent on the first
+      // request but DROPPED on any redirect hop (the browser regenerates the
+      // redirected request from its cookie jar, which is empty). Authenticated
+      // sites that 302 (e.g. to /signin when the session looks absent) then
+      // land on the login page. Seed the cookie jar instead so Chromium re-sends
+      // it on every request, including redirects — matching what a raw HTTP
+      // client does.
+      const cookieHeader = Object.entries(headers).find(
+        ([k]) => k.toLowerCase() === 'cookie',
+      )?.[1];
+      if (cookieHeader) {
+        // Scope cookies to the registrable domain (e.g. ".example.com"), not
+        // host-only. Authenticated pages often 302 across sibling subdomains
+        // (example.com -> app.example.com); a host-only cookie set for the
+        // original host would not be sent to the redirect target, leaving the
+        // request unauthenticated. The Cookie header carries no domain info, so
+        // we apply the eTLD+1 — broad enough to follow the redirect, and these
+        // are first-party cookies being returned to their own origin anyway.
+        let cookieDomain: string | undefined;
+        try {
+          const host = new URL(url).hostname;
+          const labels = host.split('.');
+          cookieDomain = labels.length > 2 ? labels.slice(-2).join('.') : host;
+        } catch {
+          cookieDomain = undefined;
+        }
+        type SeedCookie = {
+          name: string;
+          value: string;
+          url?: string;
+          domain?: string;
+          path?: string;
+        };
+        const cookies = cookieHeader
+          .split(';')
+          .map((pair) => pair.trim())
+          .filter(Boolean)
+          .map((pair): SeedCookie | null => {
+            const eq = pair.indexOf('=');
+            if (eq === -1) return null;
+            const name = pair.slice(0, eq).trim();
+            const value = pair.slice(eq + 1).trim();
+            return cookieDomain
+              ? { name, value, domain: `.${cookieDomain}`, path: '/' }
+              : { name, value, url };
+          })
+          .filter((c): c is SeedCookie => c !== null);
+        if (cookies.length > 0) {
+          try {
+            await requestContext.addCookies(cookies);
+          } catch (error) {
+            console.warn('Failed to seed cookies from Cookie header:', error);
+          }
+        }
+      }
+
+      // Remove user-agent (already applied at the context level) and cookie
+      // (now seeded into the jar) before forwarding the rest verbatim.
+      const filteredHeaders = Object.fromEntries(
+        Object.entries(headers).filter(([k]) => {
+          const lower = k.toLowerCase();
+          return lower !== 'user-agent' && lower !== 'cookie';
+        }),
+      );
+      if (Object.keys(filteredHeaders).length > 0) {
+        await page.setExtraHTTPHeaders(filteredHeaders);
+      }
+    }
+
+    const result = await scrapePage(
+      page,
+      url,
+      'load',
+      wait_after_load,
+      timeout,
+      check_selector,
+      securityState,
+    );
+    const pageError =
+      result.status !== 200 ? getError(result.status) : undefined;
+
+    if (!pageError) {
+      console.log(`✅ Scrape successful!`);
+    } else {
+      console.log(
+        `🚨 Scrape failed with status code: ${result.status} ${pageError}`,
+      );
+    }
+
+    res.json({
+      content: result.content,
+      pageStatusCode: result.status,
+      contentType: result.contentType,
+      url: result.url,
+      ...(pageError && { pageError }),
+    });
+  } catch (error) {
+    if (error instanceof InsecureConnectionError) {
+      return res.json({
+        content: '',
+        pageStatusCode: 403,
+        pageError: error.message,
+      });
+    }
+    console.error('Scrape error:', error);
+    res
+      .status(500)
+      .json({ error: 'An error occurred while fetching the page.' });
+  } finally {
+    if (page) await page.close();
+    if (requestContext) await requestContext.close();
+    pageSemaphore.release();
+  }
 });
 
-app.listen(port, () => {
-  initializeBrowser().then(() => {
+const start = async () => {
+  ssrfProxyPort = await startSSRFProxy();
+  await initializeBrowser();
+  app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
   });
+};
+start().catch((error) => {
+  console.error('Failed to start server:', error);
+  process.exit(1);
 });
 
-process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled rejection (kept running):', reason instanceof Error ? reason.message : reason);
-});
-
-process.on('SIGINT', () => {
-  shutdownBrowser().then(() => {
-    console.log('Browser closed');
-    process.exit(0);
+if (require.main === module) {
+  process.on('SIGINT', () => {
+    shutdownBrowser().then(() => {
+      console.log('Browser closed');
+      process.exit(0);
+    });
   });
-});
+}
