@@ -43,10 +43,10 @@ interface UrlModel {
   skip_tls_verification?: boolean;
 }
 
-let browser: Browser;
+let browser: Browser | null = null;
 
 const initializeBrowser = async () => {
-  browser = await chromium.launch({
+  const launched = await chromium.launch({
     headless: true,
     args: [
       '--no-sandbox',
@@ -54,11 +54,21 @@ const initializeBrowser = async () => {
       '--disable-dev-shm-usage',
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
-      '--no-zygote',
-      '--single-process',
       '--disable-gpu'
     ]
   });
+  launched.on('disconnected', () => {
+    console.warn('Browser disconnected; will relaunch on next request');
+    if (browser === launched) browser = null;
+  });
+  browser = launched;
+};
+
+const ensureBrowser = async () => {
+  if (!browser || !browser.isConnected()) {
+    await initializeBrowser();
+  }
+  return browser as Browser;
 };
 
 const createContext = async (skipTlsVerification: boolean = false) => {
@@ -83,7 +93,7 @@ const createContext = async (skipTlsVerification: boolean = false) => {
     };
   }
 
-  const newContext = await browser.newContext(contextOptions);
+  const newContext = await (await ensureBrowser()).newContext(contextOptions);
 
   if (BLOCK_MEDIA) {
     await newContext.route('**/*.{png,jpg,jpeg,gif,svg,mp3,mp4,avi,flac,ogg,wav,webm}', async (route: Route, request: PlaywrightRequest) => {
@@ -200,12 +210,22 @@ app.post('/scrape', async (req: Request, res: Response) => {
     console.warn('⚠️ WARNING: No proxy server provided. Your IP address may be blocked.');
   }
 
-  if (!browser) {
-    await initializeBrowser();
+  let requestContext: Awaited<ReturnType<typeof createContext>>;
+  let page: Page;
+  try {
+    requestContext = await createContext(skip_tls_verification);
+    page = await requestContext.newPage();
+  } catch (launchError) {
+    console.warn('Context/page creation failed; relaunching browser once:', (launchError as Error).message);
+    try {
+      browser = null;
+      requestContext = await createContext(skip_tls_verification);
+      page = await requestContext.newPage();
+    } catch (retryError) {
+      console.error('Browser unavailable after relaunch:', (retryError as Error).message);
+      return res.status(503).json({ error: 'Browser unavailable, please retry.' });
+    }
   }
-
-  const requestContext = await createContext(skip_tls_verification);
-  const page = await requestContext.newPage();
 
   // Set headers if provided
   if (headers) {
@@ -223,8 +243,8 @@ app.post('/scrape', async (req: Request, res: Response) => {
       // Strategy 2: Wait until networkidle
       result = await scrapePage(page, url, 'networkidle', wait_after_load, timeout, check_selector);
     } catch (finalError) {
-      await page.close();
-      await requestContext.close();
+      await page.close().catch(() => {});
+      await requestContext.close().catch(() => {});
       return res.status(500).json({ error: 'An error occurred while fetching the page.' });
     }
   }
@@ -237,8 +257,8 @@ app.post('/scrape', async (req: Request, res: Response) => {
     console.log(`🚨 Scrape failed with status code: ${result.status} ${pageError}`);
   }
 
-  await page.close();
-  await requestContext.close();
+  await page.close().catch(() => {});
+  await requestContext.close().catch(() => {});
 
   res.json({
     content: result.content,
@@ -252,6 +272,10 @@ app.listen(port, () => {
   initializeBrowser().then(() => {
     console.log(`Server is running on port ${port}`);
   });
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection (kept running):', reason instanceof Error ? reason.message : reason);
 });
 
 process.on('SIGINT', () => {
