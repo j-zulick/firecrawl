@@ -58,6 +58,8 @@ services:
     build: apps/playwright-service-ts
     restart: unless-stopped
     mem_limit: 1536m
+    shm_size: "1gb"
+    init: true
     logging:
       driver: json-file
       options:
