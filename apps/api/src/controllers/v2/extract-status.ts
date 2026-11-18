@@ -1,94 +1,164 @@
 import { Response } from "express";
+import { JOB_ACCESS_TTL_MS } from "../../lib/job-access-store";
+import { config } from "../../config";
 import { RequestWithAuth } from "./types";
-import { getExtract, getExtractExpiry } from "../../lib/extract/extract-redis";
-import { DBJob, PseudoJob } from "./crawl-status";
-import { getExtractQueue } from "../../services/queue-service";
-import { ExtractResult } from "../../lib/extract/extraction-service";
-import { supabaseGetJobByIdDirect } from "../../lib/supabase-jobs";
+import {
+  getExtract,
+  getExtractExpiry,
+  getExtractResult,
+} from "../../lib/extract/extract-redis";
+import { logger as _logger } from "../../lib/logger";
+import { getJobFromGCS } from "../../lib/gcs-jobs";
+import { getExtractJobAccess } from "../../lib/operational-job-access";
+import { agentJobExpiry, ZDR_EXPIRED_ERROR } from "../../lib/agent-job-expiry";
+import { readExtractJobState } from "../../lib/job-state-store";
+import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
+import {
+  ExtractV3AgentStatusError,
+  getExtractV3AgentStatus,
+} from "../../lib/extract-v3-status";
 
-export async function getExtractJob(id: string): Promise<PseudoJob<ExtractResult> | null> {
-  const [bullJob, dbJob] = await Promise.all([
-    getExtractQueue().getJob(id),
-    (process.env.USE_DB_AUTHENTICATION === "true" ? supabaseGetJobByIdDirect(id) : null) as Promise<DBJob | null>,
-  ]);
-
-  if (!bullJob && !dbJob) return null;
-
-  const data = dbJob?.docs ?? bullJob?.returnvalue?.data;
-
-  const job: PseudoJob<any> = {
-    id,
-    getState: bullJob ? bullJob.getState.bind(bullJob) : (() => dbJob!.success ? "completed" : "failed"),
-    returnvalue: data,
-    data: {
-      scrapeOptions: bullJob ? bullJob.data.scrapeOptions : dbJob!.page_options,
-      teamId: bullJob ? bullJob.data.teamId : dbJob!.team_id,
-    },
-    timestamp: bullJob ? bullJob.timestamp : new Date(dbJob!.date_added).valueOf(),
-    failedReason: (bullJob ? bullJob.failedReason : dbJob!.message) || undefined,
+async function getExtractData(id: string): Promise<any> {
+  // Try GCS first if configured
+  if (config.GCS_BUCKET_NAME) {
+    const gcsData = await getJobFromGCS(id);
+    if (gcsData) {
+      return Array.isArray(gcsData) ? gcsData[0] : gcsData;
+    }
   }
-
-  return job;
+  // Fallback to Redis
+  const redisData = await getExtractResult(id);
+  if (redisData) {
+    return Array.isArray(redisData) ? redisData[0] : redisData;
+  }
+  return [];
 }
 
 export async function extractStatusController(
   req: RequestWithAuth<{ jobId: string }, any, any>,
   res: Response,
 ) {
-  const extract = await getExtract(req.params.jobId);
-
-  let status = extract?.status;
-
-  if (extract && extract.team_id !== req.auth.team_id) {
-    return res.status(404).json({
-      success: false,
-      error: "Extract job not found",
-    });
-  }
-
-  let data: ExtractResult | [] = [];
-
-  if (!extract || extract.status === "completed") {
-    const jobData = await getExtractJob(req.params.jobId);
-    if ((!jobData && !extract) || (jobData && jobData.data.teamId !== req.auth.team_id)) {
+  const access = config.USE_DB_AUTHENTICATION
+    ? await getExtractJobAccess(req.params.jobId)
+    : null;
+  if (config.USE_DB_AUTHENTICATION) {
+    if (
+      !access ||
+      access.expiresAtMs <= Date.now() ||
+      access.teamId !== normalizeJobAccessTeamId(req.auth.team_id)
+    ) {
       return res.status(404).json({
         success: false,
         error: "Extract job not found",
       });
     }
 
-    if (jobData) {
-      const jobStatus = await jobData.getState();
-
-      if (jobStatus === "completed") {
-        status = "completed";
-      } else if (jobStatus === "failed") {
-        status = "failed";
-      } else {
-        status = "processing";
+    if (access.kind === "agent") {
+      let agent: Awaited<ReturnType<typeof getExtractV3AgentStatus>>;
+      try {
+        agent = await getExtractV3AgentStatus(req.params.jobId);
+      } catch (error) {
+        if (!(error instanceof ExtractV3AgentStatusError)) throw error;
+        if (error.retryAfterSeconds !== undefined) {
+          res.setHeader("Retry-After", String(error.retryAfterSeconds));
+        }
+        return res.status(error.status).json({
+          success: false,
+          code: error.code,
+          error: error.message,
+        });
       }
-    }
 
-    if (!jobData?.returnvalue) {
-      // if we got in the split-second where the redis is updated but the bull isn't
-      // just pretend it's still processing - MG
-      status = "processing";
-    } else {
-      data = jobData.returnvalue ?? [];
+      const expiry = agentJobExpiry(access, agent);
+      if (expiry.zeroDataRetentionExpired) {
+        return res.status(410).json({
+          success: false,
+          code: "zdr_expired",
+          error: ZDR_EXPIRED_ERROR,
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        status: agent.status === "success" ? "completed" : agent.status,
+        error: agent.error,
+        data: agent.data,
+        expiresAt: new Date(expiry.expiresAtMs).toISOString(),
+        creditsUsed: agent.creditsUsed,
+      });
     }
   }
 
+  // Get extract status from Redis (for in-progress jobs)
+  const redisExtract = await getExtract(req.params.jobId);
+
+  // Not in Redis: finished, or still being set up. Bigtable holds the
+  // terminal state for 24 hours; a request row without either is in flight.
+  if (!redisExtract) {
+    // A failed Bigtable read is an outage, not a job in flight: it propagates
+    // to the error handler rather than answering "processing".
+    const state = await readExtractJobState(req.params.jobId);
+    if (state) {
+      return res.status(200).json({
+        success: state.status === "completed",
+        data:
+          state.status === "completed"
+            ? await getExtractData(req.params.jobId)
+            : [],
+        status: state.status,
+        error: state.error,
+        expiresAt: new Date(
+          access?.expiresAtMs ?? state.completedAtMs + JOB_ACCESS_TTL_MS,
+        ).toISOString(),
+        creditsUsed: state.creditsBilled,
+      });
+    }
+
+    // Fall back to extractRequest info
+    return res.status(200).json({
+      success: true,
+      data: [],
+      status: "processing",
+      expiresAt: new Date(
+        access?.expiresAtMs ?? Date.now() + JOB_ACCESS_TTL_MS,
+      ).toISOString(),
+    });
+  }
+
+  // Get result data if completed
+  let data: any = [];
+  if (redisExtract.status === "completed") {
+    data = await getExtractData(req.params.jobId);
+  }
+
   return res.status(200).json({
-    success: status === "failed" ? false : true,
+    success: redisExtract.status === "failed" ? false : true,
     data,
-    status,
-    error: extract?.error ?? undefined,
+    status: redisExtract.status,
+    error: (() => {
+      if (typeof redisExtract.error === "string") return redisExtract.error;
+      if (redisExtract.error && typeof redisExtract.error === "object") {
+        return typeof redisExtract.error.message === "string"
+          ? redisExtract.error.message
+          : typeof redisExtract.error.error === "string"
+            ? redisExtract.error.error
+            : JSON.stringify(redisExtract.error);
+      }
+      return undefined;
+    })(),
     expiresAt: (await getExtractExpiry(req.params.jobId)).toISOString(),
-    steps: extract?.showSteps ? extract.steps : undefined,
-    llmUsage: extract?.showLLMUsage ? extract.llmUsage : undefined,
-    sources: extract?.showSources ? extract.sources : undefined,
-    costTracking: extract?.showCostTracking ? extract.costTracking : undefined,
-    sessionIds: extract?.sessionIds ? extract.sessionIds : undefined,
-    tokensUsed: extract?.tokensBilled ? extract.tokensBilled : undefined,
+    steps: redisExtract.showSteps ? redisExtract.steps : undefined,
+    llmUsage: redisExtract.showLLMUsage ? redisExtract.llmUsage : undefined,
+    sources: redisExtract.showSources ? redisExtract.sources : undefined,
+    costTracking: redisExtract.showCostTracking
+      ? redisExtract.costTracking
+      : undefined,
+    sessionIds: redisExtract.sessionIds ? redisExtract.sessionIds : undefined,
+    tokensUsed: redisExtract.tokensBilled
+      ? redisExtract.tokensBilled
+      : undefined,
+    creditsUsed: redisExtract.creditsBilled
+      ? redisExtract.creditsBilled
+      : undefined,
   });
 }

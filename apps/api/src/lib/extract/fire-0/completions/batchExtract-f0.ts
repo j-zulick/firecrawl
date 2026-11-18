@@ -1,8 +1,15 @@
 import { logger } from "../../../../lib/logger";
-import { ExtractResponse, TokenUsage } from "../../../../controllers/v1/types";
+import {
+  ExtractResponse,
+  TeamFlags,
+  TokenUsage,
+} from "../../../../controllers/v1/types";
 import { Document } from "../../../../controllers/v1/types";
 import { generateCompletions_F0 } from "../llmExtract-f0";
-import { buildBatchExtractPrompt_F0, buildBatchExtractSystemPrompt_F0 } from "../build-prompts-f0";
+import {
+  buildBatchExtractPrompt_F0,
+  buildBatchExtractSystemPrompt_F0,
+} from "../build-prompts-f0";
 import { buildDocument_F0 } from "../build-document-f0";
 
 /**
@@ -20,7 +27,13 @@ export async function batchExtractPromise_F0(
   prompt: string,
   systemPrompt: string,
   doc: Document,
-  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string }
+  metadata: {
+    teamId: string;
+    functionId?: string;
+    extractId?: string;
+    scrapeId?: string;
+  },
+  teamFlags?: TeamFlags | null,
 ): Promise<{
   extract: any;
   numTokens: number;
@@ -44,16 +57,19 @@ export async function batchExtractPromise_F0(
     },
     markdown: buildDocument_F0(doc),
     isExtractEndpoint: true,
+    teamFlags,
     metadata: {
       ...metadata,
-      functionId: metadata.functionId ? (metadata.functionId + "/batchExtractPromise_F0") : "batchExtractPromise_F0",
-    }
+      functionId: metadata.functionId
+        ? metadata.functionId + "/batchExtractPromise_F0"
+        : "batchExtractPromise_F0",
+    },
   });
 
   return {
     extract: completion.extract,
     numTokens: completion.numTokens,
     totalUsage: completion.totalUsage,
-    sources: [doc.metadata.url || doc.metadata.sourceURL || ""]
+    sources: [doc.metadata.url || doc.metadata.sourceURL || ""],
   };
 }

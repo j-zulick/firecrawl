@@ -18,14 +18,32 @@ Usage:
 Check example.py for other usage examples.
 """
 
-from typing import Any, Dict, Optional, List, Union
+from pathlib import Path
+from typing import Any, Dict, Optional, List, Union, BinaryIO, Literal
 import logging
 
 
 from .v1 import V1FirecrawlApp, AsyncV1FirecrawlApp
 from .v2 import FirecrawlClient as V2FirecrawlClient
 from .v2.client_async import AsyncFirecrawlClient
-from .v2.types import Document
+from .v2.methods.research_docs import (
+    ASYNC_CLIENT_INSPECT_PAPER_DOC,
+    ASYNC_CLIENT_LOOKUP_PROTEIN_DOC,
+    ASYNC_CLIENT_READ_PAPER_DOC,
+    ASYNC_CLIENT_RELATED_PAPERS_DOC,
+    ASYNC_CLIENT_SEARCH_GITHUB_DOC,
+    ASYNC_CLIENT_SEARCH_PAPERS_DOC,
+    CLIENT_INSPECT_PAPER_DOC,
+    CLIENT_LOOKUP_PROTEIN_DOC,
+    CLIENT_READ_PAPER_DOC,
+    CLIENT_RELATED_PAPERS_DOC,
+    CLIENT_SEARCH_GITHUB_DOC,
+    CLIENT_SEARCH_PAPERS_DOC,
+    doc,
+)
+from .v2.types import Document, ParseOptions, ScrapeOptions
+from .v2.utils.caller_origin import default_origin
+from .v2.utils.get_version import get_version
 
 logger = logging.getLogger("firecrawl")
 
@@ -56,24 +74,69 @@ class V2Proxy:
         self._client = client_instance
 
         if client_instance:
-            # self.scrape = client_instance.scrape
+            self.scrape = client_instance.scrape
+            self.scrape_alexandria = client_instance.scrape_alexandria
+            self.find_tools = client_instance.find_tools
+            self.alexandria_feedback = client_instance.alexandria_feedback
+            self.interact = client_instance.interact
+            self.stop_interaction = client_instance.stop_interaction
+            self.stop_interactive_browser = client_instance.stop_interactive_browser
+            self.scrape_execute = self.interact
+            self.delete_scrape_browser = self.stop_interaction
+            self.parse = client_instance.parse
+            self.get_parse_formats = client_instance.get_parse_formats
             self.search = client_instance.search
+            self.developer_search = client_instance.developer_search
+            self.gov_search = client_instance.gov_search
             self.crawl = client_instance.crawl
-            self.get_crawl_status = client_instance.get_crawl_status
-            self.cancel_crawl = client_instance.cancel_crawl
             self.start_crawl = client_instance.start_crawl
+            self.get_crawl_status = client_instance.get_crawl_status
+            self.get_crawl_status_page = client_instance.get_crawl_status_page
+            self.cancel_crawl = client_instance.cancel_crawl
+            self.get_crawl_errors = client_instance.get_crawl_errors
+            self.get_active_crawls = client_instance.get_active_crawls
+            self.active_crawls = client_instance.active_crawls
             self.crawl_params_preview = client_instance.crawl_params_preview
+
             self.extract = client_instance.extract
+            self.start_extract = client_instance.start_extract
+            self.get_extract_status = client_instance.get_extract_status
+
+            self.agent = client_instance.agent
+            self.start_agent = client_instance.start_agent
+            self.get_agent_status = client_instance.get_agent_status
+            self.cancel_agent = client_instance.cancel_agent
+            self.list_agents = client_instance.list_agents
+            self.get_agent_trace = client_instance.get_agent_trace
+            self.get_agent_snapshot = client_instance.get_agent_snapshot
+
             self.start_batch_scrape = client_instance.start_batch_scrape
             self.get_batch_scrape_status = client_instance.get_batch_scrape_status
+            self.get_batch_scrape_status_page = client_instance.get_batch_scrape_status_page
             self.cancel_batch_scrape = client_instance.cancel_batch_scrape
             self.batch_scrape = client_instance.batch_scrape
             self.get_batch_scrape_errors = client_instance.get_batch_scrape_errors
-            self.get_extract_status = client_instance.get_extract_status
+
             self.map = client_instance.map
+            self.create_monitor = client_instance.create_monitor
+            self.list_monitors = client_instance.list_monitors
+            self.get_monitor = client_instance.get_monitor
+            self.update_monitor = client_instance.update_monitor
+            self.delete_monitor = client_instance.delete_monitor
+            self.run_monitor = client_instance.run_monitor
+            self.list_monitor_checks = client_instance.list_monitor_checks
+            self.get_monitor_check = client_instance.get_monitor_check
             self.get_concurrency = client_instance.get_concurrency
             self.get_credit_usage = client_instance.get_credit_usage
             self.get_token_usage = client_instance.get_token_usage
+            self.get_queue_status = client_instance.get_queue_status
+
+            self.browser = client_instance.browser
+            self.browser_execute = client_instance.browser_execute
+            self.delete_browser = client_instance.delete_browser
+            self.list_browsers = client_instance.list_browsers
+
+            self.watcher = client_instance.watcher
     
     def __getattr__(self, name):
         """Forward attribute access to the underlying client."""
@@ -100,18 +163,31 @@ class AsyncV1Proxy:
 
 class AsyncV2Proxy:
     """Proxy class that forwards method calls to the appropriate version client."""
-    _client: Optional[Any] = None
+    _client: Optional[AsyncFirecrawlClient] = None
 
-    def __init__(self, client_instance: Optional[Any] = None):
+    def __init__(self, client_instance: Optional[AsyncFirecrawlClient] = None):
         self._client = client_instance
 
         if client_instance:
             self.scrape = client_instance.scrape
+            self.scrape_alexandria = client_instance.scrape_alexandria
+            self.find_tools = client_instance.find_tools
+            self.alexandria_feedback = client_instance.alexandria_feedback
+            self.interact = client_instance.interact
+            self.stop_interaction = client_instance.stop_interaction
+            self.stop_interactive_browser = client_instance.stop_interactive_browser
+            self.scrape_execute = self.interact
+            self.delete_scrape_browser = self.stop_interaction
+            self.parse = client_instance.parse
+            self.get_parse_formats = client_instance.get_parse_formats
             self.search = client_instance.search
+            self.developer_search = client_instance.developer_search
+            self.gov_search = client_instance.gov_search
             self.crawl = client_instance.crawl
             self.start_crawl = client_instance.start_crawl
             self.wait_crawl = client_instance.wait_crawl
             self.get_crawl_status = client_instance.get_crawl_status
+            self.get_crawl_status_page = client_instance.get_crawl_status_page
             self.cancel_crawl = client_instance.cancel_crawl
             self.get_crawl_errors = client_instance.get_crawl_errors
             self.get_active_crawls = client_instance.get_active_crawls
@@ -122,17 +198,41 @@ class AsyncV2Proxy:
             self.start_extract = client_instance.start_extract
             self.get_extract_status = client_instance.get_extract_status
 
+            self.agent = client_instance.agent
+            self.start_agent = client_instance.start_agent
+            self.get_agent_status = client_instance.get_agent_status
+            self.cancel_agent = client_instance.cancel_agent
+            self.list_agents = client_instance.list_agents
+            self.get_agent_trace = client_instance.get_agent_trace
+            self.get_agent_snapshot = client_instance.get_agent_snapshot
+
             self.start_batch_scrape = client_instance.start_batch_scrape
             self.get_batch_scrape_status = client_instance.get_batch_scrape_status
+            self.get_batch_scrape_status_page = client_instance.get_batch_scrape_status_page
             self.cancel_batch_scrape = client_instance.cancel_batch_scrape
             self.wait_batch_scrape = client_instance.wait_batch_scrape
             self.batch_scrape = client_instance.batch_scrape
             self.get_batch_scrape_errors = client_instance.get_batch_scrape_errors
 
             self.map = client_instance.map
+            self.create_monitor = client_instance.create_monitor
+            self.list_monitors = client_instance.list_monitors
+            self.get_monitor = client_instance.get_monitor
+            self.update_monitor = client_instance.update_monitor
+            self.delete_monitor = client_instance.delete_monitor
+            self.run_monitor = client_instance.run_monitor
+            self.list_monitor_checks = client_instance.list_monitor_checks
+            self.get_monitor_check = client_instance.get_monitor_check
             self.get_concurrency = client_instance.get_concurrency
             self.get_credit_usage = client_instance.get_credit_usage
             self.get_token_usage = client_instance.get_token_usage
+            self.get_queue_status = client_instance.get_queue_status
+
+            self.browser = client_instance.browser
+            self.browser_execute = client_instance.browser_execute
+            self.delete_browser = client_instance.delete_browser
+            self.list_browsers = client_instance.list_browsers
+
             self.watcher = client_instance.watcher
 
     def __getattr__(self, name):
@@ -149,80 +249,88 @@ class Firecrawl:
     Provides a single entrypoint that exposes the latest API directly while
     keeping a feature-frozen v1 available for incremental migration.
     """
-    
-    def __init__(self, api_key: str = None, api_url: str = "https://api.firecrawl.dev"):
+
+    def __init__(
+        self,
+        api_key: str = None,
+        api_url: Optional[str] = "https://api.firecrawl.dev",
+        timeout: float = None,
+        max_retries: int = 3,
+        backoff_factor: float = 0.5,
+        origin: str = None,
+    ):
         """Initialize the unified client.
 
         Args:
             api_key: Firecrawl API key (or set ``FIRECRAWL_API_KEY``)
-            api_url: Base API URL (defaults to production)
+            api_url: Base API URL (defaults to production, also when None)
+            timeout: Default request timeout in seconds for all HTTP requests
+            max_retries: Maximum number of retries for failed requests (default: 3)
+            backoff_factor: Exponential backoff factor for retries (default: 0.5)
+            origin: Attribution string stamped into API request payloads
+                (defaults to ``python-sdk@<version>``, or
+                ``python-sdk.<package>@<version>`` when an installed package
+                creates the client; set FIRECRAWL_DISABLE_CALLER_ORIGIN=1 to
+                keep the plain default)
         """
+        if api_url is None:
+            api_url = "https://api.firecrawl.dev"
         self.api_key = api_key
         self.api_url = api_url
+
+        # Resolved here: caller detection reads the stack of whoever constructs the client.
+        self._origin = origin or default_origin(get_version())
+        self._v1: Optional[V1Proxy] = None
+
+        self._v2_client = V2FirecrawlClient(
+            api_key=api_key,
+            api_url=api_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            backoff_factor=backoff_factor,
+            origin=origin,
+        ) if V2FirecrawlClient else None
         
-        # Initialize version-specific clients
-        self._v1_client = V1FirecrawlApp(api_key=api_key, api_url=api_url) if V1FirecrawlApp else None
-        self._v2_client = V2FirecrawlClient(api_key=api_key, api_url=api_url) if V2FirecrawlClient else None
-        
-        # Create version-specific proxies
-        self.v1 = V1Proxy(self._v1_client) if self._v1_client else None
         self.v2 = V2Proxy(self._v2_client)
         
-        
         self.scrape = self._v2_client.scrape
+        self.scrape_alexandria = self._v2_client.scrape_alexandria
+        self.find_tools = self._v2_client.find_tools
+        self.alexandria_feedback = self._v2_client.alexandria_feedback
+        self.interact = self._v2_client.interact
+        self.stop_interaction = self._v2_client.stop_interaction
+        self.stop_interactive_browser = self._v2_client.stop_interactive_browser
+        self.scrape_execute = self.interact
+        self.delete_scrape_browser = self.stop_interaction
+        self.parse = self._v2_client.parse
+        self.get_parse_formats = self._v2_client.get_parse_formats
+        self.search = self._v2_client.search
+        self.developer_search = self._v2_client.developer_search
+        self.gov_search = self._v2_client.gov_search
+        self.map = self._v2_client.map
+        self.create_monitor = self._v2_client.create_monitor
+        self.list_monitors = self._v2_client.list_monitors
+        self.get_monitor = self._v2_client.get_monitor
+        self.update_monitor = self._v2_client.update_monitor
+        self.delete_monitor = self._v2_client.delete_monitor
+        self.run_monitor = self._v2_client.run_monitor
+        self.list_monitor_checks = self._v2_client.list_monitor_checks
+        self.get_monitor_check = self._v2_client.get_monitor_check
+
         self.crawl = self._v2_client.crawl
         self.start_crawl = self._v2_client.start_crawl
+        self.wait_crawl = self._v2_client.wait_crawl
         self.crawl_params_preview = self._v2_client.crawl_params_preview
         self.get_crawl_status = self._v2_client.get_crawl_status
+        self.get_crawl_status_page = self._v2_client.get_crawl_status_page
         self.cancel_crawl = self._v2_client.cancel_crawl
         self.get_crawl_errors = self._v2_client.get_crawl_errors
+        self.get_active_crawls = self._v2_client.get_active_crawls
         self.active_crawls = self._v2_client.active_crawls
 
         self.start_batch_scrape = self._v2_client.start_batch_scrape
         self.get_batch_scrape_status = self._v2_client.get_batch_scrape_status
-        self.cancel_batch_scrape = self._v2_client.cancel_batch_scrape
-        self.batch_scrape = self._v2_client.batch_scrape
-        self.get_batch_scrape_errors = self._v2_client.get_batch_scrape_errors
-        self.get_extract_status = self._v2_client.get_extract_status
-        self.map = self._v2_client.map
-        self.search = self._v2_client.search
-        self.extract = self._v2_client.extract
-        self.get_concurrency = self._v2_client.get_concurrency
-        self.get_credit_usage = self._v2_client.get_credit_usage
-        self.get_token_usage = self._v2_client.get_token_usage
-        self.watcher = self._v2_client.watcher
-        
-class AsyncFirecrawl:
-    """Async unified Firecrawl client (v2 by default, v1 under ``.v1``)."""
-
-    def __init__(self, api_key: str = None, api_url: str = "https://api.firecrawl.dev"):
-        self.api_key = api_key
-        self.api_url = api_url
-        
-        # Initialize version-specific clients
-        self._v1_client = AsyncV1FirecrawlApp(api_key=api_key, api_url=api_url) if AsyncV1FirecrawlApp else None
-        self._v2_client = AsyncFirecrawlClient(api_key=api_key, api_url=api_url) if AsyncFirecrawlClient else None
-        
-        # Create version-specific proxies
-        self.v1 = AsyncV1Proxy(self._v1_client) if self._v1_client else None
-        self.v2 = AsyncV2Proxy(self._v2_client)
-
-        # Expose v2 async surface directly on the top-level client for ergonomic access
-        # Keep method names aligned with the sync client
-        self.scrape = self._v2_client.scrape
-        self.search = self._v2_client.search
-        self.map = self._v2_client.map
-
-        self.start_crawl = self._v2_client.start_crawl
-        self.get_crawl_status = self._v2_client.get_crawl_status
-        self.cancel_crawl = self._v2_client.cancel_crawl
-        self.crawl = self._v2_client.crawl
-        self.get_crawl_errors = self._v2_client.get_crawl_errors
-        self.active_crawls = self._v2_client.active_crawls
-        self.crawl_params_preview = self._v2_client.crawl_params_preview
-
-        self.start_batch_scrape = self._v2_client.start_batch_scrape
-        self.get_batch_scrape_status = self._v2_client.get_batch_scrape_status
+        self.get_batch_scrape_status_page = self._v2_client.get_batch_scrape_status_page
         self.cancel_batch_scrape = self._v2_client.cancel_batch_scrape
         self.batch_scrape = self._v2_client.batch_scrape
         self.get_batch_scrape_errors = self._v2_client.get_batch_scrape_errors
@@ -231,11 +339,257 @@ class AsyncFirecrawl:
         self.get_extract_status = self._v2_client.get_extract_status
         self.extract = self._v2_client.extract
 
+        self.start_agent = self._v2_client.start_agent
+        self.get_agent_status = self._v2_client.get_agent_status
+        self.cancel_agent = self._v2_client.cancel_agent
+        self.list_agents = self._v2_client.list_agents
+        self.get_agent_trace = self._v2_client.get_agent_trace
+        self.get_agent_snapshot = self._v2_client.get_agent_snapshot
+        self.get_agent_thread = self._v2_client.get_agent_thread
+        self.agent = self._v2_client.agent
+
         self.get_concurrency = self._v2_client.get_concurrency
         self.get_credit_usage = self._v2_client.get_credit_usage
         self.get_token_usage = self._v2_client.get_token_usage
+        self.get_queue_status = self._v2_client.get_queue_status
+
+        self.browser = self._v2_client.browser
+        self.browser_execute = self._v2_client.browser_execute
+        self.delete_browser = self._v2_client.delete_browser
+        self.list_browsers = self._v2_client.list_browsers
 
         self.watcher = self._v2_client.watcher
+
+        self.scrape_url = self._v2_client.scrape_url
+        self.crawl_url = self._v2_client.crawl_url
+        self.map_url = self._v2_client.map_url
+        self.async_crawl_url = self._v2_client.async_crawl_url
+        self.check_crawl_status = self._v2_client.check_crawl_status
+        self.check_crawl_errors = self._v2_client.check_crawl_errors
+        self.batch_scrape_urls = self._v2_client.batch_scrape_urls
+        self.async_batch_scrape_urls = self._v2_client.async_batch_scrape_urls
+        self.check_batch_scrape_status = self._v2_client.check_batch_scrape_status
+        self.check_batch_scrape_errors = self._v2_client.check_batch_scrape_errors
+
+    @property
+    def v1(self) -> V1Proxy:
+        """Feature-frozen v1 client, created on first use because it requires an API key on the cloud API."""
+        if self._v1 is None:
+            self._v1 = V1Proxy(V1FirecrawlApp(api_key=self.api_key, api_url=self.api_url, origin=self._origin))
+        return self._v1
+
+    def parse(
+        self,
+        file: Union[str, Path, bytes, bytearray, BinaryIO],
+        *,
+        filename: Optional[str] = None,
+        content_type: Optional[str] = None,
+        options: Optional[ParseOptions] = None,
+    ) -> Document:
+        """Parse an uploaded file via the v2 parse endpoint."""
+        return self._v2_client.parse(
+            file,
+            filename=filename,
+            content_type=content_type,
+            options=options,
+        )
+
+    # Research paper index (/v2/search/research) — delegates to the v2 client.
+    @doc(CLIENT_SEARCH_PAPERS_DOC)
+    def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return self._v2_client.search_papers(query, sort=sort, **kwargs)
+
+    @doc(CLIENT_INSPECT_PAPER_DOC)
+    def inspect_paper(self, paper_id: str):
+        return self._v2_client.inspect_paper(paper_id)
+
+    @doc(CLIENT_READ_PAPER_DOC)
+    def read_paper(self, paper_id: str, query: str, **kwargs):
+        return self._v2_client.read_paper(paper_id, query, **kwargs)
+
+    @doc(CLIENT_RELATED_PAPERS_DOC)
+    def related_papers(self, paper_id: str, intent: str, **kwargs):
+        return self._v2_client.related_papers(paper_id, intent, **kwargs)
+
+    @doc(CLIENT_LOOKUP_PROTEIN_DOC)
+    def lookup_protein(self, protein: str, **kwargs):
+        return self._v2_client.lookup_protein(protein, **kwargs)
+
+    @doc(CLIENT_SEARCH_GITHUB_DOC)
+    def search_github(self, query: str, **kwargs):
+        return self._v2_client.search_github(query, **kwargs)
+
+
+class AsyncFirecrawl:
+    """Async unified Firecrawl client (v2 by default, v1 under ``.v1``)."""
+
+    def __init__(
+        self,
+        api_key: str = None,
+        api_url: Optional[str] = "https://api.firecrawl.dev",
+        timeout: float = None,
+        max_retries: int = 3,
+        backoff_factor: float = 0.5,
+        origin: str = None,
+    ):
+        if api_url is None:
+            api_url = "https://api.firecrawl.dev"
+        self.api_key = api_key
+        self.api_url = api_url
+
+        self._origin = origin or default_origin(get_version())
+        self._v1: Optional[AsyncV1Proxy] = None
+
+        self._v2_client = AsyncFirecrawlClient(
+            api_key=api_key,
+            api_url=api_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            backoff_factor=backoff_factor,
+            origin=origin,
+        ) if AsyncFirecrawlClient else None
+        
+        self.v2 = AsyncV2Proxy(self._v2_client)
+
+        # Expose v2 async surface directly on the top-level client for ergonomic access
+        # Keep method names aligned with the sync client
+        self.scrape = self._v2_client.scrape
+        self.scrape_alexandria = self._v2_client.scrape_alexandria
+        self.find_tools = self._v2_client.find_tools
+        self.alexandria_feedback = self._v2_client.alexandria_feedback
+        self.interact = self._v2_client.interact
+        self.stop_interaction = self._v2_client.stop_interaction
+        self.stop_interactive_browser = self._v2_client.stop_interactive_browser
+        self.scrape_execute = self.interact
+        self.delete_scrape_browser = self.stop_interaction
+        self.parse = self._v2_client.parse
+        self.get_parse_formats = self._v2_client.get_parse_formats
+        self.search = self._v2_client.search
+        self.developer_search = self._v2_client.developer_search
+        self.gov_search = self._v2_client.gov_search
+        self.map = self._v2_client.map
+        self.create_monitor = self._v2_client.create_monitor
+        self.list_monitors = self._v2_client.list_monitors
+        self.get_monitor = self._v2_client.get_monitor
+        self.update_monitor = self._v2_client.update_monitor
+        self.delete_monitor = self._v2_client.delete_monitor
+        self.run_monitor = self._v2_client.run_monitor
+        self.list_monitor_checks = self._v2_client.list_monitor_checks
+        self.get_monitor_check = self._v2_client.get_monitor_check
+
+        self.start_crawl = self._v2_client.start_crawl
+        self.wait_crawl = self._v2_client.wait_crawl
+        self.get_crawl_status = self._v2_client.get_crawl_status
+        self.get_crawl_status_page = self._v2_client.get_crawl_status_page
+        self.cancel_crawl = self._v2_client.cancel_crawl
+        self.crawl = self._v2_client.crawl
+        self.get_crawl_errors = self._v2_client.get_crawl_errors
+        self.active_crawls = self._v2_client.active_crawls
+        self.crawl_params_preview = self._v2_client.crawl_params_preview
+
+        self.start_batch_scrape = self._v2_client.start_batch_scrape
+        self.get_batch_scrape_status = self._v2_client.get_batch_scrape_status
+        self.get_batch_scrape_status_page = self._v2_client.get_batch_scrape_status_page
+        self.cancel_batch_scrape = self._v2_client.cancel_batch_scrape
+        self.batch_scrape = self._v2_client.batch_scrape
+        self.get_batch_scrape_errors = self._v2_client.get_batch_scrape_errors
+
+        self.start_extract = self._v2_client.start_extract
+        self.get_extract_status = self._v2_client.get_extract_status
+        self.extract = self._v2_client.extract
+
+        self.start_agent = self._v2_client.start_agent
+        self.get_agent_status = self._v2_client.get_agent_status
+        self.cancel_agent = self._v2_client.cancel_agent
+        self.list_agents = self._v2_client.list_agents
+        self.get_agent_trace = self._v2_client.get_agent_trace
+        self.get_agent_snapshot = self._v2_client.get_agent_snapshot
+        self.get_agent_thread = self._v2_client.get_agent_thread
+        self.agent = self._v2_client.agent
+
+        self.get_concurrency = self._v2_client.get_concurrency
+        self.get_credit_usage = self._v2_client.get_credit_usage
+        self.get_token_usage = self._v2_client.get_token_usage
+        self.get_queue_status = self._v2_client.get_queue_status
+
+        self.browser = self._v2_client.browser
+        self.browser_execute = self._v2_client.browser_execute
+        self.delete_browser = self._v2_client.delete_browser
+        self.list_browsers = self._v2_client.list_browsers
+
+        self.watcher = self._v2_client.watcher
+
+        self.scrape_url = self._v2_client.scrape_url
+        self.crawl_url = self._v2_client.crawl_url
+        self.map_url = self._v2_client.map_url
+        self.async_crawl_url = self._v2_client.async_crawl_url
+        self.check_crawl_status = self._v2_client.check_crawl_status
+        self.check_crawl_errors = self._v2_client.check_crawl_errors
+        self.batch_scrape_urls = self._v2_client.batch_scrape_urls
+        self.async_batch_scrape_urls = self._v2_client.async_batch_scrape_urls
+        self.check_batch_scrape_status = self._v2_client.check_batch_scrape_status
+        self.check_batch_scrape_errors = self._v2_client.check_batch_scrape_errors
+
+    @property
+    def v1(self) -> AsyncV1Proxy:
+        """Feature-frozen async v1 client, created on first use because it requires an API key on the cloud API."""
+        if self._v1 is None:
+            self._v1 = AsyncV1Proxy(AsyncV1FirecrawlApp(api_key=self.api_key, api_url=self.api_url, origin=self._origin))
+        return self._v1
+
+    async def parse(
+        self,
+        file: Union[str, Path, bytes, bytearray, BinaryIO],
+        *,
+        filename: Optional[str] = None,
+        content_type: Optional[str] = None,
+        options: Optional[ParseOptions] = None,
+    ) -> Document:
+        """Parse an uploaded file via the v2 parse endpoint."""
+        return await self._v2_client.parse(
+            file,
+            filename=filename,
+            content_type=content_type,
+            options=options,
+        )
+
+    # Research paper index (/v2/search/research) — delegates to the v2 client.
+    @doc(ASYNC_CLIENT_SEARCH_PAPERS_DOC)
+    async def search_papers(
+        self,
+        query: str,
+        *,
+        sort: Optional[Literal["relevance", "date_desc"]] = None,
+        **kwargs,
+    ):
+        return await self._v2_client.search_papers(query, sort=sort, **kwargs)
+
+    @doc(ASYNC_CLIENT_INSPECT_PAPER_DOC)
+    async def inspect_paper(self, paper_id: str):
+        return await self._v2_client.inspect_paper(paper_id)
+
+    @doc(ASYNC_CLIENT_READ_PAPER_DOC)
+    async def read_paper(self, paper_id: str, query: str, **kwargs):
+        return await self._v2_client.read_paper(paper_id, query, **kwargs)
+
+    @doc(ASYNC_CLIENT_RELATED_PAPERS_DOC)
+    async def related_papers(self, paper_id: str, intent: str, **kwargs):
+        return await self._v2_client.related_papers(paper_id, intent, **kwargs)
+
+    @doc(ASYNC_CLIENT_LOOKUP_PROTEIN_DOC)
+    async def lookup_protein(self, protein: str, **kwargs):
+        return await self._v2_client.lookup_protein(protein, **kwargs)
+
+    @doc(ASYNC_CLIENT_SEARCH_GITHUB_DOC)
+    async def search_github(self, query: str, **kwargs):
+        return await self._v2_client.search_github(query, **kwargs)
+
 
 # Export Firecrawl as an alias for FirecrawlApp
 FirecrawlApp = Firecrawl

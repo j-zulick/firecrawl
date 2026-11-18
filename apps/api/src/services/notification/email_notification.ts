@@ -1,35 +1,39 @@
-import { supabase_service } from "../supabase";
+import { and, eq, gte } from "drizzle-orm";
+import { db } from "../../db/connection";
+import * as schema from "../../db/schema";
+import { config } from "../../config";
 import { withAuth } from "../../lib/withAuth";
 import { Resend } from "resend";
 import { NotificationType } from "../../types";
 import { logger } from "../../../src/lib/logger";
 import { sendSlackWebhook } from "../alerts/slack";
 import { getNotificationString } from "./notification_string";
-import { AuthCreditUsageChunk } from "../../controllers/v1/types";
-import { redlock } from "../redlock";
 import { redisEvictConnection } from "../redis";
 import { trackEvent } from "../ledger/tracking";
 
-const emailTemplates: Record<
-  NotificationType,
-  { subject: string; html: string }
-> = {
-  [NotificationType.APPROACHING_LIMIT]: {
-    subject: "You've used 80% of your credit limit - Firecrawl",
-    html: "Hey there,<br/><p>You are approaching your credit limit for this billing period. Your usage right now is around 80% of your total credit limit. Consider upgrading your plan to avoid hitting the limit. Check out our <a href='https://firecrawl.dev/pricing'>pricing page</a> for more info.</p><br/>Thanks,<br/>Firecrawl Team<br/>",
-  },
-  [NotificationType.LIMIT_REACHED]: {
-    subject:
-      "Credit Limit Reached! Take action now to resume usage - Firecrawl",
-    html: "Hey there,<br/><p>You have reached your credit limit for this billing period. To resume usage, please upgrade your plan. Check out our <a href='https://firecrawl.dev/pricing'>pricing page</a> for more info.</p><br/>Thanks,<br/>Firecrawl Team<br/>",
-  },
+type NotificationContext = {
+  autoRechargeCredits?: number;
+};
+
+type EmailTemplate = {
+  subject: string;
+  html: string | ((ctx: NotificationContext) => string);
+};
+
+const emailTemplates: Record<NotificationType, EmailTemplate> = {
   [NotificationType.RATE_LIMIT_REACHED]: {
     subject: "Rate Limit Reached - Firecrawl",
     html: "Hey there,<br/><p>You've hit one of the Firecrawl endpoint's rate limit! Take a breather and try again in a few moments. If you need higher rate limits, consider upgrading your plan. Check out our <a href='https://firecrawl.dev/pricing'>pricing page</a> for more info.</p><p>If you have any questions, feel free to reach out to us at <a href='mailto:help@firecrawl.com'>help@firecrawl.com</a></p><br/>Thanks,<br/>Firecrawl Team<br/><br/>Ps. this email is only sent once every 7 days if you reach a rate limit.",
   },
   [NotificationType.AUTO_RECHARGE_SUCCESS]: {
     subject: "Auto recharge successful - Firecrawl",
-    html: "Hey there,<br/><p>Your account was successfully recharged with 1000 credits because your remaining credits were below the threshold. Consider upgrading your plan at <a href='https://firecrawl.dev/pricing'>firecrawl.dev/pricing</a> to avoid hitting the limit.</p><br/>Thanks,<br/>Firecrawl Team<br/>",
+    html: (ctx: NotificationContext) => {
+      const creditsText =
+        ctx.autoRechargeCredits != null
+          ? `${ctx.autoRechargeCredits.toLocaleString()} credits`
+          : "additional credits";
+      return `Hey there,<br/><p>Your account was successfully recharged with ${creditsText} because your remaining credits were below the threshold. Consider upgrading your plan at <a href='https://firecrawl.dev/pricing'>firecrawl.dev/pricing</a> to avoid hitting the limit.</p><br/>Thanks,<br/>Firecrawl Team<br/>`;
+    },
   },
   [NotificationType.AUTO_RECHARGE_FAILED]: {
     subject: "Auto recharge failed - Firecrawl",
@@ -49,6 +53,10 @@ const emailTemplates: Record<
     <p>You can modify your notification settings anytime at <a href='https://www.firecrawl.dev/app/account-settings'>firecrawl.dev/app/account-settings</a>.</p>
     <br/>Thanks,<br/>Firecrawl Team<br/>`,
   },
+  [NotificationType.AGENT_SPONSOR_CONFIRM]: {
+    subject: "An AI agent requested an API key under your email - Firecrawl",
+    html: "",
+  },
 };
 
 // Map notification types to email categories
@@ -56,62 +64,52 @@ const notificationToEmailCategory: Record<
   NotificationType,
   "rate_limit_warnings" | "system_alerts"
 > = {
-  [NotificationType.APPROACHING_LIMIT]: "system_alerts",
-  [NotificationType.LIMIT_REACHED]: "system_alerts",
   [NotificationType.RATE_LIMIT_REACHED]: "rate_limit_warnings",
   [NotificationType.AUTO_RECHARGE_SUCCESS]: "system_alerts",
   [NotificationType.AUTO_RECHARGE_FAILED]: "system_alerts",
   [NotificationType.CONCURRENCY_LIMIT_REACHED]: "rate_limit_warnings",
   [NotificationType.AUTO_RECHARGE_FREQUENT]: "system_alerts",
+  [NotificationType.AGENT_SPONSOR_CONFIRM]: "system_alerts",
 };
-
-export async function sendNotification(
-  team_id: string,
-  notificationType: NotificationType,
-  startDateString: string | null,
-  endDateString: string | null,
-  chunk: AuthCreditUsageChunk,
-  bypassRecentChecks: boolean = false,
-  is_ledger_enabled: boolean = false,
-) {
-  return withAuth(sendNotificationInternal, undefined)(
-    team_id,
-    notificationType,
-    startDateString,
-    endDateString,
-    chunk,
-    bypassRecentChecks,
-    is_ledger_enabled,
-  );
-}
 
 async function sendEmailNotification(
   email: string,
   notificationType: NotificationType,
+  context: NotificationContext = {},
 ) {
-  const resend = new Resend(process.env.RESEND_API_KEY);
+  const resend = new Resend(config.RESEND_API_KEY);
 
   try {
     // Get user's email preferences
-    const { data: user, error: userError } = await supabase_service
-      .from("users")
-      .select("id")
-      .eq("email", email)
-      .single();
-
-    if (userError) {
+    let user: { id: string } | undefined;
+    try {
+      [user] = await db
+        .select({ id: schema.users.id })
+        .from(schema.users)
+        .where(eq(schema.users.email, email))
+        .limit(1);
+    } catch (userError) {
       logger.debug(`Error fetching user: ${userError}`);
+      return { success: false };
+    }
+    if (!user) {
       return { success: false };
     }
 
     // Check user's email preferences
-    const { data: preferences, error: prefError } = await supabase_service
-      .from("notification_preferences")
-      .select("unsubscribed_all, email_preferences")
-      .eq("user_id", user.id)
-      .single();
-
-    if (prefError) {
+    let preferences:
+      | { unsubscribed_all: boolean | null; email_preferences: string[] | null }
+      | undefined;
+    try {
+      [preferences] = await db
+        .select({
+          unsubscribed_all: schema.notification_preferences.unsubscribed_all,
+          email_preferences: schema.notification_preferences.email_preferences,
+        })
+        .from(schema.notification_preferences)
+        .where(eq(schema.notification_preferences.user_id, user.id))
+        .limit(1);
+    } catch (prefError) {
       logger.debug(`Error fetching preferences: ${prefError}`);
       return { success: false };
     }
@@ -139,12 +137,18 @@ async function sendEmailNotification(
       return { success: true }; // Return success since this is an expected case
     }
 
+    const template = emailTemplates[notificationType];
+    const html =
+      typeof template.html === "function"
+        ? template.html(context)
+        : template.html;
+
     const { error } = await resend.emails.send({
-      from: "Firecrawl <firecrawl@getmendableai.com>",
+      from: "Firecrawl <notifications@notifications.firecrawl.dev>",
       to: [email],
-      reply_to: "help@firecrawl.com",
-      subject: emailTemplates[notificationType].subject,
-      html: emailTemplates[notificationType].html,
+      replyTo: "help@firecrawl.com",
+      subject: template.subject,
+      html,
     });
 
     if (error) {
@@ -166,125 +170,14 @@ async function sendLedgerEvent(
   if (notificationType === NotificationType.CONCURRENCY_LIMIT_REACHED) {
     trackEvent("concurrent-browser-limit-reached", {
       team_id,
-    }).catch((error) => {
-      logger.warn("Error tracking event", { module: "email_notification", method: "sendLedgerEvent", error });
+    }).catch(error => {
+      logger.warn("Error tracking event", {
+        module: "email_notification",
+        method: "sendLedgerEvent",
+        error,
+      });
     });
   }
-}
-
-async function sendNotificationInternal(
-  team_id: string,
-  notificationType: NotificationType,
-  startDateString: string | null,
-  endDateString: string | null,
-  chunk: AuthCreditUsageChunk,
-  bypassRecentChecks: boolean = false,
-  is_ledger_enabled: boolean = false,
-): Promise<{ success: boolean }> {
-  if (team_id === "preview" || team_id.startsWith("preview_")) {
-    return { success: true };
-  }
-  return await redlock.using(
-    [`notification-lock:${team_id}:${notificationType}`],
-    5000,
-    async () => {
-      if (!bypassRecentChecks) {
-        const fifteenDaysAgo = new Date();
-        fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
-
-        const { data, error } = await supabase_service
-          .from("user_notifications")
-          .select("*")
-          .eq("team_id", team_id)
-          .eq("notification_type", notificationType)
-          .gte("sent_date", fifteenDaysAgo.toISOString());
-
-        if (error) {
-          logger.debug(`Error fetching notifications: ${error}`);
-          return { success: false };
-        }
-
-        if (data.length !== 0) {
-          return { success: false };
-        }
-
-        // TODO: observation: Free credits people are not receiving notifications
-
-        const { data: recentData, error: recentError } = await supabase_service
-          .from("user_notifications")
-          .select("*")
-          .eq("team_id", team_id)
-          .eq("notification_type", notificationType)
-          .gte("sent_date", startDateString)
-          .lte("sent_date", endDateString);
-
-        if (recentError) {
-          logger.debug(
-            `Error fetching recent notifications: ${recentError.message}`,
-          );
-          return { success: false };
-        }
-
-        if (recentData.length !== 0) {
-          return { success: false };
-        }
-      }
-
-      console.log(
-        `Sending notification for team_id: ${team_id} and notificationType: ${notificationType}`,
-      );
-
-      if (is_ledger_enabled) {
-        sendLedgerEvent(team_id, notificationType).catch((error) => {
-          logger.warn("Error sending ledger event", { module: "email_notification", method: "sendEmail", error });
-        });
-      }
-      // get the emails from the user with the team_id
-      const { data: emails, error: emailsError } = await supabase_service
-        .from("users")
-        .select("email")
-        .eq("team_id", team_id);
-
-      if (emailsError) {
-        logger.debug(`Error fetching emails: ${emailsError}`);
-        return { success: false };
-      }
-
-      if (!is_ledger_enabled) {
-        for (const email of emails) {
-          await sendEmailNotification(email.email, notificationType);
-        }
-      }
-
-      const { error: insertError } = await supabase_service
-        .from("user_notifications")
-        .insert([
-          {
-            team_id: team_id,
-            notification_type: notificationType,
-            sent_date: new Date().toISOString(),
-            timestamp: new Date().toISOString(),
-          },
-        ]);
-
-      if (process.env.SLACK_ADMIN_WEBHOOK_URL && emails.length > 0) {
-        sendSlackWebhook(
-          `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}. Number of credits used: ${chunk.adjusted_credits_used} | Number of credits in the plan: ${chunk.price_credits}`,
-          false,
-          process.env.SLACK_ADMIN_WEBHOOK_URL,
-        ).catch((error) => {
-          logger.debug(`Error sending slack notification: ${error}`);
-        });
-      }
-
-      if (insertError) {
-        logger.debug(`Error inserting notification record: ${insertError}`);
-        return { success: false };
-      }
-
-      return { success: true };
-    },
-  );
 }
 
 export async function sendNotificationWithCustomDays(
@@ -326,15 +219,19 @@ export async function sendNotificationWithCustomDays(
         now.getTime() - daysBetweenEmails * 24 * 60 * 60 * 1000,
       );
 
-      const { data: recentNotifications, error: recentNotificationsError } =
-        await supabase_service
-          .from("user_notifications")
-          .select("*")
-          .eq("team_id", team_id)
-          .eq("notification_type", notificationType)
-          .gte("sent_date", pastDate.toISOString());
-
-      if (recentNotificationsError) {
+      let recentNotifications: { id: string }[];
+      try {
+        recentNotifications = await db
+          .select({ id: schema.user_notifications.id })
+          .from(schema.user_notifications)
+          .where(
+            and(
+              eq(schema.user_notifications.team_id, team_id),
+              eq(schema.user_notifications.notification_type, notificationType),
+              gte(schema.user_notifications.sent_date, pastDate.toISOString()),
+            ),
+          );
+      } catch (recentNotificationsError) {
         logger.debug(
           `Error fetching recent notifications: ${recentNotificationsError}`,
         );
@@ -359,50 +256,58 @@ export async function sendNotificationWithCustomDays(
         `Sending notification for team_id: ${team_id} and notificationType: ${notificationType}`,
       );
       // get the emails from the user with the team_id
-      const { data: emails, error: emailsError } = await supabase_service
-        .from("users")
-        .select("email")
-        .eq("team_id", team_id);
-
-      if (emailsError) {
+      let emails: { email: string | null }[];
+      try {
+        emails = await db
+          .select({ email: schema.users.email })
+          .from(schema.users)
+          .where(eq(schema.users.team_id, team_id));
+      } catch (emailsError) {
         logger.debug(`Error fetching emails: ${emailsError}`);
         await redisEvictConnection.del(redisKey); // free up redis, let it try again
         return { success: false };
       }
 
       if (is_ledger_enabled) {
-        sendLedgerEvent(team_id, notificationType).catch((error) => {
-          logger.warn("Error sending ledger event", { module: "email_notification", method: "sendEmail", error });
+        sendLedgerEvent(team_id, notificationType).catch(error => {
+          logger.warn("Error sending ledger event", {
+            module: "email_notification",
+            method: "sendEmail",
+            error,
+          });
         });
       }
 
       if (!is_ledger_enabled) {
         for (const email of emails) {
-          await sendEmailNotification(email.email, notificationType);
+          if (email.email) {
+            await sendEmailNotification(email.email, notificationType);
+          }
         }
       }
 
-      const { error: insertError } = await supabase_service
-        .from("user_notifications")
-        .insert([
-          {
-            team_id: team_id,
-            notification_type: notificationType,
-            sent_date: new Date().toISOString(),
-            timestamp: new Date().toISOString(),
-          },
-        ]);
+      let insertError: unknown = null;
+      try {
+        await db.insert(schema.user_notifications).values({
+          team_id: team_id,
+          notification_type: notificationType,
+          sent_date: new Date().toISOString(),
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        insertError = error;
+      }
 
       if (
-        process.env.SLACK_ADMIN_WEBHOOK_URL &&
+        config.SLACK_ADMIN_WEBHOOK_URL &&
         emails.length > 0 &&
         notificationType !== NotificationType.CONCURRENCY_LIMIT_REACHED
       ) {
         sendSlackWebhook(
           `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}.`,
           false,
-          process.env.SLACK_ADMIN_WEBHOOK_URL,
-        ).catch((error) => {
+          config.SLACK_ADMIN_WEBHOOK_URL,
+        ).catch(error => {
           logger.debug(`Error sending slack notification: ${error}`);
         });
       }
@@ -416,5 +321,11 @@ export async function sendNotificationWithCustomDays(
       return { success: true };
     },
     undefined,
-  )(team_id, notificationType, daysBetweenEmails, bypassRecentChecks, is_ledger_enabled );
+  )(
+    team_id,
+    notificationType,
+    daysBetweenEmails,
+    bypassRecentChecks,
+    is_ledger_enabled,
+  );
 }
