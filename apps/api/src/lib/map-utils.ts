@@ -24,6 +24,10 @@ import {
   queryIndexAtSplitLevelWithMeta,
 } from "../services/index";
 import { performCosineSimilarityV2 } from "./map-cosine";
+import {
+  discoverSelfHostedMapLinks,
+  shouldUseSelfHostedMapDiscovery,
+} from "./selfhost-map-discovery";
 import { Logger } from "winston";
 
 // Max Links that "Smart /map" can return
@@ -303,6 +307,22 @@ export async function getMapResults({
       } catch (e) {
         // Silently handle sitemap errors
       }
+    }
+
+    if (!indexOnly && shouldUseSelfHostedMapDiscovery()) {
+      mapResults.push(
+        ...(await discoverSelfHostedMapLinks({
+          url,
+          search,
+          limit,
+          crawler,
+          zeroDataRetention,
+          allowSearch: !searchZeroDataRetention,
+          headers,
+          timeoutMs: crawlerOptions.timeout,
+          abort,
+        })),
+      );
     }
 
     if (search) {

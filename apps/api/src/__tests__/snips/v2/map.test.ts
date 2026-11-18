@@ -1,6 +1,8 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   concurrentIf,
+  HAS_FIRE_ENGINE,
+  TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { expectMapToSucceed, map, idmux, Identity } from "./lib";
@@ -247,6 +249,51 @@ describe("Map tests", () => {
       expect(
         response.body.links.every(link => !link.url.includes("firecrawl.com")),
       ).toBe(true);
+    },
+    60000,
+  );
+
+  // Self-hosted /map discovery (j-zulick fork): without fire-engine or a
+  // sitemap, map used to return nothing. It now extracts links from the start
+  // page (and a few same-site pages found on it).
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE && TEST_SELF_HOST && !HAS_FIRE_ENGINE)(
+    "self-hosted map discovers links without a sitemap",
+    async () => {
+      const response = await map(
+        {
+          url: base,
+          sitemap: "skip",
+          limit: 50,
+        },
+        identity,
+      );
+
+      expectMapToSucceed(response);
+      const urls: string[] = response.body.links.map((x: any) => x.url);
+      expect(urls.length).toBeGreaterThan(1);
+      const host = new URL(base).hostname;
+      for (const u of urls) {
+        expect(new URL(u).hostname).toBe(host);
+      }
+      expect(new Set(urls).size).toBe(urls.length);
+    },
+    60000,
+  );
+
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE && TEST_SELF_HOST && !HAS_FIRE_ENGINE)(
+    "self-hosted map discovery returns no links for a missing page",
+    async () => {
+      const response = await map(
+        {
+          url: `${base}/this-page-does-not-exist-${crypto.randomUUID()}`,
+          sitemap: "skip",
+        },
+        identity,
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.links).toEqual([]);
     },
     60000,
   );

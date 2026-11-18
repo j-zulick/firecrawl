@@ -540,6 +540,14 @@ const configSchema = z.object({
   SEARCH_INDEX_SAMPLE_RATE: z.coerce.number().default(0.1),
   ENABLE_SEARCH_INDEX: z.stringbool().optional(),
 
+  // Self-hosted /map discovery when fire-engine is not configured (j-zulick fork)
+  MAP_SELFHOST_DISCOVERY: emptyStringAsDefault(z.stringbool().default(true)),
+  MAP_SELFHOST_DISCOVERY_MAX_PAGES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3),
+
   // Worker Configuration
   WORKER_PORT: z.coerce.number().default(3005),
   NUQ_WORKER_PORT: z.coerce.number().default(3000).catch(3000), // todo: investigate why .catch is needed
