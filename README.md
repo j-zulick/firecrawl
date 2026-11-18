@@ -35,6 +35,24 @@
   </p>
 </div>
 
+> [!NOTE]
+> **About this fork.** This is [Joseph Zulick](https://josephzulick.com)'s self-hosted fork of
+> [firecrawl/firecrawl](https://github.com/firecrawl/firecrawl). It runs in production as the
+> page-reading service of a personal AI research platform (SearXNG search, an MCP research
+> gateway and n8n automations on DigitalOcean, deployed with Komodo).
+>
+> What the fork adds on top of upstream:
+> - **Self-hosted `/map` discovery**: link discovery from the site itself and SearXNG when
+>   fire-engine isn't available ([code](apps/api/src/lib/selfhost-map-discovery.ts), with tests)
+> - **Deployment sized for a 2 vCPU / 4 GB host**: measured memory limits, external Redis,
+>   localhost-only API, healthchecks and log rotation ([`docker-compose.yaml`](docker-compose.yaml))
+> - **Crash-safe browser service**: single-flight Chromium relaunch
+> - **Operations**: [architecture](ops/ARCHITECTURE.md), [runbook and rollback](ops/README.md),
+>   and an [end-to-end smoke test](ops/selfhost-smoke.sh)
+>
+> Everything below this note is the upstream README. All credit for Firecrawl itself goes to
+> the Firecrawl team (AGPL-3.0).
+
 ---
 
 # **🔥 Firecrawl**
