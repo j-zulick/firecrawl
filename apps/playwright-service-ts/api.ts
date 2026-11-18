@@ -159,6 +159,20 @@ interface UrlModel {
 }
 
 let browser: Browser;
+let browserLaunch: Promise<void> | null = null;
+
+// Local patch (j-zulick fork): relaunch Chromium if it has died, and make the
+// relaunch single-flight so concurrent requests after a crash share one launch
+// instead of each starting (and leaking) their own browser process.
+const ensureBrowser = async (): Promise<void> => {
+  if (browser && browser.isConnected()) return;
+  if (!browserLaunch) {
+    browserLaunch = initializeBrowser().finally(() => {
+      browserLaunch = null;
+    });
+  }
+  await browserLaunch;
+};
 
 const initializeBrowser = async () => {
   browser = await chromium.launch({
@@ -173,7 +187,6 @@ const initializeBrowser = async () => {
       '--disable-gpu',
     ],
   });
-  // Local patch: relaunch on the next request if Chromium closes instead of failing every request.
   const launched = browser;
   launched.on('disconnected', () => {
     console.warn('Browser disconnected; will relaunch on next request');
@@ -331,9 +344,7 @@ const scrapePage = async (
 
 app.get('/health', async (req: Request, res: Response) => {
   try {
-    if (!browser || !browser.isConnected()) {
-      await initializeBrowser();
-    }
+    await ensureBrowser();
 
     const { context: testContext } = await createContext();
     const testPage = await testContext.newPage();
@@ -400,9 +411,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
     );
   }
 
-  if (!browser || !browser.isConnected()) {
-    await initializeBrowser();
-  }
+  await ensureBrowser();
 
   await pageSemaphore.acquire();
 
