@@ -1,16 +1,6 @@
-import type { Document as V1Document, Action } from "../controllers/v1/types";
-
-export interface Progress {
-  current: number;
-  total: number;
-  status: string;
-  metadata?: {
-    sourceURL?: string;
-    [key: string]: any;
-  };
-  currentDocumentUrl?: string;
-  currentDocument?: Document;
-}
+import type { Action } from "../controllers/v1/types";
+import type { SkillCard } from "../search/skill-cards";
+import type { BrandingProfile } from "../types/branding";
 
 export type PageOptions = {
   includeMarkdown?: boolean;
@@ -61,38 +51,6 @@ export type SearchOptions = {
   location?: string;
 };
 
-export type CrawlerOptions = {
-  returnOnlyUrls?: boolean;
-  includes?: string | string[];
-  excludes?: string | string[];
-  maxCrawledLinks?: number;
-  maxDepth?: number;
-  limit?: number;
-  generateImgAltText?: boolean;
-  replaceAllPathsWithAbsolutePaths?: boolean;
-  ignoreSitemap?: boolean;
-  mode?: "default" | "fast"; // have a mode of some sort
-  allowBackwardCrawling?: boolean;
-  allowExternalContentLinks?: boolean;
-};
-
-export type WebScraperOptions = {
-  jobId: string;
-  urls: string[];
-  mode: "single_urls" | "sitemap" | "crawl";
-  crawlerOptions?: CrawlerOptions;
-  pageOptions?: PageOptions;
-  extractorOptions?: ExtractorOptions;
-  concurrentRequests?: number;
-  bullJobId?: string;
-  priority?: number;
-  teamId?: string;
-};
-
-export interface DocumentUrl {
-  url: string;
-}
-
 export class Document {
   id?: string;
   url?: string; // Used only in /search for now
@@ -114,7 +72,13 @@ export class Document {
   actions?: {
     screenshots?: string[];
     scrapes?: ScrapeActionContent[];
+    javascriptReturns?: {
+      type: string;
+      value: unknown;
+    }[];
+    pdfs?: string[];
   };
+  branding?: BrandingProfile;
 
   index?: number;
   linksOnPage?: string[]; // Add this new field as a separate property
@@ -151,22 +115,25 @@ export class SearchResult {
   }
 }
 
-export interface ImageSearchResult {
+interface ImageSearchResult {
   title?: string;
   imageUrl?: string;
   imageWidth?: number;
   imageHeight?: number;
   url?: string;
   position?: number;
+  answer?: string;
+  highlights?: string;
 }
 
-export interface NewsSearchResult {
+interface NewsSearchResult {
   title?: string;
   url?: string;
   snippet?: string;
   date?: string;
   imageUrl?: string;
   position?: number;
+  category?: string;
   // Scraped content fields
   markdown?: string;
   html?: string;
@@ -174,6 +141,8 @@ export interface NewsSearchResult {
   links?: string[];
   screenshot?: string;
   metadata?: Record<string, any>;
+  answer?: string;
+  highlights?: string;
 }
 
 export interface WebSearchResult {
@@ -181,6 +150,7 @@ export interface WebSearchResult {
   title: string;
   description: string;
   position?: number;
+  category?: string;
   // Scraped content fields
   markdown?: string;
   html?: string;
@@ -188,35 +158,95 @@ export interface WebSearchResult {
   links?: string[];
   screenshot?: string;
   metadata?: Record<string, any>;
+  answer?: string;
+  highlights?: string;
 }
 
-export type SearchResultType = 'web' | 'images' | 'news';
+export type SearchResultType = "web" | "images" | "news";
 
 export interface SearchV2Response {
+  tools?: import("../services/alexandria/contracts").DiscoveredTool[];
+  skills?: SkillCard[];
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];
 }
 
+/**
+ * Length of each `SearchV2Response` group as returned to the client. Every
+ * group is present and non-negative — a source that was not requested, or that
+ * returned nothing, counts 0. Persisted per search so position-based feedback
+ * can be bounded exactly per source rather than against a combined total.
+ * `tools` is present only when provider discovery ran. `skills` is present
+ * only when skill discovery ran.
+ */
+export type SearchResultCountsBySource = Record<SearchResultType, number> & {
+  tools?: number;
+  skills?: number;
+};
+
+export function countSearchResultsBySource(
+  response: SearchV2Response,
+): SearchResultCountsBySource {
+  return {
+    web: response.web?.length ?? 0,
+    images: response.images?.length ?? 0,
+    news: response.news?.length ?? 0,
+    ...(response.tools ? { tools: response.tools.length } : {}),
+    ...(response.skills ? { skills: response.skills.length } : {}),
+  };
+}
+
+/**
+ * Which vertical produced each result, keyed by group and then by the result's
+ * 1-indexed position in that group: `{"web":{"1":"developer","3":"github"}}`.
+ *
+ * Sparse on purpose. Results carry a `category` only when one applies — the
+ * developer index stamps `developer` on every hit it serves (see
+ * `search/developer.ts`), and `github` / `research` / `pdf` are derived per URL
+ * in `search/execute.ts` — so untagged results are simply absent, as are groups
+ * with no tagged results at all. An empty object therefore means "nothing was
+ * tagged", which is a different claim from a NULL column ("this row predates
+ * the column").
+ *
+ * This is the only place the serving vertical survives the response. `source`
+ * says which `data` group a result sits in, which is addressing; `category`
+ * says who answered, which is attribution. They are the same value today only
+ * because the developer category is schema-enforced as exclusive and lands in
+ * `data.web`; blend a vertical into ordinary web results and the two come
+ * apart. Persisted per search so position-based feedback can resolve the
+ * vertical behind a `(source, position)` pair it is handed later.
+ */
+export type SearchResultCategoriesBySource = Partial<
+  Record<SearchResultType, Record<string, string>>
+>;
+
+export function collectSearchResultCategories(
+  response: SearchV2Response,
+): SearchResultCategoriesBySource {
+  const collected: SearchResultCategoriesBySource = {};
+
+  for (const source of ["web", "images", "news"] as const) {
+    const results = response[source];
+    if (!results?.length) continue;
+
+    const categories: Record<string, string> = {};
+    results.forEach((result, index) => {
+      const category = (result as { category?: unknown }).category;
+      if (typeof category === "string" && category.length > 0) {
+        categories[String(index + 1)] = category;
+      }
+    });
+
+    if (Object.keys(categories).length > 0) {
+      collected[source] = categories;
+    }
+  }
+
+  return collected;
+}
+
 export interface ScrapeActionContent {
   url: string;
   html: string;
-}
-
-export interface FireEngineResponse {
-  html: string;
-  screenshots?: string[];
-  pageStatusCode?: number;
-  pageError?: string;
-  scrapeActionContent?: ScrapeActionContent[];
-}
-
-export interface FireEngineOptions {
-  mobileProxy?: boolean;
-  method?: string;
-  engine?: string;
-  blockMedia?: boolean;
-  blockAds?: boolean;
-  disableJsDom?: boolean;
-  atsv?: boolean; // beta
 }

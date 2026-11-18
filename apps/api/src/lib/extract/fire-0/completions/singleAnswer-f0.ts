@@ -1,7 +1,11 @@
 import { logger } from "../../../../lib/logger";
 import { generateCompletions_F0 } from "../llmExtract-f0";
 import { buildDocument_F0 } from "../build-document-f0";
-import { Document, TokenUsage } from "../../../../controllers/v1/types";
+import {
+  Document,
+  TeamFlags,
+  TokenUsage,
+} from "../../../../controllers/v1/types";
 
 export async function singleAnswerCompletion_F0({
   singleAnswerDocs,
@@ -10,13 +14,20 @@ export async function singleAnswerCompletion_F0({
   prompt,
   systemPrompt,
   metadata,
+  teamFlags,
 }: {
   singleAnswerDocs: Document[];
   rSchema: any;
   links: string[];
   prompt: string;
   systemPrompt: string;
-  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string };
+  metadata: {
+    teamId: string;
+    functionId?: string;
+    extractId?: string;
+    scrapeId?: string;
+  };
+  teamFlags?: TeamFlags | null;
 }): Promise<{
   extract: any;
   tokenUsage: TokenUsage;
@@ -33,16 +44,21 @@ export async function singleAnswerCompletion_F0({
       prompt: "Today is: " + new Date().toISOString() + "\n" + prompt,
       schema: rSchema,
     },
-    markdown: singleAnswerDocs.map((x) => buildDocument_F0(x)).join("\n"),
+    markdown: singleAnswerDocs.map(x => buildDocument_F0(x)).join("\n"),
     isExtractEndpoint: true,
+    teamFlags,
     metadata: {
       ...metadata,
-      functionId: metadata.functionId ? (metadata.functionId + "/singleAnswerCompletion_F0") : "singleAnswerCompletion_F0",
-    }
+      functionId: metadata.functionId
+        ? metadata.functionId + "/singleAnswerCompletion_F0"
+        : "singleAnswerCompletion_F0",
+    },
   });
-  return { 
-    extract: completion.extract, 
+  return {
+    extract: completion.extract,
     tokenUsage: completion.totalUsage,
-    sources: singleAnswerDocs.map(doc => doc.metadata.url || doc.metadata.sourceURL || "")
+    sources: singleAnswerDocs.map(
+      doc => doc.metadata.url || doc.metadata.sourceURL || "",
+    ),
   };
 }
