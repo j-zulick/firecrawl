@@ -4,8 +4,7 @@
 import Firecrawl from "../../../index";
 import { config } from "dotenv";
 import { getIdentity, getApiUrl } from "./utils/idmux";
-import { testTimeoutMs, withRateLimitRetry } from "./utils/rateLimit";
-import { describe, test, expect, beforeAll } from "vitest";
+import { describe, test, expect, beforeAll } from "@jest/globals";
 
 config();
 
@@ -14,7 +13,7 @@ let client: Firecrawl;
 
 beforeAll(async () => {
   const { apiKey } = await getIdentity({ name: "js-e2e-map" });
-  client = withRateLimitRetry(new Firecrawl({ apiKey, apiUrl: API_URL }));
+  client = new Firecrawl({ apiKey, apiUrl: API_URL });
 });
 
 describe("v2.map e2e", () => {
@@ -31,7 +30,7 @@ describe("v2.map e2e", () => {
       expect(typeof first.url).toBe("string");
       expect(first.url.startsWith("http")).toBe(true);
     }
-  }, testTimeoutMs(90_000));
+  }, 90_000);
 
   test.each(["only", "skip", "include"]) ("with options sitemap=%s", async (sitemap) => {
     if (!client) throw new Error();
@@ -51,6 +50,6 @@ describe("v2.map e2e", () => {
       expect(typeof link.url).toBe("string");
       expect(link.url.startsWith("http")).toBe(true);
     }
-  }, testTimeoutMs(120_000));
+  }, 120_000);
 });
 

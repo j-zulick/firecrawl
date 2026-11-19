@@ -1,4 +1,4 @@
-import { Firecrawl } from 'firecrawl';
+import FirecrawlApp from 'firecrawl';
 
 // Placeholder v1 example (JavaScript)
 // Mirrors the older SDK usage. Replace with your API key before running.

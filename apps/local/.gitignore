@@ -1,5 +1,0 @@
-target/
-target-linux/
-
-# The shared cleaning code, copied in only while packaging a release.
-/src/native/

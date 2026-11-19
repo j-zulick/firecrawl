@@ -1,7 +1,7 @@
 import { redisEvictConnection } from "../../services/redis";
 import { logger as _logger } from "../logger";
 
-interface GenerationData {
+export interface GenerationData {
   id: string;
   team_id: string;
   createdAt: number;
@@ -18,22 +18,13 @@ interface GenerationData {
 // TTL of 24 hours
 const GENERATION_TTL = 24 * 60 * 60;
 
-export async function saveGeneratedLlmsTxt(
-  id: string,
-  data: GenerationData,
-): Promise<void> {
+export async function saveGeneratedLlmsTxt(id: string, data: GenerationData): Promise<void> {
   _logger.debug("Saving llmstxt generation " + id + " to Redis...");
-  await redisEvictConnection.set(
-    "generation:" + id,
-    JSON.stringify(data),
-    "EX",
-    GENERATION_TTL,
-  );
+  await redisEvictConnection.set("generation:" + id, JSON.stringify(data));
+  await redisEvictConnection.expire("generation:" + id, GENERATION_TTL);
 }
 
-export async function getGeneratedLlmsTxt(
-  id: string,
-): Promise<GenerationData | null> {
+export async function getGeneratedLlmsTxt(id: string): Promise<GenerationData | null> {
   const x = await redisEvictConnection.get("generation:" + id);
   return x ? JSON.parse(x) : null;
 }
@@ -47,15 +38,11 @@ export async function updateGeneratedLlmsTxt(
 
   const updatedGeneration = {
     ...current,
-    ...data,
+    ...data
   };
 
-  await redisEvictConnection.set(
-    "generation:" + id,
-    JSON.stringify(updatedGeneration),
-    "EX",
-    GENERATION_TTL,
-  );
+  await redisEvictConnection.set("generation:" + id, JSON.stringify(updatedGeneration));
+  await redisEvictConnection.expire("generation:" + id, GENERATION_TTL);
 }
 
 export async function getGeneratedLlmsTxtExpiry(id: string): Promise<Date> {
@@ -67,7 +54,7 @@ export async function getGeneratedLlmsTxtExpiry(id: string): Promise<Date> {
 }
 
 // Convenience method for status updates
-async function updateGeneratedLlmsTxtStatus(
+export async function updateGeneratedLlmsTxtStatus(
   id: string,
   status: "processing" | "completed" | "failed",
   generatedText?: string,
@@ -78,6 +65,6 @@ async function updateGeneratedLlmsTxtStatus(
   if (generatedText !== undefined) updates.generatedText = generatedText;
   if (fullText !== undefined) updates.fullText = fullText;
   if (error !== undefined) updates.error = error;
-
+  
   await updateGeneratedLlmsTxt(id, updates);
-}
+}    

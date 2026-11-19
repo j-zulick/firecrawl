@@ -1,16 +1,13 @@
+import { logger } from "../../lib/logger";
 import { SearchV2Response, SearchResultType } from "../../lib/entities";
-import { config } from "../../config";
 import { fire_engine_search_v2 } from "./fireEngine-v2";
+import { serper_search } from "./serper";
+import { searchapi_search } from "./searchapi";
 import { searxng_search } from "./searxng";
-import { ddgSearch } from "./ddgsearch";
-import { Logger } from "winston";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
-import type { TeamPlanClass } from "../../lib/team-plan-class";
+import { googleSearch } from "./googlesearch";
 
 export async function search({
   query,
-  logger,
-  requestId,
   advanced = false,
   num_results = 5,
   tbs = undefined,
@@ -18,20 +15,12 @@ export async function search({
   lang = "en",
   country = "us",
   location = undefined,
-  safe = undefined,
   proxy = undefined,
   sleep_interval = 0,
   timeout = 5000,
   type = undefined,
-  enterprise = undefined,
-  includeDomains = undefined,
-  excludeDomains = undefined,
-  usOnly = false,
-  teamPlanClass = undefined,
 }: {
   query: string;
-  logger: Logger;
-  requestId?: string;
   advanced?: boolean;
   num_results?: number;
   tbs?: string;
@@ -39,52 +28,49 @@ export async function search({
   lang?: string;
   country?: string;
   location?: string;
-  safe?: boolean;
   proxy?: string;
   sleep_interval?: number;
   timeout?: number;
   type?: SearchResultType | SearchResultType[];
-  enterprise?: ("default" | "anon" | "zdr")[];
-  includeDomains?: string[];
-  excludeDomains?: string[];
-  usOnly?: boolean;
-  /** The team's plan class, when the caller knows it. Omitted, nothing is stated. */
-  teamPlanClass?: TeamPlanClass;
 }): Promise<SearchV2Response> {
-  // The fallback backends below take no US-only routing.
-  if (usOnly && !config.FIRE_ENGINE_BETA_URL) {
-    throw new UsOnlyUnavailableError(
-      "Search is not available for teams restricted to US-only processing on this deployment.",
-    );
-  }
   try {
-    if (config.FIRE_ENGINE_BETA_URL) {
-      logger.info("Using fire engine search");
+    if (process.env.FIRE_ENGINE_BETA_URL) {
       const results = await fire_engine_search_v2(query, {
-        requestId,
         numResults: num_results,
         tbs,
         filter,
         lang,
         country,
         location,
-        safe,
         type,
-        enterprise,
-        includeDomains,
-        excludeDomains,
-        usOnly,
-        teamPlanClass,
       });
-
+      
       return results;
     }
-
-    // includeDomains/excludeDomains are enforced on returned URLs only on
-    // the fire engine path above; the fallback providers below receive them
-    // solely as the site: chain baked into the query.
-    if (config.SEARXNG_ENDPOINT) {
-      logger.info("Using searxng search");
+    
+    if (process.env.SERPER_API_KEY) {
+      const results = await serper_search(query, {
+        num_results,
+        tbs,
+        filter,
+        lang,
+        country,
+        location,
+      });
+      if (results.web && results.web.length > 0) return results;
+    }
+    if (process.env.SEARCHAPI_API_KEY) {
+      const results = await searchapi_search(query, {
+        num_results,
+        tbs,
+        filter,
+        lang,
+        country,
+        location,
+      });
+      if (results.web && results.web.length > 0) return results;
+    }
+    if (process.env.SEARXNG_ENDPOINT) {
       const results = await searxng_search(query, {
         num_results,
         tbs,
@@ -92,21 +78,24 @@ export async function search({
         lang,
         country,
         location,
-        safe,
       });
       if (results.web && results.web.length > 0) return results;
     }
-
-    logger.info("Using DuckDuckGo search");
-    const ddgResults = await ddgSearch(query, num_results, {
+    
+    const googleResults = await googleSearch(
+      query,
+      advanced,
+      num_results,
       tbs,
+      filter,
       lang,
       country,
       proxy,
+      sleep_interval,
       timeout,
-    });
-    if (ddgResults.web && ddgResults.web.length > 0) return ddgResults;
-
+    );
+    if (googleResults.web && googleResults.web.length > 0) return googleResults;
+    
     // Fallback to empty response
     return {};
   } catch (error) {

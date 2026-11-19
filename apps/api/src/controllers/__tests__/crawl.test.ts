@@ -1,41 +1,39 @@
-import type { Mock } from "vitest";
 import { crawlController } from "../v0/crawl";
-import { config } from "../../config";
 import { Request, Response } from "express";
 import { authenticateUser } from "../auth"; // Ensure this import is correct
 import { createIdempotencyKey } from "../../services/idempotency/create";
 import { validateIdempotencyKey } from "../../services/idempotency/validate";
-import { v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 
-vi.mock("../auth", () => ({
-  authenticateUser: vi.fn().mockResolvedValue({
+jest.mock("../auth", () => ({
+  authenticateUser: jest.fn().mockResolvedValue({
     success: true,
     team_id: "team123",
     error: null,
     status: 200,
   }),
-  reduce: vi.fn(),
+  reduce: jest.fn(),
 }));
-vi.mock("../../services/idempotency/validate");
+jest.mock("../../services/idempotency/validate");
 
 describe("crawlController", () => {
   it("should prevent duplicate requests using the same idempotency key", async () => {
     const req = {
       headers: {
-        "x-idempotency-key": await uuidv7(),
-        Authorization: `Bearer ${config.TEST_API_KEY}`,
+        "x-idempotency-key": await uuidv4(),
+        Authorization: `Bearer ${process.env.TEST_API_KEY}`,
       },
       body: {
         url: "https://mendable.ai",
       },
     } as unknown as Request;
     const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
     } as unknown as Response;
 
     // Mock the idempotency key validation to return false for the second call
-    (validateIdempotencyKey as Mock)
+    (validateIdempotencyKey as jest.Mock)
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false);
 

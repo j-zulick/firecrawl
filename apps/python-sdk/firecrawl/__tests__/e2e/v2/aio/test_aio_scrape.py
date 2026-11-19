@@ -64,7 +64,6 @@ async def test_async_scrape_with_all_params():
         proxy="basic",
         max_age=0,
         store_in_cache=False,
-        integration="_e2e-test",
     )
     assert isinstance(doc, Document)
 

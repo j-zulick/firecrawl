@@ -1,47 +1,87 @@
-import { Queue } from "bullmq";
-import { config } from "../config";
+import { Queue, QueueEvents } from "bullmq";
 import { logger } from "../lib/logger";
 import IORedis from "ioredis";
-import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
-import { addExtractJob, ExtractJobData } from "./extract-queue";
-import type { BillTeamJobData } from "./billing/types";
-import type { TrackParams } from "./autumn/types";
+import { BullMQOtel } from "bullmq-otel";
 
+export type QueueFunction = () => Queue<any, any, string, any, any, string>;
+
+let scrapeQueue: Queue;
+let scrapeQueueEvents: QueueEvents;
+let extractQueue: Queue;
+let loggingQueue: Queue;
+let indexQueue: Queue;
 let deepResearchQueue: Queue;
 let generateLlmsTxtQueue: Queue;
-let billingQueue: Queue<BillTeamJobData>;
+let billingQueue: Queue;
 let precrawlQueue: Queue;
-let firebillTrackRetryQueue: Queue<FirebillTrackRetryJobData>;
 let redisConnection: IORedis;
 
 export function getRedisConnection(): IORedis {
   if (!redisConnection) {
-    redisConnection = new IORedis(config.REDIS_URL!, {
+    redisConnection = new IORedis(process.env.REDIS_URL!, {
       maxRetriesPerRequest: null,
     });
     redisConnection.on("connect", () => logger.info("Redis connected"));
     redisConnection.on("reconnecting", () => logger.warn("Redis reconnecting"));
-    redisConnection.on("error", err => logger.warn("Redis error", { err }));
+    redisConnection.on("error", (err) => logger.warn("Redis error", { err }));
+
   }
   return redisConnection;
 }
 
-const generateLlmsTxtQueueName = "{generateLlmsTxtQueue}";
-const deepResearchQueueName = "{deepResearchQueue}";
-const billingQueueName = "{billingQueue}";
+export const scrapeQueueName = "{scrapeQueue}";
+export const extractQueueName = "{extractQueue}";
+export const loggingQueueName = "{loggingQueue}";
+export const indexQueueName = "{indexQueue}";
+export const generateLlmsTxtQueueName = "{generateLlmsTxtQueue}";
+export const deepResearchQueueName = "{deepResearchQueue}";
+export const billingQueueName = "{billingQueue}";
 export const precrawlQueueName = "{precrawlQueue}";
-const firebillTrackRetryQueueName = "{firebillTrackRetryQueue}";
 
-/** A usage event firebill never confirmed, re-sent as the identical event. */
-export type FirebillTrackRetryJobData = TrackParams & {
-  idempotencyKey: string;
-};
+export function getScrapeQueue() {
+  if (!scrapeQueue) {
+    scrapeQueue = new Queue(scrapeQueueName, {
+      connection: getRedisConnection(),
+      defaultJobOptions: {
+        removeOnComplete: {
+          age: 3600, // 1 hour
+        },
+        removeOnFail: {
+          age: 3600, // 1 hour
+        },
+      },
+      telemetry: new BullMQOtel("firecrawl-bullmq"),
+    });
+  }
+  return scrapeQueue;
+}
 
-export async function addExtractJobToQueue(
-  extractId: string,
-  data: ExtractJobData,
-): Promise<void> {
-  await addExtractJob(extractId, data);
+export function getScrapeQueueEvents() {
+  if (!scrapeQueueEvents) {
+    scrapeQueueEvents = new QueueEvents(scrapeQueueName, {
+      connection: getRedisConnection(),
+    });
+  }
+
+  return scrapeQueueEvents;
+}
+
+export function getExtractQueue() {
+  if (!extractQueue) {
+    extractQueue = new Queue(extractQueueName, {
+      connection: getRedisConnection(),
+      defaultJobOptions: {
+        removeOnComplete: {
+          age: 90000, // 25 hours
+        },
+        removeOnFail: {
+          age: 90000, // 25 hours
+        },
+      },
+      telemetry: new BullMQOtel("firecrawl-bullmq"),
+    });
+  }
+  return extractQueue;
 }
 
 export function getGenerateLlmsTxtQueue() {
@@ -56,6 +96,7 @@ export function getGenerateLlmsTxtQueue() {
           age: 90000, // 25 hours
         },
       },
+      telemetry: new BullMQOtel("firecrawl-bullmq"),
     });
   }
   return generateLlmsTxtQueue;
@@ -63,27 +104,25 @@ export function getGenerateLlmsTxtQueue() {
 
 export function getDeepResearchQueue() {
   if (!deepResearchQueue) {
-    deepResearchQueue = new Queue<DeepResearchServiceOptions>(
-      deepResearchQueueName,
-      {
-        connection: getRedisConnection(),
-        defaultJobOptions: {
-          removeOnComplete: {
-            age: 90000, // 25 hours
-          },
-          removeOnFail: {
-            age: 90000, // 25 hours
-          },
+    deepResearchQueue = new Queue(deepResearchQueueName, {
+      connection: getRedisConnection(),
+      defaultJobOptions: {
+        removeOnComplete: {
+          age: 90000, // 25 hours
+        },
+        removeOnFail: {
+          age: 90000, // 25 hours
         },
       },
-    );
+      telemetry: new BullMQOtel("firecrawl-bullmq"),
+    });
   }
   return deepResearchQueue;
 }
 
 export function getBillingQueue() {
   if (!billingQueue) {
-    billingQueue = new Queue<BillTeamJobData>(billingQueueName, {
+    billingQueue = new Queue(billingQueueName, {
       connection: getRedisConnection(),
       defaultJobOptions: {
         removeOnComplete: {
@@ -93,31 +132,10 @@ export function getBillingQueue() {
           age: 3600, // 1 hour
         },
       },
+      telemetry: new BullMQOtel("firecrawl-bullmq"),
     });
   }
   return billingQueue;
-}
-
-export function getFirebillTrackRetryQueue() {
-  if (!firebillTrackRetryQueue) {
-    firebillTrackRetryQueue = new Queue<FirebillTrackRetryJobData>(
-      firebillTrackRetryQueueName,
-      {
-        connection: getRedisConnection(),
-        defaultJobOptions: {
-          removeOnComplete: {
-            age: 60 * 60, // 1 hour
-          },
-          // Exhausted retries stay inspectable for a week: each one is an
-          // event that may not have been billed.
-          removeOnFail: {
-            age: 7 * 24 * 60 * 60, // 7 days
-          },
-        },
-      },
-    );
-  }
-  return firebillTrackRetryQueue;
 }
 
 export function getPrecrawlQueue() {
@@ -132,6 +150,7 @@ export function getPrecrawlQueue() {
           age: 24 * 60 * 60, // 1 day
         },
       },
+      telemetry: new BullMQOtel("firecrawl-bullmq"),
     });
   }
   return precrawlQueue;

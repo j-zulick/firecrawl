@@ -1,7 +1,5 @@
 import { Request } from "express";
-import { eq } from "drizzle-orm";
-import { dbRr } from "../../db/connection";
-import * as schema from "../../db/schema";
+import { supabase_rr_service, supabase_service } from "../supabase";
 import { validate as isUuid } from "uuid";
 import { logger } from "../../../src/lib/logger";
 
@@ -20,13 +18,12 @@ export async function validateIdempotencyKey(req: Request): Promise<boolean> {
     return false;
   }
 
-  let data: { key: string }[] = [];
-  try {
-    data = await dbRr
-      .select({ key: schema.idempotency_keys.key })
-      .from(schema.idempotency_keys)
-      .where(eq(schema.idempotency_keys.key, key));
-  } catch (error) {
+  const { data, error } = await supabase_rr_service
+    .from("idempotency_keys")
+    .select("key")
+    .eq("key", idempotencyKey);
+
+  if (error) {
     logger.error(`Error validating idempotency key: ${error}`);
   }
 

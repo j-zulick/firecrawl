@@ -42,7 +42,6 @@ class TestExtractE2E:
             prompt="Extract the main page title",
             show_sources=True,
             enable_web_search=False,
-            integration="_e2e-test",
         )
 
         assert hasattr(resp, "success")

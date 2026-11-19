@@ -4,6 +4,7 @@ import {
   getDeepResearch,
   getDeepResearchExpiry,
 } from "../../lib/deep-research/deep-research-redis";
+import { supabaseGetJobsById } from "../../lib/supabase-jobs";
 
 export async function deepResearchStatusController(
   req: RequestWithAuth<{ jobId: string }, any, any>,
@@ -11,11 +12,23 @@ export async function deepResearchStatusController(
 ) {
   const research = await getDeepResearch(req.params.jobId);
 
-  if (!research || research.team_id !== req.auth.team_id) {
+  if (!research) {
     return res.status(404).json({
       success: false,
       error: "Deep research job not found",
     });
+  }
+
+  let data: any = null;
+
+  if (
+    research.status === "completed" &&
+    process.env.USE_DB_AUTHENTICATION === "true"
+  ) {
+    const jobData = await supabaseGetJobsById([req.params.jobId]);
+    if (jobData && jobData.length > 0) {
+      data = jobData[0].docs[0];
+    }
   }
 
   return res.status(200).json({

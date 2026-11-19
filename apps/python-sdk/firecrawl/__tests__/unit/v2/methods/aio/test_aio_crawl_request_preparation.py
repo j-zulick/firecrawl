@@ -14,7 +14,7 @@ class TestAsyncCrawlRequestPreparation:
             include_paths=["/docs/*"],
             exclude_paths=["/admin/*"],
             max_discovery_depth=2,
-            sitemap="skip",
+            ignore_sitemap=True,
             ignore_query_parameters=True,
             crawl_entire_domain=True,
             allow_external_links=False,
@@ -26,7 +26,7 @@ class TestAsyncCrawlRequestPreparation:
         assert payload["includePaths"] == ["/docs/*"]
         assert payload["excludePaths"] == ["/admin/*"]
         assert payload["maxDiscoveryDepth"] == 2
-        assert payload["sitemap"] == "skip"
+        assert payload["ignoreSitemap"] is True
         assert payload["ignoreQueryParameters"] is True
         assert payload["crawlEntireDomain"] is True
         assert payload["allowExternalLinks"] is False
@@ -58,22 +58,4 @@ class TestAsyncCrawlRequestPreparation:
         assert "headers" not in webhook
         assert "metadata" not in webhook
         assert "events" not in webhook
-
-    def test_all_fields_including_integration(self):
-        req = CrawlRequest(
-            url="https://example.com",
-            include_paths=["/docs/*"],
-            exclude_paths=["/admin/*"],
-            max_discovery_depth=2,
-            sitemap="include",
-            ignore_query_parameters=True,
-            crawl_entire_domain=False,
-            allow_external_links=True,
-            allow_subdomains=True,
-            max_concurrency=3,
-            zero_data_retention=False,
-            integration="  _unit-test  ",
-        )
-        payload = _prepare_crawl_request(req)
-        assert payload["integration"] == "_unit-test"
 

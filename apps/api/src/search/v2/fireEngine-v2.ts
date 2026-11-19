@@ -1,95 +1,138 @@
-import { config } from "../../config";
-import {
-  SearchResult,
-  SearchV2Response,
-  SearchResultType,
-} from "../../lib/entities";
+import dotenv from "dotenv";
+import { SearchResult, SearchV2Response, SearchResultType } from "../../lib/entities";
+import * as Sentry from "@sentry/node";
 import { logger } from "../../lib/logger";
-import { executeWithRetry, attemptRequest } from "../../lib/retry-utils";
-import { useFireEngine } from "../../scraper/scrapeURL/engines/fire-engine/available";
-import type { TeamPlanClass } from "../../lib/team-plan-class";
 
-function normalizeSearchTypes(
-  type?: SearchResultType | SearchResultType[],
-): SearchResultType[] {
-  if (!type) return ["web"];
-  return Array.isArray(type) ? type : [type];
-}
-
-/**
- * Checks if the response has at least one requested type with results.
- * This allows partial results to be returned when some sources have data
- * but others don't, instead of requiring all sources to have results.
- *
- * MOGERY: temp removed to fix bug
- */
-// function hasAnyResults(
-//   response: SearchV2Response,
-//   requestedTypes: SearchResultType[],
-// ): boolean {
-//   if (!response || Object.keys(response).length === 0) return false;
-//   return requestedTypes.some(type => {
-//     const results = response[type];
-//     return Array.isArray(results) && results.length > 0;
-//   });
-// }
+dotenv.config();
 
 export async function fire_engine_search_v2(
   q: string,
   options: {
-    requestId?: string;
     tbs?: string;
     filter?: string;
     lang?: string;
     country?: string;
     location?: string;
-    safe?: boolean;
     numResults: number;
     page?: number;
     type?: SearchResultType | SearchResultType[];
-    enterprise?: ("default" | "anon" | "zdr")[];
-    includeDomains?: string[];
-    excludeDomains?: string[];
-    usOnly?: boolean;
-    teamPlanClass?: TeamPlanClass;
   },
   abort?: AbortSignal,
 ): Promise<SearchV2Response> {
-  if (!useFireEngine) {
-    logger.warn(
-      "FIRE_ENGINE_BETA_URL is not configured, returning empty search results",
-    );
+  try {
+    let data = JSON.stringify({
+      query: q,
+      lang: options.lang,
+      country: options.country,
+      location: options.location,
+      tbs: options.tbs,
+      numResults: options.numResults,
+      page: options.page ?? 1,
+      type: options.type || 'web',
+    });
+
+    if (!process.env.FIRE_ENGINE_BETA_URL) {
+      return {};
+    }
+
+    const response = await fetch(`${process.env.FIRE_ENGINE_BETA_URL}/v2/search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Disable-Cache": "true",
+      },
+      body: data,
+      signal: abort,
+    });
+
+    if (response.ok) {
+      const responseData = await response.json();
+      return responseData;
+    } else {
+      return {};
+    }
+  } catch (error) {
+    logger.error(error);
+    Sentry.captureException(error);
     return {};
   }
+}
 
-  const payload = {
-    query: q,
-    lang: options.lang,
-    country: options.country,
-    location: options.location,
-    tbs: options.tbs,
-    numResults: options.numResults,
-    page: options.page ?? 1,
-    type: options.type || "web",
-    enterprise: options.enterprise,
-    safe: options.safe ? ("active" as const) : undefined,
-    includeDomains: options.includeDomains,
-    excludeDomains: options.excludeDomains,
-    ...(options.usOnly ? { usOnly: true } : {}),
-    // Sent only when the caller knows it. Without it nothing is stated about
-    // the team, which the receiver must not read as free or self-serve.
-    ...(options.teamPlanClass ? { teamPlanClass: options.teamPlanClass } : {}),
-  };
+// Backward compatibility function
+export async function fire_engine_search(
+  q: string,
+  options: {
+    tbs?: string;
+    filter?: string;
+    lang?: string;
+    country?: string;
+    location?: string;
+    numResults: number;
+    page?: number;
+    type?: SearchResultType | SearchResultType[];
+  },
+  abort?: AbortSignal,
+): Promise<SearchResult[]> {
+  const result = await fire_engine_search_v2(q, options, abort);
+  
+  // Handle backward compatibility - convert to SearchResult array
+  if (Array.isArray(result)) {
+    return result;
+  } else if (result.web) {
+    return result.web.map(item => new SearchResult(item.url, item.title, item.description));
+  }
+  
+  return [];
+}
 
-  const requestedTypes = normalizeSearchTypes(options.type);
-  const url = `${config.FIRE_ENGINE_BETA_URL}/v2/search`;
-  const data = JSON.stringify(payload);
+export async function fireEngineMap(
+  q: string,
+  options: {
+    tbs?: string;
+    filter?: string;
+    lang?: string;
+    country?: string;
+    location?: string;
+    numResults: number;
+    page?: number;
+  },
+  abort?: AbortSignal,
+): Promise<SearchResult[]> {
+  try {
+    let data = JSON.stringify({
+      query: q,
+      lang: options.lang,
+      country: options.country,
+      location: options.location,
+      tbs: options.tbs,
+      numResults: options.numResults,
+      page: options.page ?? 1,
+    });
 
-  const result = await executeWithRetry<SearchV2Response>(
-    () => attemptRequest<SearchV2Response>(url, data, abort, options.requestId),
-    (response): response is SearchV2Response => response !== null,
-    abort,
-  );
+    if (!process.env.FIRE_ENGINE_BETA_URL) {
+      logger.warn("(v1/map Beta) Results might differ from cloud offering currently.");
+      return [];
+    }
 
-  return result ?? {};
+    const response = await fetch(`${process.env.FIRE_ENGINE_BETA_URL}/map`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Disable-Cache": "true",
+      },
+      body: data,
+      signal: abort,
+    });
+
+    if (response.ok) {
+      const responseData = await response.json();
+      return responseData;
+    } else {
+      return [];
+    }
+  } catch (error) {
+    logger.error(error);
+    Sentry.captureException(error);
+    return [];
+  }
 }

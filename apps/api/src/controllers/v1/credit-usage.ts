@@ -1,38 +1,46 @@
-import { Response } from "express";
-import { ErrorResponse, RequestWithAuth } from "./types";
-import { getTeamBalance } from "../../services/autumn/usage";
-
-interface CreditUsageResponse {
-  success: true;
-  data: {
-    remaining_credits: number;
-    plan_credits: number;
-    billing_period_start: string | null;
-    billing_period_end: string | null;
-  };
-}
+import { Request, Response } from "express";
+import { RequestWithAuth } from "./types";
+import { getACUCTeam } from "../auth";
+import { logger } from "../../lib/logger";
+import { RateLimiterMode } from "../../types";
 
 export async function creditUsageController(
   req: RequestWithAuth,
-  res: Response<CreditUsageResponse | ErrorResponse>,
+  res: Response,
 ): Promise<void> {
-  const balance = await getTeamBalance(req.auth.team_id);
+  try {
+    // If we already have the credit usage info from auth, use it
+    if (req.acuc) {
+      res.json({
+        success: true,
+        data: {
+          remaining_credits: req.acuc.remaining_credits,
+        },
+      });
+      return;
+    }
 
-  if (!balance) {
-    res.status(404).json({
-      success: false,
-      error: "Could not find credit usage information",
+    // Otherwise fetch fresh data
+    const chunk = await getACUCTeam(req.auth.team_id, false, false, RateLimiterMode.Scrape);
+    if (!chunk) {
+      res.status(404).json({
+        success: false,
+        error: "Could not find credit usage information",
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        remaining_credits: chunk.remaining_credits,
+      },
     });
-    return;
+  } catch (error) {
+    logger.error("Error in credit usage controller:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal server error while fetching credit usage",
+    });
   }
-
-  res.json({
-    success: true,
-    data: {
-      remaining_credits: balance.remaining,
-      plan_credits: balance.planCredits,
-      billing_period_start: balance.periodStart,
-      billing_period_end: balance.periodEnd,
-    },
-  });
 }

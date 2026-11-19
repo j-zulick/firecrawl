@@ -11,7 +11,7 @@ A simple web crawler that uses Firecrawl and OpenAI's o4-mini model to search we
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.6+
 - Firecrawl API key
 - OpenAI API key
 

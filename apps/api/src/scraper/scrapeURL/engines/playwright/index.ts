@@ -1,15 +1,14 @@
 import { z } from "zod";
-import { config } from "../../../../config";
 import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
 import { robustFetch } from "../../lib/fetch";
-import { getInnerJson } from "@mendable/firecrawl-rs";
+import { getInnerJSON } from "../../../../lib/html-transformer";
 
 export async function scrapeURLWithPlaywright(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
   const response = await robustFetch({
-    url: config.PLAYWRIGHT_MICROSERVICE_URL!,
+    url: process.env.PLAYWRIGHT_MICROSERVICE_URL!,
     headers: {
       "Content-Type": "application/json",
     },
@@ -27,22 +26,17 @@ export async function scrapeURLWithPlaywright(
       pageStatusCode: z.number(),
       pageError: z.string().optional(),
       contentType: z.string().optional(),
-      // Optional: older playwright-service builds don't send it.
-      url: z.string().optional(),
     }),
     mock: meta.mock,
     abort: meta.abort.asSignal(),
   });
 
   if (response.contentType?.includes("application/json")) {
-    response.content = await getInnerJson(response.content);
+    response.content = await getInnerJSON(response.content);
   }
 
   return {
-    // The landed URL reported by the service. Redirect threat and blocklist
-    // re-checks compare it against the requested URL. Falls back to the
-    // requested URL for older services or a non-http(s) value (about:blank).
-    url: landedHttpUrl(response.url) ?? meta.rewrittenUrl ?? meta.url,
+    url: meta.rewrittenUrl ?? meta.url, // TODO: impove redirect following
     html: response.content,
     statusCode: response.pageStatusCode,
     error: response.pageError,
@@ -50,16 +44,6 @@ export async function scrapeURLWithPlaywright(
 
     proxyUsed: "basic",
   };
-}
-
-function landedHttpUrl(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  try {
-    const { protocol } = new URL(url);
-    return protocol === "http:" || protocol === "https:" ? url : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 export function playwrightMaxReasonableTime(meta: Meta): number {

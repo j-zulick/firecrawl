@@ -1,18 +1,10 @@
 from typing import Any, Dict, List, Optional
 import time
-import warnings
 
-from ..types import ExtractResponse, ScrapeOptions, ThreatProtectionOptions
-from ..types import AgentOptions
+from ..types import ExtractResponse, ScrapeOptions
 from ..utils.http_client import HttpClient
 from ..utils.validation import prepare_scrape_options
 from ..utils.error_handler import handle_response_error
-
-_EXTRACT_DEPRECATION_MSG = (
-    "The extract endpoint is in maintenance mode and its use is discouraged. "
-    "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
-    "to find a replacement."
-)
 
 
 def _prepare_extract_request(
@@ -26,9 +18,6 @@ def _prepare_extract_request(
     show_sources: Optional[bool] = None,
     scrape_options: Optional[ScrapeOptions] = None,
     ignore_invalid_urls: Optional[bool] = None,
-    integration: Optional[str] = None,
-    agent: Optional[AgentOptions] = None,
-    threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
     if urls is not None:
@@ -51,29 +40,7 @@ def _prepare_extract_request(
         prepared = prepare_scrape_options(scrape_options)
         if prepared:
             body["scrapeOptions"] = prepared
-    if integration is not None and str(integration).strip():
-        body["integration"] = str(integration).strip()
-    if agent is not None:
-        try:
-            body["agent"] = agent.model_dump(exclude_none=True)  # type: ignore[attr-defined]
-        except AttributeError:
-            body["agent"] = agent  # fallback
-    if threat_protection is not None:
-        body["threatProtection"] = threat_protection.model_dump(
-            by_alias=True, exclude_none=True
-        )
     return body
-
-
-def _normalize_extract_response_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    out = dict(payload)
-    if "expiresAt" in out and "expires_at" not in out:
-        out["expires_at"] = out["expiresAt"]
-    if "creditsUsed" in out and "credits_used" not in out:
-        out["credits_used"] = out["creditsUsed"]
-    if "tokensUsed" in out and "tokens_used" not in out:
-        out["tokens_used"] = out["tokensUsed"]
-    return out
 
 
 def start_extract(
@@ -88,18 +55,7 @@ def start_extract(
     show_sources: Optional[bool] = None,
     scrape_options: Optional[ScrapeOptions] = None,
     ignore_invalid_urls: Optional[bool] = None,
-    integration: Optional[str] = None,
-    agent: Optional[AgentOptions] = None,
-    threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> ExtractResponse:
-    """Start an extract job (non-blocking).
-
-    .. deprecated::
-        The extract endpoint is in maintenance mode and its use is discouraged.
-        Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
-        to find a replacement.
-    """
-    warnings.warn(_EXTRACT_DEPRECATION_MSG, DeprecationWarning, stacklevel=2)
     body = _prepare_extract_request(
         urls,
         prompt=prompt,
@@ -110,31 +66,18 @@ def start_extract(
         show_sources=show_sources,
         scrape_options=scrape_options,
         ignore_invalid_urls=ignore_invalid_urls,
-        integration=integration,
-        agent=agent,
-        threat_protection=threat_protection,
     )
     resp = client.post("/v2/extract", body)
     if not resp.ok:
         handle_response_error(resp, "extract")
-    payload = _normalize_extract_response_payload(resp.json())
-    return ExtractResponse(**payload)
+    return ExtractResponse(**resp.json())
 
 
 def get_extract_status(client: HttpClient, job_id: str) -> ExtractResponse:
-    """Get the current status of an extract job.
-
-    .. deprecated::
-        The extract endpoint is in maintenance mode and its use is discouraged.
-        Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
-        to find a replacement.
-    """
-    warnings.warn(_EXTRACT_DEPRECATION_MSG, DeprecationWarning, stacklevel=2)
     resp = client.get(f"/v2/extract/{job_id}")
     if not resp.ok:
         handle_response_error(resp, "extract-status")
-    payload = _normalize_extract_response_payload(resp.json())
-    return ExtractResponse(**payload)
+    return ExtractResponse(**resp.json())
 
 
 def wait_extract(
@@ -168,18 +111,7 @@ def extract(
     ignore_invalid_urls: Optional[bool] = None,
     poll_interval: int = 2,
     timeout: Optional[int] = None,
-    integration: Optional[str] = None,
-    agent: Optional[AgentOptions] = None,
-    threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> ExtractResponse:
-    """Extract structured data and wait until completion.
-
-    .. deprecated::
-        The extract endpoint is in maintenance mode and its use is discouraged.
-        Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
-        to find a replacement.
-    """
-    warnings.warn(_EXTRACT_DEPRECATION_MSG, DeprecationWarning, stacklevel=2)
     started = start_extract(
         client,
         urls,
@@ -191,11 +123,9 @@ def extract(
         show_sources=show_sources,
         scrape_options=scrape_options,
         ignore_invalid_urls=ignore_invalid_urls,
-        integration=integration,
-        agent=agent,
-        threat_protection=threat_protection,
     )
     job_id = getattr(started, "id", None)
     if not job_id:
         return started
     return wait_extract(client, job_id, poll_interval=poll_interval, timeout=timeout)
+

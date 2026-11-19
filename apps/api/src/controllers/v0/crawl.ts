@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { autumnService } from "../../services/autumn/autumn.service";
+import { checkTeamCredits } from "../../../src/services/billing/credit_billing";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../../src/types";
 import { addScrapeJob } from "../../../src/services/queue-jobs";
@@ -11,7 +11,7 @@ import {
   defaultCrawlerOptions,
   defaultOrigin,
 } from "../../../src/lib/default-values";
-import { v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { logger } from "../../../src/lib/logger";
 import {
   addCrawlJob,
@@ -20,103 +20,38 @@ import {
   finishCrawlKickoff,
   lockURL,
   lockURLs,
-  markCrawlActive,
   saveCrawl,
   StoredCrawl,
 } from "../../../src/lib/crawl-redis";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { checkAndUpdateURL } from "../../../src/lib/validateUrl";
+import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
-import { url as urlSchema } from "../v1/types";
+import { fromLegacyScrapeOptions, url as urlSchema } from "../v1/types";
 import { ZodError } from "zod";
-import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
+import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { fromV0ScrapeOptions } from "../v2/types";
-import { isSelfHosted } from "../../lib/deployment";
-import {
-  crawlGroup,
-  resolveNewGroupBackend,
-} from "../../services/worker/nuq-router";
-import { logRequest } from "../../services/logging/log_job";
-import { externalRequestId } from "../../lib/external-request-id";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
-import {
-  isThreatProtectionForced,
-  THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE,
-} from "../../lib/threat-protection/request";
-import {
-  getSafeMode,
-  SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
-} from "../../lib/safe-mode";
-import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
-import { requestCreditsShards } from "../../lib/request-credits-store";
-import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
-import { ipWhitelistRefusal } from "../../lib/permissions";
 
 export async function crawlController(req: Request, res: Response) {
   try {
     const auth = await authenticateUser(req, res, RateLimiterMode.Crawl);
     if (!auth.success) {
-      if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
       return res.status(auth.status).json({ error: auth.error });
     }
 
     const { team_id, chunk } = auth;
 
-    if (getScrapeZDR(chunk?.flags) === "forced") {
-      return res.status(400).json({
-        error:
-          "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API.",
-      });
+    if (chunk?.flags?.forceZDR) {
+      return res.status(400).json({ error: "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API." });
     }
 
-    if (isThreatProtectionForced(chunk?.flags)) {
-      return res.status(403).json({
-        error: THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE,
-      });
-    }
+    const id = uuidv4();
 
-    if (getSafeMode(chunk?.flags)) {
-      return res.status(403).json({
-        error: SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
-      });
-    }
-
-    const id = uuidv7();
-
-    await logRequest({
-      id,
-      kind: "crawl",
-      api_version: "v0",
-      external_request_id: externalRequestId(req),
-      team_id,
-      origin: req.body.origin ?? "api",
-      integration: req.body.integration,
-      target_hint: req.body.url ?? "",
-      zeroDataRetention: false, // not supported on v0
-      api_key_id: chunk?.api_key_id ?? null,
-      jobAccessExpiresAt: new Date(
-        Date.now() + (chunk?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
-      ),
-      creditsShards: requestCreditsShards(
-        req.body?.crawlerOptions?.limit ?? defaultCrawlerOptions.limit,
-      ),
-    });
-
-    redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
-      logger.error("Failed to add team to teams_using_v0", {
-        error,
-        team_id,
-      }),
-    );
-
-    redisEvictConnection
-      .sadd("teams_using_v0:" + team_id, "crawl:" + id)
-      .catch(error =>
-        logger.error("Failed to add team to teams_using_v0 (2)", {
-          error,
-          team_id,
-        }),
-      );
+    redisEvictConnection.sadd("teams_using_v0", team_id)
+      .catch(error => logger.error("Failed to add team to teams_using_v0", { error, team_id }));
+    
+    redisEvictConnection.sadd("teams_using_v0:" + team_id, "crawl:" + id)
+      .catch(error => logger.error("Failed to add team to teams_using_v0 (2)", { error, team_id }));
 
     if (req.headers["x-idempotency-key"]) {
       const isIdempotencyValid = await validateIdempotencyKey(req);
@@ -158,37 +93,20 @@ export async function crawlController(req: Request, res: Response) {
     }
 
     const limitCheck = req.body?.crawlerOptions?.limit ?? 1;
-    // Autumn is the source of truth for credits.
-    // No org, no Autumn customer to gate against: fail open, exactly as
-    // checkCredits answered for an identity it could not name.
-    const orgId = chunk?.org_id ?? null;
-    const autumnResult = orgId
-      ? await autumnService.checkCredits({
-          teamId: team_id,
-          orgId,
-          value: limitCheck,
-          properties: {
-            source: "v0/crawl",
-            apiKeyId: chunk?.api_key_id ?? null,
-          },
-        })
-      : null;
+    const {
+      success: creditsCheckSuccess,
+      message: creditsCheckMessage,
+      remainingCredits,
+    } = await checkTeamCredits(chunk, team_id, limitCheck);
 
-    if (autumnResult !== null && !autumnResult.allowed) {
+    if (!creditsCheckSuccess) {
       return res.status(402).json({
-        error: isSelfHosted()
-          ? "Insufficient credits. You may be requesting with a higher limit than the amount of credits you have left. Please check your server configuration."
-          : "Insufficient credits. You may be requesting with a higher limit than the amount of credits you have left. If not, upgrade your plan at https://firecrawl.dev/pricing or contact us at help@firecrawl.com",
+        error:
+          "Insufficient credits. You may be requesting with a higher limit than the amount of credits you have left. If not, upgrade your plan at https://firecrawl.dev/pricing or contact us at help@firecrawl.com",
       });
     }
 
-    // When Autumn allows the request (incl. overage) we don't clamp the crawl
-    // limit, matching the v1/v2 middleware (which uses Infinity for remaining on
-    // allow). null = Autumn unavailable / self-hosted -> also no clamp.
-    const remainingCredits =
-      autumnResult === null || autumnResult.allowed
-        ? Infinity
-        : autumnResult.remaining;
+    // TODO: need to do this to v1
     crawlerOptions.limit = Math.min(remainingCredits, crawlerOptions.limit);
 
     let url = urlSchema.parse(req.body.url);
@@ -206,42 +124,17 @@ export async function crawlController(req: Request, res: Response) {
         .json({ error: e.message ?? e });
     }
 
-    if (
-      isUrlBlocked(url, auth.chunk?.flags ?? null, {
-        team_id: auth.chunk?.team_id ?? team_id,
-        org_id: auth.chunk?.org_id ?? null,
-        origin: req.body?.origin ?? null,
-      })
-    ) {
+    if (isUrlBlocked(url, auth.chunk?.flags ?? null)) {
       return res.status(403).json({
-        error: UNSUPPORTED_SITE_MESSAGE,
+        error: BLOCKLISTED_URL_MESSAGE,
       });
-    }
-
-    const usOnlyLocationError = usOnlyLocationRefusal(
-      auth.chunk?.flags ?? undefined,
-      pageOptions?.geolocation?.country,
-    );
-    if (usOnlyLocationError) {
-      return res.status(403).json({
-        code: "US_ONLY_UNAVAILABLE",
-        error: usOnlyLocationError,
-      });
-    }
-
-    const ipWhitelistError = ipWhitelistRefusal(
-      auth.chunk?.flags,
-      pageOptions?.geolocation?.country,
-    );
-    if (ipWhitelistError) {
-      return res.status(403).json({ error: ipWhitelistError });
     }
 
     // if (mode === "single_urls" && !url.includes(",")) { // NOTE: do we need this?
     //   try {
     //     const a = new WebScraperDataProvider();
     //     await a.setOptions({
-    //       jobId: uuidv7(),
+    //       jobId: uuidv4(),
     //       mode: "single_urls",
     //       urls: [url],
     //       crawlerOptions: { ...crawlerOptions, returnOnlyUrls: true },
@@ -270,17 +163,10 @@ export async function crawlController(req: Request, res: Response) {
       pageOptions,
       undefined,
       undefined,
-      team_id,
+      team_id
     );
     internalOptions.disableSmartWaitCache = true; // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
-    internalOptions.orgId = auth.chunk?.org_id ?? null;
-    if (isUsOnly(auth.chunk?.flags ?? undefined)) {
-      internalOptions.teamFlags = auth.chunk?.flags;
-    }
-    internalOptions.saveScrapeResultToGCS = process.env
-      .GCS_FIRE_ENGINE_BUCKET_NAME
-      ? true
-      : false;
+    internalOptions.saveScrapeResultToGCS = process.env.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false;
     delete (scrapeOptions as any).timeout;
 
     const sc: StoredCrawl = {
@@ -298,43 +184,23 @@ export async function crawlController(req: Request, res: Response) {
       sc.robots = await crawler.getRobotsTxt();
     } catch (_) {}
 
-    sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
-    await crawlGroup.addGroup(
-      id,
-      sc.team_id,
-      (chunk?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
-      {
-        backend: sc.queueBackend,
-        maxConcurrency: sc.maxConcurrency,
-        delaySeconds: sc.crawlerOptions?.delay,
-      },
-    );
-
     await saveCrawl(id, sc);
-
-    await markCrawlActive(id);
 
     await finishCrawlKickoff(id);
 
     const sitemap = sc.crawlerOptions.ignoreSitemap
       ? 0
-      : await crawler.tryGetSitemap(async urls => {
+      : await crawler.tryGetSitemap(async (urls) => {
           if (urls.length === 0) return;
 
           let jobPriority = await getJobPriority({
             team_id,
-            acuc: chunk,
             basePriority: 21,
           });
-          const billing = {
-            endpoint: "crawl" as const,
-            jobId: id,
-            externalRequestId: externalRequestId(req),
-          };
-          const jobs = urls.map(url => {
-            const uuid = uuidv7();
+          const jobs = urls.map((url) => {
+            const uuid = uuidv4();
             return {
-              jobId: uuid,
+              name: uuid,
               data: {
                 url,
                 mode: "single_urls" as const,
@@ -344,29 +210,31 @@ export async function crawlController(req: Request, res: Response) {
                 team_id,
                 origin: req.body.origin ?? defaultOrigin,
                 integration: req.body.integration,
-                billing,
                 crawl_id: id,
                 sitemapped: true,
                 zeroDataRetention: false, // not supported on v0
-                apiKeyId: chunk?.api_key_id ?? null,
               },
-              priority: jobPriority,
+              opts: {
+                jobId: uuid,
+                priority: jobPriority,
+              },
             };
           });
 
           await lockURLs(
             id,
             sc,
-            jobs.map(x => x.data.url),
+            jobs.map((x) => x.data.url),
             logger,
           );
           await addCrawlJobs(
             id,
-            jobs.map(x => x.jobId),
+            jobs.map((x) => x.opts.jobId),
             logger,
           );
           for (const job of jobs) {
-            await addScrapeJob(job.data, job.jobId, job.priority);
+            // add with sentry instrumentation
+            await addScrapeJob(job.data, {}, job.opts.jobId);
           }
         });
 
@@ -376,7 +244,7 @@ export async function crawlController(req: Request, res: Response) {
       // Not needed, first one should be 15.
       // const jobPriority = await getJobPriority({team_id, basePriority: 10})
 
-      const jobId = uuidv7();
+      const jobId = uuidv4();
       await addScrapeJob(
         {
           url,
@@ -387,23 +255,20 @@ export async function crawlController(req: Request, res: Response) {
           team_id,
           origin: req.body.origin ?? defaultOrigin,
           integration: req.body.integration,
-          billing: {
-            endpoint: "crawl",
-            jobId: id,
-            externalRequestId: externalRequestId(req),
-          },
           crawl_id: id,
           zeroDataRetention: false, // not supported on v0
-          apiKeyId: chunk?.api_key_id ?? null,
+        },
+        {
+          priority: 15, // prioritize request 0 of crawl jobs same as scrape jobs
         },
         jobId,
-        await getJobPriority({ team_id, acuc: chunk, basePriority: 15 }),
       );
       await addCrawlJob(id, jobId, logger);
     }
 
     res.json({ jobId: id });
   } catch (error) {
+    Sentry.captureException(error);
     logger.error(error);
     return res.status(500).json({
       error: error instanceof ZodError ? "Invalid URL" : error.message,

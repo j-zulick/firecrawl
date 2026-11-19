@@ -1,12 +1,7 @@
-To build the `go-html-to-md` library, run the following command:
+To build the go-html-to-md library, run the following command:
 
 ```bash
-cd apps/api/sharedLibs/go-html-to-md
-go build -o <OUTPUT> -buildmode=c-shared html-to-markdown.go
+cd apps/api/src/lib/go-html-to-md
+go build -o html-to-markdown.so -buildmode=c-shared html-to-markdown.go
+chmod +x html-to-markdown.so
 ```
-
-Replace `<OUTPUT>` with the correct filename for your OS:
-
-- Windows → `html-to-markdown.dll`
-- Linux → `libhtml-to-markdown.so`
-- macOS → `libhtml-to-markdown.dylib`

@@ -6,27 +6,11 @@ import {
   generateSchemaFromPrompt,
 } from "../transformers/llmExtract";
 import { smartScrape } from "./smartScrape";
-import {
-  checkForPromptInjection,
-  createPromptInjectionGuardLimiter,
-} from "./promptInjectionGuard";
 import { parseMarkdown } from "../../../lib/html-to-markdown";
 import { getModel } from "../../../lib/generic-ai";
 import { TokenUsage } from "../../../controllers/v1/types";
 import type { SmartScrapeResult } from "./smartScrape";
-import {
-  CostLimitExceededError,
-  CostTracking,
-} from "../../../lib/cost-tracking";
-import {
-  JsonExtractionContentTooLargeError,
-  UsOnlyUnavailableError,
-} from "../error";
-import { toRootSchema, typeIncludes } from "../../../lib/openai-strict-schema";
-
-// ~2MB of markdown, well past typical page sizes -- caps worst-case JSON extraction cost/latency.
-export const MAX_JSON_EXTRACTION_MARKDOWN_CHARS = 2_000_000;
-
+import { CostLimitExceededError, CostTracking } from "../../../lib/extract/extraction-service";
 const commonSmartScrapeProperties = {
   shouldUseSmartscrape: {
     type: "boolean",
@@ -46,7 +30,7 @@ const commonReasoningPromptProperties = {
   },
   smartscrape_prompt: {
     type: ["string", "null"],
-    description: `A clear, outcome-focused prompt describing what information to find on the page.
+    description: `A clear, outcome-focused prompt describing what information to find on the page. 
       Example: "Find the product specifications in the expandable section" rather than "Click the button to reveal product specs".
       Used by the smart scraping agent to determine what actions to take.
       Dont mention anything about extraction, smartscrape just returns page content.`,
@@ -94,6 +78,69 @@ const multiSmartScrapeWrapperSchemaDefinition = {
   required: ["extractedData", "shouldUseSmartscrape"],
 };
 
+//TODO: go over and check
+// should add null to all types
+// type:string should be type:["string","null"]
+export function makeSchemaNullable(schema: any): any {
+  if (typeof schema !== "object" || schema === null) {
+    return schema; // Base case: not an object/array or is null
+  }
+
+  if (Array.isArray(schema)) {
+    return schema.map(makeSchemaNullable); // Recurse for array items
+  }
+
+  // Process object properties
+  const newSchema: { [key: string]: any } = {};
+  let isObject = false; // Flag to track if this level is an object type
+
+  for (const key in schema) {
+    if (key === "additionalProperties") {
+      continue; // Skip existing additionalProperties, we'll set it later if needed
+    }
+
+    if (key === "type") {
+      const currentType = schema[key];
+      let finalType: string | string[];
+
+      if (typeof currentType === "string") {
+        if (currentType === "object") isObject = true;
+        finalType =
+          currentType === "null" ? currentType : [currentType, "null"];
+      } else if (Array.isArray(currentType)) {
+        if (currentType.includes("object")) isObject = true;
+        finalType = currentType.includes("null")
+          ? currentType
+          : [...currentType, "null"];
+      } else {
+        finalType = currentType; // Handle unexpected types?
+      }
+      newSchema[key] = finalType;
+    } else if (typeof schema[key] === "object" && schema[key] !== null) {
+      // Recurse for nested objects (properties, items, definitions, etc.)
+      newSchema[key] = makeSchemaNullable(schema[key]);
+      if (key === "properties") {
+        // Having a 'properties' key strongly implies an object type
+        isObject = true;
+      }
+    } else {
+      // Copy other properties directly (like required, description, etc.)
+      newSchema[key] = schema[key];
+    }
+  }
+
+  // **Crucial Fix:** If this schema represents an object type, add additionalProperties: false
+  if (isObject) {
+    // Ensure 'properties' exists if 'type' was 'object' but 'properties' wasn't defined
+    if (!newSchema.properties) {
+      newSchema.properties = {};
+    }
+    newSchema.additionalProperties = false;
+  }
+
+  return newSchema;
+}
+
 /**
  * Wraps the original schema with SmartScrape fields if an original schema exists.
  *
@@ -101,7 +148,7 @@ const multiSmartScrapeWrapperSchemaDefinition = {
  * @param logger Winston logger instance.
  * @returns An object containing the schema to use for the LLM call and whether wrapping occurred.
  */
-function prepareSmartScrapeSchema(
+export function prepareSmartScrapeSchema(
   originalSchema: any | z.ZodTypeAny | undefined,
   logger: Logger,
   isSingleUrl: boolean,
@@ -133,142 +180,37 @@ function prepareSmartScrapeSchema(
   return { schemaToUse: wrappedSchema };
 }
 
-const hasRecursiveRefs = (schema: any, defs: any): boolean => {
-  if (!defs || typeof defs !== "object") return false;
-
-  for (const [defName, defValue] of Object.entries(defs)) {
-    if (containsRecursiveRef(defValue, defName, defs)) {
-      return true;
-    }
-  }
-
-  return false;
-};
-
-const containsRecursiveRef = (
-  obj: any,
-  targetDefName: string,
-  defs: any,
-  visited = new Set(),
-): boolean => {
-  if (!obj || typeof obj !== "object") return false;
-
-  const objKey = JSON.stringify(obj);
-  if (visited.has(objKey)) return false;
-  visited.add(objKey);
-
-  if (obj.$ref && typeof obj.$ref === "string") {
-    const refPath = obj.$ref.split("/");
-    if (refPath[0] === "#" && refPath[1] === "$defs") {
-      const defName = refPath[refPath.length - 1];
-      if (defName === targetDefName) {
-        visited.delete(objKey);
-        return true;
-      }
-      if (defs[defName]) {
-        const isRecursive = containsRecursiveRef(
-          defs[defName],
-          targetDefName,
-          defs,
-          visited,
-        );
-        visited.delete(objKey);
-        return isRecursive;
-      }
-    }
-  }
-
-  if (Array.isArray(obj)) {
-    for (const item of obj) {
-      if (containsRecursiveRef(item, targetDefName, defs, visited)) {
-        visited.delete(objKey);
-        return true;
-      }
-    }
-  } else {
-    for (const value of Object.values(obj)) {
-      if (containsRecursiveRef(value, targetDefName, defs, visited)) {
-        visited.delete(objKey);
-        return true;
-      }
-    }
-  }
-
-  visited.delete(objKey);
-  return false;
-};
-
 // Resolve all $defs references in the schema
-const resolveRefs = (
-  obj: any,
-  defs: any,
-  logger: Logger,
-  visited = new WeakSet(),
-  depth = 0,
-): any => {
-  if (!obj || typeof obj !== "object" || depth > 10) return obj;
+const resolveRefs = (obj: any, defs: any): any => {
+  if (!obj || typeof obj !== 'object') return obj;
 
-  if (visited.has(obj)) {
-    logger.warn(
-      "resolveRefs: Detected circular reference, aborting to prevent infinite recursion",
-    );
-    return obj;
-  }
-  visited.add(obj);
-
-  if (obj.$ref && typeof obj.$ref === "string") {
+  if (obj.$ref && typeof obj.$ref === 'string') {
     // Handle $ref references
-    const refPath = obj.$ref.split("/");
-    if (refPath[0] === "#" && refPath[1] === "$defs") {
+    const refPath = obj.$ref.split('/');
+    if (refPath[0] === '#' && refPath[1] === '$defs') {
       const defName = refPath[refPath.length - 1];
-      if (defs[defName]) {
-        return resolveRefs(
-          { ...defs[defName] },
-          defs,
-          logger,
-          visited,
-          depth + 1,
-        );
-      }
+      return resolveRefs({ ...defs[defName] }, defs);
     }
-    return obj; // Return original if ref can't be resolved
   }
 
   // Handle arrays
   if (Array.isArray(obj)) {
-    return obj.map(item => resolveRefs(item, defs, logger, visited, depth + 1));
+    return obj.map(item => resolveRefs(item, defs));
   }
 
   // Handle objects
   const resolved: any = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (key === "$defs") continue;
-    resolved[key] = resolveRefs(value, defs, logger, visited, depth + 1);
+    if (key === '$defs') continue;
+    resolved[key] = resolveRefs(value, defs);
   }
   return resolved;
 };
-
-// generateCompletions nests a root array schema under an "items" property
-// (structured outputs need an object at the root); hand back the array itself,
-// as the SmartScrape wrapper's extractedData property always did.
-function unwrapRootArray(schema: any, extract: any): any {
-  if (
-    typeIncludes(toRootSchema(schema)?.type, "array") &&
-    extract &&
-    typeof extract === "object" &&
-    !Array.isArray(extract) &&
-    "items" in extract
-  ) {
-    return extract.items;
-  }
-  return extract;
-}
 
 export async function extractData({
   extractOptions,
   urls,
   useAgent,
-  checkPromptInjection,
   extractId,
   sessionId,
   scrapeId,
@@ -277,12 +219,10 @@ export async function extractData({
   extractOptions: GenerateCompletionsOptions;
   urls: string[];
   useAgent: boolean;
-  /** Scans the pages SmartScrape fetches; the page itself is scanned upstream. */
-  checkPromptInjection?: boolean;
   extractId?: string;
   sessionId?: string;
   scrapeId?: string;
-  metadata: { teamId: string; functionId?: string };
+  metadata: { teamId: string, functionId?: string };
 }): Promise<{
   extractedDataArray: any[];
   warning: any;
@@ -292,103 +232,28 @@ export async function extractData({
   const logger = extractOptions.logger;
   const isSingleUrl = urls.length === 1;
   let costLimitExceededTokenUsage: number | null = null;
-  // Set when the prompt injection guard failed open on a SmartScrape page.
-  let promptInjectionScanIncomplete = false;
-
-  if (
-    extractOptions.markdown &&
-    extractOptions.markdown.length > MAX_JSON_EXTRACTION_MARKDOWN_CHARS
-  ) {
-    throw new JsonExtractionContentTooLargeError();
-  }
-
   // TODO: remove the "required" fields here!! it breaks o3-mini
 
   if (!schema && extractOptions.options.prompt) {
-    const genRes = await generateSchemaFromPrompt(
-      extractOptions.options.prompt,
-      logger,
-      extractOptions.costTrackingOptions.costTracking,
-      {
-        ...metadata,
-        extractId,
-        scrapeId,
-        functionId: metadata.functionId
-          ? metadata.functionId + "/extractData"
-          : "extractData",
-      },
-      extractOptions.zeroDataRetention,
-      extractOptions.teamFlags,
-    );
+    const genRes = await generateSchemaFromPrompt(extractOptions.options.prompt, logger, extractOptions.costTrackingOptions.costTracking, {
+      ...metadata,
+      extractId,
+      scrapeId,
+      functionId: metadata.functionId ? (metadata.functionId + "/extractData") : "extractData",
+    });
     schema = genRes.extract;
   }
 
   if (schema) {
     const defs = schema.$defs || {};
-    const schemaString = JSON.stringify(schema);
-    const hasAnyRefs =
-      schema.$defs ||
-      schemaString.includes('"$ref"') ||
-      schemaString.includes("#/$defs/");
-
-    if (hasAnyRefs) {
-      logger.info(
-        "Detected schema with references, attempting to resolve refs",
-        {
-          hasDefsProperty: !!schema.$defs,
-          hasRefInString: schemaString.includes('"$ref"'),
-          hasRefPathInString: schemaString.includes("#/$defs/"),
-        },
-      );
-
-      try {
-        const resolvedSchema = resolveRefs(schema, defs, logger);
-
-        const resolvedString = JSON.stringify(resolvedSchema);
-        const hasRemainingRefs =
-          resolvedString.includes('"$ref"') ||
-          resolvedString.includes("#/$defs/");
-
-        if (!hasRemainingRefs) {
-          schema = resolvedSchema;
-          if (schema && typeof schema === "object" && schema.$defs)
-            delete schema.$defs;
-          logger.info("Successfully resolved schema refs", {
-            schema,
-          });
-        } else {
-          logger.info(
-            "Reference resolution was skipped or incomplete (remaining $ref detected), preserving original schema",
-          );
-        }
-      } catch (error) {
-        logger.warn(
-          "Failed to resolve schema refs, preserving original schema",
-          { error },
-        );
-      }
-    } else {
-      logger.info("No recursive references detected, resolving refs", {
-        schema,
-      });
-      schema = resolveRefs(schema, defs, logger);
-      delete schema.$defs;
-      logger.info("Resolved schema refs", {
-        schema,
-      });
-    }
+    schema = resolveRefs(schema, defs);
+    delete schema.$defs;
+    logger.info("Resolved schema refs", {
+      schema,
+    });
   }
 
-  // The SmartScrape fields only matter when the agent can act on them.
-  // Without it, the user's schema goes to generateCompletions as-is (with no
-  // schema at all, the wrapper would require an extractedData property it
-  // doesn't have). Nested under the wrapper, a bare property map is turned
-  // into an object schema first, as generateCompletions does at the root.
-  const wrapForSmartScrape = useAgent && !!schema;
-  const schemaToUse = wrapForSmartScrape
-    ? prepareSmartScrapeSchema(toRootSchema(schema), logger, isSingleUrl)
-        .schemaToUse
-    : schema;
+  const { schemaToUse } = prepareSmartScrapeSchema(schema, logger, isSingleUrl);
   const extractOptionsNewSchema = {
     ...extractOptions,
     options: { ...extractOptions.options, schema: schemaToUse },
@@ -403,45 +268,39 @@ export async function extractData({
     warning: string | undefined,
     totalUsage: TokenUsage | undefined;
 
+  // checks if using smartScrape is needed for this case
   try {
-    const completion = await generateCompletions({
+    const {
+      extract: e,
+      warning: w,
+      totalUsage: t,
+    } = await generateCompletions({
       ...extractOptionsNewSchema,
       costTrackingOptions: {
         costTracking: extractOptions.costTrackingOptions.costTracking,
         metadata: {
           module: "scrapeURL",
           method: "extractData",
-          description: "Check if using smartScrape is needed for this case",
+          description: "Check if using smartScrape is needed for this case"
         },
       },
     });
-    extract = completion.extract;
-    warning = completion.warning;
-    totalUsage = completion.totalUsage;
+    extract = e;
+    warning = w;
+    totalUsage = t;
   } catch (error) {
-    if (
-      error instanceof CostLimitExceededError ||
-      error instanceof UsOnlyUnavailableError
-    ) {
+    if (error instanceof CostLimitExceededError) {
       throw error;
     }
-
-    logger.error("failed during extractSmartScrape.ts:generateCompletions", {
-      error,
-    });
-    // Surface the failure to the caller: swallowing it here made a failed
-    // extraction indistinguishable from a successful-but-empty one — the
-    // scrape returned 200 with the json field silently absent (and billed).
-    // `warning` is provably undefined here (only assigned on the success
-    // path of the try above), so assign directly — the caller merges any
-    // pre-existing document warnings.
-    const reason = error instanceof Error ? error.message : String(error);
-    warning = `JSON extraction failed: ${reason.slice(0, 300)}`;
+    
+    logger.error(
+      "failed during extractSmartScrape.ts:generateCompletions",
+      { error },
+    );
+    // console.log("failed during extractSmartScrape.ts:generateCompletions", error);
   }
 
-  let extractedData = wrapForSmartScrape
-    ? extract?.extractedData
-    : unwrapRootArray(schema, extract);
+  let extractedData = extract?.extractedData;
 
   // console.log("shouldUseSmartscrape", extract?.shouldUseSmartscrape);
   // console.log("smartscrape_reasoning", extract?.smartscrape_reasoning);
@@ -453,16 +312,9 @@ export async function extractData({
       url: urls,
       prompt: extract?.smartscrape_prompt,
       providedExtractId: extractId,
-    });
+    })
 
-    if (wrapForSmartScrape && extract?.shouldUseSmartscrape) {
-      // technically this should be checked upstream but might as well add another guard - Mogery
-      if (extractOptions.zeroDataRetention) {
-        throw new Error(
-          "JSON mode with agent is not supported with Zero Data Retention.",
-        );
-      }
-
+    if (useAgent && extract?.shouldUseSmartscrape) {
       let smartscrapeResults: SmartScrapeResult[];
       if (isSingleUrl) {
         smartscrapeResults = [
@@ -479,18 +331,15 @@ export async function extractData({
         const pages = extract?.smartscrapePages ?? [];
         //do it async promiseall instead
         if (pages.length > 100) {
-          logger.warn(
-            "Smart scrape pages limit exceeded, only first 100 pages will be scraped",
-            {
-              pagesLength: pages.length,
-              extractId,
-              scrapeId,
-            },
-          );
+          logger.warn("Smart scrape pages limit exceeded, only first 100 pages will be scraped", {
+            pagesLength: pages.length,
+            extractId,
+            scrapeId,
+          });
         }
 
         smartscrapeResults = await Promise.all(
-          pages.slice(0, 100).map(async page => {
+          pages.slice(0, 100).map(async (page) => {
             return await smartScrape({
               url: urls[page.page_index],
               prompt: page.smartscrape_prompt,
@@ -505,51 +354,22 @@ export async function extractData({
       // console.log("smartscrapeResults", smartscrapeResults);
 
       const scrapedPages = smartscrapeResults.map(
-        result => result.scrapedPages,
+        (result) => result.scrapedPages,
       );
       // console.log("scrapedPages", scrapedPages);
-      const htmls = scrapedPages.flat().map(page => page.html);
+      const htmls = scrapedPages.flat().map((page) => page.html);
       // console.log("htmls", htmls);
-      const requestId = extractId || scrapeId;
       const markdowns = await Promise.all(
-        htmls.map(
-          async html =>
-            await parseMarkdown(html, {
-              logger,
-              requestId,
-            }),
-        ),
+        htmls.map(async (html) => await parseMarkdown(html)),
       );
       // console.log("markdowns", markdowns);
-      // Shared so the per-page scans below stay within one guard's
-      // concurrency limit instead of each bursting its own.
-      const guardLimiter = createPromptInjectionGuardLimiter();
       extractedData = await Promise.all(
-        markdowns.map(async markdown => {
-          if (checkPromptInjection) {
-            const scannedFully = await checkForPromptInjection({
-              markdown,
-              logger,
-              costTracking: extractOptions.costTrackingOptions.costTracking,
-              metadata: { ...metadata, scrapeId, extractId },
-              zeroDataRetention: !!extractOptions.zeroDataRetention,
-              teamFlags: extractOptions.teamFlags,
-              limiter: guardLimiter,
-            });
-            if (!scannedFully) {
-              promptInjectionScanIncomplete = true;
-            }
-          }
-
+        markdowns.map(async (markdown) => {
           const newExtractOptions = {
             ...extractOptions,
             markdown: markdown,
-            model: getModel("gpt-4o-mini", "openai", {
-              teamFlags: extractOptions.teamFlags,
-            }),
-            retryModel: getModel("gpt-4.1", "openai", {
-              teamFlags: extractOptions.teamFlags,
-            }),
+            model: getModel("gemini-2.5-pro", "vertex"),
+            retryModel: getModel("gemini-2.5-pro", "google"),
             costTrackingOptions: {
               costTracking: extractOptions.costTrackingOptions.costTracking,
               metadata: {
@@ -559,7 +379,8 @@ export async function extractData({
               },
             },
           };
-          const { extract } = await generateCompletions(newExtractOptions);
+          const { extract } =
+            await generateCompletions(newExtractOptions);
           return extract;
         }),
       );
@@ -573,18 +394,10 @@ export async function extractData({
     console.error(">>>>>>>extractSmartScrape.ts error>>>>>\n", error);
     if (error instanceof Error && error.message === "Cost limit exceeded") {
       costLimitExceededTokenUsage = (error as any).cause.tokenUsage;
-      warning =
-        "Smart scrape cost limit exceeded." + (warning ? " " + warning : "");
+      warning = "Smart scrape cost limit exceeded." + (warning ? " " + warning : "")
     } else {
       throw error;
     }
-  }
-
-  if (promptInjectionScanIncomplete) {
-    // The guard fee does not bill in this case (see scrape-billing.ts).
-    warning =
-      "The prompt injection check could not scan all of the page content, so part of it went to JSON extraction unchecked. The prompt injection check was not billed." +
-      (warning ? " " + warning : "");
   }
 
   return {

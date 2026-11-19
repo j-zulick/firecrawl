@@ -1,33 +1,38 @@
 import koffi from "koffi";
-import { config } from "../config";
+import { join } from "path";
+import "../services/sentry";
+import * as Sentry from "@sentry/node";
+
+import dotenv from "dotenv";
 import { logger } from "./logger";
-import type { Logger } from "winston";
 import { stat } from "fs/promises";
-import { HTML_TO_MARKDOWN_PATH } from "../natives";
-import { convertHTMLToMarkdownWithHttpService } from "./html-to-markdown-client";
-import { postProcessMarkdown } from "@mendable/firecrawl-rs";
+dotenv.config();
 
 // TODO: add a timeout to the Go parser
+const goExecutablePath = join(
+  process.cwd(),
+  "sharedLibs",
+  "go-html-to-md",
+  "html-to-markdown.so",
+);
 
 class GoMarkdownConverter {
   private static instance: GoMarkdownConverter;
   private convert: any;
   private free: any;
-
+  
   private constructor() {
-    const lib = koffi.load(HTML_TO_MARKDOWN_PATH);
+    const lib = koffi.load(goExecutablePath);
     this.free = lib.func("FreeCString", "void", ["string"]);
     const cstn = "CString:" + crypto.randomUUID();
     const freedResultString = koffi.disposable(cstn, "string", this.free);
-    this.convert = lib.func("ConvertHTMLToMarkdown", freedResultString, [
-      "string",
-    ]);
+    this.convert = lib.func("ConvertHTMLToMarkdown", freedResultString, ["string"]);
   }
 
   public static async getInstance(): Promise<GoMarkdownConverter> {
     if (!GoMarkdownConverter.instance) {
       try {
-        await stat(HTML_TO_MARKDOWN_PATH);
+        await stat(goExecutablePath);
       } catch (_) {
         throw Error("Go shared library not found");
       }
@@ -51,43 +56,19 @@ class GoMarkdownConverter {
 
 export async function parseMarkdown(
   html: string | null | undefined,
-  context?: {
-    logger?: Logger;
-    requestId?: string;
-    zeroDataRetention?: boolean;
-  },
 ): Promise<string> {
   if (!html) {
     return "";
   }
 
-  const contextLogger = context?.logger || logger;
-  const requestId = context?.requestId;
-  const zeroDataRetention = context?.zeroDataRetention === true;
-
-  // Try HTTP service first if enabled
-  if (config.HTML_TO_MARKDOWN_SERVICE_URL) {
-    try {
-      let markdownContent = await convertHTMLToMarkdownWithHttpService(html, {
-        logger: contextLogger,
-        requestId,
-        zeroDataRetention,
-      });
-      markdownContent = await postProcessMarkdown(markdownContent);
-      return markdownContent;
-    } catch (error) {
-      contextLogger.error(
-        "Error converting HTML to Markdown with HTTP service, falling back to original parser",
-        { error },
-      );
-    }
-  }
-
   try {
-    if (config.USE_GO_MARKDOWN_PARSER) {
+    if (process.env.USE_GO_MARKDOWN_PARSER == "true") {
       const converter = await GoMarkdownConverter.getInstance();
       let markdownContent = await converter.convertHTMLToMarkdown(html);
-      markdownContent = await postProcessMarkdown(markdownContent);
+
+      markdownContent = processMultiLineLinks(markdownContent);
+      markdownContent = removeSkipToContentLinks(markdownContent);
+      // logger.info(`HTML to Markdown conversion using Go parser successful`);
       return markdownContent;
     }
   } catch (error) {
@@ -95,13 +76,14 @@ export async function parseMarkdown(
       !(error instanceof Error) ||
       error.message !== "Go shared library not found"
     ) {
-      contextLogger.error(
+      Sentry.captureException(error);
+      logger.error(
         `Error converting HTML to Markdown with Go parser: ${error}`,
       );
     } else {
-      contextLogger.warn(
+      logger.warn(
         "Tried to use Go parser, but it doesn't exist in the file system.",
-        { HTML_TO_MARKDOWN_PATH },
+        { goExecutablePath },
       );
     }
   }
@@ -130,11 +112,12 @@ export async function parseMarkdown(
 
   try {
     let markdownContent = await turndownService.turndown(html);
-    markdownContent = await postProcessMarkdown(markdownContent);
+    markdownContent = processMultiLineLinks(markdownContent);
+    markdownContent = removeSkipToContentLinks(markdownContent);
 
     return markdownContent;
   } catch (error) {
-    contextLogger.error("Error converting HTML to Markdown", { error });
+    logger.error("Error converting HTML to Markdown", { error });
     return ""; // Optionally return an empty string or handle the error as needed
   }
 }

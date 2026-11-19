@@ -1,7 +1,9 @@
 import axios from "axios";
-import { config } from "../../config";
+import dotenv from "dotenv";
 import { SearchV2Response, WebSearchResult } from "../../lib/entities";
-import { logger } from "../../lib/logger";
+import { logger } from "../../lib/logger"
+
+dotenv.config();
 
 interface SearchOptions {
   tbs?: string;
@@ -9,7 +11,6 @@ interface SearchOptions {
   lang?: string;
   country?: string;
   location?: string;
-  safe?: boolean;
   num_results: number;
   page?: number;
 }
@@ -18,29 +19,26 @@ export async function searxng_search(
   q: string,
   options: SearchOptions,
 ): Promise<SearchV2Response> {
-  const resultsPerPage = 20;
-  const requestedResults = Math.max(options.num_results, 0);
-  const startPage = options.page ?? 1;
+  const params = {
+    q: q,
+    language: options.lang,
+    // gl: options.country, //not possible with SearXNG
+    // location: options.location, //not possible with SearXNG
+    // num: options.num_results, //not possible with SearXNG
+    engines: process.env.SEARXNG_ENGINES || "",
+    categories: process.env.SEARXNG_CATEGORIES || "",
+    pageno: options.page ?? 1,
+    format: "json"
+  };
 
-  const url = config.SEARXNG_ENDPOINT!;
-  const cleanedUrl = url.endsWith("/") ? url.slice(0, -1) : url;
+  const url = process.env.SEARXNG_ENDPOINT!;
+  // Remove trailing slash if it exists
+  const cleanedUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+
+  // Concatenate "/search" to the cleaned URL
   const finalUrl = cleanedUrl + "/search";
 
-  const fetchPage = async (page: number): Promise<WebSearchResult[]> => {
-    const params = {
-      q: q,
-      language: options.lang,
-      // gl: options.country, //not possible with SearXNG
-      // location: options.location, //not possible with SearXNG
-      // num: options.num_results, //not possible with SearXNG
-      engines: config.SEARXNG_ENGINES ?? "",
-      categories: config.SEARXNG_CATEGORIES ?? "",
-      pageno: page,
-      format: "json",
-      // 2 = strict; omitted otherwise so the instance default applies
-      ...(options.safe ? { safesearch: 2 } : {}),
-    };
-
+  try {
     const response = await axios.get(finalUrl, {
       headers: {
         "Content-Type": "application/json",
@@ -51,43 +49,18 @@ export async function searxng_search(
     const data = response.data;
 
     if (data && Array.isArray(data.results)) {
-      return data.results.map((a: any) => ({
+      const webResults: WebSearchResult[] = data.results.map((a: any) => ({
         url: a.url,
         title: a.title,
         description: a.content,
       }));
-    }
-
-    return [];
-  };
-
-  try {
-    if (requestedResults === 0) {
+      
+      return {
+        web: webResults
+      };
+    } else {
       return {};
     }
-
-    const pagesToFetch = Math.max(
-      1,
-      Math.ceil(requestedResults / resultsPerPage),
-    );
-    let webResults: WebSearchResult[] = [];
-
-    for (let pageOffset = 0; pageOffset < pagesToFetch; pageOffset += 1) {
-      const pageResults = await fetchPage(startPage + pageOffset);
-      if (pageResults.length === 0) {
-        break;
-      }
-      webResults = webResults.concat(pageResults);
-      if (webResults.length >= requestedResults) {
-        break;
-      }
-    }
-
-    return webResults.length > 0
-      ? {
-          web: webResults.slice(0, requestedResults),
-        }
-      : {};
   } catch (error) {
     logger.error(`There was an error searching for content`, { error });
     return {};
