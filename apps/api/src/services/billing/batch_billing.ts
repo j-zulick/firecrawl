@@ -1,118 +1,33 @@
 import { logger } from "../../lib/logger";
 import { getRedisConnection } from "../queue-service";
-import {
-  autumnService,
-  featureIdForBillingEndpoint,
-} from "../autumn/autumn.service";
-import {
-  resolveBillingMetadata,
-  toAutumnBillingProperties,
-  type BillingEndpoint,
-  type BillingMetadata,
-} from "./types";
-import { reportExchangeBilling } from "../../lib/exchange";
-import { getACUCTeam } from "../../controllers/auth";
-import { orgIdFromAcuc } from "../../lib/team-org";
-
-// Upper bound on concurrent Exchange confirmation requests across the
-// whole worker, so slow or retrying deliveries from overlapping batch
-// runs never stack into a burst against the Exchange.
-const EXCHANGE_CONFIRM_CONCURRENCY = 16;
-let exchangeConfirmSlots = EXCHANGE_CONFIRM_CONCURRENCY;
-const exchangeConfirmWaiters: Array<() => void> = [];
-
-async function withExchangeConfirmSlot<T>(fn: () => Promise<T>): Promise<T> {
-  if (exchangeConfirmSlots > 0) {
-    exchangeConfirmSlots--;
-  } else {
-    await new Promise<void>(resolve => exchangeConfirmWaiters.push(resolve));
-  }
-  try {
-    return await fn();
-  } finally {
-    const next = exchangeConfirmWaiters.shift();
-    if (next !== undefined) {
-      next();
-    } else {
-      exchangeConfirmSlots++;
-    }
-  }
-}
-
-// Confirm the Exchange accesses behind a set of committed billing
-// operations. Runs after the batch lock is released so an Exchange outage
-// can never stall the billing loop past its lease. reportExchangeBilling
-// retries internally and never throws; a sustained failure leaves the
-// event pending on the Exchange, which flags unresolved events for
-// reconciliation.
-async function confirmExchangeOutcomes(
-  operations: BillingOperation[],
-): Promise<void> {
-  // A small worker pool pulls operations one at a time, so a slow
-  // Exchange queues at most EXCHANGE_CONFIRM_CONCURRENCY waiters per
-  // invocation on the shared budget instead of one per operation.
-  let nextIndex = 0;
-  const workerCount = Math.min(EXCHANGE_CONFIRM_CONCURRENCY, operations.length);
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (true) {
-        const index = nextIndex++;
-        if (index >= operations.length) {
-          return;
-        }
-        const op = operations[index];
-        await withExchangeConfirmSlot(() =>
-          reportExchangeBilling({
-            accessEventId: op.exchange_access_event_id!,
-            status: "confirmed",
-            ...(op.billing_reference === undefined
-              ? {}
-              : { billingReference: op.billing_reference }),
-          }),
-        );
-      }
-    }),
-  );
-}
+import { supabase_service } from "../supabase";
+import * as Sentry from "@sentry/node";
+import { Queue } from "bullmq";
+import { withAuth } from "../../lib/withAuth";
+import { getACUC, setCachedACUC, setCachedACUCTeam } from "../../controllers/auth";
 
 // Configuration constants
 const BATCH_KEY = "billing_batch";
 const BATCH_LOCK_KEY = "billing_batch_lock";
-const BATCH_SIZE = 5000; // Batch size for processing
+const BATCH_SIZE = 1000; // Batch size for processing
 const BATCH_TIMEOUT = 15000; // 15 seconds processing interval
 const LOCK_TIMEOUT = 30000; // 30 seconds lock timeout
 
 // Define interfaces for billing operations
 interface BillingOperation {
   team_id: string;
-  /**
-   * The team's org — the Autumn customer a refund would go back to. Absent
-   * (not null) on operations enqueued before this field existed; `null` is a
-   * team that genuinely has no org. See the transitional lookup below.
-   */
-  org_id?: string | null;
+  subscription_id: string | null;
   credits: number;
-  billing?: BillingMetadata;
-  endpoint?: BillingEndpoint;
   is_extract: boolean;
   timestamp: string;
-  api_key_id: number | null;
-  autumnTrackInRequest: boolean;
-  // Exchange access backing this operation, if any. Confirmed once the
-  // group finalizes. A finalization that throws leaves the event pending
-  // for reconciliation rather than voiding it.
-  exchange_access_event_id?: string;
-  billing_reference?: string;
 }
 
 // Grouped billing operations for batch processing
 interface GroupedBillingOperation {
   team_id: string;
-  org_id: string | null;
+  subscription_id: string | null;
   total_credits: number;
-  billing: BillingMetadata;
   is_extract: boolean;
-  api_key_id: number | null;
   operations: BillingOperation[];
 }
 
@@ -135,90 +50,15 @@ async function releaseLock() {
   logger.info("🔓 Released billing batch processing lock");
 }
 
-/** A memoized org lookup: unresolved is an ACUC call that threw, not a team
- *  confirmed to have no org. `retried` records that the one refund-time retry
- *  for this team has been spent. */
-type TeamOrgLookup =
-  | { resolved: true; orgId: string | null }
-  | { resolved: false; retried: boolean };
-
-async function refundRequestTrackedCredits(
-  group: GroupedBillingOperation,
-  resolveOrgIdForTeam: (
-    teamId: string,
-    retryFailed?: boolean,
-  ) => Promise<TeamOrgLookup>,
-) {
-  const requestTrackedCredits = group.operations
-    .filter(op => op.autumnTrackInRequest)
-    .reduce((sum, op) => sum + op.credits, 0);
-
-  if (requestTrackedCredits <= 0) return;
-
-  // The refund compensates an Autumn charge that already happened, so a null
-  // recorded by a lookup that failed earlier gets one more look here — past a
-  // memoized failure too, which is not an answer, but only once per team.
-  let orgId = group.org_id;
-  if (orgId === null) {
-    const lookup = await resolveOrgIdForTeam(group.team_id, true);
-    orgId = lookup.resolved ? lookup.orgId : null;
-  }
-
-  if (orgId === null) {
-    // No org, no Autumn customer to refund against — the same nothing the
-    // refund did when it could not name one.
-    logger.warn("Skipping Autumn refund: no org for the team", {
-      team_id: group.team_id,
-      credits: requestTrackedCredits,
-    });
-    return;
-  }
-
-  try {
-    await autumnService.refundCredits({
-      teamId: group.team_id,
-      orgId,
-      value: requestTrackedCredits,
-      properties: {
-        source: "processBillingBatch",
-        ...toAutumnBillingProperties(group.billing),
-        apiKeyId: group.api_key_id,
-      },
-      featureId: group.billing.hostedMcp
-        ? await autumnService.hostedMcpFeatureId(
-            group.team_id,
-            featureIdForBillingEndpoint(group.billing.endpoint),
-          )
-        : featureIdForBillingEndpoint(group.billing.endpoint),
-    });
-  } catch (error) {
-    logger.warn("Failed to refund Autumn request-tracked credits", {
-      error,
-      team_id: group.team_id,
-      credits: requestTrackedCredits,
-      billing: group.billing,
-    });
-  }
-}
-
-/**
- * Dequeues pending billing operations from Redis and finalizes each group.
- * The Autumn charge already happened at request time. A finalization that
- * throws refunds that charge, and a finalized group confirms its Exchange
- * accesses.
- */
+// Main function to process the billing batch
 export async function processBillingBatch() {
   const redis = getRedisConnection();
-
+  
   // Try to acquire lock
   if (!(await acquireLock())) {
     return;
   }
-
-  // Exchange operations finalized this run; their confirmations are
-  // delivered after the lock is released.
-  const committedExchangeOps: BillingOperation[] = [];
-
+  
   try {
     // Get all operations from Redis list
     const operations: BillingOperation[] = [];
@@ -227,155 +67,85 @@ export async function processBillingBatch() {
       if (!op) break;
       operations.push(JSON.parse(op));
     }
-
+    
     if (operations.length === 0) {
       logger.info("No billing operations to process in batch");
       return;
     }
-
-    logger.info(
-      `📦 Processing batch of ${operations.length} billing operations`,
-    );
-
-    // An answer of null is a team that genuinely has no org and is memoized as
-    // such; a lookup that throws leaves the org unknown and is memoized too, so
-    // a failing lookup costs one call per team per batch rather than one per
-    // operation. Read by the transitional legacy branch below and by the
-    // refund path, which re-checks a recorded null and passes retryFailed to
-    // take one fresh look past a memoized failure — once per team, so an
-    // outage costs one extra call rather than one per null-org group.
-    const orgIds = new Map<string, TeamOrgLookup>();
-    const resolveOrgIdForTeam = async (teamId: string, retryFailed = false) => {
-      const cached = orgIds.get(teamId);
-      if (
-        cached !== undefined &&
-        (cached.resolved || !retryFailed || cached.retried)
-      ) {
-        return cached;
-      }
-      try {
-        orgIds.set(teamId, {
-          resolved: true,
-          orgId: orgIdFromAcuc(await getACUCTeam(teamId)),
-        });
-      } catch (error) {
-        logger.warn("Failed to resolve the org for a billing op", {
-          team_id: teamId,
-          error,
-        });
-        orgIds.set(teamId, { resolved: false, retried: retryFailed });
-      }
-      return orgIds.get(teamId)!;
-    };
-
-    // Group operations by team_id, org_id, endpoint, is_extract, and api_key_id
+    
+    logger.info(`📦 Processing batch of ${operations.length} billing operations`);
+    
+    // Group operations by team_id and subscription_id
     const groupedOperations = new Map<string, GroupedBillingOperation>();
-    const unresolvedOperations: BillingOperation[] = [];
-
+    
     for (const op of operations) {
-      const billing = resolveBillingMetadata({
-        billing:
-          op.billing ?? (op.endpoint ? { endpoint: op.endpoint } : undefined),
-        isExtract: op.is_extract,
-      });
-      let orgId: string | null;
-      if (op.org_id === undefined) {
-        // transitional: operations enqueued before org_id was carried; remove
-        // after one deploy. Billing an unknown org as org-less would silently
-        // skip its refund, so those are requeued untouched instead.
-        const lookup = await resolveOrgIdForTeam(op.team_id);
-        if (!lookup.resolved) {
-          unresolvedOperations.push(op);
-          continue;
-        }
-        orgId = lookup.orgId;
-      } else {
-        orgId = op.org_id;
-      }
-      const key = `${op.team_id}:${orgId}:${billing.endpoint}:${billing.hostedMcp === true}:${op.is_extract}:${op.api_key_id}`;
-
+      const key = `${op.team_id}:${op.subscription_id ?? 'null'}:${op.is_extract}`;
+      
       if (!groupedOperations.has(key)) {
         groupedOperations.set(key, {
           team_id: op.team_id,
-          org_id: orgId,
+          subscription_id: op.subscription_id,
           total_credits: 0,
-          billing,
           is_extract: op.is_extract,
-          api_key_id: op.api_key_id,
-          operations: [],
+          operations: []
         });
       }
-
+      
       const group = groupedOperations.get(key)!;
       group.total_credits += op.credits;
       group.operations.push(op);
     }
-
-    if (unresolvedOperations.length > 0) {
-      // Back onto the same list in the same shape — still without org_id — so
-      // the next batch retries the lookup. Nothing is billed or refunded for
-      // them here.
-      logger.warn(
-        "Requeueing legacy billing operations whose org could not be resolved",
-        { count: unresolvedOperations.length },
-      );
-      await redis.rpush(
-        BATCH_KEY,
-        ...unresolvedOperations.map(op => JSON.stringify(op)),
-      );
-    }
-
+    
     // Process each group of operations
-    for (const [, group] of groupedOperations.entries()) {
-      logger.info(
-        `🔄 Billing team ${group.team_id} for ${group.total_credits} credits`,
-        {
-          team_id: group.team_id,
-          total_credits: group.total_credits,
-          billing: group.billing,
-          operation_count: group.operations.length,
-          is_extract: group.is_extract,
-        },
-      );
-
+    for (const [key, group] of groupedOperations.entries()) {
+      logger.info(`🔄 Billing team ${group.team_id} for ${group.total_credits} credits`, {
+        team_id: group.team_id,
+        subscription_id: group.subscription_id,
+        total_credits: group.total_credits,
+        operation_count: group.operations.length,
+        is_extract: group.is_extract
+      });
+      
       // Skip billing for preview teams
       if (group.team_id === "preview" || group.team_id.startsWith("preview_")) {
         logger.info(`Skipping billing for preview team ${group.team_id}`);
         continue;
       }
-
+      
       try {
-        logger.info(
-          `✅ Successfully billed team ${group.team_id} for ${group.total_credits} credits`,
+        // Execute the actual billing
+        await withAuth(supaBillTeam, { success: true, message: "No DB, bypassed." })(
+          group.team_id,
+          group.subscription_id,
+          group.total_credits,
+          logger,
+          group.is_extract
         );
-
-        // Usage is tracked to Autumn at request time, not here.
-
-        // The group is finalized: confirm the Exchange accesses it covered
-        // once the batch lock is released.
-        committedExchangeOps.push(
-          ...group.operations.filter(
-            op => op.exchange_access_event_id !== undefined,
-          ),
-        );
+        
+        logger.info(`✅ Successfully billed team ${group.team_id} for ${group.total_credits} ${group.is_extract ? 'tokens' : 'credits'}`);
       } catch (error) {
-        await refundRequestTrackedCredits(group, resolveOrgIdForTeam);
-        // No Exchange outcome: the events stay pending for reconciliation.
-        logger.error(`❌ Failed to bill team ${group.team_id}`, {
-          error,
-          group,
+        logger.error(`❌ Failed to bill team ${group.team_id}`, { error, group });
+        Sentry.captureException(error, {
+          data: {
+            operation: "batch_billing",
+            team_id: group.team_id,
+            credits: group.total_credits
+          }
         });
       }
     }
-
+    
     logger.info("✅ Billing batch processing completed successfully");
   } catch (error) {
     logger.error("Error processing billing batch", { error });
+    Sentry.captureException(error, {
+      data: {
+        operation: "batch_billing_process"
+      }
+    });
   } finally {
     await releaseLock();
   }
-
-  await confirmExchangeOutcomes(committedExchangeOps);
 }
 
 // Start periodic batch processing
@@ -383,101 +153,177 @@ let batchInterval: NodeJS.Timeout | null = null;
 
 export function startBillingBatchProcessing() {
   if (batchInterval) return;
-
+  
   logger.info("🔄 Starting periodic billing batch processing");
   batchInterval = setInterval(async () => {
-    try {
-      const queueLength = await getRedisConnection().llen(BATCH_KEY);
-      logger.info(
-        `Checking billing batch queue (${queueLength} items pending)`,
-      );
-      await processBillingBatch();
-    } catch (error) {
-      logger.error("Error in periodic billing batch processing", { error });
-    }
+    const queueLength = await getRedisConnection().llen(BATCH_KEY);
+    logger.info(`Checking billing batch queue (${queueLength} items pending)`);
+    await processBillingBatch();
   }, BATCH_TIMEOUT);
-
+  
   // Unref to not keep process alive
   batchInterval.unref();
 }
 
-/**
- * Enqueues a billing operation for async batch processing.
- */
+// Add a billing operation to the queue
 export async function queueBillingOperation(
   team_id: string,
-  /**
-   * The team's org. `undefined` only while draining `bill_team` jobs enqueued
-   * before the field existed; those resolve it in the batch instead.
-   */
-  org_id: string | null | undefined,
+  subscription_id: string | null | undefined,
   credits: number,
-  api_key_id: number | null,
-  billing: BillingMetadata,
-  is_extract: boolean = false,
-  autumnTrackInRequest: boolean = false,
-  exchange?: { accessEventId: string; billingReference?: string },
+  is_extract: boolean = false
 ) {
   // Skip queuing for preview teams
   if (team_id === "preview" || team_id.startsWith("preview_")) {
     logger.info(`Skipping billing queue for preview team ${team_id}`);
     return { success: true, message: "Preview team, no credits used" };
   }
-
+  
   logger.info(`Queueing billing operation for team ${team_id}`, {
     team_id,
+    subscription_id,
     credits,
-    billing,
-    is_extract,
+    is_extract
   });
-
+  
   try {
     const operation: BillingOperation = {
       team_id,
-      ...(org_id === undefined ? {} : { org_id }),
+      subscription_id: subscription_id ?? null,
       credits,
-      billing,
       is_extract,
-      timestamp: new Date().toISOString(),
-      api_key_id,
-      autumnTrackInRequest,
-      ...(exchange === undefined
-        ? {}
-        : {
-            exchange_access_event_id: exchange.accessEventId,
-            ...(exchange.billingReference === undefined
-              ? {}
-              : { billing_reference: exchange.billingReference }),
-          }),
+      timestamp: new Date().toISOString()
     };
-
+    
     // Add operation to Redis list
     const redis = getRedisConnection();
     await redis.rpush(BATCH_KEY, JSON.stringify(operation));
     const queueLength = await getRedisConnection().llen(BATCH_KEY);
-    logger.info(
-      `📥 Added billing operation to queue (${queueLength} total pending)`,
-      {
-        team_id,
-        credits,
-      },
-    );
-
+    logger.info(`📥 Added billing operation to queue (${queueLength} total pending)`, {
+      team_id,
+      credits
+    });
+    
     // Start batch processing if not already started
     startBillingBatchProcessing();
-
+    
     // If we have enough items, trigger immediate processing
     if (queueLength >= BATCH_SIZE) {
-      logger.info(
-        "🔄 Billing queue reached batch size, triggering immediate processing",
-      );
+      logger.info("🔄 Billing queue reached batch size, triggering immediate processing");
       await processBillingBatch();
     }
+    // TODO is there a better way to do this?
+    
+    // Update cached credits used immediately to provide accurate feedback to users
+    // This is optimistic - actual billing happens in batch
+    // Should we add this?
+    // I guess batch is fast enough that it's fine
+
+
+    // if (process.env.USE_DB_AUTHENTICATION === "true") {
+    //   (async () => {
+    //     // Get API keys for this team to update in cache
+    //     const { data } = await supabase_service
+    //       .from("api_keys")
+    //       .select("key")
+    //       .eq("team_id", team_id);
+          
+    //     for (const apiKey of (data ?? []).map(x => x.key)) {
+    //       await setCachedACUC(apiKey, (acuc) =>
+    //         acuc
+    //           ? {
+    //               ...acuc,
+    //               credits_used: acuc.credits_used + credits,
+    //               adjusted_credits_used: acuc.adjusted_credits_used + credits,
+    //               remaining_credits: acuc.remaining_credits - credits,
+    //             }
+    //           : null,
+    //       );
+    //     }
+    //   })().catch(error => {
+    //     logger.error("Failed to update cached credits", { error, team_id });
+    //   });
+    // }
+    
     return { success: true };
   } catch (error) {
     logger.error("Error queueing billing operation", { error, team_id });
+    Sentry.captureException(error, {
+      data: {
+        operation: "queue_billing",
+        team_id,
+        credits
+      }
+    });
     return { success: false, error };
   }
+}
+
+// Modified version of the billing function for batch operations
+async function supaBillTeam(
+  team_id: string,
+  subscription_id: string | null | undefined,
+  credits: number,
+  __logger?: any,
+  is_extract: boolean = false,
+) {
+  const _logger = (__logger ?? logger).child({
+    module: "credit_billing",
+    method: "supaBillTeam",
+    teamId: team_id,
+    subscriptionId: subscription_id,
+    credits,
+  });
+
+  if (team_id === "preview" || team_id.startsWith("preview_")) {
+    return { success: true, message: "Preview team, no credits used" };
+  }
+  
+  _logger.info(`Batch billing team ${team_id} for ${credits} credits`);
+
+  // Perform the actual database operation
+  const { data, error } = await supabase_service.rpc("bill_team_4_tally", {
+    _team_id: team_id,
+    sub_id: subscription_id ?? null,
+    fetch_subscription: subscription_id === undefined,
+    credits,
+    is_extract_param: is_extract,
+  });
+
+  if (error) {
+    Sentry.captureException(error);
+    _logger.error("Failed to bill team.", { error });
+    return { success: false, error };
+  }
+
+  // Update cached ACUC to reflect the new credit usage
+  (async () => {
+    for (const apiKey of (data ?? []).map((x) => x.api_key)) {
+      await setCachedACUC(apiKey, is_extract, (acuc) =>
+        acuc
+          ? {
+              ...acuc,
+              credits_used: acuc.credits_used + credits,
+              adjusted_credits_used: acuc.adjusted_credits_used + credits,
+              remaining_credits: acuc.remaining_credits - credits,
+            }
+          : null,
+      );
+      await setCachedACUCTeam(team_id, is_extract, (acuc) =>
+        acuc
+          ? {
+              ...acuc,
+              credits_used: acuc.credits_used + credits,
+              adjusted_credits_used: acuc.adjusted_credits_used + credits,
+              remaining_credits: acuc.remaining_credits - credits,
+            }
+          : null,
+      );
+    }
+  })().catch(error => {
+    _logger.error("Failed to update cached credits", { error, team_id });
+  });
+
+  return { success: true, data };
 }
 
 // Cleanup on exit
@@ -488,4 +334,4 @@ process.on("beforeExit", async () => {
     logger.info("Stopped periodic billing batch processing");
   }
   await processBillingBatch();
-});
+}); 

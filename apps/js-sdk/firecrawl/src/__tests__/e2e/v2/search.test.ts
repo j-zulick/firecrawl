@@ -2,11 +2,10 @@
  * E2E tests for v2 search (translated from Python tests)
  */
 import Firecrawl from "../../../index";
-import type { Document, SearchResultWeb, SearchResultNews, SearchResultImages } from "../../../index";
+import type { Document, SearchResult } from "../../../index";
 import { config } from "dotenv";
 import { getIdentity, getApiUrl } from "./utils/idmux";
-import { testTimeoutMs, withRateLimitRetry } from "./utils/rateLimit";
-import { describe, test, expect, beforeAll } from "vitest";
+import { describe, test, expect, beforeAll } from "@jest/globals";
 
 config();
 
@@ -15,7 +14,7 @@ let client: Firecrawl;
 
 beforeAll(async () => {
   const { apiKey } = await getIdentity({ name: "js-e2e-search" });
-  client = withRateLimitRetry(new Firecrawl({ apiKey, apiUrl: API_URL }));
+  client = new Firecrawl({ apiKey, apiUrl: API_URL });
 });
 
 function collectTexts(entries: any[] | undefined): string[] {
@@ -29,7 +28,7 @@ function collectTexts(entries: any[] | undefined): string[] {
   return texts;
 }
 
-function isDocument(entry: Document | SearchResultWeb | SearchResultNews | SearchResultImages | undefined | null): entry is Document {
+function isDocument(entry: Document | SearchResult | undefined | null): entry is Document {
   if (!entry) return false;
   const d = entry as Document;
   return (
@@ -73,7 +72,7 @@ describe("v2.search e2e", () => {
 
     expect(results.news == null).toBe(true);
     expect(results.images == null).toBe(true);
-  }, testTimeoutMs(90_000));
+  }, 90_000);
 
   test("with sources web+news and limit", async () => {
     if (!client) throw new Error();
@@ -87,14 +86,14 @@ describe("v2.search e2e", () => {
     expect(results.images == null).toBe(true);
 
     const webTitles = (results.web || [])
-      .filter((r): r is SearchResultWeb => !isDocument(r))
+      .filter((r): r is SearchResult => !isDocument(r))
       .map(r => (r.title || "").toString().toLowerCase());
     const webDescriptions = (results.web || [])
-      .filter((r): r is SearchResultWeb => !isDocument(r))
+      .filter((r): r is SearchResult => !isDocument(r))
       .map(r => (r.description || "").toString().toLowerCase());
     const allWebText = (webTitles.concat(webDescriptions)).join(" ");
     expect(allWebText.includes("firecrawl")).toBe(true);
-  }, testTimeoutMs(90_000));
+  }, 90_000);
 
   test("result structure", async () => {
     if (!client) throw new Error();
@@ -109,7 +108,7 @@ describe("v2.search e2e", () => {
       expect(typeof result.description === "string" || result.description == null).toBe(true);
       expect(result.url.startsWith("http")).toBe(true);
     }
-  }, testTimeoutMs(90_000));
+  }, 90_000);
 
   test("all parameters (comprehensive)", async () => {
     if (!client) throw new Error();
@@ -184,7 +183,7 @@ describe("v2.search e2e", () => {
           expect(Boolean(result.markdown) || Boolean(result.html)).toBe(true);
         } else {
           expect(typeof result.url).toBe("string");
-          expect(result.url?.startsWith("http")).toBe(true);
+          expect(result.url.startsWith("http")).toBe(true);
         }
       }
     }
@@ -194,10 +193,10 @@ describe("v2.search e2e", () => {
     for (const result of results.images || []) {
       if (!isDocument(result)) {
         expect(typeof result.url).toBe("string");
-        expect(result.url?.startsWith("http")).toBe(true);
+        expect(result.url.startsWith("http")).toBe(true);
       }
     }
-  }, testTimeoutMs(120_000));
+  }, 120_000);
 
   test("formats flexibility: list vs object", async () => {
     if (!client) throw new Error();
@@ -213,7 +212,7 @@ describe("v2.search e2e", () => {
     expect(results2).toBeTruthy();
     expect(results1.web).toBeTruthy();
     expect(results2.web).toBeTruthy();
-  }, testTimeoutMs(151_000));
+  }, 90_000);
 
   test("with json format object", async () => {
     if (!client) throw new Error();
@@ -230,7 +229,7 @@ describe("v2.search e2e", () => {
     });
     expect(results).toBeTruthy();
     expect(Array.isArray(results.web) || results.web == null).toBe(true);
-  }, testTimeoutMs(90_000));
+  }, 90_000);
 
   test("with summary format, documents include summary when present", async () => {
     if (!client) throw new Error();
@@ -243,6 +242,6 @@ describe("v2.search e2e", () => {
       expect(typeof docs[0].summary).toBe("string");
       expect((docs[0].summary || "").length).toBeGreaterThan(5);
     }
-  }, testTimeoutMs(90_000));
+  }, 90_000);
 });
 

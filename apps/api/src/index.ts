@@ -1,266 +1,150 @@
 import "dotenv/config";
-import { config } from "./config";
-import { shutdownTracing } from "./otel";
+import "./services/sentry";
+import * as Sentry from "@sentry/node";
 import express, { NextFunction, Request, Response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
 import {
+  getExtractQueue,
+  getScrapeQueue,
   getGenerateLlmsTxtQueue,
   getDeepResearchQueue,
   getBillingQueue,
   getPrecrawlQueue,
-  getFirebillTrackRetryQueue,
 } from "./services/queue-service";
 import { v0Router } from "./routes/v0";
-import { livenessController, readinessController } from "./controllers/health";
-import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
 import { logger } from "./lib/logger";
-import {
-  adminInternalRouter,
-  adminRouter,
-  countAdminPathRoute,
-} from "./routes/admin";
+import { adminRouter } from "./routes/admin";
 import http from "node:http";
 import https from "node:https";
 import { v1Router } from "./routes/v1";
 import expressWs from "express-ws";
-import { ErrorResponse, RequestWithMaybeACUC } from "./controllers/v1/types";
+import { ErrorResponse, RequestWithMaybeACUC, ResponseWithSentry } from "./controllers/v1/types";
 import { ZodError } from "zod";
-import { QueueFullError } from "./lib/queue-full-error";
-import { v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
+import { RateLimiterMode } from "./types";
+import { attachWsProxy } from "./services/agentLivecastWS";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
-import { exchangeRouter } from "./routes/exchange";
-import { exchangeInternalRouter } from "./routes/exchange-internal";
-import { labsRouter } from "./routes/labs";
-import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
-import { registerHostedBashRoute } from "./controllers/v2/bash";
-import { nuqShutdown } from "./services/worker/nuq";
-import { getErrorContactMessage } from "./lib/deployment";
-import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
-import { warmExchangeCatalog } from "./lib/exchange";
-import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
-import responseTime from "response-time";
-import { shutdownWebhookQueue } from "./services/webhook";
-import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
-import { isKeylessConfigured } from "./lib/keyless";
-import {
-  drainZdrRequestLogs,
-  shutdownPubSubLogging,
-} from "./services/logging/log_job";
-import { notFoundHandler } from "./lib/not-found";
-import { startRole } from "./main";
+import domainFrequencyRouter from "./routes/domain-frequency";
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { LangfuseExporter } from "langfuse-vercel";
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 
 const { createBullBoard } = require("@bull-board/api");
-const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
+const { BullMQAdapter } = require('@bull-board/api/bullMQAdapter');
 const { ExpressAdapter } = require("@bull-board/express");
 
-const numCPUs = config.ENV === "local" ? 2 : os.cpus().length;
+const numCPUs = process.env.ENV === "local" ? 2 : os.cpus().length;
 logger.info(`Number of CPUs: ${numCPUs} available`);
 
 logger.info("Network info dump", {
   networkInterfaces: os.networkInterfaces(),
 });
 
-if (isKeylessConfigured() && !config.KEYLESS_CONVERSION_HMAC_SECRET) {
-  logger.warn(
-    "Keyless conversion cohort logging is disabled: set KEYLESS_CONVERSION_HMAC_SECRET to enable privacy-safe quota-to-account measurement",
-  );
-}
-
 // Install cacheable lookup for all other requests
 cacheableLookup.install(http.globalAgent);
 cacheableLookup.install(https.globalAgent);
+
+const shouldOtel = process.env.LANGFUSE_PUBLIC_KEY || process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+const otelSdk = shouldOtel ? new NodeSDK({
+  resource: resourceFromAttributes({
+    [ATTR_SERVICE_NAME]: "firecrawl-app",
+  }),
+  spanProcessors: [
+    ...(process.env.LANGFUSE_PUBLIC_KEY ? [new BatchSpanProcessor(new LangfuseExporter())] : []),
+    ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT ? [new BatchSpanProcessor(new OTLPTraceExporter({
+      url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
+    }))] : []),
+  ],
+  instrumentations: [getNodeAutoInstrumentations()],
+}) : null;
+    
+if (otelSdk) {   
+  otelSdk.start();
+}
 
 // Initialize Express with WebSocket support
 const expressApp = express();
 const ws = expressWs(expressApp);
 const app = ws.app;
 
-global.isProduction = config.IS_PRODUCTION;
+global.isProduction = process.env.IS_PRODUCTION === "true";
 
-// Capture the exact request bytes so integrations that sign the raw payload
-// (e.g. Slack's X-Slack-Signature) can verify it after body parsing. Typed with
-// the node http types body-parser's `verify` hook expects.
-const captureRawBody = (
-  req: http.IncomingMessage,
-  _res: http.ServerResponse,
-  buf: Buffer,
-) => {
-  if (buf && buf.length) {
-    (req as http.IncomingMessage & { rawBody?: Buffer }).rawBody = buf;
-  }
-};
-
-registerMcpActionLogIngestRoute(app);
-registerHostedBashRoute(app);
-
-app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
-app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json({ limit: "10mb" }));
 
 app.use(cors()); // Add this line to enable CORS
 
-app.use(responseTime());
-
-app.disable("x-powered-by");
-
-if (config.EXPRESS_TRUST_PROXY) {
-  app.set("trust proxy", config.EXPRESS_TRUST_PROXY);
-}
-
 const serverAdapter = new ExpressAdapter();
-
-const bullBoardQueues = [
-  new BullMQAdapter(getGenerateLlmsTxtQueue()),
-  new BullMQAdapter(getDeepResearchQueue()),
-  new BullMQAdapter(getBillingQueue()),
-  new BullMQAdapter(getPrecrawlQueue()),
-  new BullMQAdapter(getFirebillTrackRetryQueue()),
-  // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
-  // management UI, not here.
-];
+serverAdapter.setBasePath(`/admin/${process.env.BULL_AUTH_KEY}/queues`);
 
 const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
-  queues: bullBoardQueues,
+  queues: [
+    new BullMQAdapter(getScrapeQueue()),
+    new BullMQAdapter(getExtractQueue()),
+    new BullMQAdapter(getGenerateLlmsTxtQueue()),
+    new BullMQAdapter(getDeepResearchQueue()),
+    new BullMQAdapter(getBillingQueue()),
+    new BullMQAdapter(getPrecrawlQueue()),
+  ],
   serverAdapter: serverAdapter,
 });
 
-if (!config.BULL_AUTH_KEY) {
-  logger.warn("BULL_AUTH_KEY is not set; admin routes are disabled.");
-} else if (config.BULL_AUTH_KEY_PATH_ROUTES) {
-  serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
-  app.use(
-    `/admin/${config.BULL_AUTH_KEY}/queues`,
-    countAdminPathRoute("queues"),
-    serverAdapter.getRouter(),
-  );
-}
+app.use(
+  `/admin/${process.env.BULL_AUTH_KEY}/queues`,
+  serverAdapter.getRouter(),
+);
 
-app.get("/", (_, res) => {
-  res.json({
-    message: "Firecrawl API",
-    documentation_url: "https://docs.firecrawl.dev",
-  });
+app.get("/", (req, res) => {
+  res.send("SCRAPERS-JS: Hello, world! K8s!");
 });
 
-app.get("/e2e-test", (_, res) => {
-  res.status(200).send("OK");
+//write a simple test function
+app.get("/test", async (req, res) => {
+  res.send("Hello, world!");
 });
-
-app.get("/health/liveness", livenessController);
-app.get("/health/readiness", readinessController);
 
 // register router
 app.use(v0Router);
 app.use("/v1", v1Router);
 app.use("/v2", v2Router);
-app.use("/labs", labsRouter);
-app.use("/exchange", exchangeRouter);
-app.use(exchangeInternalRouter);
 app.use(adminRouter);
+app.use(domainFrequencyRouter);
 
-const DEFAULT_PORT = config.PORT;
-const HOST = config.HOST;
+const DEFAULT_PORT = process.env.PORT ?? 3002;
+const HOST = process.env.HOST ?? "localhost";
 
-// The internal listener has no key check: keep its port off public ingress.
-function startAdminInternalServer(port: number) {
-  const adminApp = express();
-  adminApp.disable("x-powered-by");
-  adminApp.use(bodyParser.json({ limit: "10mb" }));
-
-  const internalBullBoard = new ExpressAdapter();
-  internalBullBoard.setBasePath("/admin/queues");
-  createBullBoard({
-    queues: bullBoardQueues,
-    serverAdapter: internalBullBoard,
-  });
-  adminApp.use("/admin/queues", internalBullBoard.getRouter());
-
-  adminApp.use(adminInternalRouter);
-  adminApp.use(notFoundHandler);
-  adminApp.use(
-    (err: unknown, req: Request, res: Response, _next: NextFunction) => {
-      logger.error("Internal admin request failed", {
-        error: err,
-        path: req.path,
-      });
-      res.status(500).json({ success: false, error: "Internal server error" });
-    },
-  );
-
-  const host = config.ADMIN_INTERNAL_HOST;
-  return adminApp.listen(port, host, (error?: Error) => {
-    if (error) {
-      logger.error("Failed to start internal admin server", {
-        error,
-        port,
-        host,
-      });
-      throw error;
-    }
-
-    logger.info("Internal admin server listening", {
-      pid: process.pid,
-      port,
-      host,
-    });
-  });
-}
-
-async function startServer(port = DEFAULT_PORT) {
-  startNodeRuntimeMetrics();
-  try {
-    await initializeBlocklist();
-    initializeEngineForcing();
-    warmExchangeCatalog();
-  } catch (error) {
-    logger.error("Failed to initialize API startup dependencies", {
-      error,
-    });
-    throw error;
-  }
-
-  const server = app.listen(Number(port), HOST, (error?: Error) => {
-    if (error) {
-      logger.error("Failed to start HTTP server", { error, port, host: HOST });
-      throw error;
-    }
-
+function startServer(port = DEFAULT_PORT) {
+  // Attach WebSocket proxy to the Express app
+  attachWsProxy(app);
+  
+  const server = app.listen(Number(port), HOST, () => {
     logger.info(`Worker ${process.pid} listening on port ${port}`);
   });
 
-  const adminInternalServer =
-    config.ADMIN_INTERNAL_PORT !== undefined
-      ? startAdminInternalServer(config.ADMIN_INTERNAL_PORT)
-      : undefined;
-
   const exitHandler = async () => {
     logger.info("SIGTERM signal received: closing HTTP server");
-    if (config.IS_KUBERNETES) {
+    if (process.env.IS_KUBERNETES === "true") {
       // Account for GCE load balancer drain timeout
       logger.info("Waiting 60s for GCE load balancer drain timeout");
-      await new Promise(resolve => setTimeout(resolve, 60000));
+      await new Promise((resolve) => setTimeout(resolve, 60000));
     }
-    const adminInternalClosed = new Promise<void>(resolve =>
-      adminInternalServer
-        ? adminInternalServer.close(() => resolve())
-        : resolve(),
-    );
-    server.close(async () => {
-      await adminInternalClosed;
+    server.close(() => {
       logger.info("Server closed.");
-      await drainZdrRequestLogs();
-      nuqShutdown().finally(() => {
-        shutdownWebhookQueue().finally(() => {
-          shutdownIndexerQueue().finally(async () => {
-            await shutdownPubSubLogging();
-            await shutdownTracing();
-            logger.info("NUQ shutdown complete");
-            process.exit(0);
-          });
+      if (otelSdk) {
+        otelSdk.shutdown().then(() => {
+          logger.info("OTEL shutdown");
+          process.exit(0);
         });
-      });
+      } else {
+        process.exit(0);
+      }
     });
   };
 
@@ -269,20 +153,84 @@ async function startServer(port = DEFAULT_PORT) {
   return server;
 }
 
-export async function start() {
-  await startServer().catch(error => {
-    logger.error("Failed to start server", { error });
-    process.exit(1);
-  });
+if (require.main === module) {
+  startServer();
 }
+
+app.get(`/serverHealthCheck`, async (req, res) => {
+  try {
+    const scrapeQueue = getScrapeQueue();
+    const [waitingJobs] = await Promise.all([scrapeQueue.getWaitingCount()]);
+    const noWaitingJobs = waitingJobs === 0;
+    // 200 if no active jobs, 503 if there are active jobs
+    return res.status(noWaitingJobs ? 200 : 500).json({
+      waitingJobs,
+    });
+  } catch (error) {
+    Sentry.captureException(error);
+    logger.error(error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/serverHealthCheck/notify", async (req, res) => {
+  if (process.env.SLACK_WEBHOOK_URL) {
+    const treshold = 1; // The treshold value for the active jobs
+    const timeout = 60000; // 1 minute // The timeout value for the check in milliseconds
+
+    const getWaitingJobsCount = async () => {
+      const scrapeQueue = getScrapeQueue();
+      const [waitingJobsCount] = await Promise.all([
+        scrapeQueue.getWaitingCount(),
+      ]);
+
+      return waitingJobsCount;
+    };
+
+    res.status(200).json({ message: "Check initiated" });
+
+    const checkWaitingJobs = async () => {
+      try {
+        let waitingJobsCount = await getWaitingJobsCount();
+        if (waitingJobsCount >= treshold) {
+          setTimeout(async () => {
+            // Re-check the waiting jobs count after the timeout
+            waitingJobsCount = await getWaitingJobsCount();
+            if (waitingJobsCount >= treshold) {
+              const slackWebhookUrl = process.env.SLACK_WEBHOOK_URL!;
+              const message = {
+                text: `⚠️ Warning: The number of active jobs (${waitingJobsCount}) has exceeded the threshold (${treshold}) for more than ${
+                  timeout / 60000
+                } minute(s).`,
+              };
+
+              const response = await fetch(slackWebhookUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(message),
+              });
+
+              if (!response.ok) {
+                logger.error("Failed to send Slack notification");
+              }
+            }
+          }, timeout);
+        }
+      } catch (error) {
+        Sentry.captureException(error);
+        logger.debug(error);
+      }
+    };
+
+    checkWaitingJobs();
+  }
+});
 
 app.get("/is-production", (req, res) => {
   res.send({ isProduction: global.isProduction });
 });
-
-// Terminal handler for unmatched paths. Must stay after every route and before
-// the error middleware below, or Express falls back to its default HTML page.
-app.use(notFoundHandler);
 
 app.use(
   (
@@ -291,52 +239,30 @@ app.use(
     res: Response<ErrorResponse>,
     next: NextFunction,
   ) => {
-    if (err instanceof QueueFullError) {
-      res.status(429).json({
-        success: false,
-        error: err.message,
-      });
-    } else if (err instanceof ZodError) {
-      // In zod v4, ZodError uses 'issues' instead of 'errors'
-      const issues = err.issues;
-
+    if (err instanceof ZodError) {
       if (
-        Array.isArray(issues) &&
-        issues.find(x => x.message === "URL uses unsupported protocol")
+        Array.isArray(err.errors) &&
+        err.errors.find((x) => x.message === "URL uses unsupported protocol")
       ) {
         logger.warn("Unsupported protocol error: " + JSON.stringify(req.body));
       }
 
-      // Check for unrecognized_keys errors and replace with custom message
-      const hasUnrecognizedKeys = issues.some(
-        e => e.code === "unrecognized_keys",
-      );
-      const strictMessage =
-        "Unrecognized key in body -- please review the v2 API documentation for request body changes";
-
-      const customErrorMessage = hasUnrecognizedKeys
-        ? strictMessage
-        : issues.length > 0 && issues[0].code === "custom"
-          ? issues[0].message
-          : "Bad Request";
-
-      res.status(400).json({
-        success: false,
-        code: "BAD_REQUEST",
-        error: customErrorMessage,
-        details: issues,
-      });
+      res
+        .status(400)
+        .json({ success: false, code: "BAD_REQUEST", error: "Bad Request", details: err.errors });
     } else {
       next(err);
     }
   },
 );
 
+Sentry.setupExpressErrorHandler(app);
+
 app.use(
   (
     err: unknown,
     req: RequestWithMaybeACUC<{}, ErrorResponse, undefined>,
-    res: Response<ErrorResponse>,
+    res: ResponseWithSentry<ErrorResponse>,
     next: NextFunction,
   ) => {
     if (
@@ -345,46 +271,37 @@ app.use(
       err.status === 400 &&
       "body" in err
     ) {
-      return res.status(400).json({
-        success: false,
-        code: "BAD_REQUEST_INVALID_JSON",
-        error: "Bad request, malformed JSON",
-      });
-    }
-    if (
-      typeof err === "object" &&
-      err !== null &&
-      "status" in err &&
-      (err as { status?: number }).status === 413
-    ) {
-      return res.status(413).json({
-        success: false,
-        error: "Request body is too large",
-      });
+      return res
+        .status(400)
+        .json({ success: false, code: "BAD_REQUEST_INVALID_JSON", error: "Bad request, malformed JSON" });
     }
 
-    const id = uuidv7();
+    const id = res.sentry ?? uuidv4();
 
     logger.error(
-      "Error occurred in request! (" + req.path + ") -- ID " + id + " -- ",
-      {
-        error: err,
-        errorId: id,
-        path: req.path,
-        teamId: req.acuc?.team_id,
-        team_id: req.acuc?.team_id,
-      },
-    );
+      "Error occurred in request! (" +
+        req.path +
+        ") -- ID " +
+        id +
+        " -- ",
+    { error: err, errorId: id, path: req.path, teamId: req.acuc?.team_id, team_id: req.acuc?.team_id });
     res.status(500).json({
       success: false,
       code: "UNKNOWN_ERROR",
-      error: getErrorContactMessage(id),
+      error:
+        "An unexpected error occurred. Please contact help@firecrawl.com for help. Your exception ID is " +
+        id,
     });
   },
 );
 
 logger.info(`Worker ${process.pid} started`);
+// const sq = getScrapeQueue();
 
-if (require.main === module) {
-  void startRole("api");
-}
+// sq.on("waiting", j => ScrapeEvents.logJobEvent(j, "waiting"));
+// sq.on("active", j => ScrapeEvents.logJobEvent(j, "active"));
+// sq.on("completed", j => ScrapeEvents.logJobEvent(j, "completed"));
+// sq.on("paused", j => ScrapeEvents.logJobEvent(j, "paused"));
+// sq.on("resumed", j => ScrapeEvents.logJobEvent(j, "resumed"));
+// sq.on("removed", j => ScrapeEvents.logJobEvent(j, "removed"));
+// 

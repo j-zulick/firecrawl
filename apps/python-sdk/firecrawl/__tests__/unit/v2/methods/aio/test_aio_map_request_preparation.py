@@ -9,12 +9,11 @@ class TestAsyncMapRequestPreparation:
         assert payload["url"] == "https://example.com"
 
     def test_fields(self):
-        opts = MapOptions(search="docs", include_subdomains=True, limit=10, sitemap="only", timeout=15000, integration="  _unit-test  ")
+        opts = MapOptions(search="docs", include_subdomains=True, limit=10, sitemap="only", timeout=15000)
         payload = _prepare_map_request("https://example.com", opts)
         assert payload["search"] == "docs"
         assert payload["includeSubdomains"] is True
         assert payload["limit"] == 10
         assert payload["sitemap"] == "only"
         assert payload["timeout"] == 15000
-        assert payload["integration"] == "_unit-test"
 

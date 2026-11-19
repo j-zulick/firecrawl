@@ -1,69 +1,19 @@
-import { describe, test, expect } from "vitest";
-import { ensureNoV1Options, ensureValidFormats, ensureValidScrapeOptions } from "../../../v2/utils/validation";
+import { describe, test, expect } from "@jest/globals";
+import { ensureValidFormats, ensureValidScrapeOptions } from "../../../v2/utils/validation";
 import type { FormatOption } from "../../../v2/types";
 import { z } from "zod";
 
 describe("v2 utils: validation", () => {
-  const scrapeLevel = {
-    pageOptions: "use scrapeOptions",
-    includeLinks: "add 'links' to scrapeOptions.formats",
-    parsePDF: "use scrapeOptions.parsers",
-  };
-  const crawlOnly = {
-    crawlerOptions: "move its fields to the top level",
-    maxDepth: "use maxDiscoveryDepth",
-    allowBackwardLinks: "use crawlEntireDomain",
-    ignoreSitemap: "use sitemap: 'skip'",
-  };
-
-  test.each(Object.entries({ ...crawlOnly, ...scrapeLevel }))("ensureNoV1Options: crawl names %s and its replacement", (option, replacement) => {
-    expect(() => ensureNoV1Options({ url: "https://a.dev", [option]: true }, "crawl")).toThrow(
-      `crawl: ${option} is a v1 option, ${replacement}`,
-    );
-  });
-
-  test.each(Object.entries(scrapeLevel))("ensureNoV1Options: search names %s and its replacement", (option, replacement) => {
-    expect(() => ensureNoV1Options({ query: "q", [option]: true }, "search")).toThrow(
-      `search: ${option} is a v1 option, ${replacement}`,
-    );
-  });
-
-  test("ensureNoV1Options: search does not apply crawl-only hints", () => {
-    expect(() => ensureNoV1Options({ query: "q", maxDepth: 2, crawlerOptions: {} }, "search")).not.toThrow();
-  });
-
-  test("ensureNoV1Options: lists every v1 option found", () => {
-    expect(() => ensureNoV1Options({ maxDepth: 2, allowBackwardLinks: true }, "crawl")).toThrow(/maxDepth.*maxDiscoveryDepth.*allowBackwardLinks.*crawlEntireDomain/);
-  });
-
-  test("ensureNoV1Options: accepts v2 options and unset v1 keys", () => {
-    expect(() => ensureNoV1Options({ url: "https://a.dev", limit: 2, maxDiscoveryDepth: 1 }, "crawl")).not.toThrow();
-    expect(() => ensureNoV1Options({ url: "https://a.dev", maxDepth: undefined }, "crawl")).not.toThrow();
-    expect(() => ensureNoV1Options(undefined, "search")).not.toThrow();
-  });
-
   test("ensureValidFormats: plain 'json' string is invalid", () => {
     const formats: FormatOption[] = ["markdown", "json"] as unknown as FormatOption[];
     expect(() => ensureValidFormats(formats)).toThrow(/json format must be an object/i);
   });
 
-  test("ensureValidFormats: accepts video string format", () => {
-    const formats: FormatOption[] = ["markdown", "video"];
-    expect(() => ensureValidFormats(formats)).not.toThrow();
-  });
-
-  test("ensureValidFormats: json format requires prompt or schema", () => {
-    // Valid cases - should not throw
-    const valid1: FormatOption[] = [{ type: "json", prompt: "p" } as any];
-    const valid2: FormatOption[] = [{ type: "json", schema: {} } as any];
-    const valid3: FormatOption[] = [{ type: "json", prompt: "p", schema: {} } as any];
-    expect(() => ensureValidFormats(valid1)).not.toThrow();
-    expect(() => ensureValidFormats(valid2)).not.toThrow();
-    expect(() => ensureValidFormats(valid3)).not.toThrow();
-
-    // Invalid case - should throw when both are missing
-    const bad: FormatOption[] = [{ type: "json" } as any];
-    expect(() => ensureValidFormats(bad)).toThrow(/requires either 'prompt' or 'schema'/i);
+  test("ensureValidFormats: json format requires prompt and schema", () => {
+    const bad1: FormatOption[] = [{ type: "json", prompt: "p" } as any];
+    const bad2: FormatOption[] = [{ type: "json", schema: {} } as any];
+    expect(() => ensureValidFormats(bad1)).toThrow(/requires 'prompt' and 'schema'/i);
+    expect(() => ensureValidFormats(bad2)).toThrow(/requires 'prompt' and 'schema'/i);
   });
 
   test("ensureValidFormats: converts zod schema to JSON schema", () => {
@@ -99,64 +49,11 @@ describe("v2 utils: validation", () => {
     expect((formats[0] as any).viewport).toEqual({ width: 800, height: 600 });
   });
 
-  test("ensureValidFormats: accepts question, highlights, and deprecated query formats", () => {
-    const formats: FormatOption[] = [
-      { type: "question", question: "What is Firecrawl?" },
-      { type: "highlights", query: "What is Firecrawl?" },
-      { type: "query", prompt: "What is Firecrawl?", mode: "directQuote" },
-    ];
-    expect(() => ensureValidFormats(formats)).not.toThrow();
-  });
-
-  test("ensureValidFormats: validates question, highlights, and deprecated query fields", () => {
-    expect(() =>
-      ensureValidFormats([{ type: "question", question: "" } as any]),
-    ).toThrow(/question format requires/i);
-    expect(() =>
-      ensureValidFormats([{ type: "highlights", query: "" } as any]),
-    ).toThrow(/highlights format requires/i);
-    expect(() =>
-      ensureValidFormats([{ type: "query", prompt: "p", mode: "quoted" } as any]),
-    ).toThrow(/query format mode/i);
-  });
-
   test("ensureValidScrapeOptions: leaves parsers untouched", () => {
     const options = { parsers: ["pdf", "images"] as string[] } as any;
     const before = [...options.parsers];
     expect(() => ensureValidScrapeOptions(options)).not.toThrow();
     expect(options.parsers).toEqual(before);
-  });
-
-  test("ensureValidScrapeOptions: leaves PDF parser pages, blocks, and pageMarkers options untouched", () => {
-    const options = {
-      parsers: [{ type: "pdf", mode: "auto", blocks: true, pages: true, pageMarkers: true }],
-    } as any;
-    expect(() => ensureValidScrapeOptions(options)).not.toThrow();
-    expect(options.parsers[0]).toEqual({
-      type: "pdf",
-      mode: "auto",
-      blocks: true,
-      pages: true,
-      pageMarkers: true,
-    });
-  });
-
-  test("ensureValidFormats: detects mistaken use of zod schema.shape", () => {
-    const schema = z.object({ title: z.string(), count: z.number() });
-    // User mistakenly passes schema.shape instead of schema
-    const formats: FormatOption[] = [
-      { type: "json", prompt: "extract", schema: schema.shape } as any,
-    ];
-    expect(() => ensureValidFormats(formats)).toThrow(/\.shape property/i);
-    expect(() => ensureValidFormats(formats)).toThrow(/Pass the Zod schema directly/i);
-  });
-
-  test("ensureValidFormats: detects mistaken use of zod schema.shape in changeTracking", () => {
-    const schema = z.object({ title: z.string() });
-    const formats: FormatOption[] = [
-      { type: "changeTracking", modes: ["json"], schema: schema.shape } as any,
-    ];
-    expect(() => ensureValidFormats(formats)).toThrow(/\.shape property/i);
   });
 });
 

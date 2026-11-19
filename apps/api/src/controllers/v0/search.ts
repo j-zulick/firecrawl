@@ -1,58 +1,48 @@
 import { Request, Response } from "express";
-import { billTeam } from "../../services/billing/credit_billing";
-import { autumnService } from "../../services/autumn/autumn.service";
+import {
+  billTeam,
+  checkTeamCredits,
+} from "../../services/billing/credit_billing";
 import { authenticateUser } from "../auth";
-import { RateLimiterMode, ScrapeJobSingleUrls } from "../../types";
-import { logSearch, logRequest } from "../../services/logging/log_job";
-import { externalRequestId } from "../../lib/external-request-id";
+import { RateLimiterMode } from "../../types";
+import { logJob } from "../../services/logging/log_job";
 import { PageOptions, SearchOptions } from "../../lib/entities";
 import { search } from "../../search";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
-import { v7 as uuidv7 } from "uuid";
+import { v4 as uuidv4 } from "uuid";
 import { logger } from "../../lib/logger";
+import { getScrapeQueue } from "../../services/queue-service";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
+import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
+import { Job } from "bullmq";
 import {
+  Document,
+  fromLegacyCombo,
   fromLegacyScrapeOptions,
-  AuthCreditUsageChunk,
+  TeamFlags,
   toLegacyDocument,
 } from "../v1/types";
+import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { fromV0Combo } from "../v2/types";
 import { ScrapeJobTimeoutError } from "../../lib/error";
-import { scrapeQueue } from "../../services/worker/nuq-router";
-import { defaultOrigin } from "../../lib/default-values";
-import { getSearchZDR } from "../../lib/zdr-helpers";
-import {
-  isThreatProtectionForced,
-  THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE,
-} from "../../lib/threat-protection/request";
-import {
-  getSafeMode,
-  SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
-} from "../../lib/safe-mode";
-import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
-import { isUsOnly } from "../../lib/us-only";
-import { ipWhitelistRefusal } from "../../lib/permissions";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
-async function searchHelper(
+export async function searchHelper(
   jobId: string,
   req: Request,
   team_id: string,
+  subscription_id: string | null | undefined,
   crawlerOptions: any,
   pageOptions: PageOptions,
   searchOptions: SearchOptions,
-  acuc: AuthCreditUsageChunk | null,
+  flags: TeamFlags,
 ): Promise<{
   success: boolean;
   error?: string;
   data?: any;
   returnCode: number;
 }> {
-  const flags = acuc?.flags ?? null;
-  const org_id = acuc?.org_id ?? null;
-  const api_key_id = acuc?.api_key_id ?? null;
   const query = req.body.query;
   const advanced = false;
   if (!query) {
@@ -70,16 +60,14 @@ async function searchHelper(
   const num_results_buffer = Math.floor(num_results * 1.5);
 
   let res = await search({
-    query,
-    logger,
-    advanced,
+    query: query,
+    advanced: advanced,
     num_results: num_results_buffer,
-    tbs,
-    filter,
+    tbs: tbs,
+    filter: filter,
     lang: searchOptions.lang ?? "en",
     country: searchOptions.country ?? "us",
     location: searchOptions.location,
-    usOnly: isUsOnly(flags),
   });
 
   let justSearch = pageOptions.fetchPageContent === false;
@@ -91,42 +79,18 @@ async function searchHelper(
     crawlerOptions,
     team_id,
   );
-  internalOptions.orgId = org_id;
-  if (isUsOnly(flags)) {
-    internalOptions.teamFlags = flags;
-  }
 
   if (justSearch) {
-    const searchCredits = Math.ceil(res.length / 10) * 2;
-    billTeam(
-      team_id,
-      org_id,
-      searchCredits,
-      api_key_id,
-      {
-        endpoint: "search",
-        jobId,
-        chargeId: jobId,
-        externalRequestId: externalRequestId(req),
-      },
-      logger,
-    ).catch(error => {
+    billTeam(team_id, subscription_id, res.length).catch((error) => {
       logger.error(
-        `Failed to bill team ${team_id} for ${searchCredits} credits: ${error}`,
+        `Failed to bill team ${team_id} for ${res.length} credits: ${error}`,
       );
       // Optionally, you could notify an admin or add to a retry queue here
     });
     return { success: true, data: res, returnCode: 200 };
   }
 
-  res = res.filter(
-    r =>
-      !isUrlBlocked(r.url, flags, {
-        team_id,
-        org_id,
-        origin: req.body?.origin ?? null,
-      }),
-  );
+  res = res.filter((r) => !isUrlBlocked(r.url, flags));
   if (res.length > num_results) {
     res = res.slice(0, num_results);
   }
@@ -135,24 +99,15 @@ async function searchHelper(
     return { success: true, error: "No search results found", returnCode: 200 };
   }
 
-  const jobPriority = await getJobPriority({
-    team_id,
-    acuc,
-    basePriority: 20,
-  });
-  const billing = {
-    endpoint: "search" as const,
-    jobId,
-    externalRequestId: externalRequestId(req),
-  };
+  const jobPriority = await getJobPriority({ team_id, basePriority: 20 });
 
   // filter out social media links
 
-  const jobDatas = res.map(x => {
+  const jobDatas = res.map((x) => {
     const url = x.url;
-    const uuid = uuidv7();
+    const uuid = uuidv4();
     return {
-      jobId: uuid,
+      name: uuid,
       data: {
         url,
         mode: "single_urls" as const,
@@ -161,28 +116,31 @@ async function searchHelper(
         internalOptions,
         startTime: Date.now(),
         zeroDataRetention: false, // not supported on v0
-        apiKeyId: api_key_id,
-        origin: req.body.origin ?? defaultOrigin,
-        requestId: jobId,
-        billing,
-      } satisfies ScrapeJobSingleUrls,
+      },
+      opts: {
+        jobId: uuid,
+        priority: jobPriority,
+      },
     };
   });
 
   // TODO: addScrapeJobs
   for (const job of jobDatas) {
-    await addScrapeJob(job.data, job.jobId, jobPriority, false, true);
+    await addScrapeJob(job.data, {}, job.opts.jobId, job.opts.priority);
   }
 
   const docs = (
-    await Promise.all(jobDatas.map(x => waitForJob(x.jobId, 60000, false)))
-  ).map(x => toLegacyDocument(x, internalOptions));
+    await Promise.all(
+      jobDatas.map((x) => waitForJob(x.opts.jobId, 60000)),
+    )
+  ).map((x) => toLegacyDocument(x, internalOptions));
 
   if (docs.length === 0) {
     return { success: true, error: "No search results found", returnCode: 200 };
   }
 
-  await scrapeQueue.removeJobs(jobDatas.map(x => x.jobId));
+  const sq = getScrapeQueue();
+  await Promise.all(jobDatas.map((x) => sq.remove(x.opts.jobId)));
 
   // make sure doc.content is not empty
   const filteredDocs = docs.filter(
@@ -210,61 +168,21 @@ export async function searchController(req: Request, res: Response) {
     // make sure to authenticate user first, Bearer <token>
     const auth = await authenticateUser(req, res, RateLimiterMode.Search);
     if (!auth.success) {
-      if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
       return res.status(auth.status).json({ error: auth.error });
     }
     const { team_id, chunk } = auth;
 
-    const v0SearchZDRMode = getSearchZDR(chunk?.flags);
-    if (v0SearchZDRMode === "forced-zdr" || v0SearchZDRMode === "forced-anon") {
-      return res.status(400).json({
-        error:
-          "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API.",
-      });
+    if (chunk?.flags?.forceZDR) {
+      return res.status(400).json({ error: "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API." });
     }
 
-    if (isThreatProtectionForced(chunk?.flags)) {
-      return res.status(403).json({
-        error: THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE,
-      });
-    }
+    const jobId = uuidv4();
 
-    if (getSafeMode(chunk?.flags)) {
-      return res.status(403).json({
-        error: SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
-      });
-    }
-
-    const jobId = uuidv7();
-
-    await logRequest({
-      id: jobId,
-      kind: "search",
-      api_version: "v0",
-      external_request_id: externalRequestId(req),
-      team_id,
-      origin: req.body.origin ?? "api",
-      integration: req.body.integration,
-      target_hint: req.body.query ?? "",
-      zeroDataRetention: false, // not supported on v0
-      api_key_id: chunk?.api_key_id ?? null,
-    });
-
-    redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
-      logger.error("Failed to add team to teams_using_v0", {
-        error,
-        team_id,
-      }),
-    );
-
-    redisEvictConnection
-      .sadd("teams_using_v0:" + team_id, "search:" + jobId)
-      .catch(error =>
-        logger.error("Failed to add team to teams_using_v0 (2)", {
-          error,
-          team_id,
-        }),
-      );
+    redisEvictConnection.sadd("teams_using_v0", team_id)
+      .catch(error => logger.error("Failed to add team to teams_using_v0", { error, team_id }));
+    
+    redisEvictConnection.sadd("teams_using_v0:" + team_id, "search:" + jobId)
+      .catch(error => logger.error("Failed to add team to teams_using_v0 (2)", { error, team_id }));
 
     const crawlerOptions = req.body.crawlerOptions ?? {};
     const pageOptions = req.body.pageOptions ?? {
@@ -276,36 +194,16 @@ export async function searchController(req: Request, res: Response) {
     };
     const origin = req.body.origin ?? "api";
 
-    const ipWhitelistError =
-      pageOptions.fetchPageContent !== false
-        ? ipWhitelistRefusal(chunk?.flags, pageOptions?.geolocation?.country)
-        : undefined;
-    if (ipWhitelistError) {
-      return res.status(403).json({ error: ipWhitelistError });
-    }
-
     const searchOptions = req.body.searchOptions ?? { limit: 5 };
 
     try {
-      // No org, no Autumn customer to gate against: fail open, exactly as
-      // checkCredits answered for an identity it could not name.
-      const orgId = chunk?.org_id ?? null;
-      const autumnResult = orgId
-        ? await autumnService.checkCredits({
-            teamId: team_id,
-            orgId,
-            value: 1,
-            properties: {
-              source: "v0/search",
-              apiKeyId: chunk?.api_key_id ?? null,
-            },
-          })
-        : null;
-      // null = Autumn unavailable / self-hosted -> fail open, matching v1/v2.
-      if (autumnResult !== null && !autumnResult.allowed) {
+      const { success: creditsCheckSuccess, message: creditsCheckMessage } =
+        await checkTeamCredits(chunk, team_id, 1);
+      if (!creditsCheckSuccess) {
         return res.status(402).json({ error: "Insufficient credits" });
       }
     } catch (error) {
+      Sentry.captureException(error);
       logger.error(error);
       return res.status(500).json({ error: "Internal server error" });
     }
@@ -314,27 +212,28 @@ export async function searchController(req: Request, res: Response) {
       jobId,
       req,
       team_id,
+      chunk?.sub_id,
       crawlerOptions,
       pageOptions,
       searchOptions,
-      chunk,
+      chunk?.flags ?? null,
     );
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - startTime) / 1000;
-    await logSearch({
-      id: jobId,
-      request_id: jobId,
-      query: req.body.query,
-      num_results: result.data?.length ?? 0,
-      is_successful: result.success,
-      error: result.error,
-      results: result.data,
+    logJob({
+      job_id: jobId,
+      success: result.success,
+      message: result.error,
+      num_docs: result.data ? result.data.length : 0,
+      docs: result.data,
       time_taken: timeTakenInSeconds,
       team_id: team_id,
-      options: searchOptions,
-      credits_cost: pageOptions.fetchPageContent
-        ? 0
-        : Math.ceil((result.data?.length ?? 0) / 10) * 2,
+      mode: "search",
+      url: req.body.query,
+      scrapeOptions: fromLegacyScrapeOptions(req.body.pageOptions, undefined, 60000, team_id),
+      crawlerOptions: crawlerOptions,
+      origin,
+      integration: req.body.integration,
       zeroDataRetention: false, // not supported
     });
     return res.status(result.returnCode).json(result);
@@ -342,10 +241,8 @@ export async function searchController(req: Request, res: Response) {
     if (error instanceof ScrapeJobTimeoutError) {
       return res.status(408).json({ error: error.message });
     }
-    if (error instanceof UsOnlyUnavailableError) {
-      return res.status(403).json({ code: error.code, error: error.message });
-    }
 
+    Sentry.captureException(error);
     logger.error("Unhandled error occurred in search", { error });
     return res.status(500).json({ error: error.message });
   }

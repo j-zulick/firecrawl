@@ -11,15 +11,17 @@
     "sourceMap": true,
     "outDir": "./dist/src",
     "moduleResolution": "NodeNext",
-    "strict": false,
-    "noImplicitAny": false,
-    "useUnknownInCatchVariables": false,
+    "baseUrl": ".",
     "strictNullChecks": true,
-    "skipLibCheck": true,
 
     "inlineSources": true,
 
-    "typeRoots": ["./src/types", "./node_modules/@types"]
+    "typeRoots": ["./src/types", "./node_modules/@types"],
+    "paths": {
+      "x402": ["./src/types/x402"],
+      "x402/*": ["./src/types/x402"],
+      "x402-express": ["./src/types/x402"]
+    }
   },
   "include": [
     "src/",
@@ -28,6 +30,7 @@
     "utils/utils.ts",
     "services/db/supabaseEmbeddings.ts",
     "utils/EventEmmitter.ts",
-    "src/services/queue-service.ts"
+    "src/services/queue-service.ts",
+    "src/types/x402.d.ts"
   ]
 }

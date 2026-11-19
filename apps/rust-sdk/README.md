@@ -1,5 +1,5 @@
 # Firecrawl Rust SDK
-The Firecrawl Rust SDK is the Rust client for Firecrawl, the context API for AI agents. Search, scrape, parse, crawl, map, and interact with the web, run Agent and Monitor jobs, and get back clean Markdown or structured data your agents can ship with, through a simple interface to the Firecrawl v2 API.
+The Firecrawl Rust SDK is a library that allows you to easily scrape and crawl websites, and output the data in a format ready for use with language models (LLMs). It provides a simple and intuitive interface for interacting with the Firecrawl API.
 
 ## Installation
 
@@ -7,7 +7,7 @@ To install the Firecrawl Rust SDK, add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-firecrawl = "2.5.0"
+firecrawl = "^0.1"
 tokio = { version = "^1", features = ["full"] }
 ```
 
@@ -15,14 +15,15 @@ To add it in your codebase.
 
 ## Usage
 
-First, you need to obtain an API key from [firecrawl.dev](https://firecrawl.dev). Then, you need to initialize the `Client` like so:
+First, you need to obtain an API key from [firecrawl.dev](https://firecrawl.dev). Then, you need to initialize the `FirecrawlApp` like so:
 
 ```rust
-use firecrawl::Client;
+use firecrawl::FirecrawlApp;
 
 #[tokio::main]
 async fn main() {
-    let client = Client::new("fc-YOUR-API-KEY").expect("Failed to initialize Client");
+    // Initialize the FirecrawlApp with the API key
+    let app = FirecrawlApp::new("fc-YOUR-API-KEY").expect("Failed to initialize FirecrawlApp");
 
     // ...
 }
@@ -40,100 +41,9 @@ match scrape_result {
 }
 ```
 
-### Video extraction
+### Scraping with Extract
 
-Use `Format::Video` on supported video URLs, including YouTube and TikTok. The returned `video` field is a signed URL to the extracted video file.
-
-```rust
-use firecrawl::{Format, ScrapeOptions};
-
-let options = ScrapeOptions {
-    formats: Some(vec![Format::Video]),
-    ..Default::default()
-};
-
-let doc = client
-    .scrape("https://www.youtube.com/watch?v=dQw4w9WgXcQ", options)
-    .await?;
-println!("{:?}", doc.video);
-```
-
-### Product extraction
-
-Use `Format::Product` on product pages for structured product extraction (title, price, availability, variants). The result is returned on the document's `product` field. This is the deterministic counterpart to the LLM-based `json` format.
-
-```rust
-use firecrawl::{Format, ScrapeOptions};
-
-let options = ScrapeOptions {
-    formats: Some(vec![Format::Product]),
-    ..Default::default()
-};
-
-let doc = client
-    .scrape("https://www.example.com/product/123", options)
-    .await?;
-println!("{:?}", doc.product);
-```
-
-### Menu extraction
-
-Use `Format::Menu` on restaurant/menu pages for structured menu extraction (merchant, sections, items, prices, availability). The result is returned on the document's `menu` field. This is the deterministic counterpart to the LLM-based `json` format.
-
-```rust
-use firecrawl::{Format, ScrapeOptions};
-
-let options = ScrapeOptions {
-    formats: Some(vec![Format::Menu]),
-    ..Default::default()
-};
-
-let doc = client
-    .scrape("https://www.example.com/menu", options)
-    .await?;
-println!("{:?}", doc.menu);
-```
-
-### Parsing uploaded files (v2)
-
-Use the v2 client `parse` method to upload local files (`html`, `pdf`, `docx`, etc.) as multipart form data.
-
-```rust
-use firecrawl::{Client, ParseFile, ParseFormat, ParseOptions};
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = Client::new("fc-YOUR-API-KEY")?;
-
-    let file = ParseFile::from_bytes(
-        "upload.html",
-        b"<!DOCTYPE html><html><body><h1>Rust Parse</h1></body></html>".to_vec(),
-    )
-    .with_content_type("text/html");
-
-    let options = ParseOptions {
-        formats: Some(vec![ParseFormat::Markdown]),
-        ..Default::default()
-    };
-
-    let doc = client.parse(file, Some(options)).await?;
-    println!("{:?}", doc.markdown);
-    Ok(())
-}
-```
-
-To list the upload formats `parse` accepts, call `get_parse_formats`. Each entry has `format`, `kind` (`Document` or `Image`), `extensions`, `mime_types`, and `available` (image formats are unavailable when image OCR is disabled on the deployment).
-
-```rust
-let formats = client.get_parse_formats().await?;
-for f in formats.iter().filter(|f| f.available) {
-    println!("{} ({:?}): {:?}", f.format, f.kind, f.extensions);
-}
-```
-
-### Scraping with JSON extraction
-
-With the JSON format, you can easily extract structured data from any URL. You need to specify your schema in the JSON Schema format, using the `serde_json::json!` macro.
+With Extract, you can easily extract structured data from any URL. You need to specify your schema in the JSON Schema format, using the `serde_json::json!` macro.
 
 ```rust
 let json_schema = json!({
@@ -160,23 +70,20 @@ let json_schema = json!({
 });
 
 let llm_extraction_options = ScrapeOptions {
-    formats: vec![ Format::Json ].into(),
-    json_options: JsonOptions {
+    formats: vec![ ScrapeFormats::Extract ].into(),
+    extract: ExtractOptions {
         schema: json_schema.into(),
         ..Default::default()
     }.into(),
     ..Default::default()
 };
 
-let llm_extraction_result = client
-    .scrape("https://news.ycombinator.com", llm_extraction_options)
+let llm_extraction_result = app
+    .scrape_url("https://news.ycombinator.com", llm_extraction_options)
     .await;
 
 match llm_extraction_result {
-    Ok(data) => match data.json {
-        Some(json) => println!("LLM Extraction Result:\n{:#?}", json),
-        None => eprintln!("LLM Extraction returned no JSON"),
-    },
+    Ok(data) => println!("LLM Extraction Result:\n{:#?}", data.extract.unwrap()),
     Err(e) => eprintln!("LLM Extraction failed: {}", e),
 }
 ```
@@ -192,7 +99,7 @@ let crawl_options = CrawlOptions {
 };
 
 let crawl_result = app
-    .crawl_url("https://firecrawl.dev", crawl_options)
+    .crawl_url("https://mendable.ai", crawl_options)
     .await;
 
 match crawl_result {
@@ -206,7 +113,7 @@ match crawl_result {
 To crawl without waiting for the result, use the `crawl_url_async` method. It takes the same parameters, but it returns a `CrawlAsyncRespone` struct, containing the crawl's ID. You can use that ID with the `check_crawl_status` method to check the status at any time. Do note that completed crawls are deleted after 24 hours.
 
 ```rust
-let crawl_id = app.crawl_url_async("https://firecrawl.dev", None).await?.id;
+let crawl_id = app.crawl_url_async("https://mendable.ai", None).await?.id;
 
 // ... later ...
 
@@ -234,56 +141,6 @@ match map_result {
 }
 ```
 
-### Developer search
-
-Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. It replaces the research index GitHub search, which was removed after 2026-11-03.
-
-```rust
-use firecrawl::{Client, DeveloperSearchOptions};
-
-let client = Client::new("fc-YOUR-API-KEY")?;
-let response = client
-    .developer_search(
-        "retry an http request with exponential backoff",
-        DeveloperSearchOptions {
-            k: Some(5),
-            repos: Some(vec!["tokio-rs/tokio".to_string()]),
-            ..Default::default()
-        },
-    )
-    .await?;
-
-for result in response.results {
-    println!("{} {}", result.title.unwrap_or_default(), result.url);
-}
-```
-
-### Scrape-bound interactive browsing (v2)
-
-Use a scrape job ID to keep interacting with the replayed browser context:
-
-```rust
-use firecrawl::{Client, ScrapeExecuteLanguage, ScrapeExecuteOptions};
-
-let client = Client::new("fc-YOUR-API-KEY")?;
-let job_id = "550e8400-e29b-41d4-a716-446655440000";
-
-let run = client
-    .interact(
-        job_id,
-        ScrapeExecuteOptions {
-            code: Some("console.log(await page.url())".to_string()),
-            language: Some(ScrapeExecuteLanguage::Node),
-            timeout: Some(60),
-            ..Default::default()
-        },
-    )
-    .await?;
-
-println!("{:?}", run.stdout);
-client.stop_interaction(job_id).await?;
-```
-
 ## Error Handling
 
 The SDK handles errors returned by the Firecrawl API and by our dependencies, and combines them into the `FirecrawlError` enum, implementing `Error`, `Debug` and `Display`. All of our methods return a `Result<T, FirecrawlError>`.
@@ -306,42 +163,4 @@ Contributions to the Firecrawl Rust SDK are welcome! If you find any issues or h
 
 ## License
 
-The Firecrawl Rust SDK is open-source and released under the [MIT License](https://opensource.org/licenses/MIT).
-
-## Alexandria tools
-
-Requires the matching Alexandria API deployment and team access. Semantic discovery
-returns contracts alongside web results in `response.data.tools`:
-
-```rust
-use firecrawl::{SearchOptions, SearchSource, FindToolsOptions};
-
-let response = client.search("podcast conversations about AI agents", SearchOptions {
-    sources: Some(vec![SearchSource::Web, SearchSource::Alexandria]),
-    limit: Some(2),
-    ..Default::default()
-}).await?;
-println!("{:?}", response.data.tools);
-println!("{:?}", response.warning);
-
-let found = client.find_tools(FindToolsOptions {
-    providers: Some(vec!["particle".into()]),
-    limit: Some(2),
-    ..Default::default()
-}).await?;
-println!("{:?}", found.items);
-if let Some(next_page) = found.next {
-    let page = client.scrape_alexandria(vec![next_page], None).await?;
-    println!("{:?}", page.alexandria);
-}
-```
-
-Find Tools reveals providers, groups, and contracts without a search query.
-An item's `next` reveals more detail; top-level `next` requests another page.
-Both are Alexandria calls accepted by `scrape_alexandria`.
-
-`AlexandriaScrapeData` preserves per-tool errors and credit costs. Execution generates
-one request ID; reuse `AlexandriaOptions.request_id` for the identical payload after
-an uncertain outcome. Results and `FirecrawlError::AlexandriaExecution` carry that
-identity. Find Tools costs zero credits; executing a selected tool uses its
-published price. All execution goes through `/v2/scrape`.
+The Firecrawl Rust SDK is open-source and released under the [AGPL License](https://www.gnu.org/licenses/agpl-3.0.en.html).

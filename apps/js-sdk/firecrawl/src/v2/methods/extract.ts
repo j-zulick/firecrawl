@@ -1,8 +1,8 @@
-import { type ExtractResponse, type ScrapeOptions, type AgentOptions, type ThreatProtectionOptions, type WebhookConfig } from "../types";
+import { type ExtractResponse, type ScrapeOptions } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { ensureValidScrapeOptions } from "../utils/validation";
 import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
-import { isZodSchema, zodSchemaToJsonSchema } from "../../utils/zodSchemaToJson";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import type { ZodTypeAny } from "zod";
 
 function prepareExtractPayload(args: {
@@ -15,41 +15,27 @@ function prepareExtractPayload(args: {
   showSources?: boolean;
   scrapeOptions?: ScrapeOptions;
   ignoreInvalidURLs?: boolean;
-  integration?: string;
-  origin?: string;
-  agent?: AgentOptions;
-  webhook?: string | WebhookConfig | null;
-  threatProtection?: ThreatProtectionOptions;
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   if (args.urls) body.urls = args.urls;
   if (args.prompt != null) body.prompt = args.prompt;
   if (args.schema != null) {
-    body.schema = isZodSchema(args.schema) ? zodSchemaToJsonSchema(args.schema) : args.schema;
+    const s: any = args.schema;
+    const isZod = s && (typeof s.safeParse === "function" || typeof s.parse === "function") && s._def;
+    body.schema = isZod ? zodToJsonSchema(s) : args.schema;
   }
   if (args.systemPrompt != null) body.systemPrompt = args.systemPrompt;
   if (args.allowExternalLinks != null) body.allowExternalLinks = args.allowExternalLinks;
   if (args.enableWebSearch != null) body.enableWebSearch = args.enableWebSearch;
   if (args.showSources != null) body.showSources = args.showSources;
   if (args.ignoreInvalidURLs != null) body.ignoreInvalidURLs = args.ignoreInvalidURLs;
-  if (args.integration && args.integration.trim()) body.integration = args.integration.trim();
-  if (args.origin) body.origin = args.origin;
-  if (args.agent) body.agent = args.agent;
-  if (args.webhook != null) body.webhook = args.webhook;
-  if (args.threatProtection != null)
-    body.threatProtection = args.threatProtection;
   if (args.scrapeOptions) {
     ensureValidScrapeOptions(args.scrapeOptions);
-    const { toolDetail, domainTools, ...scrapeOptions } = args.scrapeOptions;
-    body.scrapeOptions = scrapeOptions;
+    body.scrapeOptions = args.scrapeOptions;
   }
   return body;
 }
 
-/**
- * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
- * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
- */
 export async function startExtract(http: HttpClient, args: Parameters<typeof prepareExtractPayload>[0]): Promise<ExtractResponse> {
   const payload = prepareExtractPayload(args);
   try {
@@ -62,10 +48,6 @@ export async function startExtract(http: HttpClient, args: Parameters<typeof pre
   }
 }
 
-/**
- * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
- * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
- */
 export async function getExtractStatus(http: HttpClient, jobId: string): Promise<ExtractResponse> {
   try {
     const res = await http.get<ExtractResponse>(`/v2/extract/${jobId}`);
@@ -77,10 +59,6 @@ export async function getExtractStatus(http: HttpClient, jobId: string): Promise
   }
 }
 
-/**
- * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
- * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
- */
 export async function waitExtract(
   http: HttpClient,
   jobId: string,
@@ -96,10 +74,6 @@ export async function waitExtract(
   }
 }
 
-/**
- * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
- * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
- */
 export async function extract(
   http: HttpClient,
   args: Parameters<typeof prepareExtractPayload>[0] & { pollInterval?: number; timeout?: number }

@@ -1,6 +1,5 @@
 from typing import Optional, Dict, Any
 from ...types import MapOptions, MapData, LinkResult
-from ...utils.agent_hints import agent_hint_metadata
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.error_handler import handle_response_error
 
@@ -17,24 +16,10 @@ def _prepare_map_request(url: str, options: Optional[MapOptions] = None) -> Dict
             data["search"] = options.search
         if options.include_subdomains is not None:
             data["includeSubdomains"] = options.include_subdomains
-        if options.ignore_query_parameters is not None:
-            data["ignoreQueryParameters"] = options.ignore_query_parameters
         if options.limit is not None:
-            if options.limit <= 0:
-                raise ValueError("Limit must be positive")
             data["limit"] = options.limit
         if options.timeout is not None:
             data["timeout"] = options.timeout
-        if options.integration is not None:
-            data["integration"] = options.integration.strip()
-        if options.location is not None:
-            data["location"] = options.location.model_dump(exclude_none=True)
-        if options.threat_protection is not None:
-            data["threatProtection"] = options.threat_protection.model_dump(
-                by_alias=True, exclude_none=True
-            )
-        if options.audit_metadata is not None:
-            data["auditMetadata"] = options.audit_metadata.model_dump()
         payload.update(data)
     return payload
 
@@ -46,7 +31,7 @@ async def map(client: AsyncHttpClient, url: str, options: Optional[MapOptions] =
         handle_response_error(response, "map")
     body = response.json()
     if not body.get("success"):
-        handle_response_error(response, "map")
+        raise Exception(body.get("error", "Unknown error occurred"))
     
     
     # data = body.get("data", {})
@@ -70,4 +55,5 @@ async def map(client: AsyncHttpClient, url: str, options: Optional[MapOptions] =
         elif isinstance(item, str):
             result_links.append(LinkResult(url=item))
 
-    return MapData(links=result_links, **agent_hint_metadata(body))
+    return MapData(links=result_links)
+

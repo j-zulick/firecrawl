@@ -1,105 +1,154 @@
 import { Response } from "express";
-import { config } from "../../config";
 import {
   CrawlErrorsResponse,
   CrawlStatusParams,
   RequestWithAuth,
 } from "./types";
-import { getCrawl } from "../../lib/crawl-redis";
+import {
+  getCrawl,
+  getCrawlJobs,
+} from "../../lib/crawl-redis";
+import { getScrapeQueue } from "../../services/queue-service";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { configDotenv } from "dotenv";
-import { getCrawlJobAccess } from "../../lib/operational-job-access";
-import { logger as _logger } from "../../lib/logger";
+import { Job } from "bullmq";
+import { supabase_rr_service } from "../../services/supabase";
+import { logger } from "../../lib/logger";
 import { deserializeTransportableError } from "../../lib/error-serde";
 import { TransportableError } from "../../lib/error";
-import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
-import { scrapeQueue } from "../../services/worker/nuq-router";
 configDotenv();
+
+export async function getJob(id: string) {
+  const job = await getScrapeQueue().getJob(id);
+  if (!job) return job;
+
+  return job;
+}
+
+export async function getJobs(ids: string[]) {
+  const jobs: (Job & { id: string })[] = (
+    await Promise.all(ids.map((x) => getScrapeQueue().getJob(x)))
+  ).filter((x) => x) as (Job & { id: string })[];
+
+  return jobs;
+}
 
 export async function crawlErrorsController(
   req: RequestWithAuth<CrawlStatusParams, undefined, CrawlErrorsResponse>,
   res: Response<CrawlErrorsResponse>,
 ) {
   const sc = await getCrawl(req.params.jobId);
-
+  
   if (sc) {
     if (sc.team_id !== req.auth.team_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
-  } else if (config.USE_DB_AUTHENTICATION) {
-    const crawlTtlHours = req.acuc?.flags?.crawlTtlHours ?? 24;
-    let access;
-    try {
-      access = await getCrawlJobAccess(req.params.jobId);
-    } catch (requestError) {
-      _logger.error("Error getting request", { error: requestError });
-      throw requestError;
+
+    let jobStatuses = await Promise.all(
+      (await getCrawlJobs(req.params.jobId)).map(
+        async (x) => [x, await getScrapeQueue().getJobState(x)] as const,
+      ),
+    );
+
+    const failedJobIDs: string[] = [];
+
+    for (const [id, status] of jobStatuses) {
+      if (status === "failed") {
+        failedJobIDs.push(id);
+      }
     }
 
-    if (access && access.teamId !== req.auth.team_id) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
-    }
-
-    if (access && access.expiresAtMs <= Date.now()) {
-      return res.status(404).json({ success: false, error: "Job expired" });
-    }
-
-    if (!access) {
-      return res.status(404).json({ success: false, error: "Job not found" });
-    }
-  } else {
-    return res.status(404).json({ success: false, error: "Job not found" });
-  }
-
-  const logger = _logger.child({
-    crawlId: req.params.jobId,
-    zeroDataRetention: sc?.zeroDataRetention ?? false,
-  });
-  const failedJobs = (
-    await scrapeQueue.getGroupJobs(
-      req.params.jobId,
-      "failed",
-      undefined,
-      0,
-      logger,
-    )
-  ).filter(x => x.failedReason);
-
-  return res.status(200).json({
-    errors: failedJobs
-      .map(x => {
-        const error = deserializeTransportableError(
-          x.failedReason!,
-        ) as TransportableError | null;
-        if (error?.code === "SCRAPE_RACED_REDIRECT_ERROR") {
-          return null;
-        }
+    res.status(200).json({
+      errors: (await getJobs(failedJobIDs)).map((x) => {
+        const error = deserializeTransportableError(x.failedReason) as TransportableError | null;
         return {
           id: x.id,
           timestamp:
-            x.finishedAt !== undefined
-              ? new Date(x.finishedAt).toISOString()
+            x.finishedOn !== undefined
+              ? new Date(x.finishedOn).toISOString()
               : undefined,
-          url:
-            x.data && "url" in x.data
-              ? x.data.url
-              : "<redacted due to zero data retention>",
-          ...(error
-            ? {
-                code: error.code,
-                error: error.message,
-                ...(error instanceof ThirdPartyDataTermsRequiredError
-                  ? { requiresAction: error.requiresAction }
-                  : {}),
-              }
-            : {
-                error: x.failedReason!,
-              }),
+          url: x.data.url,
+          ...(error ? {
+            code: error.code,
+            error: error.message,
+          } : {
+            error: x.failedReason,
+          }),
         };
-      })
-      .filter(x => x !== null),
-    robotsBlocked: await redisEvictConnection.smembers(
-      "crawl:" + req.params.jobId + ":robots_blocked",
-    ),
-  });
+      }),
+      robotsBlocked: await redisEvictConnection.smembers(
+        "crawl:" + req.params.jobId + ":robots_blocked",
+      ),
+    });
+  } else if (process.env.USE_DB_AUTHENTICATION === "true") {
+    const { data: crawlJobs, error: crawlJobError } = await supabase_rr_service
+      .from("firecrawl_jobs")
+      .select("*")
+      .eq("job_id", req.params.jobId)
+      .limit(1)
+      .throwOnError();
+
+    if (crawlJobError) {
+      logger.error("Error getting crawl job", { error: crawlJobError });
+      throw crawlJobError;
+    }
+
+    const crawlJob = crawlJobs[0];
+
+    if (crawlJob && crawlJob.team_id !== req.auth.team_id) {
+      return res.status(403).json({ success: false, error: "Forbidden" });
+    }
+
+    const crawlTtlHours = req.acuc?.flags?.crawlTtlHours ?? 24;
+    const crawlTtlMs = crawlTtlHours * 60 * 60 * 1000;
+
+    if (
+      crawlJob
+      && new Date().valueOf() - new Date(crawlJob.date_added).valueOf() > crawlTtlMs
+    ) {
+      return res.status(404).json({ success: false, error: "Job expired" });
+    }
+
+    if (!crawlJobs || crawlJobs.length === 0) {
+      return res.status(404).json({ success: false, error: "Job not found" });
+    }
+
+    const { data: failedJobs, error: failedJobsError } = await supabase_rr_service
+      .from("firecrawl_jobs")
+      .select("*")
+      .eq("crawl_id", req.params.jobId)
+      .eq("team_id", req.auth.team_id)
+      .eq("success", false)
+      .throwOnError();
+
+    if (failedJobsError) {
+      logger.error("Error getting failed jobs", { error: failedJobsError });
+      throw failedJobsError;
+    }
+
+    res.status(200).json({
+      errors: (failedJobs || []).map((job) => {
+        const error = deserializeTransportableError(job.message) as TransportableError | null;
+        return {
+          id: job.job_id,
+          timestamp:
+            job.finishedOn !== undefined
+              ? new Date(job.finishedOn).toISOString()
+              : undefined,
+          url: job.url,
+          ...(error ? {
+            code: error.code,
+            error: error.message,
+          } : {
+            error: job.message,
+          }),
+        };
+      }),
+      robotsBlocked: await redisEvictConnection.smembers(
+        "crawl:" + req.params.jobId + ":robots_blocked",
+      ),
+    });
+  } else {
+    return res.status(404).json({ success: false, error: "Job not found" });
+  }
 }

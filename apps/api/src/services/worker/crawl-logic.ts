@@ -1,264 +1,285 @@
 import { logger as _logger } from "../../lib/logger";
-import {
-  finishCrawl,
-  getCrawlJobs,
-  getDoneJobsOrderedLength,
-} from "../../lib/crawl-redis";
+import { Job } from "bullmq";
+import { addCrawlJobs, finishCrawl, getCrawlJobs, getDoneJobsOrderedLength, lockURLsIndividually, StoredCrawl, unPreFinishCrawl } from "../../lib/crawl-redis";
+import { redisEvictConnection } from "../redis";
 import { getCrawl } from "../../lib/crawl-redis";
-import { readRequestCredits } from "../../lib/request-credits-store";
+import { finishCrawlPre } from "../../lib/crawl-redis";
+import { getACUCTeam } from "../../controllers/auth";
+import { crawlToCrawler } from "../../lib/crawl-redis";
+import { supabase_service } from "../supabase";
+import { v4 as uuidv4 } from "uuid";
+import { addScrapeJobs } from "../queue-jobs";
 import { getJobs } from "../../controllers/v1/crawl-status";
-import { logCrawl, logBatchScrape } from "../logging/log_job";
-import { createWebhookSender, WebhookEvent } from "../webhook/index";
-import type { NuQJob } from "./nuq";
-import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
-import {
-  createInAppNotification,
-  isDashboardOrigin,
-} from "../notification/in_app";
+import { logJob } from "../logging/log_job";
+import { callWebhook } from "../webhook";
+import { hasFormatOfType } from "../../lib/format-utils";
 
-/**
- * How often, and how long apart, finalization re-reads the ClickHouse credits
- * sum before believing an empty result. ClickPipes lands a child's row one to
- * two seconds after the worker logs it; five reads two seconds apart outwait
- * that with room to spare without holding the finalizer for long.
- */
-const FINALIZE_CREDITS_ATTEMPTS = 5;
-const FINALIZE_CREDITS_RETRY_MS = 2_000;
+export async function finishCrawlIfNeeded(job: Job & { id: string }, sc: StoredCrawl) {
+    const logger = _logger.child({
+        module: "queue-worker",
+        method: "finishCrawlIfNeeded",
+        jobId: job.id,
+        scrapeId: job.id,
+        crawlId: job.data.crawl_id,
+        zeroDataRetention: sc.internalOptions.zeroDataRetention,
+    });
 
-export async function finishCrawlSuper(job: NuQJob<any>) {
-  const crawlId = job.groupId;
+    if (await finishCrawlPre(job.data.crawl_id, logger)) {
+        logger.info("Crawl is pre-finished, checking if we need to add more jobs");
+        if (
+            job.data.crawlerOptions &&
+            !(await redisEvictConnection.exists(
+                "crawl:" + job.data.crawl_id + ":invisible_urls",
+            ))
+        ) {
+            await redisEvictConnection.set(
+                "crawl:" + job.data.crawl_id + ":invisible_urls",
+                "done",
+                "EX",
+                60 * 60 * 24,
+            );
 
-  if (!crawlId) {
-    return;
-  }
+            const sc = (await getCrawl(job.data.crawl_id))!;
 
-  const sc = await getCrawl(crawlId);
+            const visitedUrls = new Set(
+                await redisEvictConnection.smembers(
+                    "crawl:" + job.data.crawl_id + ":visited_unique",
+                ),
+            );
 
-  if (!sc) {
-    return;
-  }
+            logger.info("Visited URLs", {
+                visitedUrls: visitedUrls.size,
+            });
 
-  const logger = _logger.child({
-    module: "queue-worker",
-    method: "finishCrawl",
-    jobId: job.id,
-    scrapeId: job.id,
-    crawlId,
-    zeroDataRetention: sc.internalOptions.zeroDataRetention,
-  });
+            let lastUrls: string[] = [];
+            const useDbAuthentication = process.env.USE_DB_AUTHENTICATION === "true";
+            if (useDbAuthentication && hasFormatOfType(sc.scrapeOptions.formats, "changeTracking")) {
+                lastUrls = (
+                    (
+                        await supabase_service.rpc("diff_get_last_crawl_urls", {
+                            i_team_id: job.data.team_id,
+                            i_url: sc.originUrl!,
+                        })
+                    ).data ?? []
+                ).map((x) => x.url);
+            }
 
-  // On the FDB backend a completed member's input data is shed for ZDR crawls,
-  // so `job.data` can be null here. Prefer the member's job data when present,
-  // otherwise recover the crawl-scoped context persisted on the stored crawl.
-  const data = job.data;
-  const isV1 = data ? !!data.v1 : (sc.v1 ?? true);
-  const teamId = data?.team_id ?? sc.team_id;
-  const requestId = data?.requestId ?? sc.requestId ?? crawlId;
-  const zeroDataRetention = sc.zeroDataRetention || data?.zeroDataRetention;
-  const webhook = data?.webhook ?? sc.webhook;
-  const monitoring = data?.monitoring;
+            const lastUrlsSet = new Set(lastUrls);
 
-  logger.info("Finishing crawl");
-  await finishCrawl(crawlId, logger);
+            logger.info("Last URLs", {
+                lastUrls: lastUrlsSet.size,
+            });
 
-  if (!isV1) {
-    const jobIDs = await getCrawlJobs(crawlId);
+            const crawler = crawlToCrawler(
+                job.data.crawl_id,
+                sc,
+                (await getACUCTeam(job.data.team_id))?.flags ?? null,
+                sc.originUrl!,
+                job.data.crawlerOptions,
+            );
 
-    const jobs = (await getJobs(jobIDs)).sort(
-      (a, b) => a.timestamp - b.timestamp,
-    );
-    // const jobStatuses = await Promise.all(jobs.map((x) => x.getState()));
-    const jobStatus = sc.cancelled // || jobStatuses.some((x) => x === "failed")
-      ? "failed"
-      : "completed";
+            const univistedUrls = await crawler.filterLinks(
+                Array.from(lastUrlsSet).filter((x) => !visitedUrls.has(x)),
+                Infinity,
+                sc.crawlerOptions.maxDepth ?? 10,
+            );
 
-    const fullDocs = jobs
-      .map(x =>
-        x.returnvalue
-          ? Array.isArray(x.returnvalue)
-            ? x.returnvalue[0]
-            : x.returnvalue
-          : null,
-      )
-      .filter(x => x !== null);
+            const addableJobCount =
+                sc.crawlerOptions.limit === undefined
+                    ? Infinity
+                    : sc.crawlerOptions.limit -
+                    (await getDoneJobsOrderedLength(job.data.crawl_id));
 
-    if (sc.crawlerOptions !== null) {
-      await logCrawl({
-        id: crawlId,
-        request_id: requestId,
-        url: sc.originUrl!,
-        team_id: teamId,
-        options: sc.crawlerOptions,
-        num_docs: fullDocs.length,
-        credits_cost: fullDocs.reduce(
-          (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
-          0,
-        ),
-        zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
-        monitor_id: monitoring?.monitorId,
-        monitor_check_id: monitoring?.checkId,
-      });
-    } else {
-      await logBatchScrape({
-        id: crawlId,
-        request_id: requestId,
-        team_id: teamId,
-        num_docs: fullDocs.length,
-        credits_cost: fullDocs.reduce(
-          (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
-          0,
-        ),
-        zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
-      });
-    }
+            if (univistedUrls.links.length !== 0 && addableJobCount > 0) {
+                logger.info("Adding jobs", {
+                    univistedUrls: univistedUrls.links.length,
+                    addableJobCount,
+                });
 
-    // v0 web hooks, call when done with all the data
-    if (!isV1) {
-      const sender = await createWebhookSender({
-        teamId,
-        jobId: crawlId,
-        webhook,
-        v0: true,
-      });
-      if (sender) {
-        const documents = fullDocs.map((doc: any) => ({
-          content: {
-            content: doc?.content ?? doc?.rawHtml ?? doc?.markdown ?? "",
-            markdown: doc?.markdown,
-            metadata: doc?.metadata ?? {},
-          },
-          source: doc?.metadata?.sourceURL ?? doc?.url ?? "",
-        }));
-        if (sc.crawlerOptions !== null) {
-          sender.send(WebhookEvent.CRAWL_COMPLETED, {
-            success: true,
-            data: documents,
-          });
+                const jobs = univistedUrls.links.slice(0, addableJobCount).map((url) => {
+                    const uuid = uuidv4();
+                    return {
+                        name: uuid,
+                        data: {
+                            url,
+                            mode: "single_urls" as const,
+                            team_id: job.data.team_id,
+                            crawlerOptions: {
+                                ...job.data.crawlerOptions,
+                                urlInvisibleInCurrentCrawl: true,
+                            },
+                            scrapeOptions: job.data.scrapeOptions,
+                            internalOptions: sc.internalOptions,
+                            origin: job.data.origin,
+                            integration: job.data.integration,
+                            crawl_id: job.data.crawl_id,
+                            sitemapped: true,
+                            webhook: job.data.webhook,
+                            v1: job.data.v1,
+                            zeroDataRetention: job.data.zeroDataRetention,
+                        },
+                        opts: {
+                            jobId: uuid,
+                            priority: 20,
+                        },
+                    };
+                });
+
+                const lockedIds = await lockURLsIndividually(
+                    job.data.crawl_id,
+                    sc,
+                    jobs.map((x) => ({ id: x.opts.jobId, url: x.data.url })),
+                );
+                const lockedJobs = jobs.filter((x) =>
+                    lockedIds.find((y) => y.id === x.opts.jobId),
+                );
+                await addCrawlJobs(
+                    job.data.crawl_id,
+                    lockedJobs.map((x) => x.opts.jobId),
+                    logger,
+                );
+                await addScrapeJobs(lockedJobs);
+
+                if (lockedJobs.length > 0) {
+                    logger.info("Added jobs, not going for the full finish", {
+                        lockedJobs: lockedJobs.length,
+                    });
+
+                    await unPreFinishCrawl(job.data.crawl_id);
+                    return;
+                } else {
+                    logger.info("No jobs added (all discovered URLs were locked), finishing crawl");
+                }
+            }
+        }
+
+        logger.info("Finishing crawl");
+        await finishCrawl(job.data.crawl_id, logger);
+
+        if (!job.data.v1) {
+            const jobIDs = await getCrawlJobs(job.data.crawl_id);
+
+            const jobs = (await getJobs(jobIDs)).sort(
+                (a, b) => a.timestamp - b.timestamp,
+            );
+            // const jobStatuses = await Promise.all(jobs.map((x) => x.getState()));
+            const jobStatus = sc.cancelled // || jobStatuses.some((x) => x === "failed")
+                ? "failed"
+                : "completed";
+
+            const fullDocs = jobs
+                .map((x) =>
+                    x.returnvalue
+                        ? Array.isArray(x.returnvalue)
+                            ? x.returnvalue[0]
+                            : x.returnvalue
+                        : null,
+                )
+                .filter((x) => x !== null);
+
+            await logJob({
+                job_id: job.data.crawl_id,
+                success: jobStatus === "completed",
+                message: sc.cancelled ? "Cancelled" : undefined,
+                num_docs: fullDocs.length,
+                docs: [],
+                time_taken: (Date.now() - sc.createdAt) / 1000,
+                team_id: job.data.team_id,
+                mode: job.data.crawlerOptions !== null ? "crawl" : "batch_scrape",
+                url: sc.originUrl!,
+                scrapeOptions: sc.scrapeOptions,
+                crawlerOptions: sc.crawlerOptions,
+                origin: job.data.origin,
+                integration: job.data.integration,
+                zeroDataRetention: job.data.zeroDataRetention,
+            }, false, job.data.internalOptions?.bypassBilling ?? false);
+
+            const data = {
+                success: jobStatus !== "failed",
+                result: {
+                    links: fullDocs.map((doc) => {
+                        return {
+                            content: doc,
+                            source: doc?.metadata?.sourceURL ?? doc?.url ?? "",
+                        };
+                    }),
+                },
+                project_id: job.data.project_id,
+                docs: fullDocs,
+            };
+
+            // v0 web hooks, call when done with all the data
+            if (!job.data.v1) {
+                callWebhook({
+                    teamId: job.data.team_id,
+                    crawlId: job.data.crawl_id,
+                    data,
+                    webhook: job.data.webhook,
+                    v1: job.data.v1,
+                    eventType: job.data.crawlerOptions !== null
+                        ? "crawl.completed"
+                        : "batch_scrape.completed",
+                });
+            }
         } else {
-          sender.send(WebhookEvent.BATCH_SCRAPE_COMPLETED, {
-            success: true,
-            data: documents,
-          });
+            const num_docs = await getDoneJobsOrderedLength(job.data.crawl_id);
+            const jobStatus = sc.cancelled ? "failed" : "completed";
+
+            let credits_billed = null;
+
+            if (process.env.USE_DB_AUTHENTICATION === "true") {
+                const creditsRpc = await supabase_service
+                    .rpc("credits_billed_by_crawl_id_1", {
+                        i_crawl_id: job.data.crawl_id,
+                    });
+
+                credits_billed = creditsRpc.data?.[0]?.credits_billed ?? null;
+
+                if (credits_billed === null) {
+                    logger.warn("Credits billed is null", {
+                        error: creditsRpc.error,
+                    });
+                }
+            }
+
+            await logJob(
+                {
+                    job_id: job.data.crawl_id,
+                    success: jobStatus === "completed",
+                    message: sc.cancelled ? "Cancelled" : undefined,
+                    num_docs,
+                    docs: [],
+                    time_taken: (Date.now() - sc.createdAt) / 1000,
+                    team_id: job.data.team_id,
+                    scrapeOptions: sc.scrapeOptions,
+                    mode: job.data.crawlerOptions !== null ? "crawl" : "batch_scrape",
+                    url:
+                        sc?.originUrl ??
+                        (job.data.crawlerOptions === null ? "Batch Scrape" : "Unknown"),
+                    crawlerOptions: sc.crawlerOptions,
+                    origin: job.data.origin,
+                    integration: job.data.integration,
+                    credits_billed,
+                    zeroDataRetention: job.data.zeroDataRetention,
+                },
+                true,
+                job.data.internalOptions?.bypassBilling ?? false,
+            );
+
+
+            // v1 web hooks, call when done with no data, but with event completed
+            if (job.data.v1 && job.data.webhook) {
+                callWebhook({
+                    teamId: job.data.team_id,
+                    crawlId: job.data.crawl_id,
+                    data: [],
+                    webhook: job.data.webhook,
+                    v1: job.data.v1,
+                    eventType: job.data.crawlerOptions !== null
+                        ? "crawl.completed"
+                        : "batch_scrape.completed",
+                });
+            }
         }
-      }
     }
-  } else {
-    const num_docs = await getDoneJobsOrderedLength(crawlId);
-
-    let credits_billed: number | null = null;
-
-    try {
-      credits_billed = await readRequestCredits(requestId);
-    } catch (error) {
-      logger.warn("Bigtable request credits read failed", { error });
-    }
-
-    if (credits_billed === null) {
-      // Requests from before the Bigtable credit rows existed: sum the scrape
-      // job log. Finalization records credits_cost for good, and ClickPipes
-      // lands the last children a second or two after they are logged, so an
-      // empty sum is retried before it is believed.
-      for (let attempt = 1; attempt <= FINALIZE_CREDITS_ATTEMPTS; attempt++) {
-        try {
-          credits_billed = await readRequestCreditsFromAnalytics(requestId, {
-            emptyAsZero: false,
-          });
-        } catch (error) {
-          logger.warn("Analytics request credits read failed", {
-            error,
-            attempt,
-          });
-        }
-        if (credits_billed !== null) break;
-        if (attempt < FINALIZE_CREDITS_ATTEMPTS) {
-          await new Promise(resolve =>
-            setTimeout(resolve, FINALIZE_CREDITS_RETRY_MS),
-          );
-        }
-      }
-    }
-
-    if (credits_billed === null) {
-      // The row's credits_cost is NOT NULL, so the record has to carry a
-      // number; 0 is written and the gap is loud rather than silent.
-      logger.error(
-        "Credits billed unknown at crawl finalization; recording 0",
-        { requestId, attempts: FINALIZE_CREDITS_ATTEMPTS },
-      );
-    }
-
-    if (sc.crawlerOptions !== null) {
-      await logCrawl({
-        id: crawlId,
-        request_id: requestId,
-        url: sc.originUrl!,
-        team_id: teamId,
-        options: sc.crawlerOptions,
-        num_docs: num_docs,
-        credits_cost: credits_billed ?? 0,
-        zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
-        monitor_id: monitoring?.monitorId,
-        monitor_check_id: monitoring?.checkId,
-      });
-    } else {
-      await logBatchScrape({
-        id: crawlId,
-        request_id: requestId,
-        team_id: teamId,
-        num_docs: num_docs,
-        credits_cost: credits_billed ?? 0,
-        zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
-      });
-    }
-
-    // The origin is client-supplied, so this only scopes which of the caller's
-    // own jobs reach their team's feed. Runs with no successful page are not
-    // reported as completed.
-    if (
-      !sc.cancelled &&
-      num_docs > 0 &&
-      isDashboardOrigin(sc.origin ?? data?.origin)
-    ) {
-      const isCrawl = sc.crawlerOptions !== null;
-      await createInAppNotification(
-        teamId,
-        isCrawl ? "crawlCompleted" : "batchScrapeCompleted",
-        {
-          jobId: crawlId,
-          url: isCrawl && !zeroDataRetention ? (sc.originUrl ?? null) : null,
-          completed: num_docs,
-          creditsUsed: credits_billed,
-          link: `/app/logs?q=${encodeURIComponent(crawlId)}`,
-        },
-        { dedupeKey: crawlId },
-      );
-    }
-
-    // v1 web hooks, call when done with no data, but with event completed
-    if (isV1 && webhook) {
-      const sender = await createWebhookSender({
-        teamId,
-        jobId: crawlId,
-        webhook,
-        v0: false,
-      });
-      if (sender) {
-        if (sc.crawlerOptions !== null) {
-          sender.send(WebhookEvent.CRAWL_COMPLETED, {
-            success: true,
-            data: [],
-          });
-        } else {
-          sender.send(WebhookEvent.BATCH_SCRAPE_COMPLETED, {
-            success: true,
-            data: [],
-          });
-        }
-      }
-    }
-  }
 }

@@ -1,8 +1,7 @@
 import Firecrawl from "../../../index";
 import { config } from "dotenv";
-import { describe, test, expect, beforeAll } from "vitest";
+import { describe, test, expect, beforeAll } from "@jest/globals";
 import { getIdentity } from "./utils/idmux";
-import { testTimeoutMs, withRateLimitRetry } from "./utils/rateLimit";
 
 config();
 
@@ -11,7 +10,7 @@ let client: Firecrawl;
 
 beforeAll(async () => {
   const { apiKey } = await getIdentity({ name: "js-e2e-watcher" });
-  client = withRateLimitRetry(new Firecrawl({ apiKey, apiUrl: API_URL }));
+  client = new Firecrawl({ apiKey, apiUrl: API_URL });
 });
 
 describe("v2.watcher e2e", () => {
@@ -53,7 +52,7 @@ describe("v2.watcher e2e", () => {
     expect(snapshots).toBeGreaterThanOrEqual(1);
     expect(documents).toBeGreaterThanOrEqual(0);
     watcher.close();
-  }, testTimeoutMs(240_000));
+  }, 240_000);
 
   test("batch watcher with options (kind, pollInterval, timeout)", async () => {
     // client is initialized in beforeAll
@@ -92,6 +91,6 @@ describe("v2.watcher e2e", () => {
     expect(snapshots).toBeGreaterThanOrEqual(1);
     expect(gotCompleted || final.status !== "completed").toBe(true);
     watcher.close();
-  }, testTimeoutMs(300_000));
+  }, 300_000);
 });
 

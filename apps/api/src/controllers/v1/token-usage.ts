@@ -1,38 +1,46 @@
-import { Response } from "express";
-import { ErrorResponse, RequestWithAuth } from "./types";
-import { getTeamBalance, TOKENS_PER_CREDIT } from "../../services/autumn/usage";
-
-interface TokenUsageResponse {
-  success: true;
-  data: {
-    remaining_tokens: number;
-    plan_tokens: number;
-    billing_period_start: string | null;
-    billing_period_end: string | null;
-  };
-}
+import { Request, Response } from "express";
+import { RequestWithAuth } from "./types";
+import { getACUC, getACUCTeam } from "../auth";
+import { logger } from "../../lib/logger";
+import { RateLimiterMode } from "../../types";
 
 export async function tokenUsageController(
   req: RequestWithAuth,
-  res: Response<TokenUsageResponse | ErrorResponse>,
+  res: Response,
 ): Promise<void> {
-  const balance = await getTeamBalance(req.auth.team_id);
+  try {
+    // If we already have the token usage info from auth, use it
+    if (req.acuc) {
+      res.json({
+        success: true,
+        data: {
+          remaining_tokens: req.acuc.remaining_credits,
+        },
+      });
+      return;
+    }
 
-  if (!balance) {
-    res.status(404).json({
-      success: false,
-      error: "Could not find token usage information",
+    // Otherwise fetch fresh data
+    const chunk = await getACUCTeam(req.auth.team_id, false, false, RateLimiterMode.Extract);
+    if (!chunk) {
+      res.status(404).json({
+        success: false,
+        error: "Could not find token usage information",
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        remaining_tokens: chunk.remaining_credits,
+      },
     });
-    return;
+  } catch (error) {
+    logger.error("Error in token usage controller:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal server error while fetching token usage",
+    });
   }
-
-  res.json({
-    success: true,
-    data: {
-      remaining_tokens: balance.remaining * TOKENS_PER_CREDIT,
-      plan_tokens: balance.planCredits * TOKENS_PER_CREDIT,
-      billing_period_start: balance.periodStart,
-      billing_period_end: balance.periodEnd,
-    },
-  });
 }

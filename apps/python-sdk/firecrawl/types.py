@@ -12,10 +12,6 @@ from .v2.types import (
     # Document types
     Document,
     DocumentMetadata,
-    PdfBlockConfidence,
-    PdfBlockItem,
-    PdfPageBlocks,
-    PdfPage,
     
     # Scrape types
     ScrapeFormats,
@@ -23,7 +19,6 @@ from .v2.types import (
     ScrapeRequest,
     ScrapeData,
     ScrapeResponse,
-    ThreatProtectionOptions,
     
     # Crawl types
     CrawlRequest,
@@ -51,30 +46,11 @@ from .v2.types import (
     SourceOption,
     Format,
     JsonFormat,
-    QuestionFormat,
-    HighlightsFormat,
-    QueryFormat,
     FormatOption,
     SearchRequest,
-    SearchResultWeb,
-    SearchResultNews,
-    SearchResultImages,
+    SearchResult,
     SearchData,
-    DeveloperSearchType,
-    DeveloperSearchRequest,
-    DeveloperSearchLicenseDisclosure,
-    DeveloperSearchPassage,
-    DeveloperSearchResult,
-    DeveloperSearchRepoTypes,
-    DeveloperSearchRepoStatus,
-    DeveloperSearchSourceStatus,
-    DeveloperSearchResponse,
-    GovSearchCourtType,
-    GovSearchSource,
-    GovSearchRequest,
-    GovSearchResult,
-    GovSearchData,
-    GovSearchResponse,
+    SearchResponse,
     
     # Action types
     WaitAction,
@@ -86,12 +62,7 @@ from .v2.types import (
     ScrapeAction,
     ExecuteJavascriptAction,
     PDFAction,
-    PDFParser,
-    ImageParser,
     
-    # Usage types
-    QueueStatusResponse,
-
     # Location and format types
     Location,
     
@@ -107,7 +78,6 @@ from .v2.types import (
     
     # Configuration types
     ClientConfig,
-    AgentOptions,
 )
 
 __all__ = [
@@ -117,10 +87,6 @@ __all__ = [
     # Document types
     'Document',
     'DocumentMetadata',
-    'PdfBlockConfidence',
-    'PdfBlockItem',
-    'PdfPageBlocks',
-    'PdfPage',
     
     # Scrape types
     'ScrapeFormats',
@@ -128,7 +94,6 @@ __all__ = [
     'ScrapeRequest',
     'ScrapeData',
     'ScrapeResponse',
-    'ThreatProtectionOptions',
     
     # Crawl types
     'CrawlRequest',
@@ -157,30 +122,11 @@ __all__ = [
     'SourceOption',
     'Format',
     'JsonFormat',
-    'QuestionFormat',
-    'HighlightsFormat',
-    'QueryFormat',
     'FormatOption',
     'SearchRequest',
-    'SearchResultWeb',
-    'SearchResultNews',
-    'SearchResultImages',
+    'SearchResult',
     'SearchData',
-    'DeveloperSearchType',
-    'DeveloperSearchRequest',
-    'DeveloperSearchLicenseDisclosure',
-    'DeveloperSearchPassage',
-    'DeveloperSearchResult',
-    'DeveloperSearchRepoTypes',
-    'DeveloperSearchRepoStatus',
-    'DeveloperSearchSourceStatus',
-    'DeveloperSearchResponse',
-    'GovSearchCourtType',
-    'GovSearchSource',
-    'GovSearchRequest',
-    'GovSearchResult',
-    'GovSearchData',
-    'GovSearchResponse',
+    'SearchResponse',
     
     # Action types
     'WaitAction',
@@ -192,11 +138,6 @@ __all__ = [
     'ScrapeAction',
     'ExecuteJavascriptAction',
     'PDFAction',
-    'PDFParser',
-    'ImageParser',
-
-    # Usage types
-    'QueueStatusResponse',
     
     # Location and format types
     'Location',
@@ -213,5 +154,4 @@ __all__ = [
     
     # Configuration types
     'ClientConfig',
-    'AgentOptions',
-]  
+] 

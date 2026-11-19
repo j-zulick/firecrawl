@@ -1,56 +1,64 @@
-import { PaywalledContentError } from "../scraper/scrapeURL/error";
-import { ScrapeJobSingleUrls, RunWebScraperParams } from "../types";
+import { Job } from "bullmq";
+import {
+  WebScraperOptions,
+  RunWebScraperParams,
+  RunWebScraperResult,
+} from "../types";
+import { billTeam } from "../services/billing/credit_billing";
+import { Document, TeamFlags } from "../controllers/v1/types";
+import { supabase_service } from "../services/supabase";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
-import { scrapeURL, ScrapeUrlResponse } from "../scraper/scrapeURL";
-import type { NuQJob } from "../services/worker/nuq";
-import { CostTracking } from "../lib/cost-tracking";
+import {
+  scrapeURL,
+  ScrapeUrlResponse,
+} from "../scraper/scrapeURL";
+import { Engine } from "../scraper/scrapeURL/engines";
+import { CostTracking } from "../lib/extract/extraction-service";
 configDotenv();
 
 export async function startWebScraperPipeline({
   job,
   costTracking,
 }: {
-  job: NuQJob<ScrapeJobSingleUrls>;
+  job: Job<WebScraperOptions> & { id: string };
   costTracking: CostTracking;
 }) {
   return await runWebScraper({
     url: job.data.url,
+    mode: job.data.mode,
     scrapeOptions: {
       ...job.data.scrapeOptions,
       ...(job.data.crawl_id
         ? {
-            formats: job.data.scrapeOptions.formats.concat([
-              { type: "rawHtml" },
-            ]),
+            formats: job.data.scrapeOptions.formats.concat([{ type: "rawHtml" }]),
           }
         : {}),
     },
     internalOptions: {
       crawlId: job.data.crawl_id,
       teamId: job.data.team_id,
-      origin: job.data.origin,
       ...job.data.internalOptions,
-      // In-flight jobs enqueued before orgId existed may omit it.
-      orgId: job.data.internalOptions?.orgId ?? null,
     },
     team_id: job.data.team_id,
-    bull_job_id: job.id,
-    priority: job.priority,
+    bull_job_id: job.id.toString(),
+    priority: job.opts.priority,
+    is_scrape: job.data.is_scrape ?? false,
     is_crawl: !!(job.data.crawl_id && job.data.crawlerOptions !== null),
-    urlInvisibleInCurrentCrawl:
-      job.data.crawlerOptions?.urlInvisibleInCurrentCrawl ?? false,
+    urlInvisibleInCurrentCrawl: job.data.crawlerOptions?.urlInvisibleInCurrentCrawl ?? false,
     costTracking,
   });
 }
 
-async function runWebScraper({
+export async function runWebScraper({
   url,
+  mode,
   scrapeOptions,
   internalOptions,
   team_id,
   bull_job_id,
   priority,
+  is_scrape = false,
   is_crawl = false,
   urlInvisibleInCurrentCrawl = false,
   costTracking,
@@ -84,19 +92,12 @@ async function runWebScraper({
 
     try {
       logger.info("running scrapeURL...");
-      response = await scrapeURL(
-        bull_job_id,
-        url,
-        scrapeOptions,
-        {
-          priority,
-          ...internalOptions,
-          urlInvisibleInCurrentCrawl,
-          teamId: internalOptions?.teamId ?? team_id,
-          orgId: internalOptions?.orgId ?? null,
-        },
-        costTracking,
-      );
+      response = await scrapeURL(bull_job_id, url, scrapeOptions, {
+        priority,
+        ...internalOptions,
+        urlInvisibleInCurrentCrawl,
+        teamId: internalOptions?.teamId ?? team_id,
+      }, costTracking);
       if (!response.success) {
         if (response.error instanceof Error) {
           throw response.error;
@@ -122,7 +123,6 @@ async function runWebScraper({
       }
     } catch (_error) {
       error = _error;
-      if (_error instanceof PaywalledContentError) break;
     }
   }
 
@@ -173,3 +173,44 @@ async function runWebScraper({
     }
   }
 }
+
+const saveJob = async (
+  job: Job,
+  result: any,
+  mode: string,
+) => {
+  try {
+    const useDbAuthentication = process.env.USE_DB_AUTHENTICATION === "true";
+    if (useDbAuthentication) {
+      const { data, error } = await supabase_service
+        .from("firecrawl_jobs")
+        .update({ docs: result })
+        .eq("job_id", job.id);
+
+      if (error) throw new Error(error.message);
+      // try {
+      //   if (mode === "crawl") {
+      //     await job.moveToCompleted(null, token, false);
+      //   } else {
+      //     await job.moveToCompleted(result, token, false);
+      //   }
+      // } catch (error) {
+      //   // I think the job won't exist here anymore
+      // }
+      // } else {
+      //   try {
+      //     await job.moveToCompleted(result, token, false);
+      //   } catch (error) {
+      //     // I think the job won't exist here anymore
+      //   }
+    }
+    // ScrapeEvents.logJobEvent(job, "completed");
+  } catch (error) {
+    _logger.error(`🐂 Failed to update job status`, {
+      module: "runWebScraper",
+      method: "saveJob",
+      jobId: job.id,
+      scrapeId: job.id,
+    });
+  }
+};

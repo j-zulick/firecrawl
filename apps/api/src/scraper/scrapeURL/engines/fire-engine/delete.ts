@@ -1,30 +1,27 @@
 import { Logger } from "winston";
+import * as Sentry from "@sentry/node";
 
 import { robustFetch } from "../../lib/fetch";
 import { MockState } from "../../lib/mock";
-import { fireEngineURL } from "./scrape";
+import { fireEngineStagingURL, fireEngineURL } from "./scrape";
 
 export async function fireEngineDelete(
   logger: Logger,
-  jobId: string | undefined,
+  jobId: string,
   mock: MockState | null,
   abort?: AbortSignal,
-  baseUrl: string = fireEngineURL,
+  production = true,
 ) {
-  // jobId only supplied if we need to defer deletion
-  if (!jobId) {
-    logger.debug("Fire Engine job id not supplied, skipping delete");
-    return;
-  }
-
   await robustFetch({
-    url: `${baseUrl}/scrape/${jobId}`,
+    url: `${production ? fireEngineURL : fireEngineStagingURL}/scrape/${jobId}`,
     method: "DELETE",
     headers: {},
+    ignoreResponse: true,
+    ignoreFailure: true,
     logger: logger.child({ method: "fireEngineDelete/robustFetch", jobId }),
     mock,
     abort,
   });
 
-  logger.debug("Deleted job from Fire Engine", { jobId });
+  // We do not care whether this fails or not.
 }

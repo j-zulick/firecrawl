@@ -9,11 +9,10 @@ import {
   generateCompletions,
   trimToTokenLimit,
 } from "../../scraper/scrapeURL/transformers/llmExtract";
-import { ExtractOptions, TeamFlags } from "../../controllers/v1/types";
+import { ExtractOptions } from "../../controllers/v1/types";
 
 import { getModel } from "../generic-ai";
-import { CostTracking } from "../cost-tracking";
-import { includesFormat } from "../format-utils";
+import { CostTracking } from "../extract/extraction-service";
 interface AnalysisResult {
   gaps: string[];
   nextSteps: string[];
@@ -57,7 +56,7 @@ export class ResearchStateManager {
   }
 
   async addActivity(activities: DeepResearchActivity[]): Promise<void> {
-    if (activities.some(activity => activity.status === "complete")) {
+    if (activities.some((activity) => activity.status === "complete")) {
       this.completedSteps++;
     }
 
@@ -148,38 +147,19 @@ export class ResearchStateManager {
   }
 }
 
-// Throws UsOnlyUnavailableError for a US-only team with no US route.
-export function researchModels(teamFlags: TeamFlags | null | undefined) {
-  const modelOptions = { teamFlags, feature: "Deep research" };
-  return {
-    model: getModel("gpt-4o-mini", "openai", modelOptions),
-    retryModel: getModel("gpt-4.1-mini", "openai", modelOptions),
-    finalAnalysisModel: getModel("gpt-4.1", undefined, modelOptions),
-  };
-}
-
 export class ResearchLLMService {
-  private readonly models: ReturnType<typeof researchModels>;
-
-  constructor(
-    private readonly logger: Logger,
-    teamFlags?: TeamFlags | null,
-  ) {
-    this.models = researchModels(teamFlags);
-  }
+  constructor(private readonly logger: Logger) {}
 
   async generateSearchQueries(
     topic: string,
     findings: DeepResearchFinding[] = [],
     costTracking: CostTracking,
-    metadata: { teamId: string; functionId?: string; deepResearchId?: string },
+    metadata: { teamId: string, functionId?: string, deepResearchId?: string },
   ): Promise<{ query: string; researchGoal: string }[]> {
     const { extract } = await generateCompletions({
       logger: this.logger.child({
         method: "generateSearchQueries",
       }),
-      model: this.models.model,
-      retryModel: this.models.retryModel,
       options: {
         systemPrompt:
           "You are an expert research agent that generates search queries (SERP) to explore topics deeply and thoroughly. Do not generate repeated queries. Today's date is " +
@@ -207,7 +187,7 @@ export class ResearchLLMService {
           },
         },
         prompt: `Generate a list of 3-5 search queries to deeply research this topic: "${topic}"
-          ${findings.length > 0 ? `\nBased on these previous findings, generate more specific queries:\n${trimToTokenLimit(findings.map(f => `- ${f.text}`).join("\n"), 10000).text}` : ""}
+          ${findings.length > 0 ? `\nBased on these previous findings, generate more specific queries:\n${trimToTokenLimit(findings.map((f) => `- ${f.text}`).join("\n"), 10000).text}` : ""}
           
           Each query should be specific and focused on a particular aspect.
           Build upon previous findings when available.
@@ -225,9 +205,7 @@ export class ResearchLLMService {
       },
       metadata: {
         ...metadata,
-        functionId: metadata.functionId
-          ? metadata.functionId + "/generateSearchQueries"
-          : "generateSearchQueries",
+        functionId: metadata.functionId ? (metadata.functionId + "/generateSearchQueries") : "generateSearchQueries",
       },
     });
 
@@ -240,7 +218,7 @@ export class ResearchLLMService {
     timeRemaining: number,
     systemPrompt: string,
     costTracking: CostTracking,
-    metadata: { teamId: string; functionId?: string; deepResearchId?: string },
+    metadata: { teamId: string, functionId?: string, deepResearchId?: string },
   ): Promise<AnalysisResult | null> {
     try {
       const timeRemainingMinutes =
@@ -250,8 +228,6 @@ export class ResearchLLMService {
         logger: this.logger.child({
           method: "analyzeAndPlan",
         }),
-        model: this.models.model,
-        retryModel: this.models.retryModel,
         options: {
           systemPrompt:
             systemPrompt +
@@ -275,7 +251,7 @@ export class ResearchLLMService {
           prompt: trimToTokenLimit(
             `You are researching: ${currentTopic}
               You have ${timeRemainingMinutes} minutes remaining to complete the research but you don't need to use all of it.
-              Current findings: ${findings.map(f => `[From ${f.source}]: ${f.text}`).join("\n")}
+              Current findings: ${findings.map((f) => `[From ${f.source}]: ${f.text}`).join("\n")}
               What has been learned? What gaps remain, if any? What specific aspects should be investigated next if any?
               If you need to search for more information inside the same topic pick a sub-topic by including a nextSearchTopic -which should be highly related to the original topic/users'query.
               Important: If less than 1 minute remains, set shouldContinue to false to allow time for final synthesis.
@@ -293,9 +269,7 @@ export class ResearchLLMService {
         },
         metadata: {
           ...metadata,
-          functionId: metadata.functionId
-            ? metadata.functionId + "/analyzeAndPlan"
-            : "analyzeAndPlan",
+          functionId: metadata.functionId ? (metadata.functionId + "/analyzeAndPlan") : "analyzeAndPlan",
         },
       });
 
@@ -312,7 +286,7 @@ export class ResearchLLMService {
     summaries: string[],
     analysisPrompt: string,
     costTracking: CostTracking,
-    metadata: { teamId: string; functionId?: string; deepResearchId?: string },
+    metadata: { teamId: string, functionId?: string, deepResearchId?: string },
     formats?: string[],
     jsonOptions?: ExtractOptions,
   ): Promise<any> {
@@ -327,25 +301,25 @@ export class ResearchLLMService {
       logger: this.logger.child({
         method: "generateFinalAnalysis",
       }),
-      mode: includesFormat(formats, "json") ? "object" : "no-object",
+      mode: formats.includes("json") ? "object" : "no-object",
       options: {
         mode: "llm",
-        ...(includesFormat(formats, "json") && {
+        ...(formats.includes("json") && {
           ...jsonOptions,
         }),
-        systemPrompt: includesFormat(formats, "json")
+        systemPrompt: formats.includes("json")
           ? "You are an expert research analyst who creates comprehensive, structured analysis following the provided JSON schema exactly."
           : "You are an expert research analyst who creates comprehensive, well-structured reports.  Don't begin the report by saying 'Here is the report', nor 'Below is the report', nor something similar. ALWAYS start with a great title that reflects the research topic and findings. Your reports are detailed, properly formatted in Markdown, and include clear sections with citations. Today's date is " +
             new Date().toISOString().split("T")[0],
         prompt: trimToTokenLimit(
           analysisPrompt
-            ? `${analysisPrompt}\n\nResearch data:\n${findings.map(f => `[From ${f.source}]: ${f.text}`).join("\n")}`
-            : includesFormat(formats, "json")
-              ? `Analyze the following research data on "${topic}" and structure the output according to the provided schema: Schema: ${JSON.stringify(jsonOptions?.schema)}\n\nFindings:\n\n${findings.map(f => `[From ${f.source}]: ${f.text}`).join("\n")}`
+            ? `${analysisPrompt}\n\nResearch data:\n${findings.map((f) => `[From ${f.source}]: ${f.text}`).join("\n")}`
+            : formats.includes("json")
+              ? `Analyze the following research data on "${topic}" and structure the output according to the provided schema: Schema: ${JSON.stringify(jsonOptions?.schema)}\n\nFindings:\n\n${findings.map((f) => `[From ${f.source}]: ${f.text}`).join("\n")}`
               : `Create a comprehensive research report on "${topic}" based on the collected findings and analysis.
   
                 Research data:
-                ${findings.map(f => `[From ${f.source}]: ${f.text}`).join("\n")}
+                ${findings.map((f) => `[From ${f.source}]: ${f.text}`).join("\n")}
     
                 Requirements:
                 - Format the report in Markdown with proper headers and sections
@@ -364,8 +338,7 @@ export class ResearchLLMService {
         ).text,
       },
       markdown: "",
-      model: this.models.finalAnalysisModel,
-      retryModel: this.models.retryModel,
+      model: getModel("o3-mini"),
       costTrackingOptions: {
         costTracking,
         metadata: {
@@ -375,9 +348,7 @@ export class ResearchLLMService {
       },
       metadata: {
         ...metadata,
-        functionId: metadata.functionId
-          ? metadata.functionId + "/generateFinalAnalysis"
-          : "generateFinalAnalysis",
+        functionId: metadata.functionId ? (metadata.functionId + "/generateFinalAnalysis") : "generateFinalAnalysis",
       },
     });
 
