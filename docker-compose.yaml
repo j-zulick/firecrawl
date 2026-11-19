@@ -1,17 +1,40 @@
 name: firecrawl
 
+# ---------------------------------------------------------------------------
+# j-zulick fork of firecrawl/firecrawl
+#
+# Deployed by Komodo (stack "firecrawl-stack") on firecrawl-node, a 2 vCPU /
+# 4 GB droplet. Differences from upstream's docker-compose.yaml:
+#   * Redis is external (the redis-firecrawl-stack container). REDIS_URL is
+#     required; the bundled redis service only starts with --profile bundled-redis.
+#   * POSTGRES_PASSWORD is required (no "postgres" default).
+#   * API port is published on 127.0.0.1 only (nginx fronts it publicly).
+#   * Every long-running service restarts unless stopped and has rotated logs.
+#   * Memory/CPU limits and worker counts are sized for a 2 vCPU / 4 GB host.
+#     Raise them with the *_MEM_LIMIT / NUQ_WORKER_COUNT variables on a bigger host.
+#   * FoundationDB (experimental upstream queue backend) only starts with
+#     --profile fdb, so it does not take memory on the default Postgres backend.
+# ---------------------------------------------------------------------------
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "5"
+
+x-small-logging: &small-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-common-service: &common-service
   # NOTE: If you don't want to build the service locally,
-  # uncomment the build: statement and comment out the image: statement
+  # comment out the build: statement and uncomment the image: statement
   # image: ghcr.io/firecrawl/firecrawl
   build: apps/api
   restart: unless-stopped
-  logging:
-    driver: json-file
-    options:
-      max-size: "100m"
-      max-file: "5"
-
+  logging: *default-logging
   ulimits:
     nofile:
       soft: 65535
@@ -23,25 +46,30 @@ x-common-service: &common-service
 
 x-common-env: &common-env
   REDIS_URL: ${REDIS_URL:?set REDIS_URL in Komodo stack environment}
-  REDIS_RATE_LIMIT_URL: ${REDIS_URL:?set REDIS_URL in Komodo stack environment}
+  REDIS_RATE_LIMIT_URL: ${REDIS_RATE_LIMIT_URL:-${REDIS_URL}}
   PLAYWRIGHT_MICROSERVICE_URL: ${PLAYWRIGHT_MICROSERVICE_URL:-http://playwright-service:3000/scrape}
-  USE_DB_AUTHENTICATION: ${USE_DB_AUTHENTICATION}
+  POSTGRES_USER: ${POSTGRES_USER:-postgres}
+  POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Komodo stack environment}"
+  POSTGRES_DB: ${POSTGRES_DB:-postgres}
+  POSTGRES_HOST: ${POSTGRES_HOST:-nuq-postgres}
+  POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+  USE_DB_AUTHENTICATION: ${USE_DB_AUTHENTICATION:-false}
+  # Number of scrape worker processes the harness starts (upstream default 5).
+  NUQ_WORKER_COUNT: ${NUQ_WORKER_COUNT:-2}
+  # Back-pressure: workers stop taking jobs above these fractions of CPU / RAM.
+  MAX_CPU: ${MAX_CPU:-0.85}
+  MAX_RAM: ${MAX_RAM:-0.85}
   OPENAI_API_KEY: ${OPENAI_API_KEY}
   OPENAI_BASE_URL: ${OPENAI_BASE_URL}
   MODEL_NAME: ${MODEL_NAME}
-  MODEL_EMBEDDING_NAME: ${MODEL_EMBEDDING_NAME} 
-  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL} 
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
   SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
   BULL_AUTH_KEY: ${BULL_AUTH_KEY}
   TEST_API_KEY: ${TEST_API_KEY}
-  POSTHOG_API_KEY: ${POSTHOG_API_KEY}
-  POSTHOG_HOST: ${POSTHOG_HOST}
   SUPABASE_ANON_TOKEN: ${SUPABASE_ANON_TOKEN}
   SUPABASE_URL: ${SUPABASE_URL}
   SUPABASE_SERVICE_TOKEN: ${SUPABASE_SERVICE_TOKEN}
   SELF_HOSTED_WEBHOOK_URL: ${SELF_HOSTED_WEBHOOK_URL}
-  SERPER_API_KEY: ${SERPER_API_KEY}
-  SEARCHAPI_API_KEY: ${SEARCHAPI_API_KEY}
   LOGGING_LEVEL: ${LOGGING_LEVEL}
   PROXY_SERVER: ${PROXY_SERVER}
   PROXY_USERNAME: ${PROXY_USERNAME}
@@ -49,30 +77,47 @@ x-common-env: &common-env
   SEARXNG_ENDPOINT: ${SEARXNG_ENDPOINT}
   SEARXNG_ENGINES: ${SEARXNG_ENGINES}
   SEARXNG_CATEGORIES: ${SEARXNG_CATEGORIES}
+  # Set NUQ_BACKEND=fdb (and start with --profile fdb) to run the queue on
+  # FoundationDB instead of Postgres. Experimental upstream.
+  NUQ_BACKEND: ${NUQ_BACKEND}
+  FDB_CLUSTER_FILE: ${NUQ_BACKEND:+/var/fdb/fdb.cluster}
 
 services:
   playwright-service:
     # NOTE: If you don't want to build the service locally,
-    # uncomment the build: statement and comment out the image: statement
+    # comment out the build: statement and uncomment the image: statement
     # image: ghcr.io/firecrawl/playwright-service:latest
     build: apps/playwright-service-ts
     restart: unless-stopped
-    mem_limit: 1536m
-    shm_size: "1gb"
     init: true
-    logging:
-      driver: json-file
-      options:
-        max-size: "100m"
-        max-file: "5"
+    shm_size: "1gb"
     environment:
       PORT: 3000
       PROXY_SERVER: ${PROXY_SERVER}
       PROXY_USERNAME: ${PROXY_USERNAME}
       PROXY_PASSWORD: ${PROXY_PASSWORD}
+      ALLOW_LOCAL_WEBHOOKS: ${ALLOW_LOCAL_WEBHOOKS}
       BLOCK_MEDIA: ${BLOCK_MEDIA}
+      # Maximum concurrent pages in the shared Chromium.
+      MAX_CONCURRENT_PAGES: ${PLAYWRIGHT_MAX_CONCURRENT_PAGES:-4}
     networks:
       - backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cpus: ${PLAYWRIGHT_CPUS:-2.0}
+    mem_limit: ${PLAYWRIGHT_MEM_LIMIT:-1536m}
+    memswap_limit: ${PLAYWRIGHT_MEM_LIMIT:-1536m}
+    logging: *default-logging
+    tmpfs:
+      - /tmp/.cache:noexec,nosuid,size=256m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
 
   api:
     <<: *common-service
@@ -80,36 +125,135 @@ services:
       <<: *common-env
       HOST: "0.0.0.0"
       PORT: ${INTERNAL_PORT:-3002}
-      FLY_PROCESS_GROUP: app
+      EXTRACT_WORKER_PORT: ${EXTRACT_WORKER_PORT:-3004}
+      WORKER_PORT: ${WORKER_PORT:-3005}
+      NUQ_RABBITMQ_URL: amqp://rabbitmq:5672
+      HARNESS_STARTUP_TIMEOUT_MS: ${HARNESS_STARTUP_TIMEOUT_MS:-120000}
       ENV: local
     depends_on:
-      - playwright-service
+      playwright-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      # Only the pg backend uses nuq-postgres, so an unhealthy Postgres must not
+      # block startup when NUQ_BACKEND=fdb.
+      nuq-postgres:
+        condition: service_healthy
+        required: false
     ports:
       - "127.0.0.1:${PORT:-3002}:${INTERNAL_PORT:-3002}"
-    command: [ "pnpm", "run", "start:production" ]
+    volumes:
+      - fdb-cluster-file:/var/fdb:ro
+    command: node dist/src/harness.js --start-docker
+    cpus: ${API_CPUS:-2.0}
+    mem_limit: ${API_MEM_LIMIT:-2304m}
+    memswap_limit: ${API_MEM_LIMIT:-2304m}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:3002/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
 
-  worker:
-    <<: *common-service
+  # Only used with `--profile bundled-redis` (production uses the external
+  # redis-firecrawl-stack via REDIS_URL). Point REDIS_URL at redis://redis:6379
+  # when using it.
+  redis:
+    profiles: ["bundled-redis"]
+    # NOTE: If you want to use Valkey (open source) instead of Redis (source available),
+    # uncomment the Valkey statement and comment out the Redis statement.
+    # Using Valkey with Firecrawl is untested and not guaranteed to work. Use with caution.
+    image: redis:alpine
+    # image: valkey/valkey:alpine
+    restart: unless-stopped
+    networks:
+      - backend
+    command: redis-server --bind 0.0.0.0
+    logging: *small-logging
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    networks:
+      - backend
+    command: rabbitmq-server
     environment:
-      <<: *common-env
-      FLY_PROCESS_GROUP: worker
-      ENV: local
+      # Keep RabbitMQ's Erlang VM small on a 4 GB host.
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+S 1:1 +MBas ageffcbf +MHas ageffcbf"
+    mem_limit: ${RABBITMQ_MEM_LIMIT:-384m}
+    memswap_limit: ${RABBITMQ_MEM_LIMIT:-384m}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    logging: *small-logging
+
+  nuq-postgres:
+    # NOTE: If you don't want to build the image locally,
+    # comment out the build: statement and uncomment the image: statement
+    # image: ghcr.io/firecrawl/nuq-postgres:latest
+    build: apps/nuq-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Komodo stack environment}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=200"]
+    shm_size: "128mb"
+    mem_limit: ${POSTGRES_MEM_LIMIT:-512m}
+    memswap_limit: ${POSTGRES_MEM_LIMIT:-512m}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - backend
+    logging: *small-logging
+
+  # FoundationDB queue backend (experimental upstream). Enable with
+  # NUQ_BACKEND=fdb and `--profile fdb`.
+  foundationdb:
+    profiles: ["fdb"]
+    image: foundationdb/foundationdb:7.3.63
+    restart: unless-stopped
+    environment:
+      FDB_NETWORKING_MODE: container
+      FDB_COORDINATOR_PORT: 4500
+    networks:
+      - backend
+    volumes:
+      - fdb-data:/var/fdb/data
+      - fdb-cluster-file:/var/fdb
+    logging: *small-logging
+
+  # one-shot: creates the database on first boot (no-op afterwards)
+  foundationdb-init:
+    profiles: ["fdb"]
+    image: foundationdb/foundationdb:7.3.63
     depends_on:
-      - playwright-service
-      - api
-    command: [ "pnpm", "run", "workers" ]
-
-  # redis:
-  #   # NOTE: If you want to use Valkey (open source) instead of Redis (source available),
-  #   # uncomment the Valkey statement and comment out the Redis statement.
-  #   # Using Valkey with Firecrawl is untested and not guaranteed to work. Use with caution.
-  #   image: redis:alpine
-  #   # image: valkey/valkey:alpine
-
-  #   networks:
-  #     - backend
-  #   command: redis-server --bind 0.0.0.0
+      - foundationdb
+    entrypoint:
+      - /bin/bash
+      - -c
+      - "sleep 5 && out=$(fdbcli -C /var/fdb/fdb.cluster --exec 'configure new single ssd' 2>&1); status=$$?; printf '%s\n' \"$$out\"; if [ \"$$status\" -eq 0 ]; then exit 0; fi; printf '%s\n' \"$$out\" | grep -Eiq 'already.*configured|database.*configured|database.*already exists'"
+    volumes:
+      - fdb-cluster-file:/var/fdb
+    networks:
+      - backend
+    restart: "no"
 
 networks:
   backend:
     driver: bridge
+
+volumes:
+  fdb-data:
+  fdb-cluster-file:

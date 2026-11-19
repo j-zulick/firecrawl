@@ -6,16 +6,16 @@ package main
 import "C"
 import (
 	"unsafe"
-	// "log"
 
-	md "github.com/tomkosm/html-to-markdown"
-	"github.com/tomkosm/html-to-markdown/plugin"
+	md "github.com/firecrawl/html-to-markdown"
+	"github.com/firecrawl/html-to-markdown/plugin"
 )
 
 //export ConvertHTMLToMarkdown
 func ConvertHTMLToMarkdown(html *C.char) *C.char {
 	converter := md.NewConverter("", true, nil)
 	converter.Use(plugin.GitHubFlavored())
+	converter.Use(plugin.RobustCodeBlock())
 
 	markdown, err := converter.ConvertString(C.GoString(html))
 	if err != nil {

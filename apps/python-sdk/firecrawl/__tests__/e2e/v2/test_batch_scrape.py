@@ -1,8 +1,11 @@
 import os
+import time
 import pytest
 from dotenv import load_dotenv
+from unittest.mock import patch
 from firecrawl import Firecrawl
-from firecrawl.v2.types import ScrapeOptions
+from firecrawl.v2.types import ScrapeOptions, PaginationConfig
+from firecrawl.v2.utils.http_client import HttpClient
 
 load_dotenv()
 
@@ -48,6 +51,50 @@ class TestBatchScrapeE2E:
         assert job.status in ["scraping", "completed", "failed"]
         assert job.total >= 0
 
+    def test_status_of_running_single_url_batch_does_not_repoll(self):
+        """One status call on a just-started batch reads the current page instead of polling until it finishes."""
+        start_resp = self.client.start_batch_scrape(["https://docs.firecrawl.dev"], formats=["markdown"])
+
+        with patch.object(HttpClient, "get", autospec=True, side_effect=HttpClient.get) as get:
+            job = self.client.get_batch_scrape_status(start_resp.id)
+
+        if job.status != "scraping":
+            pytest.skip("Batch finished before the status call; nothing running to page over.")
+        assert get.call_count <= 2
+
+    def test_get_batch_scrape_status_page(self):
+        """Fetch a single batch scrape page using the next URL."""
+        urls = [f"https://docs.firecrawl.dev?batch={i}" for i in range(15)]
+
+        start_resp = self.client.start_batch_scrape(
+            urls,
+            formats=["markdown"],
+            ignore_invalid_urls=True,
+        )
+        assert start_resp.id is not None
+
+        pagination_config = PaginationConfig(auto_paginate=False)
+        deadline = time.time() + 120
+        status_job = None
+        while time.time() < deadline:
+            status_job = self.client.get_batch_scrape_status(
+                start_resp.id,
+                pagination_config=pagination_config,
+            )
+            if status_job.next:
+                break
+            if status_job.status in ["completed", "failed", "cancelled"]:
+                break
+            time.sleep(2)
+
+        assert status_job is not None
+        if not status_job.next:
+            pytest.skip("Batch scrape completed without pagination; skipping page fetch.")
+
+        next_page = self.client.get_batch_scrape_status_page(status_job.next)
+        assert isinstance(next_page.data, list)
+        assert next_page.status in ["scraping", "completed", "failed", "cancelled"]
+
     def test_wait_batch_with_all_params(self):
         """Blocking waiter with JSON and changeTracking formats plus many options."""
         urls = [
@@ -83,6 +130,7 @@ class TestBatchScrapeE2E:
             zero_data_retention=False,
             poll_interval=1,
             wait_timeout=180,
+            integration="_e2e-test",
         )
 
         assert job.status in ["completed", "failed"]
@@ -102,4 +150,3 @@ class TestBatchScrapeE2E:
 
         cancelled = self.client.cancel_batch_scrape(start_resp.id)
         assert cancelled is True
-
