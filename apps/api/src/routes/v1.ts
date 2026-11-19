@@ -4,8 +4,8 @@ import { crawlController } from "../controllers/v1/crawl";
 import { scrapeController } from "../../src/controllers/v1/scrape";
 import { crawlStatusController } from "../controllers/v1/crawl-status";
 import { mapController } from "../controllers/v1/map";
-import { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
+import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
 import { crawlStatusWSController } from "../controllers/v1/crawl-status-ws";
 import { crawlCancelController } from "../controllers/v1/crawl-cancel";
@@ -16,7 +16,6 @@ import { extractController } from "../controllers/v1/extract";
 import { extractStatusController } from "../controllers/v1/extract-status";
 import { creditUsageController } from "../controllers/v1/credit-usage";
 import { searchController } from "../controllers/v1/search";
-import { x402SearchController } from "../controllers/v1/x402-search";
 import { crawlErrorsController } from "../controllers/v1/crawl-errors";
 import { generateLLMsTextController } from "../controllers/v1/generate-llmstxt";
 import { generateLLMsTextStatusController } from "../controllers/v1/generate-llmstxt-status";
@@ -28,48 +27,45 @@ import {
   authMiddleware,
   checkCreditsMiddleware,
   blocklistMiddleware,
+  scrapeBlocklistMiddleware,
+  restrictedOptionsCountryCheck,
   idempotencyMiddleware,
+  requestTimingMiddleware,
+  validateJobIdParam,
   wrap,
+  inferIntegrationMiddleware,
 } from "./shared";
-import { paymentMiddleware } from "x402-express";
+import { queueStatusController } from "../controllers/v1/queue-status";
+import { creditUsageHistoricalController } from "../controllers/v1/credit-usage-historical";
 
-expressWs(express());
+import { tokenUsageHistoricalController } from "../controllers/v1/token-usage-historical";
+import { deprecationMiddleware } from "../lib/deprecations";
 
 export const v1Router = express.Router();
+expressWs(express()).applyTo(v1Router);
 
-// Configure payment middleware to enable micropayment-protected endpoints
-// This middleware handles payment verification and processing for premium API features
-// x402 payments protocol - https://github.com/coinbase/x402
-v1Router.use(
-  paymentMiddleware(
-    process.env.X402_PAY_TO_ADDRESS as `0x${string}` || "0x0000000000000000000000000000000000000000",
-    {
-      "POST /x402/search": {
-        price: process.env.X402_ENDPOINT_PRICE_USD as string,
-        network: process.env.X402_NETWORK as "base-sepolia" | "base" | "avalanche-fuji" | "avalanche" | "iotex",
-        config: {
-          description: "The search endpoint combines web search (SERP) with Firecrawl's scraping capabilities to return full page content for any query. Requires micropayment via X402 protocol",
-          mimeType: "application/json",
-          maxTimeoutSeconds: 120,
-        }
-      },
-    },
-  ),
-);
+// Add timing middleware to all v1 routes
+v1Router.use(requestTimingMiddleware("v1"));
 
 v1Router.post(
   "/scrape",
-  authMiddleware(RateLimiterMode.Scrape),
+  authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
+  deprecationMiddleware("v1_scrape"),
+  inferIntegrationMiddleware,
+  restrictedOptionsCountryCheck,
   checkCreditsMiddleware(1),
-  blocklistMiddleware,
+  scrapeBlocklistMiddleware,
   wrap(scrapeController),
 );
 
 v1Router.post(
   "/crawl",
   authMiddleware(RateLimiterMode.Crawl),
+  deprecationMiddleware("v1_crawl"),
+  inferIntegrationMiddleware,
+  restrictedOptionsCountryCheck,
   checkCreditsMiddleware(),
-  blocklistMiddleware,
+  scrapeBlocklistMiddleware,
   idempotencyMiddleware,
   wrap(crawlController),
 );
@@ -77,6 +73,9 @@ v1Router.post(
 v1Router.post(
   "/batch/scrape",
   authMiddleware(RateLimiterMode.Scrape),
+  deprecationMiddleware("v1_batch_scrape"),
+  inferIntegrationMiddleware,
+  restrictedOptionsCountryCheck,
   checkCreditsMiddleware(),
   blocklistMiddleware,
   idempotencyMiddleware,
@@ -85,14 +84,19 @@ v1Router.post(
 
 v1Router.post(
   "/search",
-  authMiddleware(RateLimiterMode.Search),
-  checkCreditsMiddleware(),
+  authMiddleware(RateLimiterMode.Search, { allowKeyless: true }),
+  deprecationMiddleware("v1_search"),
+  inferIntegrationMiddleware,
+  restrictedOptionsCountryCheck,
+  checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
   wrap(searchController),
 );
 
 v1Router.post(
   "/map",
   authMiddleware(RateLimiterMode.Map),
+  deprecationMiddleware("v1_map"),
+  inferIntegrationMiddleware,
   checkCreditsMiddleware(1),
   blocklistMiddleware,
   wrap(mapController),
@@ -101,6 +105,7 @@ v1Router.post(
 v1Router.get(
   "/crawl/ongoing",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_crawl_ongoing"),
   wrap(ongoingCrawlsController),
 );
 
@@ -108,18 +113,23 @@ v1Router.get(
 v1Router.get(
   "/crawl/active",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_crawl_active"),
   wrap(ongoingCrawlsController),
 );
 
 v1Router.get(
   "/crawl/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_crawl_status"),
+  validateJobIdParam,
   wrap(crawlStatusController),
 );
 
 v1Router.get(
   "/batch/scrape/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_batch_scrape_status"),
+  validateJobIdParam,
   // Yes, it uses the same controller as the normal crawl status controller
   wrap((req: any, res): any => crawlStatusController(req, res, true)),
 );
@@ -127,24 +137,28 @@ v1Router.get(
 v1Router.get(
   "/crawl/:jobId/errors",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_crawl_errors"),
   wrap(crawlErrorsController),
 );
 
 v1Router.get(
   "/batch/scrape/:jobId/errors",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_batch_scrape_errors"),
   wrap(crawlErrorsController),
 );
 
 v1Router.get(
   "/scrape/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_scrape_status"),
   wrap(scrapeStatusController),
 );
 
 v1Router.get(
   "/concurrency-check",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_concurrency_check"),
   wrap(concurrencyCheckController),
 );
 
@@ -153,19 +167,26 @@ v1Router.ws("/crawl/:jobId", crawlStatusWSController);
 v1Router.post(
   "/extract",
   authMiddleware(RateLimiterMode.Extract),
-  checkCreditsMiddleware(1),
+  inferIntegrationMiddleware,
+  deprecationMiddleware("v1_extract"),
+  restrictedOptionsCountryCheck,
+  checkCreditsMiddleware(20),
   wrap(extractController),
 );
 
 v1Router.get(
   "/extract/:jobId",
   authMiddleware(RateLimiterMode.ExtractStatus),
+  deprecationMiddleware("v1_extract_status"),
   wrap(extractStatusController),
 );
 
 v1Router.post(
   "/llmstxt",
   authMiddleware(RateLimiterMode.Scrape),
+  deprecationMiddleware("v1_llmstxt"),
+  restrictedOptionsCountryCheck,
+  checkCreditsMiddleware(1),
   blocklistMiddleware,
   wrap(generateLLMsTextController),
 );
@@ -173,12 +194,15 @@ v1Router.post(
 v1Router.get(
   "/llmstxt/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_llmstxt_status"),
   wrap(generateLLMsTextStatusController),
 );
 
 v1Router.post(
   "/deep-research",
   authMiddleware(RateLimiterMode.Crawl),
+  deprecationMiddleware("v1_deep_research"),
+  restrictedOptionsCountryCheck,
   checkCreditsMiddleware(1),
   wrap(deepResearchController),
 );
@@ -186,6 +210,7 @@ v1Router.post(
 v1Router.get(
   "/deep-research/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_deep_research_status"),
   wrap(deepResearchStatusController),
 );
 
@@ -194,12 +219,14 @@ v1Router.get(
 v1Router.delete(
   "/crawl/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_crawl_cancel"),
   crawlCancelController,
 );
 
 v1Router.delete(
   "/batch/scrape/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_batch_scrape_cancel"),
   crawlCancelController,
 );
 // v1Router.get("/checkJobStatus/:jobId", crawlJobStatusPreviewController);
@@ -216,18 +243,35 @@ v1Router.delete(
 
 v1Router.get(
   "/team/credit-usage",
-  authMiddleware(RateLimiterMode.CrawlStatus),
+  authMiddleware(RateLimiterMode.Account),
+  deprecationMiddleware("v1_team_credit_usage"),
   wrap(creditUsageController),
 );
 
 v1Router.get(
+  "/team/credit-usage/historical",
+  authMiddleware(RateLimiterMode.Account),
+  deprecationMiddleware("v1_team_credit_usage_historical"),
+  wrap(creditUsageHistoricalController),
+);
+
+v1Router.get(
   "/team/token-usage",
-  authMiddleware(RateLimiterMode.ExtractStatus),
+  authMiddleware(RateLimiterMode.Account),
+  deprecationMiddleware("v1_team_token_usage"),
   wrap(tokenUsageController),
 );
 
-v1Router.post(
-  "/x402/search",
-  authMiddleware(RateLimiterMode.Search),
-  wrap(x402SearchController),
+v1Router.get(
+  "/team/token-usage/historical",
+  authMiddleware(RateLimiterMode.Account),
+  deprecationMiddleware("v1_team_token_usage_historical"),
+  wrap(tokenUsageHistoricalController),
+);
+
+v1Router.get(
+  "/team/queue-status",
+  authMiddleware(RateLimiterMode.Account),
+  deprecationMiddleware("v1_team_queue_status"),
+  wrap(queueStatusController),
 );

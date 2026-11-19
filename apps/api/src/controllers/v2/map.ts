@@ -1,330 +1,214 @@
 import { Response } from "express";
-import { v4 as uuidv4 } from "uuid";
 import {
   mapRequestSchema,
   RequestWithAuth,
-  scrapeOptions,
-  TeamFlags,
   MapRequest,
-  MapDocument,
   MapResponse,
 } from "./types";
-import { crawlToCrawler, StoredCrawl } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
-import {
-  checkAndUpdateURLForMap,
-  isSameDomain,
-  isSameSubdomain,
-} from "../../lib/validateUrl";
-import { fireEngineMap } from "../../search/fireEngine";
 import { billTeam } from "../../services/billing/credit_billing";
-import { logJob } from "../../services/logging/log_job";
-import { logger } from "../../lib/logger";
-import { generateURLSplits, queryIndexAtDomainSplitLevelWithMeta, queryIndexAtSplitLevelWithMeta } from "../../services/index";
-import { redisEvictConnection } from "../../services/redis";
-import { performCosineSimilarityV2 } from "../../lib/map-cosine";
+import { logMap, logRequest } from "../../services/logging/log_job";
+import { externalRequestId } from "../../lib/external-request-id";
+import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError } from "../../lib/error";
+import { checkPermissions } from "../../lib/permissions";
+import {
+  resolveSafeMode,
+  isLockdownZeroDataRetention,
+} from "../../lib/safe-mode";
+import { getMapResults, MapResult } from "../../lib/map-utils";
+import { v7 as uuidv7 } from "uuid";
+import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { AvgrabResolveError, resolveViaAvgrab } from "../../lib/avgrab-resolve";
+import {
+  checkUrlsAgainstThreatPolicy,
+  resolveThreatProtection,
+} from "../../lib/threat-protection/request";
+import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 
 configDotenv();
-
-// Max Links that /map can return
-const MAX_MAP_LIMIT = 30000;
-// Max Links that "Smart /map" can return
-const MAX_FIRE_ENGINE_RESULTS = 500;
-
-interface MapResult {
-  success: boolean;
-  job_id: string;
-  time_taken: number;
-  mapResults: MapDocument[];
-}
-
-function dedupeMapDocumentArray(documents: MapDocument[]): MapDocument[] {
-  let urlSet = new Set<string>(documents.map(x => x.url));
-
-  let newDocuments: MapDocument[] = [
-    ...Array.from(urlSet).map(x => {
-      let localDocs = documents.filter(y => y.url === x);
-      return localDocs.find(x => x.title !== undefined) || localDocs[0];
-    }),
-  ];
-
-  return newDocuments;
-}
-
-async function queryIndex(url: string, limit: number, useIndex: boolean, includeSubdomains: boolean): Promise<MapDocument[]> {
-  if (!useIndex) {
-    return [];
-  }
-
-  const urlSplits = generateURLSplits(url);
-  if (urlSplits.length === 1) {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname;
-
-    // TEMP: this should be altered on June 15th 2025 7AM PT - mogery
-    const [domainLinks, splitLinks] = await Promise.all([
-      includeSubdomains ? queryIndexAtDomainSplitLevelWithMeta(hostname, limit) : [],
-      queryIndexAtSplitLevelWithMeta(url, limit),
-    ]);
-
-    return dedupeMapDocumentArray([...domainLinks, ...splitLinks]);
-  } else {
-    return (await queryIndexAtSplitLevelWithMeta(url, limit));
-  }
-}
-
-export async function getMapResults({
-  url,
-  search,
-  limit = MAX_MAP_LIMIT,
-  includeSubdomains = true,
-  crawlerOptions = {},
-  teamId,
-  allowExternalLinks,
-  abort = new AbortController().signal, // noop
-  filterByPath = true,
-  flags,
-  useIndex = true,
-}: {
-  url: string;
-  search?: string;
-  limit?: number;
-  includeSubdomains?: boolean;
-  crawlerOptions?: any;
-  teamId: string;
-  origin?: string;
-  includeMetadata?: boolean;
-  allowExternalLinks?: boolean;
-  abort?: AbortSignal;
-  mock?: string;
-  filterByPath?: boolean;
-  flags: TeamFlags;
-  useIndex?: boolean;
-}): Promise<MapResult> {
-  const id = uuidv4();
-  let mapResults: MapDocument[] = [];
-  const zeroDataRetention = flags?.forceZDR ?? false;
-
-  const sc: StoredCrawl = {
-    originUrl: url,
-    crawlerOptions: {
-      ...crawlerOptions,
-      limit: crawlerOptions.sitemapOnly ? 10000000 : limit,
-      scrapeOptions: undefined,
-    },
-    scrapeOptions: scrapeOptions.parse({}),
-    internalOptions: { teamId },
-    team_id: teamId,
-    createdAt: Date.now(),
-    zeroDataRetention,
-  };
-
-  const crawler = crawlToCrawler(id, sc, flags);
-
-  try {
-    sc.robots = await crawler.getRobotsTxt(false, abort);
-    crawler.importRobotsTxt(sc.robots);
-  } catch (_) {}
-
-  // If sitemapOnly is true, only get links from sitemap
-  if (crawlerOptions.sitemap === "only") {
-    const sitemap = await crawler.tryGetSitemap(
-      (urls) => {
-        urls.forEach((x) => {
-          mapResults.push({
-            url: x,
-          });
-        });
-      },
-      true,
-      true,
-      crawlerOptions.timeout ?? 30000,
-      abort,
-      crawlerOptions.useMock,
-    );
-    if (sitemap > 0) {
-      mapResults = mapResults
-        .slice(1)
-        .map((x) => {
-          try {
-            return {
-              ...x,
-              url: checkAndUpdateURLForMap(x.url).url.trim(),
-            };
-          } catch (_) {
-            return null;
-          }
-        })
-        .filter((x) => x !== null) as MapDocument[];
-    }
-  } else {
-    let urlWithoutWww = url.replace("www.", "");
-
-    let mapUrl =
-      search && allowExternalLinks
-        ? `${search} ${urlWithoutWww}`
-        : search
-          ? `${search} site:${urlWithoutWww}`
-          : `site:${url}`;
-
-    const resultsPerPage = 100;
-    const maxPages = Math.ceil(
-      Math.min(MAX_FIRE_ENGINE_RESULTS, limit) / resultsPerPage,
-    );
-
-    const cacheKey = `fireEngineMap:${mapUrl}`;
-    const cachedResult = await redisEvictConnection.get(cacheKey);
-
-    let pagePromises: (Promise<any> | any)[];
-
-    if (cachedResult) {
-      pagePromises = JSON.parse(cachedResult);
-    } else {
-      const fetchPage = async (page: number) => {
-        return fireEngineMap(mapUrl, {
-          numResults: resultsPerPage,
-          page: page,
-        }, abort);
-      };
-
-      pagePromises = Array.from({ length: maxPages }, (_, i) =>
-        fetchPage(i + 1),
-      );
-    }
-
-    // Parallelize sitemap index query with search results
-    const [indexResults, searchResults] = await Promise.all([
-      queryIndex(url, limit, useIndex, includeSubdomains),
-      Promise.all(pagePromises),
-    ]);
-
-    if (!zeroDataRetention) {
-      await redisEvictConnection.set(cacheKey, JSON.stringify(searchResults), "EX", 48 * 60 * 60); // Cache for 48 hours
-    }
-
-    if (indexResults.length > 0) {
-      mapResults.push(...indexResults);
-    }
-
-    // If sitemap is not ignored, fetch sitemap
-    // This will attempt to find it in the index at first, or fetch a fresh one if it's older than 2 days
-    if (crawlerOptions.sitemap === "include") {
-      try {
-        await crawler.tryGetSitemap(
-          (urls) => {
-            mapResults.push(...urls.map(x => ({
-              url: x,
-            })));
-          },
-          true,
-          false,
-          crawlerOptions.timeout ?? 30000,
-          abort,
-        );
-      } catch (e) {
-        logger.warn("tryGetSitemap threw an error", { error: e });
-      }
-    }
-
-    if (search) {
-      mapResults = searchResults.flat().map<MapDocument>(x => ({
-        url: x.url,
-        title: x.title,
-        description: x.description,
-      }) satisfies MapDocument).concat(mapResults);
-    } else {
-      mapResults = mapResults.concat(searchResults.flat().map(x => ({
-        url: x.url,
-        title: x.title,
-        description: x.description,
-      })));
-    }
-
-    const minumumCutoff = Math.min(MAX_MAP_LIMIT, limit);
-    if (mapResults.length > minumumCutoff) {
-      mapResults = mapResults.slice(0, minumumCutoff);
-    }
-
-    if (search) {
-      const searchQuery = search.toLowerCase();
-      mapResults = performCosineSimilarityV2(mapResults, searchQuery);
-    }
-
-    mapResults = mapResults
-      .map((x) => {
-        try {
-          return {
-            ...x,
-            url: checkAndUpdateURLForMap(x.url, crawlerOptions.ignoreQueryParameters ?? true).url.trim(),
-          };
-        } catch (_) {
-          return null;
-        }
-      })
-      .filter((x) => x !== null) as MapDocument[];
-    
-    // allows for subdomains to be included
-    mapResults = mapResults.filter((x) => isSameDomain(x.url, url));
-
-    // if includeSubdomains is false, filter out subdomains
-    if (!includeSubdomains) {
-      mapResults = mapResults.filter((x) => isSameSubdomain(x.url, url));
-    }
-
-    // Filter by path if enabled
-    if (filterByPath && !allowExternalLinks) {
-      try {
-        const urlObj = new URL(url);
-        const urlPath = urlObj.pathname;
-        // Only apply path filtering if the URL has a significant path (not just '/' or empty)
-        // This means we only filter by path if the user has not selected a root domain
-        if (urlPath && urlPath !== '/' && urlPath.length > 1) {
-          mapResults = mapResults.filter(x => {
-            try {
-              const linkObj = new URL(x.url);
-              return linkObj.pathname.startsWith(urlPath);
-            } catch (e) {
-              return false;
-            }
-          });
-        }
-      } catch (e) {
-        // If URL parsing fails, continue without path filtering
-        logger.warn(`Failed to parse URL for path filtering: ${url}`, { error: e });
-      }
-    }
-
-    mapResults = dedupeMapDocumentArray(mapResults);
-  }
-
-  mapResults = mapResults.slice(0, limit);
-
-  return {
-    success: true,
-    mapResults,
-    job_id: id,
-    time_taken: (new Date().getTime() - Date.now()) / 1000,
-  };
-}
 
 export async function mapController(
   req: RequestWithAuth<{}, MapResponse, MapRequest>,
   res: Response<MapResponse>,
 ) {
+  // Safe Mode lockdown is cache-only, which implies zero data retention.
+  const zeroDataRetention =
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    isLockdownZeroDataRetention(req.acuc?.flags, undefined);
+  const logger = _logger.child({
+    jobId: uuidv7(),
+    teamId: req.auth.team_id,
+    module: "api/v2",
+    method: "mapController",
+    zeroDataRetention,
+  });
+  // Get timing data from middleware (includes all middleware processing time)
+  const middlewareStartTime =
+    (req as any).requestTiming?.startTime || new Date().getTime();
+  const controllerStartTime = new Date().getTime();
+
   const originalRequest = req.body;
   req.body = mapRequestSchema.parse(req.body);
+
+  // Map is link discovery, not content scraping, but it is outbound to the
+  // target. Under Safe Mode: force domainControls so discovered links are
+  // filtered, and under lockdown serve from the index only (no sitemap/robots
+  // fetch to the target).
+  const safeMode = resolveSafeMode(req.acuc?.flags, undefined, req.body.url);
+  const lockdownIndexOnly = safeMode.safeMode?.lockdown === true;
+  if (lockdownIndexOnly) {
+    req.body.useIndex = true;
+  }
+  // Map's ignoreRobotsTxt is top-level, so checkPermissions (which reads it
+  // under crawlerOptions) can't see it — enforce robots here for Safe Mode.
+  if (
+    safeMode.safeMode?.enforceRobots &&
+    !lockdownIndexOnly &&
+    req.body.ignoreRobotsTxt
+  ) {
+    return res.status(403).json({
+      success: false,
+      code: "SAFE_MODE_BLOCKED",
+      error:
+        "Safe Mode: robots.txt is always honored for your organization; the ignoreRobotsTxt parameter is not allowed.",
+    });
+  }
+
+  const threatProtection = await resolveThreatProtection({
+    teamId: req.auth.team_id,
+    orgId: req.acuc?.org_id ?? null,
+    flags: req.acuc?.flags ?? null,
+    override: req.body.threatProtection,
+    force: safeMode.safeMode?.domainControls === true,
+  });
+  if (threatProtection.error) {
+    return res.status(403).json({
+      success: false,
+      error: threatProtection.error,
+    });
+  }
+
+  const permissions = checkPermissions(req.body, req.acuc?.flags, {
+    threatProtectionOrgConfig: threatProtection.orgConfig,
+    safeMode: safeMode.safeMode ?? null,
+  });
+  if (permissions.error) {
+    return res.status(403).json({
+      success: false,
+      code: permissions.code,
+      error: permissions.error,
+    });
+  }
+
+  const middlewareTime = controllerStartTime - middlewareStartTime;
+
+  const mapId = uuidv7();
 
   logger.info("Map request", {
     request: req.body,
     originalRequest,
     teamId: req.auth.team_id,
+    mapId,
   });
 
-  let result: Awaited<ReturnType<typeof getMapResults>>;
+  await logRequest({
+    id: mapId,
+    kind: "map",
+    api_version: "v2",
+    external_request_id: externalRequestId(req),
+    team_id: req.auth.team_id,
+    origin: req.body.origin ?? "api",
+    integration: req.body.integration,
+    target_hint: req.body.url,
+    zeroDataRetention,
+    api_key_id: req.acuc?.api_key_id ?? null,
+  });
+
+  // Short-circuit: if the URL matches avgrab's resolve pattern, delegate
+  // entirely. Skipped under Safe Mode so results still flow through the
+  // standard path (domain-controls filtering + lockdown index-only).
+  try {
+    const avgrabResults = safeMode.safeMode
+      ? null
+      : await resolveViaAvgrab(req.body.url, req.body.limit, logger);
+
+    if (avgrabResults !== null) {
+      const creditsCost = avgrabResults.length;
+
+      billTeam(
+        req.auth.team_id,
+        req.acuc?.org_id ?? null,
+        creditsCost,
+        req.acuc?.api_key_id ?? null,
+        {
+          endpoint: "map",
+          jobId: mapId,
+          // Suffixed so this early-return path can never collide with the main
+          // map charge below, even if both ever billed the same mapId.
+          chargeId: `${mapId}:avgrab`,
+          externalRequestId: externalRequestId(req),
+          hostedMcp: req.auth.hostedMcp,
+        },
+      ).catch(error => {
+        logger.error(
+          `Failed to bill team ${req.auth.team_id} for ${creditsCost} credits: ${error}`,
+        );
+      });
+
+      logMap({
+        id: mapId,
+        request_id: mapId,
+        url: req.body.url,
+        team_id: req.auth.team_id,
+        options: {
+          search: req.body.search,
+          sitemap: req.body.sitemap,
+          includeSubdomains: req.body.includeSubdomains,
+          ignoreQueryParameters: req.body.ignoreQueryParameters,
+          limit: req.body.limit,
+          timeout: req.body.timeout,
+          location: req.body.location,
+        },
+        results: avgrabResults,
+        credits_cost: creditsCost,
+        zeroDataRetention,
+      }).catch(error => {
+        logger.error(
+          `Failed to log job for team ${req.auth.team_id}: ${error}`,
+        );
+      });
+
+      return res.status(200).json({
+        success: true,
+        id: mapId,
+        links: avgrabResults,
+      });
+    }
+  } catch (error) {
+    if (error instanceof AvgrabResolveError) {
+      const status = [403, 404, 503].includes(error.upstreamStatus)
+        ? error.upstreamStatus
+        : 502;
+      return res.status(status).json({
+        success: false,
+        id: mapId,
+        code: error.code,
+        error: error.message,
+      });
+    }
+    logger.warn("avgrab resolve failed, falling back to standard map", {
+      error,
+    });
+  }
+
+  let result: MapResult;
+  let timeoutHandle: NodeJS.Timeout | null = null;
+
   const abort = new AbortController();
   try {
-    result = await Promise.race([
+    result = (await Promise.race([
       getMapResults({
         url: req.body.url,
         search: req.body.search,
@@ -336,19 +220,30 @@ export async function mapController(
         },
         origin: req.body.origin,
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
+        allowExternalLinks: req.body.allowExternalLinks,
         abort: abort.signal,
         mock: req.body.useMock,
         filterByPath: req.body.filterByPath !== false,
         flags: req.acuc?.flags ?? null,
         useIndex: req.body.useIndex,
+        ignoreCache: req.body.ignoreCache,
+        location: req.body.location,
+        headers: req.body.headers,
+        id: mapId,
       }),
-      ...(req.body.timeout !== undefined ? [
-        new Promise((resolve, reject) => setTimeout(() => {
-          abort.abort(new MapTimeoutError());
-          reject(new MapTimeoutError());
-        }, req.body.timeout))
-      ] : []),
-    ]) as any;
+      ...(req.body.timeout !== undefined
+        ? [
+            new Promise(
+              (_resolve, reject) =>
+                (timeoutHandle = setTimeout(() => {
+                  abort.abort(new MapTimeoutError());
+                  reject(new MapTimeoutError());
+                }, req.body.timeout)),
+            ),
+          ]
+        : []),
+    ])) as any;
   } catch (error) {
     if (error instanceof MapTimeoutError) {
       return res.status(408).json({
@@ -359,38 +254,116 @@ export async function mapController(
     } else {
       throw error;
     }
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+
+  // Threat protection: remove blocked links from the returned URL list
+  // entirely. Checks are URL-level; scan fees bill +2 per unique scanned
+  // URL (see calculateThreatScanCredits).
+  //
+  // "zscaler" mode evaluates map results against local rules only (org
+  // lists + synced custom categories): one map can return thousands of
+  // URLs, and inline classification would burn the tenant's 400/hour
+  // urlLookup budget on links that may never be fetched. Every URL still
+  // gets the full provider check when a scrape of it starts.
+  let threatScanCredits = 0;
+  if (threatProtection.policy && result.mapResults.length > 0) {
+    const { decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
+      result.mapResults.map(x => x.url),
+      threatProtection.policy,
+      {
+        teamId: req.auth.team_id,
+        localRulesOnly: threatProtection.policy.mode === "zscaler",
+      },
+    );
+    threatScanCredits = calculateThreatScanCredits(decisionsByUrl.values());
+    result.mapResults = result.mapResults.filter(x => {
+      const decision = decisionsByUrl.get(x.url);
+      return decision === undefined || decision.allowed;
+    });
   }
 
   // Bill the team
-  billTeam(req.auth.team_id, req.acuc?.sub_id, 1).catch((error) => {
-    logger.error(
-      `Failed to bill team ${req.auth.team_id} for 1 credit: ${error}`,
-    );
+  const creditsToBill = 1 + threatScanCredits;
+  billTeam(
+    req.auth.team_id,
+    req.acuc?.org_id ?? null,
+    creditsToBill,
+    req.acuc?.api_key_id ?? null,
+    {
+      endpoint: "map",
+      externalRequestId: externalRequestId(req),
+      jobId: mapId,
+      chargeId: mapId,
+      hostedMcp: req.auth.hostedMcp,
+    },
+  ).catch(error => {
+    logger.error("Failed to bill team for map credits", {
+      teamId: req.auth.team_id,
+      creditsToBill,
+      error,
+    });
   });
 
-  // Log the job
-  logJob({
-    job_id: result.job_id,
-    success: result.mapResults.length > 0,
-    message: "Map completed",
-    num_docs: result.mapResults.length,
-    docs: result.mapResults,
-    time_taken: result.time_taken,
-    team_id: req.auth.team_id,
-    mode: "map",
+  logMap({
+    id: result.job_id,
+    request_id: result.job_id,
     url: req.body.url,
-    crawlerOptions: {},
-    scrapeOptions: {},
-    origin: req.body.origin ?? "api",
-    integration: req.body.integration,
-    num_tokens: 0,
-    credits_billed: 1,
-    zeroDataRetention: false, // not supported
+    team_id: req.auth.team_id,
+    options: {
+      search: req.body.search,
+      sitemap: req.body.sitemap,
+      includeSubdomains: req.body.includeSubdomains,
+      ignoreQueryParameters: req.body.ignoreQueryParameters,
+      limit: req.body.limit,
+      timeout: req.body.timeout,
+      location: req.body.location,
+    },
+    results: result.mapResults,
+    credits_cost: creditsToBill,
+    zeroDataRetention,
+  }).catch(error => {
+    logger.error(`Failed to log job for team ${req.auth.team_id}: ${error}`);
   });
+
+  // Log final timing information
+  const totalRequestTime = new Date().getTime() - middlewareStartTime;
+  const controllerTime = new Date().getTime() - controllerStartTime;
+
+  logger.info("Request metrics", {
+    version: "v2",
+    jobId: result.job_id,
+    mode: "map",
+    middlewareStartTime,
+    controllerStartTime,
+    middlewareTime,
+    controllerTime,
+    totalRequestTime,
+    linksCount: result.mapResults.length,
+  });
+
+  // Check if we should warn about base domain
+  let warning: string | undefined;
+  // Only show warning if results <= 1 AND user didn't explicitly request limit=1 AND URL is not base domain
+  if (
+    result.mapResults.length <= 1 &&
+    req.body.limit !== 1 &&
+    !isBaseDomain(req.body.url)
+  ) {
+    const baseDomain = extractBaseDomain(req.body.url);
+    if (baseDomain) {
+      warning = `Only ${result.mapResults.length} result(s) found. For broader coverage, try mapping the base domain: ${baseDomain}`;
+    }
+  }
 
   const response = {
     success: true as const,
+    id: result.job_id,
     links: result.mapResults,
+    ...(warning && { warning }),
   };
 
   return res.status(200).json(response);
