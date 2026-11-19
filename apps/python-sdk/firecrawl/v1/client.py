@@ -24,6 +24,10 @@ import websockets
 import aiohttp
 import asyncio
 
+from ..v2.utils.api_origin import pin_to_api_origin
+from ..v2.utils.caller_origin import default_origin
+from ..v2.utils.get_version import get_version as get_sdk_version
+
 logger : logging.Logger = logging.getLogger("firecrawl")
 
 def get_version():
@@ -150,7 +154,7 @@ class V1ScrapeOptions(pydantic.BaseModel):
     skipTlsVerification: Optional[bool] = None
     removeBase64Images: Optional[bool] = None
     blockAds: Optional[bool] = None
-    proxy: Optional[Literal["basic", "stealth", "auto"]] = None
+    proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None
     changeTrackingOptions: Optional[V1ChangeTrackingOptions] = None
     maxAge: Optional[int] = None
     storeInCache: Optional[bool] = None
@@ -214,6 +218,7 @@ class V1JsonConfig(pydantic.BaseModel):
     prompt: Optional[str] = None
     schema_field: Optional[Any] = pydantic.Field(None, alias='schema')
     systemPrompt: Optional[str] = None
+    checkPromptInjection: Optional[bool] = None
     agent: Optional[V1ExtractAgent] = None
 
 class V1ScrapeParams(V1ScrapeOptions):
@@ -248,6 +253,7 @@ class V1BatchScrapeStatusResponse(pydantic.BaseModel):
     expiresAt: datetime
     next: Optional[str] = None
     data: List[V1FirecrawlDocument]
+    error: Optional[str] = None
 
 class V1CrawlParams(pydantic.BaseModel):
     """Parameters for crawling operations."""
@@ -294,6 +300,9 @@ class V1CrawlError(pydantic.BaseModel):
     url: str
     code: Optional[str] = None
     error: str
+    # Set when the page needs provider terms accepted first:
+    # {"type": "accept_terms", "terms", "version", "url"}.
+    requiresAction: Optional[Dict[str, Any]] = None
 
 class V1CrawlErrorsResponse(pydantic.BaseModel):
     """Response from crawl/batch scrape error monitoring."""
@@ -309,6 +318,7 @@ class V1MapParams(pydantic.BaseModel):
     limit: Optional[int] = None
     timeout: Optional[int] = 30000
     useIndex: Optional[bool] = None
+    location: Optional[V1LocationConfig] = None
 
 class V1MapResponse(pydantic.BaseModel):
     """Response from mapping operations."""
@@ -337,7 +347,10 @@ class V1ExtractResponse(pydantic.BaseModel, Generic[T]):
     data: Optional[T] = None
     error: Optional[str] = None
     warning: Optional[str] = None
+    warnings: Optional[List[str]] = None
+    replacement: Optional[str] = None
     sources: Optional[Dict[Any, Any]] = None
+    creditsUsed: Optional[int] = None
 
 class V1SearchParams(pydantic.BaseModel):
     query: str
@@ -357,6 +370,46 @@ class V1SearchResponse(pydantic.BaseModel):
     data: List[V1FirecrawlDocument]
     warning: Optional[str] = None
     error: Optional[str] = None
+
+class V1CreditUsageData(pydantic.BaseModel):
+    remaining_credits: int
+    plan_credits: Optional[int] = None
+    billing_period_start: Optional[str] = None
+    billing_period_end: Optional[str] = None
+
+class V1CreditUsageResponse(pydantic.BaseModel):
+    success: bool
+    data: V1CreditUsageData
+
+class V1TokenUsageData(pydantic.BaseModel):
+    remaining_tokens: int
+    plan_tokens: Optional[int] = None
+    billing_period_start: Optional[str] = None
+    billing_period_end: Optional[str] = None
+
+class V1TokenUsageResponse(pydantic.BaseModel):
+    success: bool
+    data: V1TokenUsageData
+
+class V1CreditUsageHistoricalPeriod(pydantic.BaseModel):
+    startDate: Optional[str] = None
+    endDate: Optional[str] = None
+    apiKey: Optional[str] = None
+    creditsUsed: int
+
+class V1CreditUsageHistoricalResponse(pydantic.BaseModel):
+    success: bool
+    periods: List[V1CreditUsageHistoricalPeriod]
+
+class V1TokenUsageHistoricalPeriod(pydantic.BaseModel):
+    startDate: Optional[str] = None
+    endDate: Optional[str] = None
+    apiKey: Optional[str] = None
+    tokensUsed: int
+
+class V1TokenUsageHistoricalResponse(pydantic.BaseModel):
+    success: bool
+    periods: List[V1TokenUsageHistoricalPeriod]
 
 class V1GenerateLLMsTextParams(pydantic.BaseModel):
     """
@@ -385,6 +438,8 @@ class V1DeepResearchResponse(pydantic.BaseModel):
     success: bool
     id: str
     error: Optional[str] = None
+    warnings: Optional[List[str]] = None
+    replacement: Optional[str] = None
 
 class V1DeepResearchStatusResponse(pydantic.BaseModel):
     """
@@ -400,12 +455,16 @@ class V1DeepResearchStatusResponse(pydantic.BaseModel):
     activities: List[Dict[str, Any]]
     sources: List[Dict[str, Any]]
     summaries: List[str]
+    warnings: Optional[List[str]] = None
+    replacement: Optional[str] = None
 
 class V1GenerateLLMsTextResponse(pydantic.BaseModel):
     """Response from LLMs.txt generation operations."""
     success: bool = True
     id: str
     error: Optional[str] = None
+    warnings: Optional[List[str]] = None
+    replacement: Optional[str] = None
 
 class V1GenerateLLMsTextStatusResponseData(pydantic.BaseModel):
     llmstxt: str
@@ -418,6 +477,8 @@ class V1GenerateLLMsTextStatusResponse(pydantic.BaseModel):
     status: Literal["processing", "completed", "failed"]
     error: Optional[str] = None
     expiresAt: str
+    warnings: Optional[List[str]] = None
+    replacement: Optional[str] = None
     
 class V1SearchResponse(pydantic.BaseModel):
     """
@@ -458,14 +519,24 @@ class V1FirecrawlApp:
     This is used by the unified client to provide version-specific access
     through app.v1.method_name() patterns.
     """
-    def __init__(self, api_key: Optional[str] = None, api_url: Optional[str] = None) -> None:
+    
+    # OpenAI schema validation error message
+    OPENAI_SCHEMA_ERROR_MESSAGE = (
+        "Schema contains invalid structure for OpenAI: object type with no 'properties' defined "
+        "but 'additionalProperties: true' (schema-less dictionary not supported by OpenAI). "
+        "Please define specific properties for your object. Note: Recursive schemas using '$ref' are supported."
+    )
+    
+    def __init__(self, api_key: Optional[str] = None, api_url: Optional[str] = None, origin: Optional[str] = None) -> None:
         """
         Initialize the V1FirecrawlApp instance with API key, API URL.
 
         Args:
             api_key (Optional[str]): API key for authenticating with the Firecrawl API.
             api_url (Optional[str]): Base URL for the Firecrawl API.
+            origin (Optional[str]): Attribution string stamped into API request payloads.
         """
+        self.origin = origin or default_origin(get_sdk_version())
         self.api_key = api_key or os.getenv('FIRECRAWL_API_KEY')
         self.api_url = api_url or os.getenv('FIRECRAWL_API_URL', 'https://api.firecrawl.dev')
         
@@ -492,7 +563,7 @@ class V1FirecrawlApp:
             skip_tls_verification: Optional[bool] = None,
             remove_base64_images: Optional[bool] = None,
             block_ads: Optional[bool] = None,
-            proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+            proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
             parse_pdf: Optional[bool] = None,
             extract: Optional[V1JsonConfig] = None,
             json_options: Optional[V1JsonConfig] = None,
@@ -519,7 +590,7 @@ class V1FirecrawlApp:
           skip_tls_verification (Optional[bool]): Skip TLS verification
           remove_base64_images (Optional[bool]): Remove base64 images
           block_ads (Optional[bool]): Block ads
-          proxy (Optional[Literal["basic", "stealth", "auto"]]): Proxy type (basic/stealth)
+          proxy (Optional[Literal["basic", "stealth", "enhanced", "auto"]]): Proxy type (basic/enhanced)
           extract (Optional[JsonConfig]): Content extraction settings
           json_options (Optional[JsonConfig]): JSON extraction settings
           actions (Optional[List[Union[WaitAction, ScreenshotAction, ClickAction, WriteAction, PressAction, ScrollAction, ScrapeAction, ExecuteJavascriptAction, PDFAction]]]): Actions to perform
@@ -545,7 +616,7 @@ class V1FirecrawlApp:
         # Build scrape parameters
         scrape_params = {
             'url': url,
-            'origin': f"python-sdk@{version}"
+            'origin': self.origin
         }
 
         # Add optional parameters if provided
@@ -696,7 +767,7 @@ class V1FirecrawlApp:
         # Create final params object
         final_params = V1SearchParams(query=query, **search_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if _integration:
             params_dict['integration'] = _integration
@@ -721,6 +792,90 @@ class V1FirecrawlApp:
                 raise Exception('Failed to parse Firecrawl response as JSON.')
         else:
             self._handle_error(response, 'search')
+
+    def get_credit_usage(self) -> V1CreditUsageResponse:
+        """Get current credit usage and billing period (v1)."""
+        _headers = self._prepare_headers()
+        response = self._get_request(
+            f"{self.api_url}/v1/team/credit-usage",
+            _headers
+        )
+
+        if response.status_code == 200:
+            try:
+                response_json = response.json()
+                if response_json.get('success') and 'data' in response_json:
+                    return V1CreditUsageResponse(**response_json)
+                elif "error" in response_json:
+                    raise Exception(f"Failed to get credit usage. Error: {response_json['error']}")
+                else:
+                    raise Exception(f"Failed to get credit usage. Error: {response_json}")
+            except ValueError:
+                raise Exception('Failed to parse Firecrawl response as JSON.')
+        else:
+            self._handle_error(response, 'get credit usage')
+
+    def get_token_usage(self) -> V1TokenUsageResponse:
+        """Get current token usage and billing period (v1)."""
+        _headers = self._prepare_headers()
+        response = self._get_request(
+            f"{self.api_url}/v1/team/token-usage",
+            _headers
+        )
+
+        if response.status_code == 200:
+            try:
+                response_json = response.json()
+                if response_json.get('success') and 'data' in response_json:
+                    return V1TokenUsageResponse(**response_json)
+                elif "error" in response_json:
+                    raise Exception(f"Failed to get token usage. Error: {response_json['error']}")
+                else:
+                    raise Exception(f"Failed to get token usage. Error: {response_json}")
+            except ValueError:
+                raise Exception('Failed to parse Firecrawl response as JSON.')
+        else:
+            self._handle_error(response, 'get token usage')
+
+    def get_credit_usage_historical(self, by_api_key: bool = False) -> V1CreditUsageHistoricalResponse:
+        """Get historical credit usage (v1)."""
+        _headers = self._prepare_headers()
+        url = f"{self.api_url}/v1/team/credit-usage/historical" + ("?byApiKey=true" if by_api_key else "")
+        response = self._get_request(url, _headers)
+
+        if response.status_code == 200:
+            try:
+                response_json = response.json()
+                if response_json.get('success') and 'periods' in response_json:
+                    return V1CreditUsageHistoricalResponse(**response_json)
+                elif "error" in response_json:
+                    raise Exception(f"Failed to get historical credit usage. Error: {response_json['error']}")
+                else:
+                    raise Exception(f"Failed to get historical credit usage. Error: {response_json}")
+            except ValueError:
+                raise Exception('Failed to parse Firecrawl response as JSON.')
+        else:
+            self._handle_error(response, 'get credit usage historical')
+
+    def get_token_usage_historical(self, by_api_key: bool = False) -> V1TokenUsageHistoricalResponse:
+        """Get historical token usage (v1)."""
+        _headers = self._prepare_headers()
+        url = f"{self.api_url}/v1/team/token-usage/historical" + ("?byApiKey=true" if by_api_key else "")
+        response = self._get_request(url, _headers)
+
+        if response.status_code == 200:
+            try:
+                response_json = response.json()
+                if response_json.get('success') and 'periods' in response_json:
+                    return V1TokenUsageHistoricalResponse(**response_json)
+                elif "error" in response_json:
+                    raise Exception(f"Failed to get historical token usage. Error: {response_json['error']}")
+                else:
+                    raise Exception(f"Failed to get historical token usage. Error: {response_json}")
+            except ValueError:
+                raise Exception('Failed to parse Firecrawl response as JSON.')
+        else:
+            self._handle_error(response, 'get token usage historical')
 
     def crawl_url(
         self,
@@ -834,7 +989,7 @@ class V1FirecrawlApp:
         final_params = V1CrawlParams(**crawl_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['url'] = url
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if _integration:
             params_dict['integration'] = _integration
@@ -962,7 +1117,7 @@ class V1FirecrawlApp:
         final_params = V1CrawlParams(**crawl_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['url'] = url
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         # Make request
         headers = self._prepare_headers(idempotency_key)
@@ -1022,7 +1177,7 @@ class V1FirecrawlApp:
                             logger.warning("Expected 'next' URL is missing.")
                             break
                         try:
-                            status_response = self._get_request(next_url, headers)
+                            status_response = self._get_request(pin_to_api_origin(self.api_url, next_url), headers)
                             if status_response.status_code != 200:
                                 logger.error(f"Failed to fetch next page: {status_response.status_code}")
                                 break
@@ -1209,6 +1364,7 @@ class V1FirecrawlApp:
             limit: Optional[int] = None,
             timeout: Optional[int] = 30000,
             use_index: Optional[bool] = None,
+            location: Optional[V1LocationConfig] = None,
             **kwargs) -> V1MapResponse:
         """
         Map and discover links from a URL.
@@ -1253,6 +1409,8 @@ class V1FirecrawlApp:
             map_params['timeout'] = timeout
         if use_index is not None:
             map_params['useIndex'] = use_index
+        if location is not None:
+            map_params['location'] = location.dict(by_alias=True, exclude_none=True)
         
         # Add any additional kwargs
         map_params.update(kwargs)
@@ -1262,7 +1420,7 @@ class V1FirecrawlApp:
         final_params = V1MapParams(**map_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['url'] = url
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if _integration:
             params_dict['integration'] = _integration
@@ -1304,7 +1462,7 @@ class V1FirecrawlApp:
         skip_tls_verification: Optional[bool] = None,
         remove_base64_images: Optional[bool] = None,
         block_ads: Optional[bool] = None,
-        proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+        proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
         extract: Optional[V1JsonConfig] = None,
         json_options: Optional[V1JsonConfig] = None,
         actions: Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]] = None,
@@ -1409,7 +1567,7 @@ class V1FirecrawlApp:
         final_params = V1ScrapeParams(**scrape_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['urls'] = urls
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
             params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
@@ -1425,7 +1583,7 @@ class V1FirecrawlApp:
                 id = response.json().get('id')
             except:
                 raise Exception(f'Failed to parse Firecrawl response as JSON.')
-            return self._monitor_job_status(id, headers, poll_interval)
+            return self._monitor_job_status(id, headers, poll_interval, 'batch_scrape')
         else:
             self._handle_error(response, 'start batch scrape job')
 
@@ -1445,7 +1603,7 @@ class V1FirecrawlApp:
         skip_tls_verification: Optional[bool] = None,
         remove_base64_images: Optional[bool] = None,
         block_ads: Optional[bool] = None,
-        proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+        proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
         extract: Optional[V1JsonConfig] = None,
         json_options: Optional[V1JsonConfig] = None,
         actions: Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]] = None,
@@ -1550,7 +1708,7 @@ class V1FirecrawlApp:
         final_params = V1ScrapeParams(**scrape_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['urls'] = urls
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
             params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
@@ -1585,7 +1743,7 @@ class V1FirecrawlApp:
         skip_tls_verification: Optional[bool] = None,
         remove_base64_images: Optional[bool] = None,
         block_ads: Optional[bool] = None,
-        proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+        proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
         extract: Optional[V1JsonConfig] = None,
         json_options: Optional[V1JsonConfig] = None,
         actions: Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]] = None,
@@ -1686,7 +1844,7 @@ class V1FirecrawlApp:
         final_params = V1ScrapeParams(**scrape_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['urls'] = urls
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
             params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
@@ -1742,7 +1900,7 @@ class V1FirecrawlApp:
                             logger.warning("Expected 'next' URL is missing.")
                             break
                         try:
-                            status_response = self._get_request(next_url, headers)
+                            status_response = self._get_request(pin_to_api_origin(self.api_url, next_url), headers)
                             if status_response.status_code != 200:
                                 logger.error(f"Failed to fetch next page: {status_response.status_code}")
                                 break
@@ -1815,6 +1973,11 @@ class V1FirecrawlApp:
         """
         Extract structured information from URLs.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             urls (Optional[List[str]]): URLs to extract from
             prompt (Optional[str]): Custom extraction prompt
@@ -1835,6 +1998,14 @@ class V1FirecrawlApp:
         Raises:
             ValueError: If prompt/schema missing or extraction fails
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # Validate any additional kwargs
         self._validate_kwargs(kwargs, "extract")
         
@@ -1855,7 +2026,7 @@ class V1FirecrawlApp:
             'enableWebSearch': enable_web_search,
             'showSources': show_sources,
             'schema': schema,
-            'origin': f'python-sdk@{get_version()}'
+            'origin': self.origin
         }
 
         # Only add prompt and systemPrompt if they exist
@@ -1919,6 +2090,11 @@ class V1FirecrawlApp:
         """
         Retrieve the status of an extract job.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             job_id (str): The ID of the extract job.
 
@@ -1928,6 +2104,14 @@ class V1FirecrawlApp:
         Raises:
             ValueError: If there is an error retrieving the status.
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
         try:
             response = self._get_request(f'{self.api_url}/v1/extract/{job_id}', headers)
@@ -1955,6 +2139,11 @@ class V1FirecrawlApp:
         """
         Initiate an asynchronous extract job.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             urls (List[str]): URLs to extract information from
             prompt (Optional[str]): Custom extraction prompt
@@ -1975,6 +2164,14 @@ class V1FirecrawlApp:
         Raises:
             ValueError: If job initiation fails
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
         
         schema = schema
@@ -1987,7 +2184,7 @@ class V1FirecrawlApp:
             'enableWebSearch': enable_web_search,
             'showSources': show_sources,
             'schema': schema,
-            'origin': f'python-sdk@{version}'
+            'origin': self.origin
         }
 
         if prompt:
@@ -2020,6 +2217,9 @@ class V1FirecrawlApp:
         """
         Generate LLMs.txt for a given URL and poll until completion.
 
+        .. deprecated::
+            /v1/llmstxt is deprecated and will not be replaced.
+
         Args:
             url (str): Target URL to generate LLMs.txt from
             max_urls (Optional[int]): Maximum URLs to process (default: 10)
@@ -2037,6 +2237,12 @@ class V1FirecrawlApp:
         Raises:
             Exception: If generation fails
         """
+        import warnings
+        warnings.warn(
+            "/v1/llmstxt is deprecated and will not be replaced.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         params = V1GenerateLLMsTextParams(
             maxUrls=max_urls,
             showFullText=show_full_text,
@@ -2089,6 +2295,9 @@ class V1FirecrawlApp:
         """
         Initiate an asynchronous LLMs.txt generation operation.
 
+        .. deprecated::
+            /v1/llmstxt is deprecated and will not be replaced.
+
         Args:
             url (str): The target URL to generate LLMs.txt from. Must be a valid HTTP/HTTPS URL.
             max_urls (Optional[int]): Maximum URLs to process (default: 10)
@@ -2105,6 +2314,12 @@ class V1FirecrawlApp:
         Raises:
             Exception: If the generation job initiation fails.
         """
+        import warnings
+        warnings.warn(
+            "/v1/llmstxt is deprecated and will not be replaced.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         params = V1GenerateLLMsTextParams(
             maxUrls=max_urls,
             showFullText=show_full_text,
@@ -2114,7 +2329,7 @@ class V1FirecrawlApp:
 
         headers = self._prepare_headers()
         json_data = {'url': url, **params.dict(by_alias=True, exclude_none=True)}
-        json_data['origin'] = f"python-sdk@{version}"
+        json_data['origin'] = self.origin
 
         try:
             req = self._post_request(f'{self.api_url}/v1/llmstxt', json_data, headers)
@@ -2140,6 +2355,9 @@ class V1FirecrawlApp:
         """
         Check the status of a LLMs.txt generation operation.
 
+        .. deprecated::
+            /v1/llmstxt is deprecated and will not be replaced.
+
         Args:
             id (str): The unique identifier of the LLMs.txt generation job to check status for.
 
@@ -2156,6 +2374,12 @@ class V1FirecrawlApp:
         Raises:
             Exception: If the status check fails.
         """
+        import warnings
+        warnings.warn(
+            "/v1/llmstxt is deprecated and will not be replaced.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
         try:
             response = self._get_request(f'{self.api_url}/v1/llmstxt/{id}', headers)
@@ -2291,24 +2515,29 @@ class V1FirecrawlApp:
             self,
             id: str,
             headers: Dict[str, str],
-            poll_interval: int) -> V1CrawlStatusResponse:
+            poll_interval: int,
+            job_type: Literal["crawl", "batch_scrape"] = "crawl") -> Union[V1CrawlStatusResponse, V1BatchScrapeStatusResponse]:
         """
-        Monitor the status of a crawl job until completion.
+        Monitor the status of a crawl or batch scrape job until completion.
 
         Args:
-            id (str): The ID of the crawl job.
+            id (str): The ID of the job.
             headers (Dict[str, str]): The headers to include in the status check requests.
             poll_interval (int): Seconds between status checks.
+            job_type (str): "crawl" or "batch_scrape"; selects the status endpoint and response type.
 
         Returns:
-            CrawlStatusResponse: The crawl results if the job is completed successfully.
+            V1CrawlStatusResponse or V1BatchScrapeStatusResponse: The job results if the job is completed successfully.
 
         Raises:
             Exception: If the job fails or an error occurs during status checks.
         """
-        while True:
-            api_url = f'{self.api_url}/v1/crawl/{id}'
+        is_batch = job_type == "batch_scrape"
+        api_url = f'{self.api_url}/v1/batch/scrape/{id}' if is_batch else f'{self.api_url}/v1/crawl/{id}'
+        label = 'Batch scrape' if is_batch else 'Crawl'
+        response_model = V1BatchScrapeStatusResponse if is_batch else V1CrawlStatusResponse
 
+        while True:
             status_response = self._get_request(api_url, headers)
             if status_response.status_code == 200:
                 try:
@@ -2318,26 +2547,26 @@ class V1FirecrawlApp:
                 if status_data['status'] == 'completed':
                     if 'data' in status_data:
                         data = status_data['data']
-                        while 'next' in status_data:
+                        while status_data.get('next'):
                             if len(status_data['data']) == 0:
                                 break
-                            status_response = self._get_request(status_data['next'], headers)
+                            status_response = self._get_request(pin_to_api_origin(self.api_url, status_data['next']), headers)
                             try:
                                 status_data = status_response.json()
                             except:
                                 raise Exception(f'Failed to parse Firecrawl response as JSON.')
                             data.extend(status_data.get('data', []))
                         status_data['data'] = data
-                        return V1CrawlStatusResponse(**status_data)
+                        return response_model(**status_data)
                     else:
-                        raise Exception('Crawl job completed but no data was returned')
+                        raise Exception(f'{label} job completed but no data was returned')
                 elif status_data['status'] in ['active', 'paused', 'pending', 'queued', 'waiting', 'scraping']:
                     poll_interval=max(poll_interval,2)
                     time.sleep(poll_interval)  # Wait for the specified interval before checking again
                 else:
-                    raise Exception(f'Crawl job failed or was stopped. Status: {status_data["status"]}')
+                    raise Exception(f'{label} job failed or was stopped. Status: {status_data["status"]}')
             else:
-                self._handle_error(status_response, 'check crawl status')
+                self._handle_error(status_response, f'check {label.lower()} status')
 
     def _handle_error(
             self,
@@ -2417,6 +2646,9 @@ class V1FirecrawlApp:
         """
         Initiates a deep research operation on a given query and polls until completion.
 
+        .. deprecated::
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
+
         Args:
             query (str): Research query or topic to investigate
             max_depth (Optional[int]): Maximum depth of research exploration
@@ -2442,6 +2674,12 @@ class V1FirecrawlApp:
         Raises:
             Exception: If research fails
         """
+        import warnings
+        warnings.warn(
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         research_params = {}
         if max_depth is not None:
             research_params['maxDepth'] = max_depth
@@ -2511,6 +2749,9 @@ class V1FirecrawlApp:
         """
         Initiates an asynchronous deep research operation.
 
+        .. deprecated::
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
+
         Args:
             query (str): Research query or topic to investigate
             max_depth (Optional[int]): Maximum depth of research exploration
@@ -2529,6 +2770,12 @@ class V1FirecrawlApp:
         Raises:
             Exception: If the research initiation fails.
         """
+        import warnings
+        warnings.warn(
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         research_params = {}
         if max_depth is not None:
             research_params['maxDepth'] = max_depth
@@ -2545,9 +2792,9 @@ class V1FirecrawlApp:
         research_params = V1DeepResearchParams(**research_params)
 
         headers = self._prepare_headers()
-        
+
         json_data = {'query': query, **research_params.dict(by_alias=True, exclude_none=True)}
-        json_data['origin'] = f"python-sdk@{version}"
+        json_data['origin'] = self.origin
 
         # Handle json options schema if present
         if 'jsonOptions' in json_data:
@@ -2573,6 +2820,9 @@ class V1FirecrawlApp:
         """
         Check the status of a deep research operation.
 
+        .. deprecated::
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
+
         Args:
             id (str): The ID of the deep research operation.
 
@@ -2583,7 +2833,7 @@ class V1FirecrawlApp:
             * success - Whether research completed successfully
             * status - Current state (processing/completed/failed)
             * error - Error message if failed
-            
+
             Results:
             * id - Unique identifier for the research job
             * data - Research findings and analysis
@@ -2594,6 +2844,12 @@ class V1FirecrawlApp:
         Raises:
             Exception: If the status check fails.
         """
+        import warnings
+        warnings.warn(
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
         try:
             response = self._get_request(f'{self.api_url}/v1/deep-research/{id}', headers)
@@ -2679,6 +2935,359 @@ class V1FirecrawlApp:
         if isinstance(schema, (list, tuple)):
             return [self._ensure_schema_dict(v) for v in schema]
         return schema
+
+    def _contains_recursive_ref(self, obj, target_def_name, defs, visited=None):
+        """
+        Check if an object contains a recursive reference to a specific definition.
+        
+        Args:
+            obj: Object to check
+            target_def_name: Name of the definition to check for recursion
+            defs: Dictionary of definitions
+            visited: Set of visited object keys to detect cycles
+            
+        Returns:
+            True if recursive reference is found, False otherwise
+        """
+        if not obj or not isinstance(obj, (dict, list)):
+            return False
+        
+        if visited is None:
+            visited = set()
+        
+        import json
+        obj_key = json.dumps(obj, sort_keys=True, default=str)
+        if obj_key in visited:
+            return False
+        visited.add(obj_key)
+        
+        try:
+            if isinstance(obj, dict):
+                if "$ref" in obj and isinstance(obj["$ref"], str):
+                    ref_path = obj["$ref"].split("/")
+                    if len(ref_path) >= 3 and ref_path[0] == "#" and ref_path[1] == "$defs":
+                        def_name = ref_path[-1]
+                        if def_name == target_def_name:
+                            return True
+                        if def_name in defs:
+                            return self._contains_recursive_ref(defs[def_name], target_def_name, defs, visited)
+                
+                for value in obj.values():
+                    if self._contains_recursive_ref(value, target_def_name, defs, visited):
+                        return True
+            
+            elif isinstance(obj, list):
+                for item in obj:
+                    if self._contains_recursive_ref(item, target_def_name, defs, visited):
+                        return True
+        
+        finally:
+            visited.discard(obj_key)
+        
+        return False
+
+    def _check_for_circular_defs(self, defs):
+        """
+        Check if $defs contain circular references.
+        
+        Args:
+            defs: Dictionary of definitions to check
+            
+        Returns:
+            True if circular references are found, False otherwise
+        """
+        if not defs:
+            return False
+        
+        for def_name, def_value in defs.items():
+            if self._contains_recursive_ref(def_value, def_name, defs):
+                return True
+        
+        return False
+
+    def _resolve_refs(self, obj, defs, visited=None, depth=0):
+        """
+        Resolve $ref references in a JSON schema object.
+        
+        Args:
+            obj: Object to resolve references in
+            defs: Dictionary of definitions
+            visited: Set to track visited objects and prevent infinite recursion
+            depth: Current recursion depth
+            
+        Returns:
+            Object with resolved references
+        """
+        if not obj or not isinstance(obj, (dict, list)) or depth > 10:
+            return obj
+        
+        if visited is None:
+            visited = set()
+        
+        obj_id = id(obj)
+        if obj_id in visited:
+            return obj
+        
+        visited.add(obj_id)
+        
+        try:
+            if isinstance(obj, dict):
+                if "$ref" in obj and isinstance(obj["$ref"], str):
+                    ref_path = obj["$ref"].split("/")
+                    if len(ref_path) >= 3 and ref_path[0] == "#" and ref_path[1] == "$defs":
+                        def_name = ref_path[-1]
+                        if def_name in defs:
+                            return self._resolve_refs(dict(defs[def_name]), defs, visited, depth + 1)
+                    return obj
+                
+                resolved = {}
+                for key, value in obj.items():
+                    if key == "$defs":
+                        continue
+                    resolved[key] = self._resolve_refs(value, defs, visited, depth + 1)
+                return resolved
+            
+            elif isinstance(obj, list):
+                return [self._resolve_refs(item, defs, visited, depth + 1) for item in obj]
+            
+        finally:
+            visited.discard(obj_id)
+        
+        return obj
+
+    def _normalize_schema_for_openai(self, schema):
+        """
+        Normalize a schema for OpenAI compatibility by handling recursive references.
+        
+        Args:
+            schema: Schema to normalize
+            
+        Returns:
+            Normalized schema
+        """
+        if not schema or not isinstance(schema, dict):
+            return schema
+
+        visited = set()
+
+        def normalize_object(obj):
+            if not isinstance(obj, dict):
+                if isinstance(obj, list):
+                    return [normalize_object(item) for item in obj]
+                return obj
+
+            # Create a unique key for this object to track visitation
+            obj_id = id(obj)
+            if obj_id in visited:
+                return obj
+            visited.add(obj_id)
+
+            normalized = dict(obj)
+
+            # Handle $ref recursion - preserve as-is for OpenAI compatibility
+            if "$ref" in normalized:
+                visited.discard(obj_id)
+                return normalized
+
+            if "$defs" in normalized:
+                defs = normalized.pop("$defs")
+                processed_rest = {}
+                
+                for key, value in normalized.items():
+                    if (isinstance(value, dict) and "$ref" not in value):
+                        processed_rest[key] = normalize_object(value)
+                    else:
+                        processed_rest[key] = value
+                
+                result = {**processed_rest, "$defs": {k: normalize_object(v) for k, v in defs.items()}}
+                visited.discard(obj_id)
+                return result
+
+            # Only remove additionalProperties when it's explicitly True
+            if (normalized.get("type") == "object" and 
+                "properties" in normalized and 
+                normalized.get("additionalProperties") is True):
+                del normalized["additionalProperties"]
+
+            if (normalized.get("type") == "object" and 
+                "required" in normalized and 
+                "properties" in normalized):
+                if (isinstance(normalized["required"], list) and 
+                    isinstance(normalized["properties"], dict)):
+                    valid_required = [field for field in normalized["required"] 
+                                   if field in normalized["properties"]]
+                    if valid_required:
+                        normalized["required"] = valid_required
+                    else:
+                        del normalized["required"]
+                else:
+                    del normalized["required"]
+
+            # Handle nested schemas including arrays (anyOf/oneOf/items)
+            for key, value in list(normalized.items()):
+                if isinstance(value, dict) and "$ref" not in value:
+                    normalized[key] = normalize_object(value)
+                elif isinstance(value, list):
+                    # Handle arrays that might contain schema objects
+                    normalized[key] = [normalize_object(item) if isinstance(item, dict) else item for item in value]
+
+            visited.discard(obj_id)
+            return normalized
+
+        return normalize_object(schema)
+
+    def _validate_schema_for_openai(self, schema):
+        """
+        Validate schema for OpenAI compatibility.
+        
+        Args:
+            schema: Schema to validate
+            
+        Returns:
+            True if schema is valid, False otherwise
+        """
+        if not schema or not isinstance(schema, dict):
+            return True
+
+        visited = set()
+
+        def has_invalid_structure(obj):
+            if not isinstance(obj, dict):
+                return False
+
+            obj_id = id(obj)
+            if obj_id in visited:
+                return False
+            visited.add(obj_id)
+
+            if "$ref" in obj:
+                visited.discard(obj_id)
+                return False
+
+            if (obj.get("type") == "object" and 
+                "properties" not in obj and 
+                "patternProperties" not in obj and 
+                obj.get("additionalProperties") is True):
+                visited.discard(obj_id)
+                return True
+
+            # Check both direct dict values and arrays for nested schemas
+            for value in obj.values():
+                if isinstance(value, dict) and "$ref" not in value:
+                    if has_invalid_structure(value):
+                        visited.discard(obj_id)
+                        return True
+                elif isinstance(value, list):
+                    # Check items in arrays (anyOf/oneOf/items)
+                    for item in value:
+                        if isinstance(item, dict) and "$ref" not in item:
+                            if has_invalid_structure(item):
+                                visited.discard(obj_id)
+                                return True
+
+            visited.discard(obj_id)
+            return False
+
+        return not has_invalid_structure(schema)
+    
+    def _detect_recursive_schema(self, schema):
+        """
+        Detect if a schema contains recursive references.
+        
+        Args:
+            schema: Schema to analyze
+            
+        Returns:
+            True if schema has recursive patterns, False otherwise
+        """
+        if not schema or not isinstance(schema, dict):
+            return False
+
+        import json
+        schema_string = json.dumps(schema)
+        has_refs = (
+            '"$ref"' in schema_string or
+            "#/$defs/" in schema_string or
+            "#/definitions/" in schema_string
+        )
+        has_defs = bool(schema.get("$defs") or schema.get("definitions"))
+        
+        return has_refs or has_defs
+
+    def _select_model_for_schema(self, schema=None):
+        """
+        Select appropriate model based on schema complexity.
+        
+        Args:
+            schema: Schema to analyze
+            
+        Returns:
+            Dict with modelName and reason
+        """
+        if not schema:
+            return {"modelName": "gpt-4o-mini", "reason": "no_schema"}
+        
+        if self._detect_recursive_schema(schema):
+            return {"modelName": "gpt-4o", "reason": "recursive_schema_detected"}
+        
+        return {"modelName": "gpt-4o-mini", "reason": "simple_schema"}
+    
+    def _process_schema_with_validation(self, schema_container, schema_key="schema"):
+        """
+        Process and validate a schema container (like extract or json_options).
+        
+        Args:
+            schema_container: Dict containing schema
+            schema_key: Key where schema is stored (default: "schema")
+            
+        Returns:
+            Processed schema container
+        """
+        if isinstance(schema_container, dict) and schema_key in schema_container:
+            schema = self._ensure_schema_dict(schema_container[schema_key])
+            
+            # Handle schema reference resolution similar to TypeScript implementation
+            if schema and isinstance(schema, dict):
+                defs = schema.get("$defs", {})
+                import json
+                schema_string = json.dumps(schema)
+                has_any_refs = (
+                    schema.get("$defs") or
+                    '"$ref"' in schema_string or
+                    "#/$defs/" in schema_string
+                )
+                
+                if has_any_refs:
+                    try:
+                        resolved_schema = self._resolve_refs(schema, defs)
+                        resolved_string = json.dumps(resolved_schema)
+                        has_remaining_refs = '"$ref"' in resolved_string or "#/$defs/" in resolved_string
+                        
+                        if not has_remaining_refs:
+                            schema = resolved_schema
+                            # Remove $defs after successful resolution
+                            if isinstance(schema, dict) and "$defs" in schema:
+                                del schema["$defs"]
+                        # If refs remain, preserve original schema
+                    except Exception:
+                        # Failed to resolve refs, preserve original schema
+                        pass
+                else:
+                    # No recursive references detected, resolve refs anyway
+                    try:
+                        schema = self._resolve_refs(schema, defs)
+                        if isinstance(schema, dict) and "$defs" in schema:
+                            del schema["$defs"]
+                    except Exception:
+                        pass
+            
+            schema = self._normalize_schema_for_openai(schema)
+            if not self._validate_schema_for_openai(schema):
+                raise ValueError(self.OPENAI_SCHEMA_ERROR_MESSAGE)
+                
+            schema_container[schema_key] = schema
+        return schema_container
+
 
 class V1CrawlWatcher:
     """
@@ -2777,9 +3386,9 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
     Provides non-blocking alternatives to all V1FirecrawlApp operations.
     """
 
-    def __init__(self, api_key: str, api_url: str = "https://api.firecrawl.dev"):
+    def __init__(self, api_key: str, api_url: str = "https://api.firecrawl.dev", origin: Optional[str] = None):
         # Reuse V1 helpers (_prepare_headers, _validate_kwargs, _ensure_schema_dict, _get_error_message)
-        super().__init__(api_key=api_key, api_url=api_url)
+        super().__init__(api_key=api_key, api_url=api_url, origin=origin)
 
     async def _async_request(
             self,
@@ -2913,6 +3522,24 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         return self._get_error_message(status_code, action, error_message, error_details)
 
+    async def get_credit_usage(self) -> V1CreditUsageResponse:
+        """Get current credit usage and billing period (v1, async)."""
+        headers = self._prepare_headers()
+        resp = await self._async_get_request(
+            f"{self.api_url}/v1/team/credit-usage",
+            headers
+        )
+        return V1CreditUsageResponse(**resp)
+
+    async def get_token_usage(self) -> V1TokenUsageResponse:
+        """Get current token usage and billing period (v1, async)."""
+        headers = self._prepare_headers()
+        resp = await self._async_get_request(
+            f"{self.api_url}/v1/team/token-usage",
+            headers
+        )
+        return V1TokenUsageResponse(**resp)
+
     async def crawl_url_and_watch(
             self,
             url: str,
@@ -3015,7 +3642,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             skip_tls_verification: Optional[bool] = None,
             remove_base64_images: Optional[bool] = None,
             block_ads: Optional[bool] = None,
-            proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+            proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
             parse_pdf: Optional[bool] = None,
             extract: Optional[V1JsonConfig] = None,
             json_options: Optional[V1JsonConfig] = None,
@@ -3038,7 +3665,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
           skip_tls_verification (Optional[bool]): Skip TLS verification
           remove_base64_images (Optional[bool]): Remove base64 images
           block_ads (Optional[bool]): Block ads
-          proxy (Optional[Literal["basic", "stealth", "auto"]]): Proxy type (basic/stealth)
+          proxy (Optional[Literal["basic", "stealth", "enhanced", "auto"]]): Proxy type (basic/enhanced)
           extract (Optional[V1JsonConfig]): Content extraction settings
           json_options (Optional[V1JsonConfig]): JSON extraction settings
           actions (Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]]): Actions to perform
@@ -3067,7 +3694,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         # Build scrape parameters
         scrape_params = {
             'url': url,
-            'origin': f"python-sdk@{version}"
+            'origin': self.origin
         }
 
         # Add optional parameters if provided and not None
@@ -3149,7 +3776,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         skip_tls_verification: Optional[bool] = None,
         remove_base64_images: Optional[bool] = None,
         block_ads: Optional[bool] = None,
-        proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+        proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
         extract: Optional[V1JsonConfig] = None,
         json_options: Optional[V1JsonConfig] = None,
         actions: Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]] = None,
@@ -3247,7 +3874,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         final_params = V1ScrapeParams(**scrape_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['urls'] = urls
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
             params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
@@ -3267,7 +3894,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                 id = response.get('id')
             except:
                 raise Exception(f'Failed to parse Firecrawl response as JSON.')
-            return await self._async_monitor_job_status(id, headers, poll_interval)
+            return await self._async_monitor_job_status(id, headers, poll_interval, 'batch_scrape')
         else:
             self._handle_error(response, 'start batch scrape job')
 
@@ -3288,7 +3915,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         skip_tls_verification: Optional[bool] = None,
         remove_base64_images: Optional[bool] = None,
         block_ads: Optional[bool] = None,
-        proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+        proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
         extract: Optional[V1JsonConfig] = None,
         json_options: Optional[V1JsonConfig] = None,
         actions: Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]] = None,
@@ -3389,7 +4016,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         final_params = V1ScrapeParams(**scrape_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['urls'] = urls
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
             params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
@@ -3404,13 +4031,10 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             headers
         )
 
-        if response.get('status_code') == 200:
-            try:
-                return V1BatchScrapeResponse(**response.json())
-            except:
-                raise Exception(f'Failed to parse Firecrawl response as JSON.')
-        else:
-            await self._handle_error(response, 'start batch scrape job')
+        if response.get('success'):
+            return V1BatchScrapeResponse(**response)
+
+        await self._handle_error(response, 'start batch scrape job')
 
     async def crawl_url(
         self,
@@ -3516,7 +4140,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         final_params = V1CrawlParams(**crawl_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['url'] = url
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
         # Make request
         headers = self._prepare_headers(idempotency_key)
         response = await self._async_post_request(
@@ -3631,7 +4255,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         final_params = V1CrawlParams(**crawl_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['url'] = url
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         # Make request
         headers = self._prepare_headers(idempotency_key)
@@ -3692,7 +4316,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                     if not next_url:
                         logger.warning("Expected 'next' URL is missing.")
                         break
-                    next_data = await self._async_get_request(next_url, headers)
+                    next_data = await self._async_get_request(pin_to_api_origin(self.api_url, next_url), headers)
                     data.extend(next_data.get('data', []))
                     status_data = next_data
                 status_data['data'] = data
@@ -3715,26 +4339,34 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
 
         return response
 
-    async def _async_monitor_job_status(self, id: str, headers: Dict[str, str], poll_interval: int = 2) -> V1CrawlStatusResponse:
+    async def _async_monitor_job_status(
+            self,
+            id: str,
+            headers: Dict[str, str],
+            poll_interval: int = 2,
+            job_type: Literal["crawl", "batch_scrape"] = "crawl") -> Union[V1CrawlStatusResponse, V1BatchScrapeStatusResponse]:
         """
-        Monitor the status of an asynchronous job until completion.
+        Monitor the status of an asynchronous crawl or batch scrape job until completion.
 
         Args:
             id (str): The ID of the job to monitor
             headers (Dict[str, str]): Headers to include in status check requests
             poll_interval (int): Seconds between status checks (default: 2)
+            job_type (str): "crawl" or "batch_scrape"; selects the status endpoint and response type (default: "crawl")
 
         Returns:
-            V1CrawlStatusResponse: The job results if completed successfully
+            V1CrawlStatusResponse or V1BatchScrapeStatusResponse: The job results if completed successfully
 
         Raises:
             Exception: If the job fails or an error occurs during status checks
         """
+        is_batch = job_type == "batch_scrape"
+        api_url = f'{self.api_url}/v1/batch/scrape/{id}' if is_batch else f'{self.api_url}/v1/crawl/{id}'
+        label = 'Batch scrape' if is_batch else 'Crawl'
+        response_model = V1BatchScrapeStatusResponse if is_batch else V1CrawlStatusResponse
+
         while True:
-            status_data = await self._async_get_request(
-                f'{self.api_url}/v1/crawl/{id}',
-                headers
-            )
+            status_data = await self._async_get_request(api_url, headers)
 
             if status_data.get('status') == 'completed':
                 if 'data' in status_data:
@@ -3746,17 +4378,17 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                         if not next_url:
                             logger.warning("Expected 'next' URL is missing.")
                             break
-                        next_data = await self._async_get_request(next_url, headers)
+                        next_data = await self._async_get_request(pin_to_api_origin(self.api_url, next_url), headers)
                         data.extend(next_data.get('data', []))
                         status_data = next_data
                     status_data['data'] = data
-                    return V1CrawlStatusResponse(**status_data)
+                    return response_model(**status_data)
                 else:
-                    raise Exception('Job completed but no data was returned')
+                    raise Exception(f'{label} job completed but no data was returned')
             elif status_data.get('status') in ['active', 'paused', 'pending', 'queued', 'waiting', 'scraping']:
                 await asyncio.sleep(max(poll_interval, 2))
             else:
-                raise Exception(f'Job failed or was stopped. Status: {status_data["status"]}')
+                raise Exception(f'{label} job failed or was stopped. Status: {status_data["status"]}')
 
     async def map_url(
         self,
@@ -3768,6 +4400,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         sitemap_only: Optional[bool] = None,
         limit: Optional[int] = None,
         timeout: Optional[int] = 30000,
+        location: Optional[V1LocationConfig] = None,
         params: Optional[V1MapParams] = None) -> V1MapResponse:
         """
         Asynchronously map and discover links from a URL.
@@ -3810,12 +4443,14 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             map_params['limit'] = limit
         if timeout is not None:
             map_params['timeout'] = timeout
+        if location is not None:
+            map_params['location'] = location.dict(by_alias=True, exclude_none=True)
 
         # Create final params object
         final_params = V1MapParams(**map_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['url'] = url
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         # Make request
         endpoint = f'/v1/map'
@@ -3847,6 +4482,11 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         Asynchronously extract structured information from URLs.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             urls (Optional[List[str]]): URLs to extract from
             prompt (Optional[str]): Custom extraction prompt
@@ -3866,6 +4506,14 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Raises:
           ValueError: If prompt/schema missing or extraction fails
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
 
         if not prompt and not schema:
@@ -3883,7 +4531,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             'enableWebSearch': enable_web_search,
             'showSources': show_sources,
             'schema': schema,
-            'origin': f'python-sdk@{get_version()}'
+            'origin': self.origin
         }
 
         # Only add prompt and systemPrompt if they exist
@@ -3964,30 +4612,22 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
                     if not next_url:
                         logger.warning("Expected 'next' URL is missing.")
                         break
-                    next_data = await self._async_get_request(next_url, headers)
+                    next_data = await self._async_get_request(pin_to_api_origin(self.api_url, next_url), headers)
                     data.extend(next_data.get('data', []))
                     status_data = next_data
                 status_data['data'] = data
 
-        response = V1BatchScrapeStatusResponse(
+        return V1BatchScrapeStatusResponse(
+            success=False if 'error' in status_data else True,
             status=status_data.get('status'),
             total=status_data.get('total'),
             completed=status_data.get('completed'),
             creditsUsed=status_data.get('creditsUsed'),
             expiresAt=status_data.get('expiresAt'),
-            data=status_data.get('data')
+            data=status_data.get('data'),
+            next=status_data.get('next'),
+            error=status_data.get('error'),
         )
-
-        if 'error' in status_data:
-            response['error'] = status_data['error']
-
-        if 'next' in status_data:
-            response['next'] = status_data['next']
-
-        return {
-            'success': False if 'error' in status_data else True,
-            **response
-        }
 
     async def check_batch_scrape_errors(self, id: str) -> V1CrawlErrorsResponse:
         """
@@ -4063,6 +4703,11 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         Check the status of an asynchronous extraction job.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             job_id (str): The ID of the extraction job
 
@@ -4077,6 +4722,14 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Raises:
             ValueError: If status check fails
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
         try:
             return await self._async_get_request(
@@ -4100,6 +4753,11 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         Initiate an asynchronous extraction job without waiting for completion.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             urls (Optional[List[str]]): URLs to extract from
             prompt (Optional[str]): Custom extraction prompt
@@ -4120,6 +4778,14 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Raises:
             ValueError: If job initiation fails
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
 
         if not prompt and not schema:
@@ -4131,14 +4797,14 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         if schema:
             schema = self._ensure_schema_dict(schema)
 
-        request_data = V1ExtractResponse(
-            urls=urls or [],
-            allowExternalLinks=allow_external_links,
-            enableWebSearch=enable_web_search,
-            showSources=show_sources,
-            schema=schema,
-            origin=f'python-sdk@{version}'
-        )
+        request_data = {
+            'urls': urls or [],
+            'allowExternalLinks': allow_external_links,
+            'enableWebSearch': enable_web_search,
+            'showSources': show_sources,
+            'schema': schema,
+            'origin': self.origin,
+        }
 
         if prompt:
             request_data['prompt'] = prompt
@@ -4166,6 +4832,9 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         Generate LLMs.txt for a given URL and monitor until completion.
 
+        .. deprecated::
+            /v1/llmstxt is deprecated and will not be replaced.
+
         Args:
             url (str): Target URL to generate LLMs.txt from
             max_urls (Optional[int]): Maximum URLs to process (default: 10)
@@ -4185,6 +4854,12 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Raises:
             Exception: If generation fails
         """
+        import warnings
+        warnings.warn(
+            "/v1/llmstxt is deprecated and will not be replaced.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         params = {}
         if max_urls is not None:
             params['maxUrls'] = max_urls
@@ -4228,6 +4903,9 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         Initiate an asynchronous LLMs.txt generation job without waiting for completion.
 
+        .. deprecated::
+            /v1/llmstxt is deprecated and will not be replaced.
+
         Args:
             url (str): Target URL to generate LLMs.txt from
             max_urls (Optional[int]): Maximum URLs to process (default: 10)
@@ -4244,6 +4922,12 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Raises:
             ValueError: If job initiation fails
         """
+        import warnings
+        warnings.warn(
+            "/v1/llmstxt is deprecated and will not be replaced.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         params = {}
         if max_urls is not None:
             params['maxUrls'] = max_urls
@@ -4261,7 +4945,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
 
         headers = self._prepare_headers()
         json_data = {'url': url, **params.dict(by_alias=True, exclude_none=True)}
-        json_data['origin'] = f"python-sdk@{version}"
+        json_data['origin'] = self.origin
 
         try:
             return await self._async_post_request(
@@ -4275,6 +4959,9 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
     async def check_generate_llms_text_status(self, id: str) -> V1GenerateLLMsTextStatusResponse:
         """
         Check the status of an asynchronous LLMs.txt generation job.
+
+        .. deprecated::
+            /v1/llmstxt is deprecated and will not be replaced.
 
         Args:
             id (str): The ID of the generation job
@@ -4292,6 +4979,12 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Raises:
             ValueError: If status check fails
         """
+        import warnings
+        warnings.warn(
+            "/v1/llmstxt is deprecated and will not be replaced.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
         try:
             return await self._async_get_request(
@@ -4315,6 +5008,9 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             on_source: Optional[Callable[[Dict[str, Any]], None]] = None) -> V1DeepResearchStatusResponse:
         """
         Initiates a deep research operation on a given query and polls until completion.
+
+        .. deprecated::
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
 
         Args:
             query (str): Research query or topic to investigate
@@ -4341,6 +5037,12 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Raises:
             Exception: If research fails
         """
+        import warnings
+        warnings.warn(
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         research_params = {}
         if max_depth is not None:
             research_params['maxDepth'] = max_depth
@@ -4410,6 +5112,9 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         Initiates an asynchronous deep research operation.
 
+        .. deprecated::
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
+
         Args:
             query (str): Research query or topic to investigate
             max_depth (Optional[int]): Maximum depth of research exploration
@@ -4428,6 +5133,12 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Raises:
             Exception: If the research initiation fails.
         """
+        import warnings
+        warnings.warn(
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         research_params = {}
         if max_depth is not None:
             research_params['maxDepth'] = max_depth
@@ -4444,9 +5155,9 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         research_params = V1DeepResearchParams(**research_params)
 
         headers = self._prepare_headers()
-        
+
         json_data = {'query': query, **research_params.dict(by_alias=True, exclude_none=True)}
-        json_data['origin'] = f"python-sdk@{version}"
+        json_data['origin'] = self.origin
 
         try:
             return await self._async_post_request(
@@ -4461,6 +5172,9 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         Check the status of a deep research operation.
 
+        .. deprecated::
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
+
         Args:
             id (str): The ID of the deep research operation.
 
@@ -4471,7 +5185,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             * success - Whether research completed successfully
             * status - Current state (processing/completed/failed)
             * error - Error message if failed
-            
+
             Results:
             * id - Unique identifier for the research job
             * data - Research findings and analysis
@@ -4482,6 +5196,12 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Raises:
             Exception: If the status check fails.
         """
+        import warnings
+        warnings.warn(
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
         try:
             return await self._async_get_request(
@@ -4563,7 +5283,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         # Create final params object
         final_params = V1SearchParams(query=query, **search_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         return await self._async_post_request(
             f"{self.api_url}/v1/search",

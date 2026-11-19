@@ -1,18 +1,29 @@
-import { Document, ScrapeOptions, TeamFlags, URLTrace, scrapeOptions as scrapeOptionsSchema } from "../../controllers/v2/types";
-import { getScrapeQueue } from "../../services/queue-service";
+import { v7 as uuidv7 } from "uuid";
+import { config } from "../../config";
+import {
+  Document,
+  ScrapeOptions,
+  TeamFlags,
+  URLTrace,
+  scrapeOptions as scrapeOptionsSchema,
+} from "../../controllers/v2/types";
 import { waitForJob } from "../../services/queue-jobs";
 import { addScrapeJob } from "../../services/queue-jobs";
 import { getJobPriority } from "../job-priority";
 import type { Logger } from "winston";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+import { scrapeQueue } from "../../services/worker/nuq-router";
 
 interface ScrapeDocumentOptions {
   url: string;
   teamId: string;
+  orgId?: string | null;
   origin: string;
   timeout: number;
   isSingleUrl?: boolean;
   flags: TeamFlags | null;
+  apiKeyId: number | null;
+  requestId?: string;
 }
 
 export async function scrapeDocument(
@@ -21,22 +32,27 @@ export async function scrapeDocument(
   logger: Logger,
   internalScrapeOptions: Partial<ScrapeOptions> = { onlyMainContent: false },
 ): Promise<Document | null> {
-  const trace = urlTraces.find((t) => t.url === options.url);
+  const trace = urlTraces.find(t => t.url === options.url);
   if (trace) {
     trace.status = "scraped";
     trace.timing.scrapedAt = new Date().toISOString();
   }
 
-  if (isUrlBlocked(options.url, options.flags ?? null)) {
+  if (
+    isUrlBlocked(options.url, options.flags ?? null, {
+      team_id: options.teamId,
+      org_id: options.orgId ?? null,
+      origin: options.origin,
+    })
+  ) {
     return null;
   }
 
   async function attemptScrape(timeout: number) {
-    const jobId = crypto.randomUUID();
+    const jobId = uuidv7();
     const jobPriority = await getJobPriority({
       team_id: options.teamId,
       basePriority: 10,
-      from_extract: true,
     });
 
     await addScrapeJob(
@@ -50,23 +66,34 @@ export async function scrapeDocument(
         }),
         internalOptions: {
           teamId: options.teamId,
-          saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
+          orgId: options.orgId ?? null,
+          saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
+            ? true
+            : false,
           bypassBilling: true,
+          // Safe Mode resolves per-URL at the scrapeURL backstop from these flags.
+          teamFlags: options.flags ?? undefined,
         },
         origin: options.origin,
         is_scrape: true,
         from_extract: true,
         startTime: Date.now(),
         zeroDataRetention: false, // not supported
+        apiKeyId: options.apiKeyId,
+        requestId: options.requestId,
       },
-      {},
       jobId,
       jobPriority,
+      false,
+      true,
     );
 
-    const doc = await waitForJob(jobId, timeout);
-
-    await getScrapeQueue().remove(jobId);
+    const doc = await waitForJob(jobId, timeout, false, logger);
+    try {
+      await scrapeQueue.removeJob(jobId, logger);
+    } catch (error) {
+      logger.warn("Error removing job from queue", { error, scrapeId: jobId });
+    }
 
     if (trace) {
       trace.timing.completedAt = new Date().toISOString();
@@ -96,7 +123,7 @@ export async function scrapeDocument(
         logger.debug("Scrape finished!");
         return x;
       }
-      
+
       throw timeoutError;
     }
   } catch (error) {

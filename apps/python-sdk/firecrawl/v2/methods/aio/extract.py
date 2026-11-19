@@ -1,9 +1,16 @@
 from typing import Any, Dict, List, Optional
 import asyncio
+import warnings
 
-from ...types import ExtractResponse, ScrapeOptions
+from ...types import ExtractResponse, ScrapeOptions, ThreatProtectionOptions
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.validation import prepare_scrape_options
+
+_EXTRACT_DEPRECATION_MSG = (
+    "The extract endpoint is in maintenance mode and its use is discouraged. "
+    "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+    "to find a replacement."
+)
 
 
 def _prepare_extract_request(
@@ -17,6 +24,8 @@ def _prepare_extract_request(
     show_sources: Optional[bool] = None,
     scrape_options: Optional[ScrapeOptions] = None,
     ignore_invalid_urls: Optional[bool] = None,
+    integration: Optional[str] = None,
+    threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
     if urls is not None:
@@ -39,6 +48,12 @@ def _prepare_extract_request(
         prepared = prepare_scrape_options(scrape_options)
         if prepared:
             body["scrapeOptions"] = prepared
+    if integration is not None and str(integration).strip():
+        body["integration"] = str(integration).strip()
+    if threat_protection is not None:
+        body["threatProtection"] = threat_protection.model_dump(
+            by_alias=True, exclude_none=True
+        )
     return body
 
 
@@ -54,7 +69,17 @@ async def start_extract(
     show_sources: Optional[bool] = None,
     scrape_options: Optional[ScrapeOptions] = None,
     ignore_invalid_urls: Optional[bool] = None,
+    integration: Optional[str] = None,
+    threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> ExtractResponse:
+    """Start an extract job (non-blocking, async).
+
+    .. deprecated::
+        The extract endpoint is in maintenance mode and its use is discouraged.
+        Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+        to find a replacement.
+    """
+    warnings.warn(_EXTRACT_DEPRECATION_MSG, DeprecationWarning, stacklevel=2)
     body = _prepare_extract_request(
         urls,
         prompt=prompt,
@@ -65,12 +90,22 @@ async def start_extract(
         show_sources=show_sources,
         scrape_options=scrape_options,
         ignore_invalid_urls=ignore_invalid_urls,
+        integration=integration,
+        threat_protection=threat_protection,
     )
     resp = await client.post("/v2/extract", body)
     return ExtractResponse(**resp.json())
 
 
 async def get_extract_status(client: AsyncHttpClient, job_id: str) -> ExtractResponse:
+    """Get the current status of an extract job (async).
+
+    .. deprecated::
+        The extract endpoint is in maintenance mode and its use is discouraged.
+        Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+        to find a replacement.
+    """
+    warnings.warn(_EXTRACT_DEPRECATION_MSG, DeprecationWarning, stacklevel=2)
     resp = await client.get(f"/v2/extract/{job_id}")
     return ExtractResponse(**resp.json())
 
@@ -106,7 +141,17 @@ async def extract(
     ignore_invalid_urls: Optional[bool] = None,
     poll_interval: int = 2,
     timeout: Optional[int] = None,
+    integration: Optional[str] = None,
+    threat_protection: Optional[ThreatProtectionOptions] = None,
 ) -> ExtractResponse:
+    """Extract structured data and wait until completion (async).
+
+    .. deprecated::
+        The extract endpoint is in maintenance mode and its use is discouraged.
+        Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+        to find a replacement.
+    """
+    warnings.warn(_EXTRACT_DEPRECATION_MSG, DeprecationWarning, stacklevel=2)
     started = await start_extract(
         client,
         urls,
@@ -118,6 +163,8 @@ async def extract(
         show_sources=show_sources,
         scrape_options=scrape_options,
         ignore_invalid_urls=ignore_invalid_urls,
+        integration=integration,
+        threat_protection=threat_protection,
     )
     job_id = getattr(started, "id", None)
     if not job_id:
