@@ -1,193 +1,52 @@
 import "dotenv/config";
-import "./sentry";
-import * as Sentry from "@sentry/node";
+import { config } from "../config";
+import { shutdownTracing } from "../otel";
 import {
-  getScrapeQueue,
-  getExtractQueue,
   getDeepResearchQueue,
   getGenerateLlmsTxtQueue,
-  scrapeQueueName,
   getRedisConnection,
 } from "./queue-service";
-import { Job, Queue, QueueEvents } from "bullmq";
+import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger } from "../lib/logger";
-import { Worker } from "bullmq";
 import systemMonitor from "./system-monitor";
-import { v4 as uuidv4 } from "uuid";
-import {
-  addCrawlJobDone,
-  finishCrawlKickoff,
-  getCrawl,
-  normalizeURL,
-} from "../lib/crawl-redis";
-import { StoredCrawl } from "../lib/crawl-redis";
+import { v7 as uuidv7 } from "uuid";
 import { configDotenv } from "dotenv";
-import { concurrentJobDone } from "../lib/concurrency-limit";
-import {
-  ExtractResult,
-  performExtraction,
-} from "../lib/extract/extraction-service";
-import { updateExtract } from "../lib/extract/extract-redis";
 import { updateDeepResearch } from "../lib/deep-research/deep-research-redis";
 import { performDeepResearch } from "../lib/deep-research/deep-research-service";
 import { performGenerateLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-service";
 import { updateGeneratedLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-redis";
-import { performExtraction_F0 } from "../lib/extract/fire-0/extraction-service-f0";
 import Express from "express";
-import http from "http";
-import https from "https";
-import { cacheableLookup } from "../scraper/scrapeURL/lib/cacheableLookup";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
-import { redisEvictConnection } from "./redis";
-import path from "path";
-import { finishCrawlIfNeeded } from "./worker/crawl-logic";
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { LangfuseExporter } from "langfuse-vercel";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
-import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
-import { resourceFromAttributes } from "@opentelemetry/resources";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
-import { BullMQOtel } from "bullmq-otel";
+import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
+import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
+import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
+import { finishCrawlSuper } from "./worker/crawl-logic";
+import { getCrawl } from "../lib/crawl-redis";
+import {
+  processMonitorCheckJob,
+  reconcileRunningMonitorChecks,
+} from "./monitoring/runner";
+import { enqueueDueMonitorChecks } from "./monitoring/scheduler";
+import {
+  consumeMonitorCheckJobs,
+  consumeMonitorSearchCheckJobs,
+} from "./monitoring/queue";
+import { shutdownPubSubLogging } from "./logging/log_job";
+import { startRole } from "../main";
 
 configDotenv();
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const jobLockExtendInterval =
-  Number(process.env.JOB_LOCK_EXTEND_INTERVAL) || 10000;
-const jobLockExtensionTime =
-  Number(process.env.JOB_LOCK_EXTENSION_TIME) || 60000;
+const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
+const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
 
-const cantAcceptConnectionInterval =
-  Number(process.env.CANT_ACCEPT_CONNECTION_INTERVAL) || 2000;
-const connectionMonitorInterval =
-  Number(process.env.CONNECTION_MONITOR_INTERVAL) || 10;
-const gotJobInterval = Number(process.env.CONNECTION_MONITOR_INTERVAL) || 20;
+const cantAcceptConnectionInterval = config.CANT_ACCEPT_CONNECTION_INTERVAL;
+const connectionMonitorInterval = config.CONNECTION_MONITOR_INTERVAL;
+const gotJobInterval = config.CONNECTION_MONITOR_INTERVAL;
 
 const runningJobs: Set<string> = new Set();
-
-// Install cacheable lookup for all other requests
-cacheableLookup.install(http.globalAgent);
-cacheableLookup.install(https.globalAgent);
-
-const shouldOtel = process.env.LANGFUSE_PUBLIC_KEY || process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-const otelSdk = shouldOtel ? new NodeSDK({
-  resource: resourceFromAttributes({
-    [ATTR_SERVICE_NAME]: "firecrawl-worker",
-  }),
-  spanProcessors: [
-    ...(process.env.LANGFUSE_PUBLIC_KEY ? [new BatchSpanProcessor(new LangfuseExporter())] : []),
-    ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT ? [new BatchSpanProcessor(new OTLPTraceExporter({
-      url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
-    }))] : []),
-  ],
-  instrumentations: [getNodeAutoInstrumentations()],
-}) : null;
-
-if (otelSdk) {
-  otelSdk.start();
-}
-
-const processExtractJobInternal = async (
-  token: string,
-  job: Job & { id: string },
-) => {
-  const logger = _logger.child({
-    module: "extract-worker",
-    method: "processJobInternal",
-    jobId: job.id,
-    extractId: job.data.extractId,
-    teamId: job.data?.teamId ?? undefined,
-  });
-
-  const extendLockInterval = setInterval(async () => {
-    logger.info(`🔄 Worker extending lock on job ${job.id}`);
-    await job.extendLock(token, jobLockExtensionTime);
-  }, jobLockExtendInterval);
-
-  try {
-    let result: ExtractResult | null = null;
-
-    const model = job.data.request.agent?.model;
-    if (
-      job.data.request.agent &&
-      model &&
-      model.toLowerCase().includes("fire-1")
-    ) {
-      result = await performExtraction(job.data.extractId, {
-        request: job.data.request,
-        teamId: job.data.teamId,
-        subId: job.data.subId,
-      });
-    } else {
-      result = await performExtraction_F0(job.data.extractId, {
-        request: job.data.request,
-        teamId: job.data.teamId,
-        subId: job.data.subId,
-      });
-    }
-    // result = await performExtraction_F0(job.data.extractId, {
-    //   request: job.data.request,
-    //   teamId: job.data.teamId,
-    //   subId: job.data.subId,
-    // });
-
-    if (result && result.success) {
-      // Move job to completed state in Redis
-      await job.moveToCompleted(result, token, false);
-      return result;
-    } else {
-      // throw new Error(result.error || "Unknown error during extraction");
-
-      await job.moveToCompleted(result, token, false);
-      await updateExtract(job.data.extractId, {
-        status: "failed",
-        error:
-          result?.error ??
-          "Unknown error, please contact help@firecrawl.com. Extract id: " +
-            job.data.extractId,
-      });
-
-      return result;
-    }
-  } catch (error) {
-    logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
-
-    Sentry.captureException(error, {
-      data: {
-        job: job.id,
-      },
-    });
-
-    try {
-      // Move job to failed state in Redis
-      await job.moveToFailed(error, token, false);
-    } catch (e) {
-      logger.log("Failed to move job to failed state in Redis", { error });
-    }
-
-    await updateExtract(job.data.extractId, {
-      status: "failed",
-      error:
-        error.error ??
-        error ??
-        "Unknown error, please contact help@firecrawl.com. Extract id: " +
-          job.data.extractId,
-    });
-    return {
-      success: false,
-      error:
-        error.error ??
-        error ??
-        "Unknown error, please contact help@firecrawl.com. Extract id: " +
-          job.data.extractId,
-    };
-    // throw error;
-  } finally {
-    clearInterval(extendLockInterval);
-  }
-};
+let monitorSchedulerInterval: NodeJS.Timeout | null = null;
 
 const processDeepResearchJobInternal = async (
   token: string,
@@ -217,20 +76,19 @@ const processDeepResearchJobInternal = async (
       query: job.data.request.query,
       maxDepth: job.data.request.maxDepth,
       timeLimit: job.data.request.timeLimit,
-      subId: job.data.subId,
       maxUrls: job.data.request.maxUrls,
       analysisPrompt: job.data.request.analysisPrompt,
       systemPrompt: job.data.request.systemPrompt,
       formats: job.data.request.formats,
       jsonOptions: job.data.request.jsonOptions,
+      apiKeyId: job.data.apiKeyId,
+      externalRequestId: job.data.externalRequestId ?? null,
     });
 
     if (result.success) {
-      // Move job to completed state in Redis and update research status
       await job.moveToCompleted(result, token, false);
       return result;
     } else {
-      // If the deep research failed but didn't throw an error
       const error = new Error("Deep research failed without specific error");
       await updateDeepResearch(job.data.researchId, {
         status: "failed",
@@ -243,14 +101,7 @@ const processDeepResearchJobInternal = async (
   } catch (error) {
     logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
 
-    Sentry.captureException(error, {
-      data: {
-        job: job.id,
-      },
-    });
-
     try {
-      // Move job to failed state in Redis
       await job.moveToFailed(error, token, false);
     } catch (e) {
       logger.error("Failed to move job to failed state in Redis", { error });
@@ -291,8 +142,9 @@ const processGenerateLlmsTxtJobInternal = async (
       url: job.data.request.url,
       maxUrls: job.data.request.maxUrls,
       showFullText: job.data.request.showFullText,
-      subId: job.data.subId,
       cache: job.data.request.cache,
+      apiKeyId: job.data.apiKeyId,
+      externalRequestId: job.data.externalRequestId ?? null,
     });
 
     if (result.success) {
@@ -317,12 +169,6 @@ const processGenerateLlmsTxtJobInternal = async (
   } catch (error) {
     logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
 
-    Sentry.captureException(error, {
-      data: {
-        job: job.id,
-      },
-    });
-
     try {
       await job.moveToFailed(error, token, false);
     } catch (e) {
@@ -340,57 +186,50 @@ const processGenerateLlmsTxtJobInternal = async (
   }
 };
 
+async function processFinishCrawlJobInternal(_job: NuQJob) {
+  const job = await crawlFinishedQueue.getJob(_job.id);
+
+  if (!job) {
+    throw new Error("crawlFinish job disappeared");
+  }
+
+  if (!job.groupId) {
+    throw new Error("crawlFinish job with no groupId");
+  }
+
+  if (!job.ownerId) {
+    throw new Error("crawlFinish job with no ownerId");
+  }
+
+  const sc = await getCrawl(job.groupId);
+
+  if (!sc) {
+    throw new Error("crawlFinish job with sc expired");
+  }
+
+  const anyJob = await scrapeQueue.getGroupAnyJob(job.groupId, job.ownerId);
+
+  if (!anyJob) {
+    throw new Error("crawlFinish couldn't find anyJob");
+  }
+
+  await finishCrawlSuper(anyJob);
+}
+
 let isShuttingDown = false;
 let isWorkerStalled = false;
 
 process.on("SIGINT", () => {
-  console.log("Received SIGTERM. Shutting down gracefully...");
+  _logger.debug("Received SIGINT. Shutting down gracefully...");
   isShuttingDown = true;
 });
 
 process.on("SIGTERM", () => {
-  console.log("Received SIGTERM. Shutting down gracefully...");
+  _logger.debug("Received SIGTERM. Shutting down gracefully...");
   isShuttingDown = true;
 });
 
 let cantAcceptConnectionCount = 0;
-
-const separateWorkerFun = (
-  queue: Queue,
-  path: string,
-): Worker => {
-  // Extract memory size from --max-old-space-size flag if present
-  const maxOldSpaceSize = process.env.SCRAPE_WORKER_MAX_OLD_SPACE_SIZE || process.execArgv
-    .find(arg => arg.startsWith('--max-old-space-size='))
-    ?.split('=')[1];
-
-  // Filter out the invalid flag for worker threads
-  const filteredExecArgv = process.execArgv
-    .filter(arg => !arg.startsWith('--max-old-space-size'));
-
-  const worker = new Worker(queue.name, path, {
-    connection: getRedisConnection(),
-    lockDuration: 60 * 1000, // 60 seconds
-    stalledInterval: 60 * 1000, // 60 seconds
-    maxStalledCount: 10, // 10 times
-    concurrency: 8,
-    useWorkerThreads: false,
-    workerForkOptions: {
-      execArgv: filteredExecArgv.concat(maxOldSpaceSize ? (
-        ['--max-old-space-size=' + maxOldSpaceSize]
-      ) : []),
-    },
-    workerThreadsOptions: {
-      execArgv: filteredExecArgv,
-      resourceLimits: maxOldSpaceSize ? {
-        maxOldGenerationSizeMb: parseInt(maxOldSpaceSize)
-      } : undefined
-    },
-    telemetry: new BullMQOtel("firecrawl-bullmq"),
-  });
-
-  return worker;
-};
 
 const workerFun = async (
   queue: Queue,
@@ -400,10 +239,9 @@ const workerFun = async (
 
   const worker = new Worker(queue.name, null, {
     connection: getRedisConnection(),
-    lockDuration: 60 * 1000, // 60 seconds
-    stalledInterval: 60 * 1000, // 60 seconds
-    maxStalledCount: 10, // 10 times
-    telemetry: new BullMQOtel("firecrawl-bullmq"),
+    lockDuration: 60 * 1000,
+    stalledInterval: 60 * 1000,
+    maxStalledCount: 10,
   });
 
   worker.startStalledCheckTimer();
@@ -412,10 +250,10 @@ const workerFun = async (
 
   while (true) {
     if (isShuttingDown) {
-      console.log("No longer accepting new jobs. SIGINT");
+      _logger.info("No longer accepting new jobs. SIGINT");
       break;
     }
-    const token = uuidv4();
+    const token = uuidv7();
     const canAcceptConnection = await monitor.acceptConnection();
     if (!canAcceptConnection) {
       console.log("Can't accept connection due to RAM/CPU load");
@@ -431,7 +269,7 @@ const workerFun = async (
         });
       }
 
-      await sleep(cantAcceptConnectionInterval); // more sleep
+      await sleep(cantAcceptConnectionInterval);
       continue;
     } else if (!currentLiveness) {
       logger.info("Not accepting jobs because the liveness check failed");
@@ -448,17 +286,11 @@ const workerFun = async (
         runningJobs.add(job.id);
       }
 
-      async function afterJobDone(job: Job<any, any, string>) {
-        try {
-          await concurrentJobDone(job);
-        } finally {
-          if (job.id) {
-            runningJobs.delete(job.id);
-          }
+      processJobInternal(token, job).finally(() => {
+        if (job.id) {
+          runningJobs.delete(job.id);
         }
-      }
-
-      processJobInternal(token, job).finally(() => afterJobDone(job));
+      });
 
       await sleep(gotJobInterval);
     } else {
@@ -467,18 +299,104 @@ const workerFun = async (
   }
 };
 
-// Start all workers
+const crawlFinishWorker = async () => {
+  const __logger = _logger.child({
+    module: "extract-worker",
+    method: "crawlFinishWorker",
+  });
+
+  let noJobTimeout = 1500;
+
+  while (!isShuttingDown) {
+    const job = await crawlFinishedQueue.getJobToProcess();
+
+    if (job === null) {
+      __logger.info("No jobs to process", { module: "nuq/metrics" });
+      await new Promise(resolve => setTimeout(resolve, noJobTimeout));
+      if (!config.NUQ_RABBITMQ_URL) {
+        noJobTimeout = Math.min(noJobTimeout * 2, 10000);
+      }
+      continue;
+    }
+
+    noJobTimeout = 500;
+
+    const logger = __logger.child({
+      zeroDataRetention: job.data?.zeroDataRetention ?? false,
+      crawlId: job.groupId,
+    });
+
+    logger.info("Acquired job");
+
+    const lockRenewInterval = setInterval(async () => {
+      logger.info("Renewing lock");
+      if (!(await crawlFinishedQueue.renewLock(job.id, job.lock!, logger))) {
+        logger.warn("Failed to renew lock");
+        clearInterval(lockRenewInterval);
+        return;
+      }
+      logger.info("Renewed lock");
+    }, 15000);
+
+    let processResult:
+      | {
+          ok: true;
+          data: Awaited<ReturnType<typeof processFinishCrawlJobInternal>>;
+        }
+      | { ok: false; error: any };
+
+    try {
+      processResult = {
+        ok: true,
+        data: await processFinishCrawlJobInternal(job),
+      };
+    } catch (error) {
+      processResult = { ok: false, error };
+    }
+
+    clearInterval(lockRenewInterval);
+
+    if (processResult.ok) {
+      if (
+        !(await crawlFinishedQueue.jobFinish(
+          job.id,
+          job.lock!,
+          processResult.data,
+          logger,
+        ))
+      ) {
+        logger.warn("Could not update job status");
+      }
+    } else {
+      if (
+        !(await crawlFinishedQueue.jobFail(
+          job.id,
+          job.lock!,
+          processResult.error instanceof Error
+            ? processResult.error.message
+            : typeof processResult.error === "string"
+              ? processResult.error
+              : JSON.stringify(processResult.error),
+          logger,
+        ))
+      ) {
+        logger.warn("Could not update job status");
+      }
+    }
+  }
+};
+
 const app = Express();
 
 let currentLiveness: boolean = true;
 
 app.get("/liveness", (req, res) => {
   _logger.info("Liveness endpoint hit");
-  if (process.env.USE_DB_AUTHENTICATION === "true") {
+  if (config.USE_DB_AUTHENTICATION && config.NUQ_RABBITMQ_URL) {
     // networking check for Kubernetes environments
-    const host = process.env.FIRECRAWL_APP_HOST || "firecrawl-app-service";
-    const port = process.env.FIRECRAWL_APP_PORT || "3002";
-    const scheme = process.env.FIRECRAWL_APP_SCHEME || "http";
+    const host = config.FIRECRAWL_APP_HOST;
+    const port = config.FIRECRAWL_APP_PORT;
+    const scheme = config.FIRECRAWL_APP_SCHEME;
 
     robustFetch({
       url: `${scheme}://${host}:${port}`,
@@ -492,7 +410,8 @@ app.get("/liveness", (req, res) => {
       .then(() => {
         currentLiveness = true;
         res.status(200).json({ ok: true });
-      }).catch(e => {
+      })
+      .catch(e => {
         _logger.error("WORKER NETWORKING CHECK FAILED", { error: e });
         currentLiveness = false;
         res.status(500).json({ ok: false });
@@ -503,100 +422,80 @@ app.get("/liveness", (req, res) => {
   }
 });
 
-const workerPort = process.env.WORKER_PORT || process.env.PORT || 3005;
-app.listen(workerPort, () => {
+const workerPort = config.WORKER_PORT || config.PORT;
+app.listen(workerPort, (error?: Error) => {
+  if (error) {
+    _logger.error("Failed to start liveness endpoint", {
+      error,
+      port: workerPort,
+    });
+    throw error;
+  }
+
   _logger.info(`Liveness endpoint is running on port ${workerPort}`);
 });
 
-(async () => {
-  async function failedListener(args: { jobId: string; failedReason: string; prev?: string | undefined; }) {
-    const job = await getScrapeQueue().getJob(args.jobId);
+export async function start() {
+  await initializeBlocklist().catch(e => {
+    _logger.error("Failed to initialize blocklist", { error: e });
+    process.exit(1);
+  });
 
-    if (job && job.data.crawl_id) {
-      await redisEvictConnection.srem("crawl:" + job.data.crawl_id + ":jobs_qualified", args.jobId);
-      await redisEvictConnection.expire("crawl:" + job.data.crawl_id + ":jobs_qualified", 24 * 60 * 60);
-    }
+  initializeEngineForcing();
 
-    if (args.failedReason === "job stalled more than allowable limit") {
-      const set = await redisEvictConnection.set(
-        "stalled-job-cleaner:" + args.jobId,
-        "1",
-        "EX",
-        60 * 60 * 24,
-        "NX",
-      );
-      if (!set) {
-        return;
-      }
+  if (config.USE_DB_AUTHENTICATION && !config.DISABLE_MONITORING) {
+    monitorSchedulerInterval = setInterval(() => {
+      enqueueDueMonitorChecks().catch(error => {
+        _logger.error("Failed to enqueue due monitor checks", { error });
+      });
+      reconcileRunningMonitorChecks().catch(error => {
+        _logger.error("Failed to reconcile running monitor checks", { error });
+      });
+    }, 60_000);
+    enqueueDueMonitorChecks().catch(error => {
+      _logger.error("Failed to enqueue due monitor checks", { error });
+    });
+    reconcileRunningMonitorChecks().catch(error => {
+      _logger.error("Failed to reconcile running monitor checks", { error });
+    });
 
-      let logger = _logger.child({ jobId: args.jobId, scrapeId: args.jobId, module: "queue-worker", method: "failedListener", zeroDataRetention: job?.data.zeroDataRetention });
-      if (job && job.data.crawl_id) {
-        logger = logger.child({ crawlId: job.data.crawl_id });
-        logger.warn("Job stalled more than allowable limit");
-
-        const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
-
-        if (job.data.mode === "kickoff") {
-          await finishCrawlKickoff(job.data.crawl_id);
-          if (sc) {
-            await finishCrawlIfNeeded(job, sc);
-          }
-        } else {
-          const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
-
-          logger.debug("Declaring job as done...");
-          await addCrawlJobDone(job.data.crawl_id, job.id, false, logger);
-          await redisEvictConnection.srem(
-            "crawl:" + job.data.crawl_id + ":visited_unique",
-            normalizeURL(job.data.url, sc),
-          );
-
-          await finishCrawlIfNeeded(job, sc);
-        }
-      } else {
-        logger.warn("Job stalled more than allowable limit");
-      }
-    }
+    // Search checks drain on their own consumer so they can't starve the rest.
+    await Promise.all([
+      consumeMonitorCheckJobs(processMonitorCheckJob),
+      consumeMonitorSearchCheckJobs(processMonitorCheckJob),
+    ]);
+  } else if (!config.USE_DB_AUTHENTICATION) {
+    _logger.info(
+      "Skipping monitor worker startup because database authentication is disabled",
+    );
+  } else {
+    _logger.info(
+      "Skipping monitor worker startup because NUQ_RABBITMQ_URL is not configured",
+    );
   }
 
-  const scrapeQueueEvents = new QueueEvents(scrapeQueueName, { connection: getRedisConnection() });
-  scrapeQueueEvents.on("failed", failedListener);
-
-  const results = await Promise.all([
-    separateWorkerFun(
-      getScrapeQueue(),
-      path.join(__dirname, "worker", "scrape-worker.js"),
-    ),
-    workerFun(getExtractQueue(), processExtractJobInternal),
+  await Promise.all([
     workerFun(getDeepResearchQueue(), processDeepResearchJobInternal),
     workerFun(getGenerateLlmsTxtQueue(), processGenerateLlmsTxtJobInternal),
+    crawlFinishWorker(),
   ]);
 
-  console.log("All workers exited. Waiting for all jobs to finish...");
+  if (monitorSchedulerInterval) {
+    clearInterval(monitorSchedulerInterval);
+  }
 
-  const workerResults = results.filter((x) => x instanceof Worker);
-  await Promise.all(workerResults.map((x) => x.close()));
+  _logger.info("All workers exited. Waiting for all jobs to finish...");
 
   while (runningJobs.size > 0) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
 
-  setInterval(async () => {
-    _logger.debug("Currently running jobs", {
-      jobs: (
-        await Promise.all(
-          [...runningJobs].map(async (jobId) => {
-            return await getScrapeQueue().getJob(jobId);
-          }),
-        )
-      ).filter((x) => x && !x.data?.zeroDataRetention),
-    });
-  }, 1000);
-
-  await scrapeQueueEvents.close();
-  console.log("All jobs finished. Worker out!");
-  if (otelSdk) {
-    await otelSdk.shutdown();
-  }
+  _logger.info("All jobs finished. Shutting down...");
+  await shutdownPubSubLogging();
+  await shutdownTracing();
   process.exit(0);
-})();
+}
+
+if (require.main === module) {
+  void startRole("queue-worker");
+}

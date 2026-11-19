@@ -1,170 +1,356 @@
 import { configDotenv } from "dotenv";
-import crypto from "crypto";
+import { DrizzleQueryError } from "drizzle-orm/errors";
+import { v7 as uuidv7 } from "uuid";
+import { config } from "../../../config";
 import { parse } from "tldts";
 import { TeamFlags } from "../../../controllers/v1/types";
+import { db, dbRr } from "../../../db/connection";
+import * as schema from "../../../db/schema";
+import { exchangeClaimsUrl } from "../../../lib/exchange";
+import { persistedTeamId } from "../../../lib/keyless-team";
+import { logger } from "../../../lib/logger";
+import { isValidUuid } from "../../../lib/owner-id";
 
 configDotenv();
 
-const hashKey = Buffer.from(process.env.HASH_KEY || "", "utf-8");
-const algorithm = "aes-256-ecb";
+type BlocklistBlob = {
+  blocklist: string[];
+  allowedKeywords: string[];
+};
 
-export function encryptAES(plaintext: string, key: Buffer): string {
-  const cipher = crypto.createCipheriv(algorithm, key, null);
-  const encrypted = Buffer.concat([
-    cipher.update(plaintext, "utf-8"),
-    cipher.final(),
-  ]);
-  return encrypted.toString("base64");
+type BlockContext = {
+  team_id?: string | null;
+  org_id?: string | null;
+  origin?: string | null;
+  /** False for a re-check of a request whose hit was already recorded. */
+  record?: boolean;
+};
+
+type BlockHit = {
+  id: string;
+  domain: string;
+  url: string;
+  team_id: string | null;
+  origin: string | null;
+};
+
+const HIT_BUFFER_FLUSH_MS = 5000;
+const HIT_BUFFER_MAX_SIZE = 200;
+let hitBuffer: BlockHit[] = [];
+let hitFlushTimer: NodeJS.Timeout | null = null;
+
+async function flushHits(): Promise<void> {
+  if (hitBuffer.length === 0) return;
+  const batch = hitBuffer;
+  hitBuffer = [];
+  if (config.USE_DB_AUTHENTICATION !== true) return;
+  try {
+    await db.insert(schema.blocklist_hits).values(batch);
+  } catch (error) {
+    // Database errors can include the inserted URLs; log only the SQLSTATE.
+    const cause = error instanceof DrizzleQueryError ? error.cause : error;
+    const code =
+      cause !== null && typeof cause === "object" && "code" in cause
+        ? cause.code
+        : undefined;
+    logger.warn("Failed to record blocklist hits", {
+      hits: batch.length,
+      errorCode:
+        typeof code === "string" && /^[0-9A-Z]{5}$/.test(code) ? code : null,
+    });
+  }
 }
 
-export function decryptAES(ciphertext: string, key: Buffer): string {
-  const decipher = crypto.createDecipheriv(algorithm, key, null);
-  const decrypted = Buffer.concat([
-    decipher.update(Buffer.from(ciphertext, "base64")),
-    decipher.final(),
-  ]);
-  return decrypted.toString("utf-8");
+function scheduleHitFlush(): void {
+  if (hitFlushTimer !== null) return;
+  hitFlushTimer = setTimeout(() => {
+    hitFlushTimer = null;
+    void flushHits();
+  }, HIT_BUFFER_FLUSH_MS);
+  if (typeof hitFlushTimer.unref === "function") hitFlushTimer.unref();
 }
 
-const urlBlocklist = [
-  "h8ngAFXUNLO3ZqQufJjGVA==",
-  "fEGiDm/TWDBkXUXejFVICg==",
-  "l6Mei7IGbEmTTFoSudUnqQ==",
-  "4OjallJzXRiZUAWDiC2Xww==",
-  "ReSvkSfx34TNEdecmmSDdQ==",
-  "X1E4WtdmXAv3SAX9xN925Q==",
-  "VTzBQfMtXZzM05mnNkWkjA==",
-  "m/q4Lb2Z8cxwU7/CoztOFg==",
-  "UbVnmRaeG+gKcyVDLAm0vg==",
-  "xNQhczYG22tTVc6lYE3qwg==",
-  "CQfGDydbg4l1swRCru6O6Q==",
-  "l86LQxm2NonTWMauXwEsPw==",
-  "6v4QDUcwjnID80G+uU+tgw==",
-  "pCF/6nrKZAxaYntzEGluZQ==",
-  "r0CRhAmQqSe7V2s3073T00sAh4WcS5779jwuGJ26ows==",
-  "aBOVqRFBM4UVg33usY10NdiF0HCnFH/ImtD0n+zIpc8==",
-  "QV436UZuQ6D0Dqrx9MwaGw==",
-  "OYVvrwILYbzA2mSSqOPPpw==",
-  "xW2i4C0Dzcnp+qu12u0SAw==",
-  "OLHba209l0dfl0MI4EnQonBITK9z8Qwgd/NsuaTkXmA=",
-  "X0VynmNjpL3PrYxpUIG7sFMBt8OlrmQWtxj8oXVu2QM=",
-  "ObdlM5NEkvBJ/sojRW5K/Q==",
-  "C8Th38X0SjsE1vL/OsD8bA==",
-  "PTbGg8PK/h0Seyw4HEpK4Q==",
-  "lZdQMknjHb7+4+sjF3qNTw==",
-  "LsgSq54q5oDysbva29JxnQ==",
-  "KZfBtpwjOpdSoqacRbz7og==",
-  "Indtl4yxJMHCKBGF4KABCQ==",
-  "e3HFXLVgxhaVoadYpwb2BA==",
-  "b+asgLayXQ5Jq+se+q56jA==",
-  "86ZDUI7vmp4MvNq3fvZrGQ==",
-  "sEGFoYZ6GEg4Zocd+TiyfQ==",
-  "6OOL72eXthgnJ1Hj4PfOQQ==",
-  "g/ME+Sh1CAFboKrwkVb+5Q==",
-  "Pw+xawUoX8xBYbX2yqqGWQ==",
-  "k6vBalxYFhAvkPsF19t9gQ==",
-  "b+asgLayXQ5Jq+se+q56jA==",
-  "KKttwRz4w+AMJrZcB828WQ==",
-  "vMdzZ33BXoyWVZnAPOBcrg==",
-  "l8GDVI8w/ueHnNzdN1ODuQ==",
-  "+yz9bnYYMnC0trJZGJwf6Q==",
-  "oTdhIjEjqdT2pEvyxD1Ssg==",
-]
+// blocklist_hits.team_id is a uuid column, and one invalid value fails the whole
+// batched insert, so a team id that is still not a UUID is stored as null.
+function hitTeamId(teamId: string | null | undefined): string | null {
+  if (!teamId) return null;
+  const stored = persistedTeamId(teamId);
+  return isValidUuid(stored) ? stored : null;
+}
 
-const allowedKeywords = [
-  "pulse",
-  "privacy",
-  "terms",
-  "policy",
-  "user-agreement",
-  "legal",
-  "help",
-  "policies",
-  "support",
-  "contact",
-  "about",
-  "careers",
-  "blog",
-  "press",
-  "conditions",
-  "tos",
-  "://library.tiktok.com",
-  "://ads.tiktok.com",
-  "://tiktok.com/business",
-  "://developers.facebook.com",
-  "://developers.meta.com",
-  "://facebook.com/ads/library",
-  "://www.facebook.com/ads/library",
-  "://meta.com/experiences",
-  "://www.meta.com/experiences",
-  "://creditcards.aa.com",
-  "://aa.org",
-  "://www.aa.org",
-];
+function recordHit(
+  url: string,
+  domain: string,
+  context: BlockContext | undefined,
+): void {
+  if (context === undefined || context.record === false) return;
+  if (config.USE_DB_AUTHENTICATION !== true) return;
+  hitBuffer.push({
+    id: uuidv7(),
+    domain,
+    url: url.length > 2048 ? url.slice(0, 2048) : url,
+    team_id: hitTeamId(context.team_id),
+    origin: context.origin ?? null,
+  });
+  if (hitBuffer.length >= HIT_BUFFER_MAX_SIZE) {
+    if (hitFlushTimer !== null) {
+      clearTimeout(hitFlushTimer);
+      hitFlushTimer = null;
+    }
+    void flushHits();
+  } else {
+    scheduleHitFlush();
+  }
+}
 
-export function decryptedBlocklist(list: string[]): string[] {
-  return hashKey.length > 0
-    ? list.map((ciphertext) => decryptAES(ciphertext, hashKey))
+function allowedKeywordMatches(url: string, allowedKeyword: string): boolean {
+  const keyword = allowedKeyword.trim();
+  if (!keyword) {
+    return false;
+  }
+
+  if (keyword.startsWith("regex:")) {
+    try {
+      return new RegExp(keyword.slice("regex:".length), "i").test(url);
+    } catch {
+      return false;
+    }
+  }
+
+  const regexMatch = keyword.match(/^\/(.+)\/([dgimsuvy]*)$/);
+  if (regexMatch) {
+    try {
+      return new RegExp(regexMatch[1], regexMatch[2]).test(url);
+    } catch {
+      return false;
+    }
+  }
+
+  return url.toLowerCase().includes(keyword.toLowerCase());
+}
+
+let blob: BlocklistBlob | null = null;
+let orgBlobs: Map<string, BlocklistBlob> = new Map();
+
+// Rows are written by ops directly, so reads must survive a missing or
+// partial document — a bad row must never take down startup. Blank entries
+// can never match and would make an org register as scoped, so drop them.
+function parseStringEntries(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (x): x is string => typeof x === "string" && x.trim().length > 0,
+      )
     : [];
 }
 
-export function isUrlBlocked(url: string, flags: TeamFlags): boolean {
-  const lowerCaseUrl = url.trim().toLowerCase();
+function parseBlob(data: unknown): BlocklistBlob {
+  const doc = (data ?? {}) as Record<string, unknown>;
+  return {
+    blocklist: parseStringEntries(doc.blocklist),
+    allowedKeywords: parseStringEntries(doc.allowedKeywords),
+  };
+}
 
-  let blockedlist = decryptedBlocklist(urlBlocklist);
+function mergeBlob(target: BlocklistBlob, source: BlocklistBlob): void {
+  target.blocklist.push(...source.blocklist);
+  target.allowedKeywords.push(...source.allowedKeywords);
+}
 
-  if (flags?.unblockedDomains) {
-    blockedlist = blockedlist.filter((blocked) => !flags.unblockedDomains!.includes(blocked));
+// Rows may repeat entries; the match loops scan linearly, so dedupe once at
+// load instead of paying for duplicates on every check.
+function dedupeBlob(blob: BlocklistBlob): BlocklistBlob {
+  return {
+    blocklist: [...new Set(blob.blocklist)],
+    allowedKeywords: [...new Set(blob.allowedKeywords)],
+  };
+}
+
+export async function initializeBlocklist() {
+  if (config.USE_DB_AUTHENTICATION !== true || config.DISABLE_BLOCKLIST) {
+    blob = {
+      blocklist: [],
+      allowedKeywords: [],
+    };
+    orgBlobs = new Map();
+    return;
   }
 
-  const decryptedUrl =
-    blockedlist.find((decrypted) => lowerCaseUrl === decrypted) ||
-    lowerCaseUrl;
+  let rows: { data: any; org_id: string | null }[];
+  try {
+    rows = await dbRr.select().from(schema.blocklist);
+  } catch (error) {
+    throw new Error(
+      `Error getting blocklist: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+    );
+  }
 
-  // If the URL is empty or invalid, return false
+  if (rows.length === 0) {
+    throw new Error("Error getting blocklist: No data returned from database");
+  }
+
+  if (!rows.some(row => row.org_id === null)) {
+    throw new Error(
+      "Error getting blocklist: No global blocklist row (org_id IS NULL) found",
+    );
+  }
+
+  const globalBlob: BlocklistBlob = { blocklist: [], allowedKeywords: [] };
+  const perOrg = new Map<string, BlocklistBlob>();
+  for (const row of rows) {
+    if (row.org_id === null) {
+      mergeBlob(globalBlob, parseBlob(row.data));
+    } else {
+      const existing = perOrg.get(row.org_id);
+      if (existing) {
+        mergeBlob(existing, parseBlob(row.data));
+      } else {
+        perOrg.set(row.org_id, parseBlob(row.data));
+      }
+    }
+  }
+  for (const [orgId, orgBlob] of perOrg) {
+    const deduped = dedupeBlob(orgBlob);
+    // An org whose rows hold no blockable entries must not register as
+    // org-scoped at all — hasOrgScopedBlocklist consumers would otherwise
+    // pay cache opt-outs for an org that can never block anything.
+    if (deduped.blocklist.length === 0) {
+      perOrg.delete(orgId);
+    } else {
+      perOrg.set(orgId, deduped);
+    }
+  }
+  blob = dedupeBlob(globalBlob);
+  orgBlobs = perOrg;
+}
+
+function findBlockedMatch(
+  url: string,
+  lowerCaseUrl: string,
+  blockedlist: string[],
+  allowedKeywords: string[],
+): string | null {
+  const decryptedUrl =
+    blockedlist.find(decrypted => lowerCaseUrl === decrypted) || lowerCaseUrl;
+
+  // If the URL is empty or invalid, return no match
   let parsedUrl: any;
   try {
     parsedUrl = parse(decryptedUrl);
+    // tldts doesn't percent-decode hosts the way fetchers do.
+    if (!parsedUrl.domain && URL.canParse(decryptedUrl)) {
+      parsedUrl = parse(new URL(decryptedUrl).hostname);
+    }
   } catch {
     console.log("Error parsing URL:", url);
-    return false;
+    return null;
   }
 
   const domain = parsedUrl.domain;
   const publicSuffix = parsedUrl.publicSuffix;
 
   if (!domain) {
-    return false;
+    return null;
   }
 
-  // Check if URL contains any allowed keyword
+  // Check if URL contains any allowed keyword. A keyword in a URL the
+  // Exchange claims (a profile slug, or a sub-page like /about) doesn't
+  // exempt it: only the Exchange may serve those.
   if (
-    allowedKeywords.some((keyword) =>
-      lowerCaseUrl.includes(keyword.toLowerCase()),
-    )
+    allowedKeywords.some(keyword => allowedKeywordMatches(url, keyword)) &&
+    !exchangeClaimsUrl(url)
   ) {
-    return false;
+    return null;
   }
 
   // Block exact matches
   if (blockedlist.includes(domain)) {
-    return true;
+    return domain;
   }
 
   // Block subdomains
-  if (blockedlist.some((blocked) => domain.endsWith(`.${blocked}`))) {
-    return true;
+  if (blockedlist.some(blocked => domain.endsWith(`.${blocked}`))) {
+    return domain;
   }
 
   // Block different TLDs of the same base domain
   const baseDomain = domain.split(".")[0]; // Extract the base domain (e.g., "facebook" from "facebook.com")
+
   if (
     publicSuffix &&
+    baseDomain.length > 2 &&
     blockedlist.some(
-      (blocked) => blocked.startsWith(baseDomain + ".") && blocked !== domain,
+      blocked => blocked.startsWith(baseDomain + ".") && blocked !== domain,
     )
   ) {
+    return domain;
+  }
+
+  return null;
+}
+
+/**
+ * Whether the org has any org-scoped blocklist entries at all. Lets shared
+ * caches opt such requesters out entirely: a per-URL check is not enough
+ * when the cached artifact covers other URLs than the one checked.
+ */
+export function hasOrgScopedBlocklist(
+  orgId: string | null | undefined,
+): boolean {
+  if (blob === null) {
+    throw new Error("Blocklist not initialized");
+  }
+  return typeof orgId === "string" && orgBlobs.has(orgId);
+}
+
+export function isUrlBlocked(
+  url: string,
+  flags: TeamFlags,
+  context?: BlockContext,
+): boolean {
+  if (blob === null) {
+    throw new Error("Blocklist not initialized");
+  }
+
+  const lowerCaseUrl = url.trim().toLowerCase();
+
+  let blockedlist = [...blob.blocklist];
+
+  if (flags?.unblockedDomains) {
+    blockedlist = blockedlist.filter(
+      blocked => !flags.unblockedDomains!.includes(blocked),
+    );
+  }
+
+  const globalMatch = findBlockedMatch(
+    url,
+    lowerCaseUrl,
+    blockedlist,
+    blob.allowedKeywords,
+  );
+  if (globalMatch !== null) {
+    recordHit(url, globalMatch, context);
     return true;
+  }
+
+  // The org blob's own allowedKeywords exempt URLs from the org list only.
+  const orgBlob = context?.org_id ? orgBlobs.get(context.org_id) : undefined;
+  if (orgBlob) {
+    let orgBlockedlist = orgBlob.blocklist;
+    if (flags?.unblockedDomains) {
+      orgBlockedlist = orgBlockedlist.filter(
+        blocked => !flags.unblockedDomains!.includes(blocked),
+      );
+    }
+    const orgMatch = findBlockedMatch(
+      url,
+      lowerCaseUrl,
+      orgBlockedlist,
+      orgBlob.allowedKeywords,
+    );
+    if (orgMatch !== null) {
+      recordHit(url, orgMatch, context);
+      return true;
+    }
   }
 
   return false;
