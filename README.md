@@ -36,22 +36,9 @@
 </div>
 
 > [!NOTE]
-> **About this fork.** This is [Joseph Zulick](https://josephzulick.com)'s self-hosted fork of
-> [firecrawl/firecrawl](https://github.com/firecrawl/firecrawl). It runs in production as the
-> page-reading service of a personal AI research platform (SearXNG search, an MCP research
-> gateway and n8n automations on DigitalOcean, deployed with Komodo).
+> **Operating a self-hosted renderer.** A 40-page sandbox crawl on this fork peaked at about 2.2 GiB across the API, browser and queue services. The API had failed during startup at a 1600 MB limit. The [operating case and measurements](ops/README.md) show why the renderer runs separately, how two workers were sized, and how to verify the deployed revision with real scrape and queue jobs.
 >
-> What the fork adds on top of upstream:
-> - **Self-hosted `/map` discovery**: link discovery from the site itself and SearXNG when
->   fire-engine isn't available ([code](apps/api/src/lib/selfhost-map-discovery.ts), with tests)
-> - **Deployment sized for a 2 vCPU / 4 GB host**: measured memory limits, external Redis,
->   localhost-only API, healthchecks and log rotation ([`docker-compose.yaml`](docker-compose.yaml))
-> - **Crash-safe browser service**: single-flight Chromium relaunch
-> - **Operations**: [architecture](ops/ARCHITECTURE.md), [runbook and rollback](ops/README.md),
->   and an [end-to-end smoke test](ops/selfhost-smoke.sh)
->
-> Everything below this note is the upstream README. All credit for Firecrawl itself goes to
-> the Firecrawl team (AGPL-3.0).
+> This fork of [Firecrawl](https://github.com/firecrawl/firecrawl) adds self-hosted map discovery, shared Chromium recovery and a Komodo Compose example. The remaining README documents the upstream AGPL-3.0 project.
 
 ---
 

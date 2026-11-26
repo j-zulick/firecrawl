@@ -3,9 +3,9 @@ name: firecrawl
 # ---------------------------------------------------------------------------
 # j-zulick fork of firecrawl/firecrawl
 #
-# Deployed by Komodo (stack "firecrawl-stack") on firecrawl-node, a 2 vCPU /
-# 4 GB droplet. Differences from upstream's docker-compose.yaml:
-#   * Redis is external (the redis-firecrawl-stack container). REDIS_URL is
+# Reference Komodo deployment sized for a 2 vCPU / 4 GB Linux host.
+# Differences from upstream docker-compose.yaml:
+#   * Redis is external. REDIS_URL is
 #     required; the bundled redis service only starts with --profile bundled-redis.
 #   * POSTGRES_PASSWORD is required (no "postgres" default).
 #   * API port is published on 127.0.0.1 only (nginx fronts it publicly).
@@ -155,8 +155,7 @@ services:
       retries: 3
       start_period: 120s
 
-  # Only used with `--profile bundled-redis` (production uses the external
-  # redis-firecrawl-stack via REDIS_URL). Point REDIS_URL at redis://redis:6379
+  # Only used with `--profile bundled-redis`. Point REDIS_URL at redis://redis:6379
   # when using it.
   redis:
     profiles: ["bundled-redis"]
