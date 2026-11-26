@@ -64,8 +64,19 @@ Steps (all on **firecrawl-node**, prompt `<user>@firecrawl-node`; host key
 `SHA256:IHvBmZ…a1rDo`):
 
 1. Add `POSTGRES_PASSWORD` to the Komodo stack environment.
-2. Merge the PR to `main` and run **DeployStack** in Komodo. The first build takes
-   about 10–15 minutes (Rust + Go + pnpm).
+2. Merge the PR to `main`, build the changed images from Komodo's checkout, then run
+   **DeployStack** in Komodo. DeployStack does not build (the stack has `run_build: false`):
+   without the build step the new compose runs the old images. The `api` build takes about
+   10–15 minutes (Rust + Go + pnpm). Build with placeholder values; Komodo supplies the real
+   environment at DeployStack:
+   ```bash
+   docker exec periphery sh -c 'cd /etc/komodo/stacks/firecrawl-stack && \
+     REDIS_URL=redis://build-only POSTGRES_PASSWORD=build-only \
+     docker compose -p firecrawl-stack -f docker-compose.yaml build api playwright-service'
+   ```
+   After DeployStack, check that the running images are the new ones
+   (`docker image inspect firecrawl-stack-api --format '{{.Created}}'` is after the merge)
+   and that Komodo's deployed commit matches `main`.
 3. Remove the old worker container, which Compose no longer manages. If it is left
    running, it keeps the old code and old image:
    ```bash
@@ -75,11 +86,16 @@ Steps (all on **firecrawl-node**, prompt `<user>@firecrawl-node`; host key
 4. Wait for `docker ps` to show `api` and `playwright-service` as `(healthy)`,
    then run the smoke test on the host. The API is published on
    `127.0.0.1:3302` on firecrawl-node (`PORT` in the Komodo env). The script
-   needs `curl` and `jq`:
+   needs `bash`, `curl` and `jq`. The host has no `jq`, so run it in a throwaway
+   container on the host network:
    ```bash
    docker exec periphery cat /etc/komodo/stacks/firecrawl-stack/ops/selfhost-smoke.sh > /tmp/fc-smoke.sh
-   bash /tmp/fc-smoke.sh http://127.0.0.1:3302
+   docker run --rm --network host -v /tmp/fc-smoke.sh:/s.sh:ro alpine:3 \
+     sh -c 'apk add -q --no-cache bash curl jq >/dev/null && bash /s.sh http://127.0.0.1:3302'
+   rm -f /tmp/fc-smoke.sh
    ```
+   Record the commit (`docker exec periphery git -C /etc/komodo/stacks/firecrawl-stack log -1 --format=%h`)
+   with the PASS/FAIL lines and the date.
    To test through nginx instead, run
    `FIRECRAWL_TOKEN=<nginx bearer> bash /tmp/fc-smoke.sh https://firecrawl.example.com`.
    Add `SMOKE_SEARCH=1` if `SEARXNG_ENDPOINT` is configured.
