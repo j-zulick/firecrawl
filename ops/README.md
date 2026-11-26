@@ -2,7 +2,7 @@
 
 This fork tracks [firecrawl/firecrawl](https://github.com/firecrawl/firecrawl) and is
 deployed by Komodo (stack `firecrawl-stack`) to **firecrawl-node** (DigitalOcean
-droplet 543605618, 64.225.59.96, 2 vCPU / 4 GB). Komodo builds from `main`, so
+droplet, 2 vCPU / 4 GB). Komodo builds from `main`, so
 **merging to `main` and running DeployStack is a production deploy.**
 
 ## What the fork changes on top of upstream
@@ -60,7 +60,7 @@ The upstream architecture changed between the old base and now:
 - `/v1/*` endpoints are kept, and `/v2/*` is the current API. The smoke test
   covers both.
 
-Steps (all on **firecrawl-node**, prompt `joe@firecrawl-node`; host key
+Steps (all on **firecrawl-node**, prompt `<user>@firecrawl-node`; host key
 `SHA256:IHvBmZ…a1rDo`):
 
 1. Add `POSTGRES_PASSWORD` to the Komodo stack environment.
@@ -81,7 +81,7 @@ Steps (all on **firecrawl-node**, prompt `joe@firecrawl-node`; host key
    bash /tmp/fc-smoke.sh http://127.0.0.1:3302
    ```
    To test through nginx instead, run
-   `FIRECRAWL_TOKEN=<nginx bearer> bash /tmp/fc-smoke.sh https://firecrawl.josephzulick.com`.
+   `FIRECRAWL_TOKEN=<nginx bearer> bash /tmp/fc-smoke.sh https://firecrawl.example.com`.
    Add `SMOKE_SEARCH=1` if `SEARXNG_ENDPOINT` is configured.
 5. Update the health check script (`private/komodo/firecrawl-health.sh`). It should
    expect `api`, `playwright-service`, `rabbitmq` and `nuq-postgres`, and no
