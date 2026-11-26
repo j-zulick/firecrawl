@@ -79,6 +79,52 @@ The upstream architecture changed between the old base and now:
    Keep the revision, image IDs, timestamp, outcomes and final exit status in the deployment record. Redact identifiers before sharing. A green fork CI build covers configuration, shell checks and component tests. The deployed service needs its own successful smoke run.
 4. Inspect the previous topology for orphaned worker containers. Stop only a positively identified obsolete worker after confirming that its queue has drained and the replacement passed its checks.
 
+### When Komodo owns the checkout inside Periphery
+
+Use the same isolated deployment checks above. In this variant, set `STACK_CHECKOUT` to the checkout inside your Periphery container and `COMPOSE_PROJECT_NAME` to the actual project in Komodo. Select your configured loopback port. The commands below show the default 3002.
+
+1. Add `POSTGRES_PASSWORD` to the Komodo stack environment.
+2. Merge the PR to `main`, build the changed images from Komodo's checkout, then run
+   **DeployStack** in Komodo. DeployStack does not build (this procedure assumes `run_build: false`):
+   without the build step the new compose runs the old images. The `api` build takes about
+   10–15 minutes (Rust + Go + pnpm). Build with placeholder values; Komodo supplies the real
+   environment at DeployStack:
+   ```bash
+   docker exec -w "$STACK_CHECKOUT" periphery sh -c '\
+     REDIS_URL=redis://build-only POSTGRES_PASSWORD=build-only \
+     docker compose -p "$1" -f docker-compose.yaml build api playwright-service' sh "$COMPOSE_PROJECT_NAME"
+   ```
+   After DeployStack, check that the running images are the new ones
+   (`docker image inspect "$BUILT_API_IMAGE_ID" --format '{{.Created}}'` is after the merge)
+   and that Komodo's deployed commit matches `main`.
+3. Remove the old worker container, which Compose no longer manages. If it is left
+   running, it keeps the old code and old image:
+   ```bash
+   docker ps -a --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" \
+     --filter 'label=com.docker.compose.service=worker' --format '{{.Names}} {{.Status}}'
+   # After checking the drained queue and the healthy replacement, retire only this obsolete worker.
+   ```
+4. Wait for `docker ps` to show `api` and `playwright-service` as `(healthy)`,
+   then run the smoke test on the host. The API is published on
+   `127.0.0.1:3002` by default (`PORT` in the Komodo env). The script
+   needs `bash`, `curl` and `jq`. If the host has no `jq`, run it in a throwaway
+   container on the host network:
+   ```bash
+   smoke_file=$(mktemp)
+   docker exec periphery cat "$STACK_CHECKOUT/ops/selfhost-smoke.sh" > "$smoke_file"
+   docker run --rm --network host -v "$smoke_file:/s.sh:ro" alpine:3 \
+     sh -c 'apk add -q --no-cache bash curl jq >/dev/null && bash /s.sh http://127.0.0.1:3002'
+   rm -f "$smoke_file"
+   ```
+   Record the commit (`docker exec periphery git -C "$STACK_CHECKOUT" log -1 --format=%h`)
+   with the PASS/FAIL lines and the date.
+   For an authorized test proxy, bind its FIRECRAWL_TOKEN and run
+   `bash ops/selfhost-smoke.sh https://firecrawl.example.com`.
+   Add `SMOKE_SEARCH=1` if `SEARXNG_ENDPOINT` is configured.
+5. Update the stack health check. It should
+   expect `api`, `playwright-service`, `rabbitmq` and `nuq-postgres`, and no
+   longer `worker`.
+
 ### Rollback
 
 Restore the last verified checkout and corresponding images, then redeploy using the same Compose project, existing queue data and compatible configuration. Verify database compatibility before switching between queue architectures. Repeat the version, container and smoke checks. Preserve the failed deployment record for diagnosis.
