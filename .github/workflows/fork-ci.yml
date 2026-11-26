@@ -69,9 +69,15 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
+      # Same order as upstream's test-api-core: install without lifecycle
+      # scripts (foundationdb's install script needs the FDB C client, which
+      # the type check does not), then build the Rust module with napi.
+      - name: Install API dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+        env:
+          npm_config_ignore_scripts: 'true'
       - name: Build native (Rust) module
         working-directory: apps/api/native
-        run: pnpm install && pnpm run build
-      - run: pnpm install --frozen-lockfile --ignore-scripts
+        run: ./node_modules/.bin/napi build --platform --release
       - run: npx tsc --noEmit -p .
       - run: pnpm knip
