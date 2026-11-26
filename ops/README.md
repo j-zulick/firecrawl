@@ -2,7 +2,7 @@
 
 This fork tracks [firecrawl/firecrawl](https://github.com/firecrawl/firecrawl) and is
 deployed by Komodo (stack `firecrawl-stack`) to **firecrawl-node** (DigitalOcean
-droplet,2 vCPU / 4 GB). Komodo builds from `main`, so
+droplet, 2 vCPU / 4 GB). Komodo builds from `main`, so
 **merging to `main` and running DeployStack is a production deploy.**
 
 ## What the fork changes on top of upstream
