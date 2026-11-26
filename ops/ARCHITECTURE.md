@@ -71,7 +71,9 @@ flowchart LR
 
 ## Operations
 
-- **Deploys:** merge to `main`, then Komodo builds and redeploys the stack. Upgrades
+- **Deploys:** merge to `main`, build the changed images from Komodo's checkout, then
+  redeploy with Komodo (its DeployStack does not rebuild images), and confirm the
+  running images and deployed commit match `main`. Upgrades
   that change the topology have a written runbook with rollback steps
   ([`ops/README.md`](README.md)).
 - **Verification:** [`ops/selfhost-smoke.sh`](selfhost-smoke.sh) checks the deployed
