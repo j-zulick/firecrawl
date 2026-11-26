@@ -1,9 +1,6 @@
-# j-zulick fork: operator notes
+# Operating a self-hosted Firecrawl renderer
 
-This fork tracks [firecrawl/firecrawl](https://github.com/firecrawl/firecrawl) and is
-deployed by Komodo (stack `firecrawl-stack`) to **firecrawl-node** (DigitalOcean
-droplet, 2 vCPU / 4 GB). Komodo builds from `main`, so
-**merging to `main` and running DeployStack is a production deploy.**
+A browser crash or a surge of rendering jobs can consume the memory needed by search and the research gateway. This fork runs the renderer on a separate host. Concurrent scrape requests share one Chromium relaunch after a crash. The sandbox sizing run below explains the two-worker default. [Component diagram and request path](ARCHITECTURE.md)
 
 ## What the fork changes on top of upstream
 
@@ -60,61 +57,41 @@ The upstream architecture changed between the old base and now:
 - `/v1/*` endpoints are kept, and `/v2/*` is the current API. The smoke test
   covers both.
 
-Steps (all on **firecrawl-node**, prompt `<user>@firecrawl-node`; host key
-`SHA256:IHvBmZ…a1rDo`):
+### Build and verify an isolated deployment
 
-1. Add `POSTGRES_PASSWORD` to the Komodo stack environment.
-2. Merge the PR to `main`, build the changed images from Komodo's checkout, then run
-   **DeployStack** in Komodo. DeployStack does not build (the stack has `run_build: false`):
-   without the build step the new compose runs the old images. The `api` build takes about
-   10–15 minutes (Rust + Go + pnpm). Build with placeholder values; Komodo supplies the real
-   environment at DeployStack:
-   ```bash
-   docker exec periphery sh -c 'cd /etc/komodo/stacks/firecrawl-stack && \
-     REDIS_URL=redis://build-only POSTGRES_PASSWORD=build-only \
-     docker compose -p firecrawl-stack -f docker-compose.yaml build api playwright-service'
+1. Record the current Git revision, Compose project name, image IDs and queue database backup before an upgrade. Use a separate test project with its own database, cache, volumes and available loopback port. Put the required settings in that project's environment.
+2. Check out the candidate revision in the stack's build directory. If Komodo's stack has builds disabled, run `docker compose build api playwright-service` there **using the configured project name**, then run DeployStack. Check both the revision Komodo reports and the image IDs of the actual running containers. A successful deployment can still be serving an older local image.
+3. From the checkout, run the smoke script against the isolated instance with Bash, curl and jq. The checked-in Compose default port is 3002. The script submits a two-page crawl and a two-URL batch to a scraper-test site. It checks v1 and v2 scrape responses, map results, completed jobs and rejection of an invalid URL. Set `SMOKE_SEARCH=1` only for an instance with search configured.
+
+   ```sh
+   git rev-parse HEAD
+   docker compose ps
+   bash ops/selfhost-smoke.sh http://127.0.0.1:3002
    ```
-   After DeployStack, check that the running images are the new ones
-   (`docker image inspect firecrawl-stack-api --format '{{.Created}}'` is after the merge)
-   and that Komodo's deployed commit matches `main`.
-3. Remove the old worker container, which Compose no longer manages. If it is left
-   running, it keeps the old code and old image:
-   ```bash
-   docker ps -a --filter name=firecrawl-stack-worker --format '{{.Names}} {{.Status}}'
-   docker rm -f firecrawl-stack-worker-1   # name as printed above
+
+   On a Linux host without jq, a disposable test client can use the same loopback endpoint:
+
+   ```sh
+   docker run --rm --network host -v "$PWD/ops/selfhost-smoke.sh:/smoke.sh:ro" alpine:3 \
+     sh -c 'apk add -q --no-cache bash curl jq >/dev/null && bash /smoke.sh http://127.0.0.1:3002'
    ```
-4. Wait for `docker ps` to show `api` and `playwright-service` as `(healthy)`,
-   then run the smoke test on the host. The API is published on
-   `127.0.0.1:3302` on firecrawl-node (`PORT` in the Komodo env). The script
-   needs `bash`, `curl` and `jq`. The host has no `jq`, so run it in a throwaway
-   container on the host network:
-   ```bash
-   docker exec periphery cat /etc/komodo/stacks/firecrawl-stack/ops/selfhost-smoke.sh > /tmp/fc-smoke.sh
-   docker run --rm --network host -v /tmp/fc-smoke.sh:/s.sh:ro alpine:3 \
-     sh -c 'apk add -q --no-cache bash curl jq >/dev/null && bash /s.sh http://127.0.0.1:3302'
-   rm -f /tmp/fc-smoke.sh
-   ```
-   Record the commit (`docker exec periphery git -C /etc/komodo/stacks/firecrawl-stack log -1 --format=%h`)
-   with the PASS/FAIL lines and the date.
-   To test through nginx instead, run
-   `FIRECRAWL_TOKEN=<nginx bearer> bash /tmp/fc-smoke.sh https://firecrawl.example.com`.
-   Add `SMOKE_SEARCH=1` if `SEARXNG_ENDPOINT` is configured.
-5. Update the health check script (`private/komodo/firecrawl-health.sh`). It should
-   expect `api`, `playwright-service`, `rabbitmq` and `nuq-postgres`, and no
-   longer `worker`.
+
+   Keep the revision, image IDs, timestamp, outcomes and final exit status in the deployment record. Redact identifiers before sharing. A green fork CI build covers configuration, shell checks and component tests. The deployed service needs its own successful smoke run.
+4. Inspect the previous topology for orphaned worker containers. Stop only a positively identified obsolete worker after confirming that its queue has drained and the replacement passed its checks.
 
 ### Rollback
 
-1. In Komodo, point the stack at commit `379d3de` (the last pre-sync `main`), or
-   revert the merge commit on `main`, then run DeployStack.
-2. Remove the containers the old compose file does not manage:
-   `docker rm -f firecrawl-stack-rabbitmq-1 firecrawl-stack-nuq-postgres-1`.
-3. Run the health check.
+Restore the last verified checkout and corresponding images, then redeploy using the same Compose project, existing queue data and compatible configuration. Verify database compatibility before switching between queue architectures. Repeat the version, container and smoke checks. Preserve the failed deployment record for diagnosis.
 
 ## Building locally
 
-```bash
-docker compose build
-REDIS_URL=redis://redis:6379 POSTGRES_PASSWORD=dev docker compose --profile bundled-redis up -d
-ops/selfhost-smoke.sh
+From a clean checkout, use a fresh Compose project and an unused host port. This shell sets temporary development values for the bundled Redis and the new database:
+
+```sh
+export COMPOSE_PROJECT_NAME=firecrawl-sandbox
+export REDIS_URL=redis://redis:6379
+export POSTGRES_PASSWORD="$(openssl rand -hex 24)"
+export PORT=3303
+docker compose --profile bundled-redis up --build -d
+bash ops/selfhost-smoke.sh "http://127.0.0.1:$PORT"
 ```
