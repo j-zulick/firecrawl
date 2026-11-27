@@ -94,9 +94,15 @@ Use the same isolated deployment checks above. In this variant, set `STACK_CHECK
      REDIS_URL=redis://build-only POSTGRES_PASSWORD=build-only \
      docker compose -p "$1" -f docker-compose.yaml build api playwright-service' sh "$COMPOSE_PROJECT_NAME"
    ```
-   After DeployStack, check that the running images are the new ones
-   (`docker image inspect "$BUILT_API_IMAGE_ID" --format '{{.Created}}'` is after the merge)
-   and that Komodo's deployed commit matches `main`.
+   After DeployStack, check that the running `api` container uses the image you just built
+   (the two IDs match, and the image was created after the merge) and that Komodo's deployed
+   commit matches `main`:
+   ```bash
+   docker image inspect "$COMPOSE_PROJECT_NAME-api" --format '{{.Id}} {{.Created}}'
+   docker inspect --format '{{.Image}}' "$(docker ps -q \
+     --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" \
+     --filter 'label=com.docker.compose.service=api')"
+   ```
 3. Remove the old worker container, which Compose no longer manages. If it is left
    running, it keeps the old code and old image:
    ```bash
@@ -118,8 +124,8 @@ Use the same isolated deployment checks above. In this variant, set `STACK_CHECK
    ```
    Record the commit (`docker exec periphery git -C "$STACK_CHECKOUT" log -1 --format=%h`)
    with the PASS/FAIL lines and the date.
-   For an authorized test proxy, bind its FIRECRAWL_TOKEN and run
-   `bash ops/selfhost-smoke.sh https://firecrawl.example.com`.
+   To test through an authenticating proxy you are authorized to use, pass its token:
+   `FIRECRAWL_TOKEN=<token> bash ops/selfhost-smoke.sh https://firecrawl.example.com`.
    Add `SMOKE_SEARCH=1` if `SEARXNG_ENDPOINT` is configured.
 5. Update the stack health check. It should
    expect `api`, `playwright-service`, `rabbitmq` and `nuq-postgres`, and no
