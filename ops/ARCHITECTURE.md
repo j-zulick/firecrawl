@@ -66,7 +66,7 @@ flowchart LR
 | Cheapest reader first | Most pages don't need a browser. Escalating only on failure keeps latency and memory down and avoids hammering sites. |
 | Self-hosted rather than a SaaS scraper | No per-page cost, data stays on my infrastructure, and I can patch behaviour (e.g. [self-hosted `/map` discovery](../apps/api/src/lib/selfhost-map-discovery.ts)). |
 | Komodo for deployment | Git-driven deploys of Docker Compose stacks across several hosts from one control plane, without the overhead of Kubernetes for a handful of services. |
-| Memory limits on every container | Sized from measurements (about 1.85 GB idle and 2.2 GB peak for the whole Firecrawl stack during a 40-page crawl), so one service can't push the host into swap or the OOM killer. |
+| Memory limits on every container | Sized from measurements (about 1.85 GB idle and 2.2 GB peak for the whole Firecrawl stack during a 40-page crawl), to bound individual services under the measured load. |
 | Track upstream rather than diverge | Fork-specific changes are kept small and documented (see [`ops/README.md`](README.md)), so pulling upstream fixes stays a merge rather than a rewrite. |
 
 ## Operations
@@ -76,9 +76,7 @@ flowchart LR
   running images and deployed commit match `main`. Upgrades
   that change the topology have a written runbook with rollback steps
   ([`ops/README.md`](README.md)).
-- **Verification:** [`ops/selfhost-smoke.sh`](selfhost-smoke.sh) checks the deployed
-  API end to end (scrape, map, crawl, batch, search, error handling) after every
-  deploy.
+- **Verification:** [`ops/selfhost-smoke.sh`](selfhost-smoke.sh) checks a selected deployment end to end (scrape, map, crawl, batch and error handling). Search requires an enabled backend. Retain the actual run before reporting a successful deployment.
 - **Monitoring:** scheduled health checks of both droplets, with alerts relayed
   through n8n.
 - **Resilience:**
