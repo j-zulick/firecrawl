@@ -46,6 +46,22 @@ On an 8 GB droplet, `NUQ_WORKER_COUNT=4`, `API_MEM_LIMIT=4g`,
 
 At 1600 MB the API container was OOM-killed during startup; 2304 MB leaves ~0.6 GB headroom.
 
+## What the smoke test verified (2026-11-27)
+
+An isolated stack, built from source in GitHub Actions (workflow `verify-selfhost-smoke.yml`, [run 45946905080](https://github.com/j-zulick/firecrawl/actions/runs/45946905080), 2026-11-27 05:37 UTC), passed every check of `ops/selfhost-smoke.sh`. The tested revision has the same tree as `main` after this fork's history rewrite later that day.
+
+| Check | Result |
+|---|---|
+| `GET /` | API up |
+| `POST /v1/scrape` (markdown) | 9,222 characters |
+| `POST /v2/scrape` (markdown + links) | 9,222 characters, 22 links |
+| `POST /v2/map` | 10 links |
+| v2 crawl | completed, 2/2 pages |
+| v2 batch scrape | completed, 2/2 pages |
+| invalid URL | rejected with HTTP 400 |
+
+This covers the code paths: API, NuQ queue, workers, the separate Playwright renderer and link discovery. A production host still needs its own run after each deployment (see step 3 below), recorded with the revision and image IDs and with identifiers redacted.
+
 ## Upgrading from the Aug-2025 base (first deploy of `upstream-sync`)
 
 The upstream architecture changed between the old base and now:
